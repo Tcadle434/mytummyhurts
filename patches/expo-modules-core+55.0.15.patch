@@ -1,0 +1,113 @@
+diff --git a/node_modules/expo-modules-core/ios/Core/DynamicTypes/DynamicSwiftUIViewType.swift b/node_modules/expo-modules-core/ios/Core/DynamicTypes/DynamicSwiftUIViewType.swift
+index 586f261..6b75a69 100644
+--- a/node_modules/expo-modules-core/ios/Core/DynamicTypes/DynamicSwiftUIViewType.swift
++++ b/node_modules/expo-modules-core/ios/Core/DynamicTypes/DynamicSwiftUIViewType.swift
+@@ -42,7 +42,7 @@ internal struct DynamicSwiftUIViewType<ViewType: ExpoSwiftUIView>: AnyDynamicTyp
+     // For wrapper types
+     // e.g. ExpoUIView(SecureFieldView.self)
+     if let provider = appContext.findView(withTag: viewTag, ofType: ExpoSwiftUI.ViewWrapper.self),
+-       let innerView = provider.getWrappedView() as? ViewType {
++       let innerView = MainActor.assumeIsolated({ provider.getWrappedView() }) as? ViewType {
+       return innerView
+     }
+     // For views using WithHostingView protocol.
+@@ -50,7 +50,9 @@ internal struct DynamicSwiftUIViewType<ViewType: ExpoSwiftUIView>: AnyDynamicTyp
+     guard let view = appContext.findView(withTag: viewTag, ofType: AnyExpoSwiftUIHostingView.self) else {
+       throw Exceptions.SwiftUIViewNotFound((tag: viewTag, type: innerType.self))
+     }
+-    return view.getContentView()
++    return MainActor.assumeIsolated {
++      view.getContentView()
++    }
+   }
+ 
+   var description: String {
+diff --git a/node_modules/expo-modules-core/ios/Core/Views/ComponentData.swift b/node_modules/expo-modules-core/ios/Core/Views/ComponentData.swift
+index d632a6e..eb6e81a 100644
+--- a/node_modules/expo-modules-core/ios/Core/Views/ComponentData.swift
++++ b/node_modules/expo-modules-core/ios/Core/Views/ComponentData.swift
+@@ -59,7 +59,9 @@ public final class ComponentData: RCTComponentDataSwiftAdapter {
+ 
+     // Props are set differently in SwiftUI hosting views – delegate the work to `ExpoSwiftUI.HostingView`.
+     if let hostingView = view as? ExpoSwiftUI.AnyHostingView {
+-      hostingView.updateProps(props)
++      MainActor.assumeIsolated {
++        hostingView.updateProps(props)
++      }
+ 
+       // Pass props to React too, to apply layout and styles for the hosting view.
+       super.setProps(props, forView: view)
+diff --git a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/ExpoSwiftUI.swift b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/ExpoSwiftUI.swift
+index b376a98..26c695d 100644
+--- a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/ExpoSwiftUI.swift
++++ b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/ExpoSwiftUI.swift
+@@ -23,6 +23,7 @@ extension ExpoSwiftUI {
+    Protocol for wrapper views (e.g., UIBaseView) that wrap an inner view.
+    Used by DynamicSwiftUIViewType to resolve the underlying view through wrapper layers.
+    */
++  @MainActor
+   public protocol ViewWrapper {
+     func getWrappedView() -> Any
+   }
+diff --git a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIHostingView.swift b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIHostingView.swift
+index b1c9f8b..e388a57 100644
+--- a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIHostingView.swift
++++ b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIHostingView.swift
+@@ -5,6 +5,7 @@ import SwiftUI
+ /**
+  A type-erased protocol that hosting views must conform to.
+  */
++@MainActor
+ internal protocol AnyExpoSwiftUIHostingView {
+   func updateProps(_ rawProps: [String: Any])
+   func getContentView() -> any ExpoSwiftUI.View
+@@ -42,7 +43,7 @@ extension ExpoSwiftUI {
+   /**
+    A hosting view that renders a SwiftUI view inside the UIKit view hierarchy.
+    */
+-  public final class HostingView<Props: ViewProps, ContentView: View<Props>>: ExpoView, @MainActor AnyExpoSwiftUIHostingView {
++  public final class HostingView<Props: ViewProps, ContentView: View<Props>>: ExpoView, AnyExpoSwiftUIHostingView {
+     /**
+      Props object that stores all the props for this particular view.
+      It's an environment object that is observed by the content view.
+diff --git a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIViewDefinition.swift b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIViewDefinition.swift
+index fa947e5..851f2fd 100644
+--- a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIViewDefinition.swift
++++ b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIViewDefinition.swift
+@@ -47,7 +47,9 @@ public extension ExpoSwiftUIView {
+         Group {
+           if let hostingView = child as? ExpoSwiftUI.UIViewHost,
+             let hostingUIView = hostingView.view as? (any ExpoSwiftUI.AnyHostingView) {
+-            let content = hostingUIView.getContentView()
++            let content = MainActor.assumeIsolated {
++              hostingUIView.getContentView()
++            }
+             transform(
+               AnyView(
+                 content
+diff --git a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIVirtualView.swift b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIVirtualView.swift
+index 6d65323..092a3ea 100644
+--- a/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIVirtualView.swift
++++ b/node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIVirtualView.swift
+@@ -193,7 +193,7 @@ extension ExpoSwiftUI {
+ 
+ // MARK: - ViewWrapper
+ 
+-extension ExpoSwiftUI.SwiftUIVirtualView: @MainActor ExpoSwiftUI.ViewWrapper {
++extension ExpoSwiftUI.SwiftUIVirtualView: ExpoSwiftUI.ViewWrapper {
+   func getWrappedView() -> Any {
+     if let wrapper = contentView as? ExpoSwiftUI.ViewWrapper {
+       return wrapper.getWrappedView()
+diff --git a/node_modules/expo-modules-core/ios/Core/Views/ViewDefinition.swift b/node_modules/expo-modules-core/ios/Core/Views/ViewDefinition.swift
+index 5dc73e3..d641170 100644
+--- a/node_modules/expo-modules-core/ios/Core/Views/ViewDefinition.swift
++++ b/node_modules/expo-modules-core/ios/Core/Views/ViewDefinition.swift
+@@ -118,7 +118,7 @@ extension ConcurrentFunctionDefinition: ViewDefinitionFunctionElement {
+   public typealias ViewType = FirstArgType
+ }
+ 
+-extension UIView: @MainActor AnyArgument {
++extension UIView: AnyArgument {
+   public static func getDynamicType() -> AnyDynamicType {
+     return DynamicViewType(innerType: Self.self)
+   }

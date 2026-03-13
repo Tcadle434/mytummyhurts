@@ -1,0 +1,30 @@
+name: Scheduled Maintenance
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invoke scheduled maintenance worker
+        env:
+          SCHEDULED_MAINTENANCE_URL: ${{ secrets.SCHEDULED_MAINTENANCE_URL }}
+          SCHEDULED_MAINTENANCE_SECRET: ${{ secrets.SCHEDULED_MAINTENANCE_SECRET }}
+        run: |
+          if [ -z "$SCHEDULED_MAINTENANCE_URL" ] || [ -z "$SCHEDULED_MAINTENANCE_SECRET" ]; then
+            echo "Missing scheduled maintenance secrets."
+            exit 1
+          fi
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            -X POST \
+            "$SCHEDULED_MAINTENANCE_URL" \
+            -H "content-type: application/json" \
+            -H "x-maintenance-secret: $SCHEDULED_MAINTENANCE_SECRET" \
+            -d '{}'

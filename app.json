@@ -1,22 +1,29 @@
 {
   "expo": {
-    "name": "app",
-    "slug": "app",
+    "name": "MyTummyHurts",
+    "slug": "mytummyhurts",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "mytummyhurts",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#f5efe3"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.thomascadle.mytummyhurts",
+      "infoPlist": {
+        "NSCameraUsageDescription": "MyTummyHurts uses your camera to scan meals before you eat them.",
+        "NSPhotoLibraryUsageDescription": "MyTummyHurts uses your photo library so you can upload meal photos.",
+        "NSUserNotificationsUsageDescription": "MyTummyHurts uses notifications to follow up on scanned meals at the right time."
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#e2eee5",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -25,6 +32,22 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ],
+      "expo-secure-store",
+      "expo-image",
+      "expo-font",
+      "expo-notifications",
+      "expo-camera",
+      "expo-image-picker"
+    ]
   }
 }
