@@ -5,12 +5,12 @@ export const legalDocuments = {
       {
         heading: 'What we collect',
         body:
-          'MyTummyHurts stores the account details you provide, meal images or descriptions you choose to scan, scan results, follow-up answers, and stomach-profile settings so the app can personalize future food risk reads.',
+          'MyTummyHurts stores the account details you provide, meal images or descriptions you choose to log, scan results, daily gut reports, and stomach-profile settings so the app can personalize future food risk reads.',
       },
       {
         heading: 'How we use it',
         body:
-          'We use your data to analyze meals, show your scan history, send optional meal follow-up notifications, and improve your trigger and safe-food insights over time.',
+          'We use your data to analyze meals, show your food history, send optional daily report reminders, and improve your trigger and safe-food insights over time.',
       },
       {
         heading: 'Third-party processors',

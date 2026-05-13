@@ -3,6 +3,7 @@ import { NavigatorScreenParams } from '@react-navigation/native';
 import { ScanInputPayload } from '../types/domain';
 
 export type OnboardingStackParamList = {
+  GetStarted: undefined;
   OnboardingFlow: undefined;
   OnboardingPaywall: undefined;
   OnboardingAuth: undefined;
@@ -13,6 +14,7 @@ export type MainTabParamList = {
   Home: undefined;
   History: undefined;
   Insights: undefined;
+  Symptoms: undefined;
 };
 
 export type RootStackParamList = {
@@ -31,19 +33,25 @@ export type RootStackParamList = {
   };
   ScanResult: {
     scanId: string;
-    mealId: string;
     manualMode?: boolean;
     fromOnboarding?: boolean;
   };
-  FollowUp: {
-    mealId: string;
+  DailyGutReport: {
+    localDate?: string;
   };
+  WeeklyProgress: undefined;
+  DailyScoreDay: {
+    localDate: string;
+    weekStart?: string;
+  };
+  GutScoreDetail: undefined;
   ManualMeal: {
     scanId?: string;
   };
   LegalDocument: {
     document: 'privacy' | 'terms';
   };
+  DesignSystemShowcase: undefined;
   InsightDetail: {
     ingredientName: string;
   };

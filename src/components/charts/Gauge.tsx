@@ -1,57 +1,95 @@
-import Svg, { Circle, G, Line } from 'react-native-svg';
-import { Text, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { palette, type } from '../../theme';
+import { components, radii, spacing, tokens, type } from '../../theme';
 import { RiskLevel } from '../../types/domain';
 
 type GaugeProps = {
   score: number;
   label: RiskLevel;
+  labelText?: string;
 };
 
-export function Gauge({ score, label }: GaugeProps) {
-  const radius = 64;
-  const circumference = Math.PI * radius;
+export function Gauge({ score, label, labelText }: GaugeProps) {
+  const radius = 54;
+  const strokeWidth = 10;
+  const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (circumference * score) / 100;
-  const angle = -Math.PI + (Math.PI * score) / 100;
-  const center = 82;
-  const needleLength = 56;
-  const endX = center + needleLength * Math.cos(angle);
-  const endY = center + needleLength * Math.sin(angle);
-  const tone = label === 'high' ? palette.high : label === 'medium' ? palette.medium : palette.low;
+  const center = 66;
+  const tone =
+    label === 'high'
+      ? tokens.color.status.risk.high.tint
+      : label === 'medium'
+        ? tokens.color.status.risk.medium.tint
+        : tokens.color.status.risk.low.tint;
+  const badgeBackground =
+    label === 'high'
+      ? tokens.color.status.risk.high.background
+      : label === 'medium'
+        ? tokens.color.status.risk.medium.background
+        : tokens.color.status.risk.low.background;
+  const displayLabel = labelText ?? label.charAt(0).toUpperCase() + label.slice(1);
 
   return (
-    <View style={{ alignItems: 'center', gap: 10 }}>
-      <Svg width={164} height={110}>
-        <G rotation="180" origin={`${center}, ${center}`}>
-          <Circle
-            cx={center}
-            cy={center}
-            r={radius}
-            stroke="#E5E2D8"
-            strokeWidth={16}
-            strokeDasharray={`${circumference} ${circumference}`}
-            strokeDashoffset={0}
-            strokeLinecap="round"
-            fill="transparent"
-          />
+    <View style={styles.wrap}>
+      <View style={styles.chartWrap}>
+        <Svg width={132} height={132}>
+          <Circle cx={center} cy={center} r={radius} stroke={components.chart.track} strokeWidth={strokeWidth} fill="transparent" />
           <Circle
             cx={center}
             cy={center}
             r={radius}
             stroke={tone}
-            strokeWidth={16}
+            strokeWidth={strokeWidth}
             strokeDasharray={`${circumference} ${circumference}`}
             strokeDashoffset={dashOffset}
             strokeLinecap="round"
             fill="transparent"
+            rotation={-90}
+            origin={`${center}, ${center}`}
           />
-        </G>
-        <Line x1={center} y1={center} x2={endX} y2={endY} stroke={palette.text} strokeWidth={4} strokeLinecap="round" />
-        <Circle cx={center} cy={center} r={8} fill={palette.text} />
-      </Svg>
-      <Text style={{ color: palette.text, fontFamily: type.body.bold, fontSize: 38 }}>{score}</Text>
-      <Text style={{ color: tone, fontFamily: type.body.semibold, fontSize: 14, textTransform: 'capitalize' }}>{label}</Text>
+          <Circle cx={center} cy={center} r={radius - 16} fill={tokens.color.surface.frosted} />
+        </Svg>
+        <View style={styles.centerContent}>
+          <Text style={styles.score}>{score}%</Text>
+        </View>
+      </View>
+      <View style={[styles.badge, { backgroundColor: badgeBackground }]}>
+        <Text style={[styles.badgeText, { color: tone }]}>{displayLabel}</Text>
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  wrap: {
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chartWrap: {
+    width: 132,
+    height: 132,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerContent: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  score: {
+    color: tokens.color.text.primary,
+    fontFamily: type.body.bold,
+    fontSize: 22,
+    letterSpacing: -0.5,
+  },
+  badge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+  },
+  badgeText: {
+    fontFamily: type.body.semibold,
+    fontSize: 12,
+  },
+});

@@ -1,24 +1,28 @@
+import { Ionicons } from '@expo/vector-icons';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { palette, radii, shadows, spacing, type } from '../theme';
+import { components, spacing, tokens, type } from '../theme';
 
-const labels: Record<string, string> = {
-  Home: 'Home',
-  History: 'History',
-  Insights: 'Insights',
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const tabConfig: Record<string, { label: string; icon: IconName; iconFocused: IconName }> = {
+  Home: { label: 'Home', icon: 'home-outline', iconFocused: 'home' },
+  History: { label: 'History', icon: 'time-outline', iconFocused: 'time' },
+  Insights: { label: 'Insights', icon: 'stats-chart-outline', iconFocused: 'stats-chart' },
+  Symptoms: { label: 'Symptoms', icon: 'pulse-outline', iconFocused: 'pulse' },
 };
 
-export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.wrap, { paddingBottom: insets.bottom + spacing.sm }]}>
+    <View style={[styles.wrap, { paddingBottom: insets.bottom + 4 }]}>
       <View style={styles.bar}>
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
-          const descriptor = descriptors[route.key];
+          const config = tabConfig[route.name] ?? { label: route.name, icon: 'ellipse-outline' as IconName, iconFocused: 'ellipse' as IconName };
 
           return (
             <Pressable
@@ -26,87 +30,45 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               onPress={() => navigation.navigate(route.name)}
               style={({ pressed }) => [styles.tab, pressed && { opacity: 0.82 }]}
             >
-              <Text style={[styles.tabLabel, isFocused && styles.tabLabelFocused]}>{labels[route.name] ?? route.name}</Text>
-              <View style={[styles.tabIndicator, isFocused && styles.tabIndicatorFocused]} />
+              <Ionicons
+                name={isFocused ? config.iconFocused : config.icon}
+                size={22}
+                color={isFocused ? components.tabBar.activeTint : components.tabBar.inactiveTint}
+              />
+              <Text style={[styles.tabLabel, isFocused && styles.tabLabelFocused]}>
+                {config.label}
+              </Text>
             </Pressable>
           );
         })}
       </View>
-
-      <Pressable
-        onPress={() =>
-          navigation.getParent()?.navigate('ScanCapture', {
-            sourceType: 'camera',
-            manualMode: false,
-            fromOnboarding: false,
-          })
-        }
-        style={({ pressed }) => [styles.scanButton, pressed && { transform: [{ scale: 0.97 }] }]}
-      >
-        <Text style={styles.scanPlus}>+</Text>
-      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     backgroundColor: 'transparent',
   },
   bar: {
-    height: 72,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255, 252, 246, 0.95)',
-    borderWidth: 1,
-    borderColor: palette.border,
-    paddingHorizontal: spacing.lg,
+    ...components.tabBar.shell,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    ...shadows.lift,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
-    gap: 8,
+    gap: 3,
   },
   tabLabel: {
-    color: palette.textMuted,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
+    ...tokens.type.label.tab,
+    color: components.tabBar.inactiveTint,
   },
   tabLabelFocused: {
-    color: palette.primary,
-  },
-  tabIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 99,
-    backgroundColor: 'transparent',
-  },
-  tabIndicatorFocused: {
-    backgroundColor: palette.primary,
-  },
-  scanButton: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: -18,
-    width: 76,
-    height: 76,
-    borderRadius: 99,
-    backgroundColor: palette.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 6,
-    borderColor: palette.background,
-    ...shadows.lift,
-  },
-  scanPlus: {
-    color: palette.white,
-    fontFamily: type.body.bold,
-    fontSize: 34,
-    marginTop: -2,
+    color: components.tabBar.activeTint,
+    fontFamily: type.body.semibold,
   },
 });

@@ -1,84 +1,63 @@
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import {
-  AppScreen,
-  InputField,
-  OptionChip,
-  PrimaryButton,
-  ScreenHeader,
-  SectionCard,
-} from '../../components/common/UI';
-import { symptomOptions } from '../../data/catalog';
+import { AppScreen, InputField, OptionChip, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
+import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { spacing } from '../../theme';
-import { RootStackParamList } from '../../navigation/types';
+import { components, palette, radii, spacing, tokens, type } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ManualMeal'>;
 
-const timeOptions = [
-  { id: 'just_now', label: 'Just now' },
-  { id: 'one_to_two_hours', label: '1-2 hours ago' },
-  { id: 'earlier_today', label: 'Earlier today' },
-  { id: 'yesterday', label: 'Yesterday' },
-] as const;
+const contextOptions = ['At home', 'Restaurant', 'Work', 'Late night', 'Stressful', 'Travel'];
 
-const severityOptions = [
-  { id: 'felt_good', label: 'Felt good' },
-  { id: 'mild', label: 'Mild symptoms' },
-  { id: 'moderate', label: 'Moderate symptoms' },
-  { id: 'severe', label: 'Severe symptoms' },
-] as const;
-
-export function ManualMealScreen({ navigation, route }: Props) {
-  const scans = useAppStore((state) => state.scans);
-  const meals = useAppStore((state) => state.meals);
+export function ManualMealScreen({ navigation }: Props) {
   const analyzeScanInput = useAppStore((state) => state.analyzeScanInput);
-  const setFollowupState = useAppStore((state) => state.setFollowupState);
-  const submitSymptoms = useAppStore((state) => state.submitSymptoms);
-
-  const scan = route.params.scanId ? scans.find((entry) => entry.id === route.params.scanId) : undefined;
-  const existingMeal = route.params.scanId ? meals.find((entry) => entry.scanId === route.params.scanId) : undefined;
-
-  const [description, setDescription] = useState('');
-  const [eatenTimeBucket, setEatenTimeBucket] = useState<(typeof timeOptions)[number]['id']>('just_now');
-  const [severity, setSeverity] = useState<(typeof severityOptions)[number]['id']>('moderate');
-  const [symptomTags, setSymptomTags] = useState<string[]>([]);
+  const [mealName, setMealName] = useState('');
+  const [ingredientDraft, setIngredientDraft] = useState('');
+  const [ingredients, setIngredients] = useState<string[]>([]);
+  const [selectedContexts, setSelectedContexts] = useState<string[]>([]);
+  const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const canSave = Boolean(mealName.trim() || ingredients.length || notes.trim()) && !busy;
+
+  function toggleContext(value: string) {
+    setSelectedContexts((current) => (current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value]));
+  }
+
+  function addIngredient() {
+    const trimmed = ingredientDraft.trim().toLowerCase();
+    if (!trimmed || ingredients.includes(trimmed)) {
+      return;
+    }
+
+    setIngredients((current) => [...current, trimmed]);
+    setIngredientDraft('');
+  }
+
   async function handleSave() {
+    if (!canSave) {
+      return;
+    }
+
     setBusy(true);
-    let mealId = existingMeal?.id;
-
     try {
-      if (!mealId) {
-        trackEvent('manual_meal_text');
-        const result = await analyzeScanInput({
-          sourceType: 'manual_text',
-          text: description,
-        });
-        mealId = result.mealId;
-        trackEvent('manual_meal_saved', { entry_mode: 'text', had_image: false, had_text: true });
-      } else {
-        trackEvent(route.params.scanId ? 'manual_meal_photo' : 'manual_meal_upload');
-        trackEvent('manual_meal_saved', { entry_mode: 'photo', had_image: true, had_text: false });
-      }
-
-      if (!mealId) {
-        return;
-      }
-
-      await setFollowupState(mealId, true);
-      await submitSymptoms({
-        mealId,
-        severity,
-        symptomTags,
-        eatenTimeBucket,
+      trackEvent('manual_meal_text');
+      const result = await analyzeScanInput({
+        sourceType: 'manual_text',
+        scanCategory: 'food',
+        text: buildManualMealDescription({
+          mealName,
+          ingredients,
+          contexts: selectedContexts,
+          notes,
+        }),
       });
-
-      navigation.reset({ index: 0, routes: [{ name: 'MainTabs', params: { screen: 'History' } }] });
+      trackEvent('manual_meal_saved', { entry_mode: 'text', had_image: false, had_text: true });
+      navigation.replace('ScanResult', { scanId: result.scanId, manualMode: true });
     } finally {
       setBusy(false);
     }
@@ -86,69 +65,134 @@ export function ManualMealScreen({ navigation, route }: Props) {
 
   return (
     <AppScreen>
-      <ScreenHeader
-        eyebrow="Manual meal"
-        title={scan ? `Finish saving ${scan.dishName}` : 'Describe a meal'}
-        subtitle="Use this when the meal already happened and you still want the app to learn from it."
-      />
-
-      {!scan ? (
-        <SectionCard>
-          <Text>Describe the meal</Text>
-          <InputField
-            value={description}
-            placeholder="Example: spicy chicken burrito with cheese, salsa, and sour cream"
-            onChangeText={setDescription}
-            multiline
-          />
-        </SectionCard>
-      ) : null}
+      <ScreenHeader title="Describe a meal" subtitle="This is saved as food you ate today and used as learning evidence." />
 
       <SectionCard>
-        <Text>When did you eat this?</Text>
-        <View style={{ gap: spacing.sm }}>
-          {timeOptions.map((option) => (
-            <OptionChip
-              key={option.id}
-              label={option.label}
-              selected={eatenTimeBucket === option.id}
-              onPress={() => setEatenTimeBucket(option.id)}
-            />
+        <Text style={styles.fieldLabel}>Meal name</Text>
+        <InputField value={mealName} placeholder="Turkey sandwich" onChangeText={setMealName} />
+
+        <Text style={styles.fieldLabel}>Ingredients</Text>
+        <View style={styles.ingredientWrap}>
+          {ingredients.map((ingredient) => (
+            <Pressable
+              key={ingredient}
+              onPress={() => setIngredients((current) => current.filter((entry) => entry !== ingredient))}
+              style={({ pressed }) => [styles.ingredientChip, pressed && { opacity: 0.82 }]}
+            >
+              <Text style={styles.ingredientChipLabel}>{ingredient}</Text>
+              <Text style={styles.ingredientChipClose}>x</Text>
+            </Pressable>
           ))}
+        </View>
+
+        <View style={styles.addIngredientRow}>
+          <View style={styles.addIngredientField}>
+            <InputField value={ingredientDraft} placeholder="+ Add ingredient" onChangeText={setIngredientDraft} />
+          </View>
+          <Pressable onPress={addIngredient} style={({ pressed }) => [styles.addButton, pressed && { opacity: 0.82 }]}>
+            <Ionicons name="add" size={18} color={palette.text} />
+          </Pressable>
         </View>
       </SectionCard>
 
       <SectionCard>
-        <Text>How did you feel after it?</Text>
-        <View style={{ gap: spacing.sm }}>
-          {severityOptions.map((option) => (
-            <OptionChip
-              key={option.id}
-              label={option.label}
-              selected={severity === option.id}
-              onPress={() => setSeverity(option.id)}
-            />
+        <Text style={styles.fieldLabel}>Context</Text>
+        <View style={styles.optionWrap}>
+          {contextOptions.map((option) => (
+            <OptionChip key={option} label={option} selected={selectedContexts.includes(option)} onPress={() => toggleContext(option)} />
           ))}
         </View>
+
+        <Text style={styles.fieldLabel}>Notes</Text>
+        <InputField value={notes} placeholder="Sauces, drinks, portion size, or anything you remember..." onChangeText={setNotes} multiline />
       </SectionCard>
 
-      <SectionCard>
-        <Text>Which symptoms showed up?</Text>
-        <View style={{ gap: spacing.sm }}>
-          {symptomOptions.map((tag) => (
-            <OptionChip
-              key={tag}
-              label={tag}
-              selected={symptomTags.includes(tag)}
-              onPress={() =>
-                setSymptomTags((current) => (current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag]))
-              }
-            />
-          ))}
-        </View>
-      </SectionCard>
-
-      <PrimaryButton label={busy ? 'Saving…' : 'Save meal'} onPress={() => void handleSave()} disabled={busy} />
+      <View style={styles.actionRow}>
+        <SecondaryButton label="Cancel" onPress={() => navigation.goBack()} />
+        <PrimaryButton label={busy ? 'Saving...' : 'Save food'} onPress={() => void handleSave()} disabled={!canSave} />
+      </View>
     </AppScreen>
   );
 }
+
+function buildManualMealDescription({
+  mealName,
+  ingredients,
+  contexts,
+  notes,
+}: {
+  mealName: string;
+  ingredients: string[];
+  contexts: string[];
+  notes: string;
+}) {
+  const parts = [
+    mealName.trim() ? `Meal: ${mealName.trim()}.` : '',
+    ingredients.length ? `Ingredients: ${ingredients.join(', ')}.` : '',
+    contexts.length ? `Context: ${contexts.join(', ')}.` : '',
+    notes.trim() ? `Notes: ${notes.trim()}.` : '',
+  ].filter(Boolean);
+
+  return parts.join(' ');
+}
+
+const styles = StyleSheet.create({
+  fieldLabel: {
+    color: palette.text,
+    fontFamily: type.body.bold,
+    fontSize: 18,
+  },
+  ingredientWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  ingredientChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: radii.pill,
+    backgroundColor: tokens.color.status.success.background,
+  },
+  ingredientChipLabel: {
+    color: palette.primaryDark,
+    fontFamily: type.body.medium,
+    fontSize: 15,
+    textTransform: 'capitalize',
+  },
+  ingredientChipClose: {
+    color: palette.primaryDark,
+    fontFamily: type.body.bold,
+    fontSize: 18,
+    lineHeight: 18,
+  },
+  addIngredientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  addIngredientField: {
+    flex: 1,
+  },
+  addButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: components.button.secondary.borderColor,
+    backgroundColor: components.button.secondary.backgroundColor,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+});

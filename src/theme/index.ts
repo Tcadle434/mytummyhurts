@@ -1,67 +1,77 @@
-export const palette = {
-  background: '#F5EFE3',
-  backgroundElevated: '#FFF9F1',
-  card: '#FFFCF6',
-  cardMuted: '#EEF3EA',
-  primary: '#1F5C4B',
-  primaryDark: '#174538',
-  sage: '#A5B990',
-  sageSoft: '#DDE7D5',
-  text: '#20251F',
-  textMuted: '#637063',
-  border: '#D8D5CC',
-  divider: '#E6E0D4',
-  shadow: '#14211A',
-  low: '#4B9E6A',
-  medium: '#D1A23D',
-  high: '#D46B4A',
-  danger: '#B5533C',
-  white: '#FFFFFF',
-  overlay: 'rgba(16, 24, 20, 0.44)',
-};
+import { foundations } from './foundations';
+import { tokens } from './tokens';
+import { components } from './components';
+
+export { foundations, tokens, components };
+export * from './mascot';
 
 export const spacing = {
-  xs: 6,
-  sm: 10,
-  md: 16,
-  lg: 20,
-  xl: 28,
-  xxl: 36,
+  xs: tokens.space.xs,
+  sm: tokens.space.sm,
+  md: tokens.space.md,
+  lg: tokens.space.lg,
+  xl: tokens.space.xl,
+  xxl: tokens.space.xxl,
+  xxxl: tokens.space.xxxl,
 };
 
 export const radii = {
-  sm: 10,
-  md: 16,
-  lg: 22,
-  xl: 30,
-  pill: 999,
+  sm: tokens.radius.sm,
+  md: tokens.radius.md,
+  lg: tokens.radius.lg,
+  xl: tokens.radius.xl,
+  xxl: tokens.radius.xxl,
+  pill: tokens.radius.pill,
 };
 
 export const shadows = {
-  card: {
-    shadowColor: palette.shadow,
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
-  },
-  lift: {
-    shadowColor: palette.shadow,
-    shadowOpacity: 0.12,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 5,
-  },
+  card: tokens.shadow.card,
+  lift: tokens.shadow.lift,
+  modal: tokens.shadow.modal,
 };
 
 export const type = {
   display: {
-    fontFamily: 'InstrumentSerif_400Regular',
+    fontFamily: foundations.typography.family.display,
   },
   body: {
-    regular: 'PlusJakartaSans_400Regular',
-    medium: 'PlusJakartaSans_500Medium',
-    semibold: 'PlusJakartaSans_600SemiBold',
-    bold: 'PlusJakartaSans_700Bold',
+    regular: foundations.typography.family.bodyRegular,
+    medium: foundations.typography.family.bodyMedium,
+    semibold: foundations.typography.family.bodySemibold,
+    bold: foundations.typography.family.bodyBold,
   },
+  title: tokens.type.title,
+  label: tokens.type.label,
+};
+
+export const palette = {
+  background: tokens.color.surface.app.default,
+  backgroundElevated: tokens.color.surface.app.raised,
+  card: tokens.color.surface.card.default,
+  cardMuted: tokens.color.surface.card.warm,
+  primary: tokens.color.accent.brand,
+  primaryDark: tokens.color.accent.brandStrong,
+  sageSoft: tokens.color.status.success.background,
+  sageLight: tokens.color.surface.card.success,
+  text: tokens.color.text.primary,
+  textMuted: tokens.color.text.secondary,
+  border: tokens.color.border.subtle,
+  divider: tokens.color.border.strong,
+  pillGreen: tokens.color.status.success.background,
+  pillGreenBorder: tokens.color.border.emphasis,
+  pillGreenText: tokens.color.status.success.foreground,
+  peachSoft: tokens.color.status.danger.background,
+  peachStrong: foundations.color.brand.pip.accent,
+  creamStrong: foundations.color.brand.status.yellow,
+  line: tokens.color.chart.track,
+  softBlue: tokens.color.info.background,
+  shadow: tokens.color.utility.shadow,
+  low: tokens.color.status.risk.low.tint,
+  medium: tokens.color.status.risk.medium.tint,
+  high: tokens.color.status.risk.high.tint,
+  danger: tokens.color.status.danger.foreground,
+  white: tokens.color.utility.white,
+  overlay: tokens.color.overlay.scrim,
+  surfaceContainerLow: tokens.color.surface.card.default,
+  outlineVariant: tokens.color.border.subtle,
 };

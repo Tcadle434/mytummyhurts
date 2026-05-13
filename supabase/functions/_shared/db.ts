@@ -1,10 +1,22 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.99.1';
 
 import {
+  ConditionIngredientInsight,
+  DailyGutReport,
+  ExtractionImageDetail,
+  ExtractedIngredient,
+  GutScoreDriver,
+  GutScoreEvent,
+  GutScoreHistoryPoint,
+  GutScoreImpact,
+  GutScorePhase,
+  GutScoreState,
+  IngredientConfidence,
   IngredientInsight,
-  MealRecord,
+  MealComponent,
   ScanRecord,
   StomachProfile,
+  StructuredAnalysisV2,
   UserProfile,
 } from './domain.ts';
 import { BillingPlanCode, normalizePlanCode } from './billing.ts';
@@ -29,34 +41,310 @@ function asRecord(value: unknown) {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
+function asConfidence(value: unknown): IngredientConfidence {
+  return value === 'high' || value === 'low' ? value : 'medium';
+}
+
+function asImageDetail(value: unknown): ExtractionImageDetail {
+  return value === 'high' || value === 'low' || value === 'not_applicable' ? value : 'high';
+}
+
+function normalizeIngredientName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function mapComponentList(value: unknown, fallbackDishName: string, fallbackPrepStyle: string[]): MealComponent[] {
+  if (Array.isArray(value)) {
+    const components = value
+      .map((entry) => {
+        const record = asRecord(entry);
+        const name = String(record.name ?? '').trim();
+        if (!name) {
+          return null;
+        }
+
+        return {
+          name,
+          confidence: asConfidence(record.confidence),
+          prepStyle: asStringArray(record.prepStyle),
+        };
+      })
+      .filter((entry): entry is MealComponent => Boolean(entry));
+
+    if (components.length > 0) {
+      return components;
+    }
+  }
+
+  return fallbackDishName
+    ? [
+        {
+          name: fallbackDishName,
+          confidence: 'medium',
+          prepStyle: fallbackPrepStyle,
+        },
+      ]
+    : [];
+}
+
+function mapIngredientList(value: unknown, evidence: 'visible' | 'inferred', fallbackComponent?: string): ExtractedIngredient[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const ingredients: ExtractedIngredient[] = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const rawName = String(record.rawName ?? record.name ?? '').trim();
+    const canonicalName = normalizeIngredientName(String(record.canonicalName ?? rawName));
+    if (!rawName || !canonicalName) {
+      continue;
+    }
+
+    const component = String(record.component ?? fallbackComponent ?? '').trim();
+    ingredients.push({
+      rawName,
+      canonicalName,
+      confidence: asConfidence(record.confidence),
+      component: component || undefined,
+      evidence,
+    });
+  }
+
+  return ingredients;
+}
+
+export function mapStructuredAnalysisValue(
+  value: unknown,
+  options: {
+    fallbackDishName?: string;
+    extractionModel?: string | null;
+    extractionPromptVersion?: string | null;
+    extractionClarity?: string | null;
+    extractionUnclearReason?: string | null;
+    dishConfidence?: unknown;
+    imageDetail?: unknown;
+  } = {},
+): StructuredAnalysisV2 {
+  const record = asRecord(value);
+  const fallbackDishName = options.fallbackDishName?.trim() || String(record.dishName ?? '').trim() || 'Unknown meal';
+  const prepStyle = asStringArray(record.prepStyle);
+  const components = mapComponentList(record.components, fallbackDishName, prepStyle);
+  const visibleIngredients = mapIngredientList(record.visibleIngredients, 'visible', components[0]?.name);
+  const inferredIngredients = mapIngredientList(record.inferredIngredients, 'inferred', components[0]?.name);
+  const legacyIngredients =
+    visibleIngredients.length === 0 && inferredIngredients.length === 0
+      ? mapIngredientList(record.ingredients, 'visible', components[0]?.name)
+      : [];
+  const clarity = (options.extractionClarity ?? record.clarity) === 'unclear' ? 'unclear' : 'clear';
+  const unclearReason = String(options.extractionUnclearReason ?? record.unclearReason ?? '').trim() || undefined;
+
+  return {
+    dishName: String(record.dishName ?? fallbackDishName).trim() || fallbackDishName,
+    dishConfidence: asConfidence(options.dishConfidence ?? record.dishConfidence),
+    clarity,
+    unclearReason: clarity === 'unclear' ? unclearReason : undefined,
+    components,
+    visibleIngredients: visibleIngredients.length > 0 ? visibleIngredients : legacyIngredients,
+    inferredIngredients,
+    prepStyle,
+    notes: asStringArray(record.notes),
+    model: String(options.extractionModel ?? record.model ?? '').trim() || 'unknown',
+    promptVersion: String(options.extractionPromptVersion ?? record.promptVersion ?? '').trim() || 'unknown',
+    imageDetail: asImageDetail(options.imageDetail ?? record.imageDetail),
+  };
+}
+
 function buildInsightSummary(row: Record<string, unknown>) {
   const triggerScore = Number(row.trigger_score ?? 0);
   const safeScore = Number(row.safe_score ?? 0);
+  const negativeEvidenceCount = Number(row.negative_evidence_count ?? 0);
+  const positiveEvidenceCount = Number(row.positive_evidence_count ?? 0);
   const ingredientName = String(row.ingredient_name ?? 'ingredient');
 
   return triggerScore >= safeScore
-    ? `${ingredientName} is showing up as a likely trigger based on your confirmed meals.`
-    : `${ingredientName} is starting to look gentler on your stomach.`;
+    ? `${ingredientName} is showing up as a likely trigger from ${negativeEvidenceCount || 'your'} reactive-day signal${negativeEvidenceCount === 1 ? '' : 's'}.`
+    : `${ingredientName} is starting to look gentler from ${positiveEvidenceCount || 'your'} calm-day signal${positiveEvidenceCount === 1 ? '' : 's'}.`;
+}
+
+function mapSourceBreakdown(value: unknown, positiveEvidenceCount: number, negativeEvidenceCount: number) {
+  const record = asRecord(value);
+  return {
+    declared: Boolean(record.declared),
+    science: Boolean(record.science),
+    personal: typeof record.personal === 'boolean' ? record.personal : positiveEvidenceCount + negativeEvidenceCount > 0,
+    positiveEvidenceCount: Number(record.positiveEvidenceCount ?? positiveEvidenceCount),
+    negativeEvidenceCount: Number(record.negativeEvidenceCount ?? negativeEvidenceCount),
+  };
+}
+
+function asInsightConfidence(value: unknown) {
+  return value === 'high' || value === 'medium' || value === 'low' ? value : 'low';
+}
+
+function asGutScorePhase(value: unknown): GutScorePhase {
+  return value === 'learn' || value === 'reintroduce' ? value : 'calm';
+}
+
+function asGutScoreImpact(value: unknown): GutScoreImpact | undefined {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) {
+    return undefined;
+  }
+
+  const projectedDelta = Number(record.projectedDelta ?? 0);
+  const direction =
+    record.direction === 'raise' || record.direction === 'lower' || record.direction === 'neutral'
+      ? record.direction
+      : projectedDelta > 0
+        ? 'raise'
+        : projectedDelta < 0
+          ? 'lower'
+          : 'neutral';
+  return {
+    currentScore: typeof record.currentScore === 'number' ? Number(record.currentScore) : undefined,
+    projectedScore: typeof record.projectedScore === 'number' ? Number(record.projectedScore) : undefined,
+    projectedDelta,
+    direction,
+    summary: String(record.summary ?? ''),
+    drivers: asStringArray(record.drivers),
+  };
+}
+
+function mapGutScoreDrivers(value: unknown): GutScoreDriver[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      const label = String(record.label ?? '').trim();
+      if (!label) {
+        return null;
+      }
+
+      return {
+        id: String(record.id ?? label),
+        label,
+        detail: String(record.detail ?? ''),
+        impact: record.impact === 'lowers' || record.impact === 'neutral' ? record.impact : 'raises',
+        weight: Number(record.weight ?? 0),
+      };
+    })
+    .filter((entry): entry is GutScoreDriver => Boolean(entry));
+}
+
+function mapDailyScoreComponents(value: unknown): DailyGutReport['dailyScoreComponents'] {
+  const components = asRecord(value);
+  if (!Object.keys(components).length) {
+    return undefined;
+  }
+
+  return {
+    symptomScore: Number(components.symptomScore ?? 0),
+    foodExposure: Number(components.foodExposure ?? 0),
+    foodAdjustment: Number(components.foodAdjustment ?? 0),
+    evidenceWeight: Number(components.evidenceWeight ?? 0),
+  };
+}
+
+function mapGutScoreEventRow(row: Record<string, unknown>): GutScoreEvent {
+  return {
+    id: String(row.id),
+    eventType: String(row.event_type ?? 'score_recomputed'),
+    algorithmVersion: String(row.score_algorithm_version ?? 'gut-score-v2'),
+    scoreBefore: typeof row.score_before === 'number' ? Number(row.score_before) : undefined,
+    scoreAfter: Number(row.score_after ?? 0),
+    scoreDelta: Number(row.score_delta ?? 0),
+    phaseBefore: row.phase_before ? asGutScorePhase(row.phase_before) : undefined,
+    phaseAfter: asGutScorePhase(row.phase_after),
+    summary: String(row.summary ?? ''),
+    drivers: mapGutScoreDrivers(row.drivers),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+  };
+}
+
+function mapGutScoreSnapshotRow(row: Record<string, unknown>): GutScoreState {
+  const components = asRecord(row.components);
+  const score = Number(row.score ?? 0);
+  const trendDelta7d = Number(row.trend_delta_7d ?? 0);
+  const createdAt = String(row.created_at ?? new Date().toISOString());
+
+  return {
+    algorithmVersion: String(row.score_algorithm_version ?? 'gut-score-v2'),
+    currentScore: score,
+    baselineScore: Number(row.baseline_score ?? score),
+    phase: asGutScorePhase(row.phase),
+    confidenceLevel: asInsightConfidence(row.confidence_level),
+    trendDelta7d,
+    trendDirection: trendDelta7d <= -2 ? 'down' : trendDelta7d >= 2 ? 'up' : 'flat',
+    components: {
+      recentDailyOutcome: Number(components.recentDailyOutcome ?? components.symptomBurden ?? 0),
+      symptomFreeConsistency: Number(components.symptomFreeConsistency ?? 0),
+      personalizedIngredientEvidence: Number(components.personalizedIngredientEvidence ?? components.toleranceTrend ?? 0),
+      recentFoodLoad: Number(components.recentFoodLoad ?? components.triggerLoad ?? 0),
+      dataConfidence: Number(components.dataConfidence ?? components.uncertainty ?? 0),
+    },
+    drivers: mapGutScoreDrivers(row.drivers),
+    history: [{ score, createdAt }],
+    nextAction: '',
+    updatedAt: createdAt,
+  };
 }
 
 export function mapInsightRow(row: Record<string, unknown>): IngredientInsight {
+  const positiveEvidenceCount = Number(row.positive_evidence_count ?? 0);
+  const negativeEvidenceCount = Number(row.negative_evidence_count ?? 0);
+  const supportingEvidenceCount = Number(row.supporting_evidence_count ?? positiveEvidenceCount + negativeEvidenceCount);
+
   return {
     id: String(row.id),
     ingredientName: String(row.ingredient_name ?? ''),
     triggerScore: Number(row.trigger_score ?? 0),
     safeScore: Number(row.safe_score ?? 0),
+    combinedRiskScore: Number(row.combined_risk_score ?? 50 + Number(row.trigger_score ?? 0) - Number(row.safe_score ?? 0)),
+    confidenceLevel: asInsightConfidence(row.confidence_level),
     patternStrength:
       row.pattern_strength === 'strong' || row.pattern_strength === 'moderate' || row.pattern_strength === 'weak'
         ? row.pattern_strength
         : 'weak',
     linkedConditions: asStringArray(row.linked_conditions),
-    supportingEvidenceCount: Number(row.supporting_evidence_count ?? 0),
+    supportingEvidenceCount,
+    positiveEvidenceCount,
+    negativeEvidenceCount,
+    lastSeenAt: row.last_seen_at ? String(row.last_seen_at) : undefined,
+    lastOutcomeAt: row.last_outcome_at ? String(row.last_outcome_at) : undefined,
+    sourceBreakdown: mapSourceBreakdown(row.source_breakdown, positiveEvidenceCount, negativeEvidenceCount),
     lastRecomputedAt: String(row.last_recomputed_at ?? new Date().toISOString()),
     summary: buildInsightSummary(row),
   };
 }
 
-async function createSignedUrlMap(admin: SupabaseClient, storagePaths: string[]) {
+export function mapConditionInsightRow(row: Record<string, unknown>): ConditionIngredientInsight {
+  const positiveEvidenceCount = Number(row.positive_evidence_count ?? 0);
+  const negativeEvidenceCount = Number(row.negative_evidence_count ?? 0);
+  const supportingEvidenceCount = Number(row.supporting_evidence_count ?? positiveEvidenceCount + negativeEvidenceCount);
+
+  return {
+    id: String(row.id),
+    ingredientName: String(row.ingredient_name ?? ''),
+    conditionName: String(row.condition_name ?? ''),
+    riskScore: Number(row.risk_score ?? 50),
+    triggerScore: Number(row.trigger_score ?? 0),
+    safeScore: Number(row.safe_score ?? 0),
+    confidenceLevel: asInsightConfidence(row.confidence_level),
+    positiveEvidenceCount,
+    negativeEvidenceCount,
+    supportingEvidenceCount,
+    sourceBreakdown: mapSourceBreakdown(row.source_breakdown, positiveEvidenceCount, negativeEvidenceCount),
+    lastSeenAt: row.last_seen_at ? String(row.last_seen_at) : undefined,
+    lastOutcomeAt: row.last_outcome_at ? String(row.last_outcome_at) : undefined,
+    lastRecomputedAt: String(row.last_recomputed_at ?? new Date().toISOString()),
+  };
+}
+
+async function createSignedUrlMap(admin: SupabaseClient, storagePaths: string[]): Promise<Map<string, string>> {
   if (!storagePaths.length) {
     return new Map<string, string>();
   }
@@ -67,11 +355,14 @@ async function createSignedUrlMap(admin: SupabaseClient, storagePaths: string[])
     return new Map<string, string>();
   }
 
-  return new Map(
-    data
-      .filter((entry) => entry?.signedUrl && entry.path)
-      .map((entry) => [entry.path, entry.signedUrl as string]),
-  );
+  const signedUrls = new Map<string, string>();
+  for (const entry of data) {
+    if (entry?.signedUrl && entry.path) {
+      signedUrls.set(entry.path, entry.signedUrl);
+    }
+  }
+
+  return signedUrls;
 }
 
 export async function ensureUserRow(admin: SupabaseClient, user: { id: string; email: string | null }) {
@@ -109,8 +400,8 @@ export async function getInsights(
     .from('ingredient_insights')
     .select('*')
     .eq('user_id', userId)
-    .order('trigger_score', { ascending: false })
-    .order('safe_score', { ascending: false });
+    .order('combined_risk_score', { ascending: false })
+    .order('supporting_evidence_count', { ascending: false });
 
   if (options.search?.trim()) {
     query = query.ilike('ingredient_name', `%${options.search.trim()}%`);
@@ -129,6 +420,64 @@ export async function getInsights(
   return (data ?? []).map((row) => mapInsightRow(row as Record<string, unknown>));
 }
 
+export async function getConditionIngredientInsights(
+  admin: SupabaseClient,
+  userId: string,
+  options: { search?: string; limit?: number } = {},
+) {
+  let query = admin
+    .from('condition_ingredient_insights')
+    .select('*')
+    .eq('user_id', userId)
+    .order('risk_score', { ascending: false });
+
+  if (options.search?.trim()) {
+    query = query.ilike('ingredient_name', `%${options.search.trim()}%`);
+  }
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => mapConditionInsightRow(row as Record<string, unknown>));
+}
+
+export async function getGutScoreSnapshots(admin: SupabaseClient, userId: string, limit = 14): Promise<GutScoreState[]> {
+  const { data, error } = await admin
+    .from('gut_score_snapshots')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => mapGutScoreSnapshotRow(row as Record<string, unknown>));
+}
+
+export async function getGutScoreEvents(admin: SupabaseClient, userId: string, limit = 10): Promise<GutScoreEvent[]> {
+  const { data, error } = await admin
+    .from('gut_score_events')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => mapGutScoreEventRow(row as Record<string, unknown>));
+}
+
 export async function getProfile(admin: SupabaseClient, userId: string): Promise<UserProfile | null> {
   const { data, error } = await admin.from('user_profiles').select('*').eq('user_id', userId).maybeSingle();
   if (error) {
@@ -139,12 +488,17 @@ export async function getProfile(admin: SupabaseClient, userId: string): Promise
     return null;
   }
 
-  const insights = await getInsights(admin, userId);
+  const [insights, gutScoreSnapshots, gutScoreEvents] = await Promise.all([
+    getInsights(admin, userId),
+    getGutScoreSnapshots(admin, userId),
+    getGutScoreEvents(admin, userId, 1),
+  ]);
   const stomachProfileBlob = (data.stomach_profile_blob as StomachProfile | null) ?? null;
 
   const profile = buildUserProfileFromSeed(
     {
       userId,
+      displayName: data.display_name ?? undefined,
       knownConditions: asStringArray(data.known_conditions),
       knownIngredientSensitivities: asStringArray(data.known_ingredient_sensitivities),
       commonSymptoms: asStringArray(data.common_symptoms),
@@ -152,23 +506,57 @@ export async function getProfile(admin: SupabaseClient, userId: string): Promise
       symptomSeverityBaseline: data.symptom_severity_baseline ?? undefined,
       mealContexts: asStringArray(data.meal_contexts),
       motivation: data.motivation ?? undefined,
+      currentEatingPatterns: asStringArray(data.current_eating_patterns),
+      lifestyleFactors: asStringArray(data.lifestyle_factors),
+      foodsToReintroduce: asStringArray(data.foods_to_reintroduce),
     },
     insights,
     {
       priorStomachProfile: stomachProfileBlob,
-      confirmedMealCount: stomachProfileBlob?.metadata?.confirmedMealCount ?? 0,
+      reportCount: stomachProfileBlob?.metadata?.reportCount ?? 0,
     },
   );
 
   if (stomachProfileBlob) {
+    const mergedIngredientScores = {
+      ...profile.stomachProfile.ingredientScores,
+      ...Object.entries(stomachProfileBlob.ingredientScores ?? {}).reduce<Record<string, (typeof profile.stomachProfile.ingredientScores)[string]>>(
+        (accumulator, [key, value]) => {
+          accumulator[key] = {
+            ...profile.stomachProfile.ingredientScores[key],
+            ...(value ?? {}),
+          };
+          return accumulator;
+        },
+        {},
+      ),
+    };
+
     profile.stomachProfile = {
       ...profile.stomachProfile,
       ...stomachProfileBlob,
-      ingredientScores: stomachProfileBlob.ingredientScores ?? profile.stomachProfile.ingredientScores,
+      ingredientScores: mergedIngredientScores,
       metadata: {
         ...profile.stomachProfile.metadata,
         ...(stomachProfileBlob.metadata ?? {}),
       },
+    };
+  }
+
+  const latestSnapshot = gutScoreSnapshots[0];
+  const snapshotHistory: GutScoreHistoryPoint[] = [...gutScoreSnapshots]
+    .reverse()
+    .map((snapshot) => ({ score: snapshot.currentScore, createdAt: snapshot.updatedAt }));
+  const blobGutScore = profile.stomachProfile.metadata.gutScore;
+
+  if (latestSnapshot || blobGutScore) {
+    profile.stomachProfile.metadata.gutScore = {
+      ...(blobGutScore ?? latestSnapshot!),
+      ...(latestSnapshot ?? {}),
+      drivers: latestSnapshot?.drivers.length ? latestSnapshot.drivers : blobGutScore?.drivers ?? [],
+      history: snapshotHistory.length ? snapshotHistory : blobGutScore?.history ?? [],
+      nextAction: blobGutScore?.nextAction ?? latestSnapshot?.drivers[0]?.detail ?? '',
+      recentEvent: gutScoreEvents[0] ?? blobGutScore?.recentEvent,
     };
   }
 
@@ -214,68 +602,7 @@ export async function getBillingState(admin: SupabaseClient, userId: string) {
   };
 }
 
-export async function getHistorySnapshot(admin: SupabaseClient, userId: string) {
-  const page = 1;
-  const pageSize = 20;
-  const offset = (page - 1) * pageSize;
-  const recentRangeEnd = offset + pageSize - 1;
-
-  const [{ data: pendingMealRows, error: pendingError }, { data: recentMealRows, error: recentError, count }] = await Promise.all([
-    admin.from('meals').select('*').eq('user_id', userId).eq('followup_state', 'pending').order('created_at', { ascending: false }).limit(12),
-    admin
-      .from('meals')
-      .select('*', { count: 'exact' })
-      .eq('user_id', userId)
-      .neq('followup_state', 'pending')
-      .order('created_at', { ascending: false })
-      .range(offset, recentRangeEnd),
-  ]);
-
-  if (pendingError) {
-    throw pendingError;
-  }
-
-  if (recentError) {
-    throw recentError;
-  }
-
-  const combinedMeals = [...(pendingMealRows ?? []), ...(recentMealRows ?? [])];
-  const scanIds = Array.from(
-    new Set(
-      combinedMeals
-        .map((row) => row.scan_id)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0),
-    ),
-  );
-
-  const { data: scanRows, error: scansError } = scanIds.length
-    ? await admin.from('scans').select('*').eq('user_id', userId).in('id', scanIds)
-    : { data: [], error: null };
-
-  if (scansError) {
-    throw scansError;
-  }
-
-  const storagePaths = (scanRows ?? [])
-    .map((row) => row.image_storage_path)
-    .filter((value): value is string => typeof value === 'string' && value.length > 0);
-  const signedUrlMap = await createSignedUrlMap(admin, storagePaths);
-
-  const scans = (scanRows ?? []).map((row) => mapScanRow(row as Record<string, unknown>, signedUrlMap));
-  const pendingMeals = (pendingMealRows ?? []).map((row) => mapMealRow(row as Record<string, unknown>, scans));
-  const recentMeals = (recentMealRows ?? []).map((row) => mapMealRow(row as Record<string, unknown>, scans));
-
-  return {
-    page,
-    pageSize,
-    hasMore: Number(count ?? 0) > page * pageSize,
-    pendingMeals,
-    recentMeals,
-    scans,
-  };
-}
-
-export async function getPaginatedHistorySnapshot(
+export async function getPaginatedScanHistory(
   admin: SupabaseClient,
   userId: string,
   options: { page?: number; pageSize?: number } = {},
@@ -283,42 +610,28 @@ export async function getPaginatedHistorySnapshot(
   const page = Math.max(1, Number(options.page ?? 1));
   const pageSize = Math.min(40, Math.max(5, Number(options.pageSize ?? 20)));
   const offset = (page - 1) * pageSize;
-  const recentRangeEnd = offset + pageSize - 1;
+  const rangeEnd = offset + pageSize - 1;
 
-  const [{ data: pendingMealRows, error: pendingError }, { data: recentMealRows, error: recentError, count }] = await Promise.all([
-    admin.from('meals').select('*').eq('user_id', userId).eq('followup_state', 'pending').order('created_at', { ascending: false }).limit(12),
+  const [{ data: scanRows, error: scansError, count }, { data: reportRows, error: reportsError }] = await Promise.all([
     admin
-      .from('meals')
+      .from('scans')
       .select('*', { count: 'exact' })
       .eq('user_id', userId)
-      .neq('followup_state', 'pending')
       .order('created_at', { ascending: false })
-      .range(offset, recentRangeEnd),
+      .range(offset, rangeEnd),
+    admin
+      .from('daily_gut_reports')
+      .select('*')
+      .eq('user_id', userId)
+      .order('local_date', { ascending: false }),
   ]);
-
-  if (pendingError) {
-    throw pendingError;
-  }
-
-  if (recentError) {
-    throw recentError;
-  }
-
-  const combinedMeals = [...(pendingMealRows ?? []), ...(recentMealRows ?? [])];
-  const scanIds = Array.from(
-    new Set(
-      combinedMeals
-        .map((row) => row.scan_id)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0),
-    ),
-  );
-
-  const { data: scanRows, error: scansError } = scanIds.length
-    ? await admin.from('scans').select('*').eq('user_id', userId).in('id', scanIds)
-    : { data: [], error: null };
 
   if (scansError) {
     throw scansError;
+  }
+
+  if (reportsError) {
+    throw reportsError;
   }
 
   const storagePaths = (scanRows ?? [])
@@ -326,27 +639,36 @@ export async function getPaginatedHistorySnapshot(
     .filter((value): value is string => typeof value === 'string' && value.length > 0);
   const signedUrlMap = await createSignedUrlMap(admin, storagePaths);
 
-  const scans = (scanRows ?? []).map((row) => mapScanRow(row as Record<string, unknown>, signedUrlMap));
-  const pendingMeals = (pendingMealRows ?? []).map((row) => mapMealRow(row as Record<string, unknown>, scans));
-  const recentMeals = (recentMealRows ?? []).map((row) => mapMealRow(row as Record<string, unknown>, scans));
-
   return {
     page,
     pageSize,
     hasMore: Number(count ?? 0) > page * pageSize,
-    pendingMeals,
-    recentMeals,
-    scans,
+    scans: (scanRows ?? []).map((row) => mapScanRow(row as Record<string, unknown>, signedUrlMap)),
+    dailyReports: (reportRows ?? []).map((row) => mapDailyReportRow(row as Record<string, unknown>)),
   };
 }
 
 export function mapScanRow(row: Record<string, unknown>, signedUrlMap: Map<string, string>): ScanRecord {
   const imageStoragePath = typeof row.image_storage_path === 'string' ? row.image_storage_path : undefined;
   const signedUrl = imageStoragePath ? signedUrlMap.get(imageStoragePath) : undefined;
+  const structuredRecord = asRecord(row.structured_analysis);
+  const structuredAnalysis = mapStructuredAnalysisValue(row.structured_analysis, {
+    fallbackDishName: String(row.dish_name ?? 'Unknown meal'),
+    extractionModel: typeof row.extraction_model === 'string' ? row.extraction_model : null,
+    extractionPromptVersion: typeof row.extraction_prompt_version === 'string' ? row.extraction_prompt_version : null,
+    extractionClarity: typeof row.extraction_clarity === 'string' ? row.extraction_clarity : null,
+    extractionUnclearReason: typeof row.extraction_unclear_reason === 'string' ? row.extraction_unclear_reason : null,
+    dishConfidence: row.dish_confidence,
+    imageDetail: structuredRecord.imageDetail,
+  });
 
   return {
     id: String(row.id),
     sourceType: (row.source_type as ScanRecord['sourceType']) ?? 'camera',
+    scanCategory:
+      row.scan_category === 'menu' || row.scan_category === 'grocery'
+        ? row.scan_category
+        : 'food',
     analysisStatus:
       row.analysis_status === 'queued' || row.analysis_status === 'processing' || row.analysis_status === 'failed'
         ? row.analysis_status
@@ -355,6 +677,8 @@ export function mapScanRow(row: Record<string, unknown>, signedUrlMap: Map<strin
     createdAt: String(row.created_at ?? new Date().toISOString()),
     completedAt: row.completed_at ? String(row.completed_at) : undefined,
     inputText: typeof row.input_text === 'string' ? row.input_text : undefined,
+    localDate: row.local_date ? String(row.local_date) : undefined,
+    timezone: typeof row.timezone === 'string' ? row.timezone : undefined,
     dishName: String(row.dish_name ?? 'Unknown meal'),
     overallRiskScore: Number(row.overall_risk_score ?? 0),
     overallRiskLevel:
@@ -362,47 +686,31 @@ export function mapScanRow(row: Record<string, unknown>, signedUrlMap: Map<strin
     conditionRiskScores: asRecord(row.condition_risk_scores) as ScanRecord['conditionRiskScores'],
     possibleTriggers: asStringArray(row.possible_triggers),
     interpretation:
-      typeof asRecord(row.structured_analysis).interpretation === 'string'
-        ? String(asRecord(row.structured_analysis).interpretation)
+      typeof structuredRecord.interpretation === 'string'
+        ? String(structuredRecord.interpretation)
         : Number(row.overall_risk_score ?? 0) >= 67
           ? 'This meal may trigger symptoms for you.'
           : Number(row.overall_risk_score ?? 0) >= 34
             ? 'This meal has some watch-outs for your stomach.'
             : 'This meal looks relatively safe for your stomach.',
-    structuredAnalysis: {
-      dishName: String(asRecord(row.structured_analysis).dishName ?? row.dish_name ?? 'Unknown meal'),
-      ingredients: Array.isArray(asRecord(row.structured_analysis).ingredients)
-        ? (asRecord(row.structured_analysis).ingredients as Array<Record<string, unknown>>).map((ingredient) => ({
-            name: String(ingredient.name ?? ''),
-            confidence:
-              ingredient.confidence === 'high' || ingredient.confidence === 'low' ? ingredient.confidence : 'medium',
-          }))
-        : [],
-      prepStyle: asStringArray(asRecord(row.structured_analysis).prepStyle),
-      notes: asStringArray(asRecord(row.structured_analysis).notes),
-    },
+    structuredAnalysis,
+    gutScoreImpact: asGutScoreImpact(structuredRecord.gutScoreImpact),
     imageUri: signedUrl,
   };
 }
 
-export function mapMealRow(row: Record<string, unknown>, scans: ScanRecord[]): MealRecord {
-  const scan = typeof row.scan_id === 'string' ? scans.find((entry) => entry.id === row.scan_id) : undefined;
+export function mapDailyReportRow(row: Record<string, unknown>): DailyGutReport {
   return {
     id: String(row.id),
-    title: scan?.dishName ?? 'Saved meal',
-    imageUri: scan?.imageUri,
-    scanId: typeof row.scan_id === 'string' ? row.scan_id : undefined,
-    mealOrigin: (row.meal_origin as MealRecord['mealOrigin']) ?? 'manual_text',
-    didUserEat: typeof row.did_user_eat === 'boolean' ? row.did_user_eat : undefined,
-    eatenTimeBucket: (row.eaten_time_bucket as MealRecord['eatenTimeBucket']) ?? undefined,
-    followupState:
-      row.followup_state === 'answered_yes' ||
-      row.followup_state === 'answered_no' ||
-      row.followup_state === 'dismissed' ||
-      row.followup_state === 'archived'
-        ? row.followup_state
-        : 'pending',
-    followupDueAt: row.followup_due_at ? String(row.followup_due_at) : undefined,
+    userId: String(row.user_id),
+    localDate: String(row.local_date),
+    gutSeverity: Number(row.gut_severity),
+    dailyScore: typeof row.daily_score === 'number' ? Number(row.daily_score) : undefined,
+    dailyScoreComponents: mapDailyScoreComponents(row.daily_score_components),
+    dailyScoreDrivers: mapGutScoreDrivers(row.daily_score_drivers),
+    dailyScoreUpdatedAt: row.daily_score_updated_at ? String(row.daily_score_updated_at) : undefined,
+    symptomTags: asStringArray(row.symptom_tags),
+    notes: typeof row.notes === 'string' && row.notes.length > 0 ? row.notes : undefined,
     createdAt: String(row.created_at ?? new Date().toISOString()),
     updatedAt: String(row.updated_at ?? row.created_at ?? new Date().toISOString()),
   };
@@ -422,16 +730,6 @@ export async function getScanById(admin: SupabaseClient, scanId: string) {
   return mapScanRow(data as Record<string, unknown>, signedMap);
 }
 
-export async function getMealById(admin: SupabaseClient, mealId: string) {
-  const { data, error } = await admin.from('meals').select('*').eq('id', mealId).single();
-  if (error) {
-    throw error;
-  }
-
-  const scans = data.scan_id ? [await getScanById(admin, String(data.scan_id))] : [];
-  return mapMealRow(data as Record<string, unknown>, scans);
-}
-
 export async function createSignedStorageUrl(admin: SupabaseClient, path: string | null | undefined) {
   if (!path) {
     return null;
@@ -444,25 +742,6 @@ export async function createSignedStorageUrl(admin: SupabaseClient, path: string
   }
 
   return data.signedUrl;
-}
-
-export async function getDueFollowupMeals(admin: SupabaseClient, options: { limit?: number } = {}) {
-  const limit = Math.min(100, Math.max(1, Number(options.limit ?? 40)));
-  const { data, error } = await admin
-    .from('meals')
-    .select('*')
-    .eq('followup_state', 'pending')
-    .is('followup_notified_at', null)
-    .not('followup_due_at', 'is', null)
-    .lte('followup_due_at', new Date().toISOString())
-    .order('followup_due_at', { ascending: true })
-    .limit(limit);
-
-  if (error) {
-    throw error;
-  }
-
-  return data ?? [];
 }
 
 export async function getActiveDeviceTokens(admin: SupabaseClient, userIds: string[]) {

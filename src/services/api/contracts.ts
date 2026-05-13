@@ -1,57 +1,65 @@
 import {
   BillingState,
-  EatenTimeBucket,
+  ConditionIngredientInsight,
+  DailyGutReport,
   IngredientInsight,
-  MealRecord,
-  MealSymptomRecord,
+  ScanCategory,
   ScanInputPayload,
   ScanRecord,
-  ScanResult,
   UserProfile,
 } from '../../types/domain';
 
 export interface AnalyzeImageRequest {
   imagePath: string;
   sourceType: ScanInputPayload['sourceType'];
+  scanCategory?: ScanCategory;
+  localDate?: string;
+  timezone?: string;
 }
 
 export interface AnalyzeTextRequest {
   text: string;
   sourceType: ScanInputPayload['sourceType'];
+  scanCategory?: ScanCategory;
+  localDate?: string;
+  timezone?: string;
 }
 
 export interface AnalyzeResponse {
   scanId: string;
-  mealId: string;
   tokensRemaining: number;
   scan: ScanRecord;
-  meal: MealRecord;
   billing: BillingState;
+  profile?: UserProfile | null;
+  insights?: IngredientInsight[];
+  conditionInsights?: ConditionIngredientInsight[];
 }
 
-export interface MealResponseRequest {
-  mealId: string;
-  didUserEat: boolean;
+export interface ScanDeleteRequest {
+  scanId: string;
 }
 
-export interface MealResponse {
+export interface ScanDeleteResponse {
   ok: true;
-  meal: MealRecord;
-}
-
-export interface MealSymptomsRequest {
-  mealId: string;
-  severity: MealSymptomRecord['severity'];
-  symptomTags: string[];
-  otherText?: string;
-  eatenTimeBucket?: EatenTimeBucket;
-}
-
-export interface MealSymptomsResponse {
-  ok: true;
-  meal: MealRecord;
+  scanId: string;
   profile: UserProfile | null;
   insights: IngredientInsight[];
+  conditionInsights: ConditionIngredientInsight[];
+}
+
+export interface DailyReportUpsertRequest {
+  localDate: string;
+  gutSeverity: number;
+  symptomTags?: string[];
+  notes?: string;
+}
+
+export interface DailyReportUpsertResponse {
+  ok: true;
+  report: DailyGutReport;
+  profile: UserProfile | null;
+  insights: IngredientInsight[];
+  conditionInsights: ConditionIngredientInsight[];
 }
 
 export interface HistoryRequest {
@@ -63,9 +71,8 @@ export interface HistoryResponse {
   page: number;
   pageSize: number;
   hasMore: boolean;
-  pendingMeals: MealRecord[];
-  recentMeals: MealRecord[];
   scans: ScanRecord[];
+  dailyReports: DailyGutReport[];
 }
 
 export interface InsightsRequest {
@@ -76,21 +83,28 @@ export interface InsightsRequest {
 export interface InsightsResponse {
   profile: UserProfile | null;
   insights: IngredientInsight[];
+  conditionInsights: ConditionIngredientInsight[];
   billing: BillingState;
 }
 
 export interface ProfileUpdateRequest {
   onboardingAnswers?: {
+    displayName?: string | null;
     conditions?: string[];
     customConditions?: string[];
     ingredientSensitivities?: string[];
     customIngredientSensitivities?: string[];
     symptoms?: string[];
+    customSymptoms?: string[];
     symptomFrequency?: string;
     symptomSeverityBaseline?: string;
     mealContexts?: string[];
     motivation?: string;
+    currentEatingPatterns?: string[];
+    lifestyleFactors?: string[];
+    favoriteFoodsToReintroduce?: string;
   };
+  displayName?: string | null;
   knownConditions?: string[];
   knownIngredientSensitivities?: string[];
   commonSymptoms?: string[];
@@ -98,12 +112,16 @@ export interface ProfileUpdateRequest {
   symptomSeverityBaseline?: string;
   mealContexts?: string[];
   motivation?: string;
+  currentEatingPatterns?: string[];
+  lifestyleFactors?: string[];
+  foodsToReintroduce?: string[];
 }
 
 export interface ProfileUpdateResponse {
   ok: true;
   profile: UserProfile | null;
   insights: IngredientInsight[];
+  conditionInsights: ConditionIngredientInsight[];
   billing: BillingState;
 }
 

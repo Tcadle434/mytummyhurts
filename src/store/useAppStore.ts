@@ -8,9 +8,16 @@ import { defaultOnboardingAnswers } from '../data/onboarding';
 import { trackEvent } from '../services/analytics';
 import { apiClient } from '../services/api/client';
 import { ProfileUpdateRequest } from '../services/api/contracts';
-import { analyzeMealInput, buildUserProfile, recomputeInsights } from '../services/ai/scoring';
+import {
+  analyzeMealInput,
+  buildGutScoreEvent,
+  buildUserProfile,
+  computeGutScoreState,
+  recomputeConditionIngredientInsights,
+  recomputeDailyScores,
+  recomputeInsights,
+} from '../services/ai/scoring';
 import { buildSubscriptionWindow } from '../services/billing/plans';
-import { cancelLocalMealFollowupNotification, syncLocalMealFollowupNotification } from '../services/notifications';
 import { queryClient } from '../services/query/client';
 import { queryKeys } from '../services/query/keys';
 import { uploadMealImage } from '../services/storage';
@@ -18,18 +25,16 @@ import {
   AppUser,
   AuthProvider,
   BillingState,
-  EatenTimeBucket,
-  FollowupState,
+  ConditionIngredientInsight,
+  DailyGutReport,
   IngredientInsight,
-  MealRecord,
-  MealSymptomRecord,
   OnboardingAnswers,
   OnboardingStage,
   RiskLevel,
   ScanInputPayload,
   ScanRecord,
+  ScanCategory,
   SubscriptionPlan,
-  SymptomSeverity,
   UserProfile,
 } from '../types/domain';
 import { createId } from '../utils/id';
@@ -42,17 +47,21 @@ type AppStoreState = {
   profile: UserProfile | null;
   billing: BillingState;
   scans: ScanRecord[];
-  meals: MealRecord[];
-  symptoms: MealSymptomRecord[];
+  dailyReports: DailyGutReport[];
   insights: IngredientInsight[];
+  conditionInsights: ConditionIngredientInsight[];
   pendingOnboardingScan: boolean;
   initialServerSyncNeeded: boolean;
   serverSyncInFlight: boolean;
   serverSyncError: string | null;
   remoteDataLoaded: boolean;
   updateOnboardingField: <K extends keyof OnboardingAnswers>(field: K, value: OnboardingAnswers[K]) => void;
-  toggleOnboardingValue: (field: 'conditions' | 'ingredientSensitivities' | 'symptoms' | 'mealContexts', value: string) => void;
-  addCustomOnboardingValue: (field: 'customConditions' | 'customIngredientSensitivities', value: string) => void;
+  toggleOnboardingValue: (
+    field: 'conditions' | 'ingredientSensitivities' | 'symptoms' | 'mealContexts' | 'currentEatingPatterns' | 'lifestyleFactors',
+    value: string,
+  ) => void;
+  addCustomOnboardingValue: (field: 'customConditions' | 'customIngredientSensitivities' | 'customSymptoms', value: string) => void;
+  removeCustomOnboardingValue: (field: 'customConditions' | 'customIngredientSensitivities' | 'customSymptoms', value: string) => void;
   setOnboardingStepIndex: (index: number) => void;
   setOnboardingStage: (stage: OnboardingStage) => void;
   selectPlan: (plan: SubscriptionPlan) => void;
@@ -64,14 +73,13 @@ type AppStoreState = {
   syncInitialAccountState: () => Promise<void>;
   updateProfileSettings: (request: ProfileUpdateRequest) => Promise<void>;
   applyBillingState: (billing: BillingState) => void;
-  analyzeScanInput: (payload: ScanInputPayload) => Promise<{ scanId: string; mealId: string }>;
-  setFollowupState: (mealId: string, didEat: boolean) => Promise<void>;
-  submitSymptoms: (params: {
-    mealId: string;
-    severity: SymptomSeverity;
-    symptomTags: string[];
-    otherText?: string;
-    eatenTimeBucket?: EatenTimeBucket;
+  analyzeScanInput: (payload: ScanInputPayload) => Promise<{ scanId: string }>;
+  deleteScanRecord: (scanId: string) => Promise<void>;
+  upsertDailyReport: (params: {
+    localDate: string;
+    gutSeverity: number;
+    symptomTags?: string[];
+    notes?: string;
   }) => Promise<void>;
   purchaseTopUp: (tokens: number) => Promise<void>;
   signOut: () => void;
@@ -89,27 +97,83 @@ function now() {
   return new Date().toISOString();
 }
 
-function plusHours(hours: number) {
-  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function currentTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+function scanCategoryForPayload(payload: ScanInputPayload): ScanCategory {
+  return payload.scanCategory ?? 'food';
 }
 
 function mergeById<T extends { id: string }>(items: T[], incoming: T) {
   return [incoming, ...items.filter((item) => item.id !== incoming.id)];
 }
 
-function mergeMealArrays(pendingMeals: MealRecord[], recentMeals: MealRecord[]) {
-  return [...pendingMeals, ...recentMeals].sort(
-    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-  );
-}
-
 function createLocalProfile(userId: string, answers: OnboardingAnswers, insights: IngredientInsight[]) {
   return buildUserProfile(userId, answers, insights);
 }
 
+function buildScoringOptions(state: Pick<AppStoreState, 'onboardingAnswers'>) {
+  return {
+    declaredSensitivities: state.onboardingAnswers.ingredientSensitivities.concat(
+      state.onboardingAnswers.customIngredientSensitivities,
+    ),
+    activeConditions: state.onboardingAnswers.conditions.concat(state.onboardingAnswers.customConditions),
+  };
+}
+
+function rebuildLocalLearningState(
+  state: AppStoreState,
+  scans: ScanRecord[],
+  dailyReports: DailyGutReport[],
+  eventType: string,
+) {
+  const scoringOptions = buildScoringOptions(state);
+  const scoredDailyReports = recomputeDailyScores(dailyReports, scans);
+  const insights = recomputeInsights(scans, scoredDailyReports, scoringOptions);
+  const conditionInsights = recomputeConditionIngredientInsights(scans, scoredDailyReports, scoringOptions);
+  const profile = state.profile ? buildUserProfile(state.profile.userId, state.onboardingAnswers, insights) : state.profile;
+
+  if (profile) {
+    profile.stomachProfile.metadata.reportCount = scoredDailyReports.length;
+    profile.stomachProfile.metadata.profileConfidenceLevel =
+      scoredDailyReports.length >= 8 ? 'stable' : scoredDailyReports.length >= 1 ? 'growing' : 'early';
+    const gutScore = computeGutScoreState({
+      answers: state.onboardingAnswers,
+      insights,
+      scans,
+      dailyReports: scoredDailyReports,
+      previousGutScore: state.profile?.stomachProfile.metadata.gutScore,
+      movementSource: eventType.includes('scan') ? 'scan' : eventType.includes('daily_report') ? 'daily_report' : 'profile',
+    });
+    profile.stomachProfile.metadata.gutScore = {
+      ...gutScore,
+      recentEvent: buildGutScoreEvent({
+        eventType,
+        score: gutScore,
+        previousScore: state.profile?.stomachProfile.metadata.gutScore,
+      }),
+    };
+  }
+
+  return {
+    profile,
+    insights,
+    conditionInsights,
+    dailyReports: scoredDailyReports,
+  };
+}
+
 function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
   AppStoreState,
-  'authUser' | 'profile' | 'billing' | 'scans' | 'meals' | 'symptoms' | 'insights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'initialServerSyncNeeded' | 'pendingOnboardingScan' | 'onboardingStage'
+  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'initialServerSyncNeeded' | 'pendingOnboardingScan' | 'onboardingStage'
 > {
   return {
     authUser: null,
@@ -119,9 +183,9 @@ function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
       selectedPlan: keepSelectedPlan,
     },
     scans: [],
-    meals: [],
-    symptoms: [],
+    dailyReports: [],
     insights: [],
+    conditionInsights: [],
     remoteDataLoaded: false,
     serverSyncError: null,
     serverSyncInFlight: false,
@@ -134,16 +198,16 @@ function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
 export const useAppStore = create<AppStoreState>()(
   persist(
     (set, get) => ({
-      onboardingStage: 'flow',
+      onboardingStage: 'intro',
       onboardingStepIndex: 0,
       onboardingAnswers: defaultOnboardingAnswers,
       authUser: null,
       profile: null,
       billing: defaultBillingState,
       scans: [],
-      meals: [],
-      symptoms: [],
+      dailyReports: [],
       insights: [],
+      conditionInsights: [],
       pendingOnboardingScan: false,
       initialServerSyncNeeded: false,
       serverSyncInFlight: false,
@@ -159,7 +223,7 @@ export const useAppStore = create<AppStoreState>()(
       },
       toggleOnboardingValue: (field, value) => {
         set((state) => {
-          const currentValues = state.onboardingAnswers[field];
+          const currentValues = Array.isArray(state.onboardingAnswers[field]) ? state.onboardingAnswers[field] : [];
           const nextValues = currentValues.includes(value)
             ? currentValues.filter((entry) => entry !== value)
             : [...currentValues, value];
@@ -179,7 +243,7 @@ export const useAppStore = create<AppStoreState>()(
         }
 
         set((state) => {
-          const currentValues = state.onboardingAnswers[field];
+          const currentValues = state.onboardingAnswers[field] ?? [];
           if (currentValues.includes(trimmed)) {
             return state;
           }
@@ -191,6 +255,14 @@ export const useAppStore = create<AppStoreState>()(
             },
           };
         });
+      },
+      removeCustomOnboardingValue: (field, value) => {
+        set((state) => ({
+          onboardingAnswers: {
+            ...state.onboardingAnswers,
+            [field]: (state.onboardingAnswers[field] ?? []).filter((entry) => entry !== value),
+          },
+        }));
       },
       setOnboardingStepIndex: (index) => set({ onboardingStepIndex: index }),
       setOnboardingStage: (stage) => set({ onboardingStage: stage }),
@@ -260,9 +332,10 @@ export const useAppStore = create<AppStoreState>()(
 
         set((currentState) => ({
           scans: history.scans,
-          meals: mergeMealArrays(history.pendingMeals, history.recentMeals),
+          dailyReports: history.dailyReports ?? [],
           profile: insightsResponse.profile ?? currentState.profile,
           insights: insightsResponse.insights,
+          conditionInsights: insightsResponse.conditionInsights,
           billing: insightsResponse.billing,
           remoteDataLoaded: true,
           serverSyncError: null,
@@ -289,21 +362,27 @@ export const useAppStore = create<AppStoreState>()(
 
           const profileResponse = await apiClient.updateProfile({
             onboardingAnswers: {
+              displayName: state.onboardingAnswers.displayName.trim() || null,
               conditions: state.onboardingAnswers.conditions,
               customConditions: state.onboardingAnswers.customConditions,
               ingredientSensitivities: state.onboardingAnswers.ingredientSensitivities,
               customIngredientSensitivities: state.onboardingAnswers.customIngredientSensitivities,
               symptoms: state.onboardingAnswers.symptoms,
+              customSymptoms: state.onboardingAnswers.customSymptoms ?? [],
               symptomFrequency: state.onboardingAnswers.symptomFrequency,
               symptomSeverityBaseline: state.onboardingAnswers.symptomSeverityBaseline,
               mealContexts: state.onboardingAnswers.mealContexts,
               motivation: state.onboardingAnswers.motivation,
+              currentEatingPatterns: state.onboardingAnswers.currentEatingPatterns ?? [],
+              lifestyleFactors: state.onboardingAnswers.lifestyleFactors ?? [],
+              favoriteFoodsToReintroduce: state.onboardingAnswers.favoriteFoodsToReintroduce ?? '',
             },
           });
 
           set((currentState) => ({
             profile: profileResponse.profile ?? currentState.profile,
             insights: profileResponse.insights,
+            conditionInsights: profileResponse.conditionInsights,
             billing: profileResponse.billing,
             initialServerSyncNeeded: false,
             serverSyncInFlight: false,
@@ -327,14 +406,56 @@ export const useAppStore = create<AppStoreState>()(
       },
       updateProfileSettings: async (request) => {
         const state = get();
+        if (!state.profile) {
+          return;
+        }
+
         if (!isLiveBackendConfigured || !state.authUser) {
+          set((currentState) => ({
+            onboardingAnswers:
+              typeof request.displayName === 'undefined'
+                ? currentState.onboardingAnswers
+                : {
+                    ...currentState.onboardingAnswers,
+                    displayName: request.displayName?.trim() ?? '',
+                  },
+            profile: currentState.profile
+              ? {
+                  ...currentState.profile,
+                  displayName:
+                    typeof request.displayName === 'undefined'
+                      ? currentState.profile.displayName
+                      : request.displayName?.trim() || undefined,
+                  knownConditions: request.knownConditions ?? currentState.profile.knownConditions,
+                  knownIngredientSensitivities:
+                    request.knownIngredientSensitivities ?? currentState.profile.knownIngredientSensitivities,
+                  commonSymptoms: request.commonSymptoms ?? currentState.profile.commonSymptoms,
+                  symptomFrequency: request.symptomFrequency ?? currentState.profile.symptomFrequency,
+                  symptomSeverityBaseline:
+                    request.symptomSeverityBaseline ?? currentState.profile.symptomSeverityBaseline,
+                  mealContexts: request.mealContexts ?? currentState.profile.mealContexts,
+                  motivation: request.motivation ?? currentState.profile.motivation,
+                  currentEatingPatterns: request.currentEatingPatterns ?? currentState.profile.currentEatingPatterns,
+                  lifestyleFactors: request.lifestyleFactors ?? currentState.profile.lifestyleFactors,
+                  foodsToReintroduce: request.foodsToReintroduce ?? currentState.profile.foodsToReintroduce,
+                }
+              : currentState.profile,
+          }));
           return;
         }
 
         const response = await apiClient.updateProfile(request);
         set((currentState) => ({
+          onboardingAnswers:
+            typeof request.displayName === 'undefined'
+              ? currentState.onboardingAnswers
+              : {
+                  ...currentState.onboardingAnswers,
+                  displayName: request.displayName?.trim() ?? '',
+                },
           profile: response.profile ?? currentState.profile,
           insights: response.insights,
+          conditionInsights: response.conditionInsights,
           billing: response.billing,
         }));
         await Promise.all([
@@ -353,8 +474,11 @@ export const useAppStore = create<AppStoreState>()(
         }
 
         const scanStartedAt = now();
-        trackEvent('scan_started', { source_type: payload.sourceType, entry_point: payload.sourceType });
-        trackEvent('scan_analysis_started', { source_type: payload.sourceType });
+        const scanCategory = scanCategoryForPayload(payload);
+        const localDate = payload.localDate ?? localDateString();
+        const timezone = payload.timezone ?? currentTimezone();
+        trackEvent('scan_started', { source_type: payload.sourceType, scan_category: scanCategory, entry_point: payload.sourceType });
+        trackEvent('scan_analysis_started', { source_type: payload.sourceType, scan_category: scanCategory });
 
         if (isLiveBackendConfigured && state.authUser) {
           if (state.initialServerSyncNeeded) {
@@ -365,20 +489,25 @@ export const useAppStore = create<AppStoreState>()(
             ? await apiClient.analyzeImage({
                 imagePath: await uploadMealImage(payload.imageUri, state.authUser.id),
                 sourceType: payload.sourceType,
+                scanCategory,
+                localDate,
+                timezone,
               })
             : await apiClient.analyzeText({
                 text: payload.text?.trim() || 'demo meal with rice and chicken',
                 sourceType: payload.sourceType,
+                scanCategory,
+                localDate,
+                timezone,
               });
 
           set((currentState) => ({
             scans: mergeById(currentState.scans, response.scan),
-            meals: mergeById(currentState.meals, response.meal),
             billing: response.billing,
+            profile: response.profile ?? currentState.profile,
+            insights: response.insights ?? currentState.insights,
+            conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
           }));
-          await syncLocalMealFollowupNotification(response.meal, response.scan).catch((error) => {
-            console.warn('[notifications] failed to schedule follow-up notification', error);
-          });
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: queryKeys.history }),
             queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
@@ -392,47 +521,34 @@ export const useAppStore = create<AppStoreState>()(
             token_balance_after: response.billing.tokensRemaining,
           });
 
-          return { scanId: response.scanId, mealId: response.mealId };
+          return { scanId: response.scanId };
         }
 
         const result = analyzeMealInput(payload, get().profile, get().insights);
         const scanId = createId('scan');
-        const mealId = createId('meal');
 
         const scan: ScanRecord = {
           id: scanId,
           sourceType: payload.sourceType,
+          scanCategory,
           analysisStatus: 'completed',
           tokenCost: 1,
           createdAt: scanStartedAt,
           completedAt: now(),
           inputText: payload.text,
+          localDate,
+          timezone,
           ...result,
-        };
-
-        const meal: MealRecord = {
-          id: mealId,
-          title: result.dishName,
-          imageUri: result.imageUri,
-          scanId,
-          mealOrigin: payload.sourceType,
-          followupState: 'pending',
-          followupDueAt: plusHours(2),
-          createdAt: scanStartedAt,
-          updatedAt: scanStartedAt,
         };
 
         set((currentState) => ({
           scans: [scan, ...currentState.scans],
-          meals: [meal, ...currentState.meals],
           billing: {
             ...currentState.billing,
             tokensRemaining: currentState.billing.tokensRemaining - 1,
           },
+          ...rebuildLocalLearningState(currentState, [scan, ...currentState.scans], currentState.dailyReports, 'scan_completed'),
         }));
-        await syncLocalMealFollowupNotification(meal, scan).catch((error) => {
-          console.warn('[notifications] failed to schedule follow-up notification', error);
-        });
 
         trackEvent('scan_analysis_completed', {
           scan_id: scanId,
@@ -441,119 +557,102 @@ export const useAppStore = create<AppStoreState>()(
           token_balance_after: get().billing.tokensRemaining,
         });
 
-        return { scanId, mealId };
+        return { scanId };
       },
-      setFollowupState: async (mealId, didEat) => {
-        if (isLiveBackendConfigured && get().authUser) {
-          const response = await apiClient.respondEaten({ mealId, didUserEat: didEat });
-          set((state) => ({
-            meals: mergeById(state.meals, response.meal),
-          }));
-        } else {
-          const nextState: FollowupState = didEat ? 'answered_yes' : 'answered_no';
-          set((state) => ({
-            meals: state.meals.map((meal) =>
-              meal.id === mealId
-                ? {
-                    ...meal,
-                    didUserEat: didEat,
-                    followupState: nextState,
-                    updatedAt: now(),
-                  }
-                : meal,
-            ),
-          }));
+      deleteScanRecord: async (scanId) => {
+        const existingScan = get().scans.find((scan) => scan.id === scanId);
+        if (!existingScan) {
+          return;
         }
 
-        await cancelLocalMealFollowupNotification(mealId).catch((error) => {
-          console.warn('[notifications] failed to cancel follow-up notification', error);
-        });
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-        ]);
-
-        trackEvent(didEat ? 'followup_banner_yes' : 'followup_banner_no', { meal_id: mealId, source_surface: 'app' });
-      },
-      submitSymptoms: async ({ mealId, severity, symptomTags, otherText, eatenTimeBucket }) => {
         if (isLiveBackendConfigured && get().authUser) {
-          const response = await apiClient.logSymptoms({
-            mealId,
-            severity,
-            symptomTags,
-            otherText,
-            eatenTimeBucket,
-          });
-
+          const response = await apiClient.deleteScan({ scanId });
           set((state) => ({
-            symptoms: [
-              {
-                id: createId('symptom'),
-                mealId,
-                severity,
-                symptomTags,
-                otherText,
-                submittedAt: now(),
-              },
-              ...state.symptoms,
-            ],
-            meals: mergeById(state.meals, response.meal),
+            scans: state.scans.filter((scan) => scan.id !== scanId),
             profile: response.profile ?? state.profile,
             insights: response.insights,
+            conditionInsights: response.conditionInsights,
           }));
         } else {
-          const symptomRecord: MealSymptomRecord = {
-            id: createId('symptom'),
-            mealId,
-            severity,
-            symptomTags,
-            otherText,
-            submittedAt: now(),
-          };
-
           set((state) => {
-            const meals = state.meals.map((meal) =>
-              meal.id === mealId
-                ? {
-                    ...meal,
-                    didUserEat: true,
-                    eatenTimeBucket: eatenTimeBucket ?? meal.eatenTimeBucket ?? 'just_now',
-                    followupState: 'answered_yes' as const,
-                    updatedAt: now(),
-                  }
-                : meal,
-            );
-
-            const insights = recomputeInsights(state.scans, meals, [symptomRecord, ...state.symptoms]);
-            const profile = state.profile
-              ? buildUserProfile(state.profile.userId, state.onboardingAnswers, insights)
-              : state.profile;
-
-            if (profile) {
-              profile.stomachProfile.metadata.confirmedMealCount = meals.filter((meal) => meal.didUserEat).length;
-              profile.stomachProfile.metadata.profileConfidenceLevel =
-                profile.stomachProfile.metadata.confirmedMealCount >= 5 ? 'stable' : 'growing';
-            }
-
+            const scans = state.scans.filter((scan) => scan.id !== scanId);
             return {
-              symptoms: [symptomRecord, ...state.symptoms],
-              meals,
-              insights,
-              profile,
+              scans,
+              ...rebuildLocalLearningState(state, scans, state.dailyReports, 'scan_deleted'),
             };
           });
         }
 
-        await cancelLocalMealFollowupNotification(mealId).catch((error) => {
-          console.warn('[notifications] failed to cancel follow-up notification', error);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+        ]);
+
+        trackEvent('history_item_deleted', {
+          scan_id: scanId,
+          scan_category: existingScan.scanCategory,
+          source_type: existingScan.sourceType,
         });
+      },
+      upsertDailyReport: async ({ localDate, gutSeverity, symptomTags = [], notes }) => {
+        if (isLiveBackendConfigured && get().authUser) {
+          const response = await apiClient.upsertDailyReport({
+            localDate,
+            gutSeverity,
+            symptomTags,
+            notes,
+          });
+
+          set((state) => ({
+            dailyReports: mergeById(state.dailyReports, response.report).sort(
+              (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+            ),
+            profile: response.profile ?? state.profile,
+            insights: response.insights,
+            conditionInsights: response.conditionInsights,
+          }));
+        } else {
+          const existing = get().dailyReports.find((report) => report.localDate === localDate);
+          const timestamp = now();
+          const report: DailyGutReport = {
+            id: existing?.id ?? createId('report'),
+            userId: get().authUser?.id ?? 'local-user',
+            localDate,
+            gutSeverity,
+            symptomTags,
+            notes: notes?.trim() || undefined,
+            createdAt: existing?.createdAt ?? timestamp,
+            updatedAt: timestamp,
+          };
+
+          set((state) => {
+            const dailyReports = mergeById(state.dailyReports, report).sort(
+              (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+            );
+
+            return {
+              ...rebuildLocalLearningState(
+                state,
+                state.scans,
+                dailyReports,
+                gutSeverity <= 3 ? 'calm_daily_report' : gutSeverity >= 7 ? 'reactive_daily_report' : 'neutral_daily_report',
+              ),
+            };
+          });
+        }
+
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.history }),
           queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
           queryClient.invalidateQueries({ queryKey: queryKeys.home }),
         ]);
 
-        trackEvent('symptom_saved', { meal_id: mealId, severity, tags_count: symptomTags.length });
+        trackEvent('daily_gut_report_saved', {
+          local_date: localDate,
+          gut_severity: gutSeverity,
+          tags_count: symptomTags.length,
+        });
       },
       purchaseTopUp: async (tokens) => {
         if (isLiveBackendConfigured && get().authUser) {
@@ -584,9 +683,9 @@ export const useAppStore = create<AppStoreState>()(
         profile: state.profile,
         billing: state.billing,
         scans: state.scans,
-        meals: state.meals,
-        symptoms: state.symptoms,
+        dailyReports: state.dailyReports,
         insights: state.insights,
+        conditionInsights: state.conditionInsights,
         pendingOnboardingScan: state.pendingOnboardingScan,
         initialServerSyncNeeded: state.initialServerSyncNeeded,
         serverSyncError: state.serverSyncError,
@@ -600,25 +699,16 @@ export function selectLatestScan(scans: ScanRecord[], scanId: string) {
   return scans.find((scan) => scan.id === scanId);
 }
 
-export function selectMeal(meals: MealRecord[], mealId: string) {
-  return meals.find((meal) => meal.id === mealId);
-}
-
-export function selectDueMeal(meals: MealRecord[]) {
-  const currentTime = Date.now();
-  return meals.find(
-    (meal) => meal.followupState === 'pending' && meal.followupDueAt && new Date(meal.followupDueAt).getTime() <= currentTime,
-  );
-}
-
-export function selectPendingMeals(meals: MealRecord[]) {
-  return meals.filter((meal) => meal.followupState === 'pending');
-}
-
 export function selectInsightBuckets(insights: IngredientInsight[]) {
   return {
-    triggers: insights.filter((insight) => insight.triggerScore >= insight.safeScore).slice(0, 8),
-    safeFoods: insights.filter((insight) => insight.safeScore > insight.triggerScore).slice(0, 8),
+    triggers: insights
+      .filter((insight) => insight.triggerScore >= insight.safeScore || insight.combinedRiskScore >= 52)
+      .sort((left, right) => right.combinedRiskScore - left.combinedRiskScore)
+      .slice(0, 8),
+    safeFoods: insights
+      .filter((insight) => insight.safeScore > insight.triggerScore || insight.combinedRiskScore <= 44)
+      .sort((left, right) => left.combinedRiskScore - right.combinedRiskScore)
+      .slice(0, 8),
   };
 }
 

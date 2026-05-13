@@ -1,12 +1,12 @@
-import { InstrumentSerif_400Regular } from '@expo-google-fonts/instrument-serif';
 import {
   PlusJakartaSans_400Regular,
   PlusJakartaSans_500Medium,
   PlusJakartaSans_600SemiBold,
   PlusJakartaSans_700Bold,
 } from '@expo-google-fonts/plus-jakarta-sans';
+import { InstrumentSerif_400Regular } from '@expo-google-fonts/instrument-serif';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { SuperwallProvider } from 'expo-superwall';
+import { SuperwallLoaded, SuperwallProvider } from 'expo-superwall';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { ReactNode } from 'react';
@@ -73,8 +73,10 @@ export function AppProviders({ children }: AppProvidersProps) {
         console.warn('[superwall] configuration error', error);
       }}
     >
-      <SuperwallIdentityBridge />
-      <SuperwallBillingBridge />
+      <SuperwallLoaded>
+        <SuperwallIdentityBridge />
+        <SuperwallBillingBridge />
+      </SuperwallLoaded>
       {content}
     </SuperwallProvider>
   );

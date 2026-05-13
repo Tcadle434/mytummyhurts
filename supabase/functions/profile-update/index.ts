@@ -9,6 +9,11 @@ function unique(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function normalizeOptionalText(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
 serve(async (request) => {
   if (isOptionsRequest(request)) {
     return jsonResponse({ ok: true });
@@ -22,16 +27,22 @@ serve(async (request) => {
     const user = await requireUser(request);
     const body = await readJsonBody<{
       onboardingAnswers?: {
+        displayName?: string | null;
         conditions?: string[];
         customConditions?: string[];
         ingredientSensitivities?: string[];
         customIngredientSensitivities?: string[];
         symptoms?: string[];
+        customSymptoms?: string[];
         symptomFrequency?: string;
         symptomSeverityBaseline?: string;
         mealContexts?: string[];
         motivation?: string;
+        currentEatingPatterns?: string[];
+        lifestyleFactors?: string[];
+        favoriteFoodsToReintroduce?: string;
       };
+      displayName?: string | null;
       knownConditions?: string[];
       knownIngredientSensitivities?: string[];
       commonSymptoms?: string[];
@@ -39,6 +50,9 @@ serve(async (request) => {
       symptomSeverityBaseline?: string;
       mealContexts?: string[];
       motivation?: string;
+      currentEatingPatterns?: string[];
+      lifestyleFactors?: string[];
+      foodsToReintroduce?: string[];
     }>(request);
 
     const admin = createAdminClient();
@@ -65,15 +79,28 @@ serve(async (request) => {
         ])
       : unique(body.knownIngredientSensitivities ?? existingRow.known_ingredient_sensitivities ?? []);
     const commonSymptoms = onboardingAnswers
-      ? unique(onboardingAnswers.symptoms ?? [])
+      ? unique([...(onboardingAnswers.symptoms ?? []), ...(onboardingAnswers.customSymptoms ?? [])])
       : unique(body.commonSymptoms ?? existingRow.common_symptoms ?? []);
     const mealContexts = onboardingAnswers
       ? unique(onboardingAnswers.mealContexts ?? [])
       : unique(body.mealContexts ?? existingRow.meal_contexts ?? []);
+    const currentEatingPatterns = onboardingAnswers
+      ? unique(onboardingAnswers.currentEatingPatterns ?? [])
+      : unique(body.currentEatingPatterns ?? existingRow.current_eating_patterns ?? []);
+    const lifestyleFactors = onboardingAnswers
+      ? unique(onboardingAnswers.lifestyleFactors ?? [])
+      : unique(body.lifestyleFactors ?? existingRow.lifestyle_factors ?? []);
+    const foodsToReintroduce = onboardingAnswers
+      ? unique(String(onboardingAnswers.favoriteFoodsToReintroduce ?? '').split(/[\n,]/))
+      : unique(body.foodsToReintroduce ?? existingRow.foods_to_reintroduce ?? []);
+    const displayName = onboardingAnswers
+      ? normalizeOptionalText(onboardingAnswers.displayName)
+      : normalizeOptionalText(body.displayName ?? existingRow.display_name ?? null);
 
     const { error: upsertError } = await admin.from('user_profiles').upsert(
       {
         user_id: user.id,
+        display_name: displayName,
         known_conditions: knownConditions,
         known_ingredient_sensitivities: knownIngredientSensitivities,
         common_symptoms: commonSymptoms,
@@ -85,6 +112,9 @@ serve(async (request) => {
           null,
         meal_contexts: mealContexts,
         motivation: onboardingAnswers?.motivation ?? body.motivation ?? existingRow.motivation ?? null,
+        current_eating_patterns: currentEatingPatterns,
+        lifestyle_factors: lifestyleFactors,
+        foods_to_reintroduce: foodsToReintroduce,
       },
       { onConflict: 'user_id' },
     );
@@ -93,8 +123,41 @@ serve(async (request) => {
       throw upsertError;
     }
 
-    const [{ profile, insights }, billing] = await Promise.all([
-      rebuildInsightsAndProfile(admin, user.id),
+    if (foodsToReintroduce.length > 0) {
+      const { data: existingTrials, error: trialLookupError } = await admin
+        .from('reintroduction_trials')
+        .select('target_food, ingredient_name')
+        .eq('user_id', user.id);
+
+      if (trialLookupError) {
+        throw trialLookupError;
+      }
+
+      const existingTrialKeys = new Set(
+        (existingTrials ?? []).map((trial) => normalizeOptionalText(trial.target_food ?? trial.ingredient_name) ?? ''),
+      );
+      const newTrials = foodsToReintroduce
+        .filter((food) => !existingTrialKeys.has(food))
+        .map((food) => ({
+          user_id: user.id,
+          ingredient_name: food,
+          target_food: food,
+          status: 'planned',
+        }));
+
+      if (newTrials.length > 0) {
+        const { error: trialInsertError } = await admin.from('reintroduction_trials').insert(newTrials);
+        if (trialInsertError) {
+          throw trialInsertError;
+        }
+      }
+    }
+
+    const [{ profile, insights, conditionInsights }, billing] = await Promise.all([
+      rebuildInsightsAndProfile(admin, user.id, {
+        eventType: onboardingAnswers ? 'onboarding_profile_created' : 'profile_updated',
+        sourceType: 'profile',
+      }),
       getBillingState(admin, user.id),
     ]);
 
@@ -102,6 +165,7 @@ serve(async (request) => {
       ok: true,
       profile,
       insights,
+      conditionInsights,
       billing,
     });
   } catch (error) {

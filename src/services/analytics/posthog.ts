@@ -1,8 +1,8 @@
 import PostHog from 'posthog-react-native';
 
-import { env, isPostHogConfigured } from '../../config/env';
+import { env, shouldUsePostHog } from '../../config/env';
 
-export const posthogClient = isPostHogConfigured
+export const posthogClient = shouldUsePostHog
   ? new PostHog(env.posthogKey, {
       host: env.posthogHost,
       persistence: 'file',

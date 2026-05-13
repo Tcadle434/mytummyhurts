@@ -18,12 +18,6 @@ before update on public.user_profiles
 for each row
 execute function public.touch_updated_at();
 
-drop trigger if exists touch_meals_updated_at on public.meals;
-create trigger touch_meals_updated_at
-before update on public.meals
-for each row
-execute function public.touch_updated_at();
-
 drop trigger if exists touch_device_tokens_updated_at on public.device_tokens;
 create trigger touch_device_tokens_updated_at
 before update on public.device_tokens
@@ -166,13 +160,10 @@ create or replace function public.complete_scan_analysis(
   p_overall_risk_level text,
   p_condition_risk_scores jsonb,
   p_possible_triggers jsonb,
-  p_structured_analysis jsonb,
-  p_followup_due_at timestamptz,
-  p_meal_origin text default null
+  p_structured_analysis jsonb
 )
 returns table (
   scan_id uuid,
-  meal_id uuid,
   token_transaction_id uuid,
   tokens_remaining integer
 )
@@ -232,22 +223,6 @@ begin
   )
   returning id into scan_id;
 
-  insert into public.meals (
-    user_id,
-    scan_id,
-    meal_origin,
-    followup_state,
-    followup_due_at
-  )
-  values (
-    p_user_id,
-    scan_id,
-    coalesce(p_meal_origin, p_source_type),
-    'pending',
-    p_followup_due_at
-  )
-  returning id into meal_id;
-
   insert into public.token_transactions (user_id, delta, reason, reference_id)
   values (p_user_id, -1, 'scan_analysis', scan_id)
   returning id into token_transaction_id;
@@ -267,9 +242,6 @@ end;
 $$;
 
 create index if not exists scans_user_created_at_idx on public.scans (user_id, created_at desc);
-create index if not exists meals_user_created_at_idx on public.meals (user_id, created_at desc);
-create index if not exists meals_user_followup_due_idx on public.meals (user_id, followup_state, followup_due_at);
-create index if not exists symptoms_meal_submitted_at_idx on public.meal_symptoms (meal_id, submitted_at desc);
 create index if not exists ingredient_insights_user_trigger_idx on public.ingredient_insights (user_id, trigger_score desc);
 create index if not exists ingredient_insights_user_safe_idx on public.ingredient_insights (user_id, safe_score desc);
 create unique index if not exists ingredient_insights_user_ingredient_idx on public.ingredient_insights (user_id, ingredient_name);

@@ -1,8 +1,9 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
-import { createSignedStorageUrl, ensureUserRow, getBillingState, getInsights, getMealById, getProfile, getScanById } from '../_shared/db.ts';
+import { createSignedStorageUrl, ensureUserRow, getBillingState, getInsights, getProfile, getScanById } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
 import { extractMealFromImage } from '../_shared/openai.ts';
+import { rebuildInsightsAndProfile } from '../_shared/profile.ts';
 import { computeScanResultFromStructured } from '../_shared/scoring.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
 
@@ -17,7 +18,7 @@ serve(async (request) => {
 
   try {
     const user = await requireUser(request);
-    const body = await readJsonBody<{ imagePath?: string; sourceType?: string }>(request);
+    const body = await readJsonBody<{ imagePath?: string; sourceType?: string; scanCategory?: string; localDate?: string; timezone?: string }>(request);
     const admin = createAdminClient();
 
     await ensureUserRow(admin, user);
@@ -29,7 +30,8 @@ serve(async (request) => {
       knownIngredients: profile?.knownIngredientSensitivities ?? [],
     });
 
-    if (extraction.clarity === 'unclear' || extraction.ingredients.length === 0) {
+    const normalizedIngredients = [...extraction.visibleIngredients, ...extraction.inferredIngredients];
+    if (extraction.clarity === 'unclear' || normalizedIngredients.length === 0) {
       return errorResponse(
         'The meal could not be analyzed clearly. Try retaking the photo with the full meal visible.',
         422,
@@ -39,12 +41,7 @@ serve(async (request) => {
     }
 
     const result = computeScanResultFromStructured(
-      {
-        dishName: extraction.dishName,
-        ingredients: extraction.ingredients,
-        prepStyle: extraction.prepStyle,
-        notes: extraction.notes,
-      },
+      extraction,
       profile,
       insights,
       signedImageUrl ?? undefined,
@@ -63,9 +60,24 @@ serve(async (request) => {
       p_structured_analysis: {
         ...result.structuredAnalysis,
         interpretation: result.interpretation,
+        gutScoreImpact: result.gutScoreImpact,
       },
-      p_followup_due_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-      p_meal_origin: body.sourceType ?? 'camera',
+      p_scan_ingredients: normalizedIngredients.map((ingredient, index) => ({
+        raw_name: ingredient.rawName,
+        canonical_name: ingredient.canonicalName,
+        confidence: ingredient.confidence,
+        evidence: ingredient.evidence,
+        component_name: ingredient.component ?? null,
+        display_order: index,
+      })),
+      p_extraction_model: result.structuredAnalysis.model,
+      p_extraction_prompt_version: result.structuredAnalysis.promptVersion,
+      p_extraction_clarity: result.structuredAnalysis.clarity,
+      p_extraction_unclear_reason: result.structuredAnalysis.unclearReason ?? null,
+      p_dish_confidence: result.structuredAnalysis.dishConfidence,
+      p_scan_category: body.scanCategory ?? 'food',
+      p_local_date: body.localDate ?? null,
+      p_timezone: body.timezone ?? null,
     });
 
     if (error) {
@@ -86,19 +98,32 @@ serve(async (request) => {
       throw new Error('missing_scan_result');
     }
 
-    const [scan, meal, billing] = await Promise.all([
+    const scanCategory = body.scanCategory ?? 'food';
+    const learning = scanCategory === 'food'
+      ? await rebuildInsightsAndProfile(admin, user.id, {
+          eventType: 'scan_completed',
+          sourceType: 'scan',
+          sourceId: String(finalized.scan_id),
+        })
+      : null;
+
+    const [scan, billing] = await Promise.all([
       getScanById(admin, finalized.scan_id),
-      getMealById(admin, finalized.meal_id),
       getBillingState(admin, user.id),
     ]);
 
     return jsonResponse({
       scanId: finalized.scan_id,
-      mealId: finalized.meal_id,
       tokensRemaining: finalized.tokens_remaining,
       scan,
-      meal,
       billing,
+      ...(learning
+        ? {
+            profile: learning.profile,
+            insights: learning.insights,
+            conditionInsights: learning.conditionInsights,
+          }
+        : {}),
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'unauthorized') {

@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { useSuperwallEvents, useUser } from 'expo-superwall';
+import { useSuperwall, useSuperwallEvents } from 'expo-superwall';
 import { ReactNode, useEffect, useRef } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
@@ -9,7 +9,6 @@ import { trackEvent } from '../../services/analytics';
 import { supabase } from '../../services/supabase/client';
 import { buildSubscriptionWindow, derivePlanFromProductId } from '../../services/billing/plans';
 import { posthogClient } from '../../services/analytics/posthog';
-import { subscribeToMealFollowupNotificationResponses } from '../../services/notifications';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { navigationRef } from '../../navigation/navigationRef';
@@ -90,11 +89,27 @@ export function RemoteBootstrapBridge() {
 
 export function SuperwallIdentityBridge() {
   const authUser = useAppStore((state) => state.authUser);
-  const { identify, update, signOut } = useUser();
+  const { identify, reset, setUserAttributes } = useSuperwall((state) => ({
+    identify: state.identify,
+    reset: state.reset,
+    setUserAttributes: state.setUserAttributes,
+  }));
+  const lastIdentitySignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const nextIdentitySignature = authUser
+      ? `${authUser.id}:${authUser.email ?? ''}:${authUser.provider ?? 'unknown'}`
+      : '__signed_out__';
+
+    if (lastIdentitySignatureRef.current === nextIdentitySignature) {
+      return;
+    }
+
+    lastIdentitySignatureRef.current = nextIdentitySignature;
+
     if (!authUser) {
-      signOut().catch((error) => {
+      reset().catch((error) => {
+        lastIdentitySignatureRef.current = null;
         console.warn('[superwall] failed to sign out user', error);
       });
       return;
@@ -102,15 +117,16 @@ export function SuperwallIdentityBridge() {
 
     identify(authUser.id)
       .then(() =>
-        update({
+        setUserAttributes({
           email: authUser.email,
           auth_provider: authUser.provider,
         }),
       )
       .catch((error) => {
+        lastIdentitySignatureRef.current = null;
         console.warn('[superwall] failed to identify user', error);
       });
-  }, [authUser, identify, update, signOut]);
+  }, [authUser?.email, authUser?.id, authUser?.provider, identify, reset, setUserAttributes]);
 
   return null;
 }
@@ -250,23 +266,30 @@ export function SuperwallBillingBridge() {
 
 export function NotificationResponseBridge() {
   useEffect(() => {
-    function openFollowup(mealId: string) {
-      trackEvent('followup_push_opened', { meal_id: mealId });
+    function openDailyReport(localDate?: string) {
+      trackEvent('daily_report_push_opened', { local_date: localDate });
       if (navigationRef.isReady()) {
-        navigationRef.navigate('FollowUp', { mealId });
+        navigationRef.navigate('DailyGutReport', { localDate });
       }
     }
 
     void Notifications.getLastNotificationResponseAsync().then((response) => {
-      const mealId = response?.notification.request.content.data?.mealId;
-      if (typeof mealId === 'string' && mealId.length > 0) {
-        openFollowup(mealId);
+      const data = response?.notification.request.content.data;
+      if (data?.type === 'daily_gut_report') {
+        openDailyReport(typeof data.localDate === 'string' ? data.localDate : undefined);
       }
     });
 
-    return subscribeToMealFollowupNotificationResponses((mealId) => {
-      openFollowup(mealId);
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.type === 'daily_gut_report') {
+        openDailyReport(typeof data.localDate === 'string' ? data.localDate : undefined);
+      }
     });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   return null;

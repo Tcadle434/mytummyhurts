@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
-import { ensureUserRow, getBillingState, getInsights, getProfile } from '../_shared/db.ts';
+import { ensureUserRow, getBillingState, getConditionIngredientInsights, getInsights, getProfile } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
 
@@ -19,15 +19,17 @@ serve(async (request) => {
     await ensureUserRow(admin, user);
     const body = request.method === 'POST' ? await readJsonBody<{ search?: string; limit?: number }>(request) : {};
 
-    const [profile, insights, billing] = await Promise.all([
+    const [profile, insights, conditionInsights, billing] = await Promise.all([
       getProfile(admin, user.id),
       getInsights(admin, user.id, { search: body.search, limit: body.limit }),
+      getConditionIngredientInsights(admin, user.id, { search: body.search, limit: body.limit }),
       getBillingState(admin, user.id),
     ]);
 
     return jsonResponse({
       profile,
       insights,
+      conditionInsights,
       billing,
     });
   } catch (error) {

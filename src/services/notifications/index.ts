@@ -2,7 +2,6 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { apiClient } from '../api/client';
-import { MealRecord, ScanRecord } from '../../types/domain';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -13,14 +12,14 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export async function getMealFollowupNotificationStatus() {
+export async function getDailyReportNotificationStatus() {
   const permissions = await Notifications.getPermissionsAsync();
   return permissions.granted || permissions.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 }
 
-export async function registerMealFollowupNotifications() {
+export async function registerDailyReportNotifications() {
   if (Platform.OS !== 'ios') {
-    throw new Error('Follow-up notifications are only configured for iPhone right now.');
+    throw new Error('Daily report reminders are only configured for iPhone right now.');
   }
 
   const currentPermissions = await Notifications.getPermissionsAsync();
@@ -47,52 +46,4 @@ export async function registerMealFollowupNotifications() {
   });
 
   return pushToken;
-}
-
-export async function syncLocalMealFollowupNotification(meal: MealRecord, scan?: ScanRecord) {
-  if (Platform.OS !== 'ios' || meal.followupState !== 'pending' || !meal.followupDueAt) {
-    return null;
-  }
-
-  const enabled = await getMealFollowupNotificationStatus();
-  if (!enabled) {
-    return null;
-  }
-
-  await cancelLocalMealFollowupNotification(meal.id);
-
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title: `Did you eat ${meal.title || scan?.dishName || 'that meal'}?`,
-      body: 'Tell us how your stomach felt so future scans get sharper.',
-      sound: true,
-      data: {
-        type: 'meal_followup',
-        mealId: meal.id,
-      },
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DATE,
-      date: new Date(meal.followupDueAt),
-    },
-  });
-}
-
-export async function cancelLocalMealFollowupNotification(mealId: string) {
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  const matching = scheduled.filter((entry) => entry.content.data?.mealId === mealId);
-  await Promise.all(matching.map((entry) => Notifications.cancelScheduledNotificationAsync(entry.identifier)));
-}
-
-export function subscribeToMealFollowupNotificationResponses(callback: (mealId: string) => void) {
-  const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-    const mealId = response.notification.request.content.data?.mealId;
-    if (typeof mealId === 'string' && mealId.length > 0) {
-      callback(mealId);
-    }
-  });
-
-  return () => {
-    subscription.remove();
-  };
 }

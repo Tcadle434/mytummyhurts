@@ -47,7 +47,8 @@
       "expo-font",
       "expo-notifications",
       "expo-camera",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-video"
     ]
   }
 }

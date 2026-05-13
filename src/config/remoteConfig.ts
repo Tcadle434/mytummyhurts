@@ -1,4 +1,4 @@
-import { isPostHogConfigured, isSuperwallConfigured, isLiveBackendConfigured } from './env';
+import { isSuperwallConfigured, shouldUseLiveBackend, shouldUsePostHog } from './env';
 import { topUpOptions } from '../data/catalog';
 
 export const remoteConfig = {
@@ -11,8 +11,8 @@ export const remoteConfig = {
   },
   topUpOptions,
   featureFlags: {
-    liveSupabase: isLiveBackendConfigured,
-    livePostHog: isPostHogConfigured,
+    liveSupabase: shouldUseLiveBackend,
+    livePostHog: shouldUsePostHog,
     liveSuperwall: isSuperwallConfigured,
     livePush: false,
   },

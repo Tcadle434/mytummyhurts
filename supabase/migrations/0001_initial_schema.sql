@@ -44,28 +44,6 @@ create table if not exists public.scans (
   completed_at timestamptz
 );
 
-create table if not exists public.meals (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.users(id) on delete cascade,
-  scan_id uuid references public.scans(id) on delete set null,
-  meal_origin text not null,
-  did_user_eat boolean,
-  eaten_time_bucket text,
-  followup_state text not null default 'pending',
-  followup_due_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.meal_symptoms (
-  id uuid primary key default gen_random_uuid(),
-  meal_id uuid not null references public.meals(id) on delete cascade,
-  severity text not null,
-  symptom_tags jsonb not null default '[]'::jsonb,
-  other_text text,
-  submitted_at timestamptz not null default now()
-);
-
 create table if not exists public.ingredient_insights (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
@@ -112,8 +90,6 @@ create table if not exists public.device_tokens (
 alter table public.users enable row level security;
 alter table public.user_profiles enable row level security;
 alter table public.scans enable row level security;
-alter table public.meals enable row level security;
-alter table public.meal_symptoms enable row level security;
 alter table public.ingredient_insights enable row level security;
 alter table public.token_transactions enable row level security;
 alter table public.subscriptions enable row level security;
@@ -127,18 +103,6 @@ create policy "users can read own profile" on public.user_profiles
 
 create policy "users can read own scans" on public.scans
   for select using (auth.uid() = user_id);
-
-create policy "users can read own meals" on public.meals
-  for select using (auth.uid() = user_id);
-
-create policy "users can read own symptoms" on public.meal_symptoms
-  for select using (
-    exists (
-      select 1 from public.meals
-      where public.meals.id = public.meal_symptoms.meal_id
-      and public.meals.user_id = auth.uid()
-    )
-  );
 
 create policy "users can read own ingredient insights" on public.ingredient_insights
   for select using (auth.uid() = user_id);

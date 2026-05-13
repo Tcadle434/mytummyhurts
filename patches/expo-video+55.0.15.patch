@@ -1,0 +1,34 @@
+diff --git a/node_modules/expo-video/ios/Records/Tracks.swift b/node_modules/expo-video/ios/Records/Tracks.swift
+index 488f12b..28f8a57 100644
+--- a/node_modules/expo-video/ios/Records/Tracks.swift
++++ b/node_modules/expo-video/ios/Records/Tracks.swift
+@@ -117,18 +117,23 @@ internal struct VideoTrack: Record, Equatable {
+       return nil
+     }
+ 
+-    let trackUrl = assetVariant.url
+-    let id = extractHlsTrackId(trackUrl: trackUrl, mainUrl: mainUrl)
+     let videoSize = videoAttributes.videoSize
+     let mimeType = videoAttributes.getFormattedCodecString()
+-    let frameRate = videoAttributes.nominalFrameRate.flatMap(Float.init)
+-    let peakBitrate = assetVariant.peakBitRate.flatMap { $0.isFinite ? Int($0) : nil }
+-    let averageBitrate = assetVariant.averageBitRate.flatMap { $0.isFinite ? Int($0) : nil }
++    let frameRate = videoAttributes.nominalFrameRate.flatMap { $0.isFinite && $0 >= 0 ? Float($0) : nil }
++    let peakBitrate = assetVariant.peakBitRate.flatMap { $0.isFinite && $0 >= 0 ? Int($0) : nil }
++    let averageBitrate = assetVariant.averageBitRate.flatMap { $0.isFinite && $0 >= 0 ? Int($0) : nil }
+     let safeFrameRate = (frameRate?.isFinite == true) ? frameRate : nil
++    let id = [
++      videoSize.map { "\($0.width)x\($0.height)" },
++      peakBitrate.map { "peak-\($0)" },
++      averageBitrate.map { "avg-\($0)" },
++      mimeType
++    ]
++      .compactMap { $0 }
++      .joined(separator: "-")
+ 
+     return VideoTrack(
+       id: id,
+-      url: trackUrl,
+       size: videoSize,
+       mimeType: mimeType,
+       bitrate: peakBitrate ?? averageBitrate,

@@ -4,7 +4,12 @@ import { useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, InfoPill, InputField, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
-import { signInWithApple, signInWithEmail, signInWithGoogle } from '../../services/auth';
+import {
+  signInWithApple,
+  signInWithEmailPassword,
+  signInWithGoogle,
+  signUpWithEmailPassword,
+} from '../../services/auth';
 import { palette, radii, spacing } from '../../theme';
 import { OnboardingStackParamList } from '../../navigation/types';
 
@@ -12,14 +17,14 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingAuth'>;
 
 export function AuthScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
-  const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | 'email' | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | 'signIn' | 'signUp' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const busyMessage = busyProvider === 'signIn' ? 'signing in' : busyProvider === 'signUp' ? 'creating your account' : `${busyProvider} sign-in`;
 
-  async function handleProvider(provider: 'apple' | 'google' | 'email') {
+  async function handleProvider(provider: 'apple' | 'google') {
     setBusyProvider(provider);
     setErrorMessage(null);
-    setStatusMessage(null);
 
     try {
       if (provider === 'apple') {
@@ -28,14 +33,27 @@ export function AuthScreen({ navigation }: Props) {
         return;
       }
 
-      if (provider === 'google') {
-        await signInWithGoogle();
-        navigation.replace('FirstScanLanding');
-        return;
-      }
+      await signInWithGoogle();
+      navigation.replace('FirstScanLanding');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Authentication failed.';
+      setErrorMessage(message);
+    } finally {
+      setBusyProvider(null);
+    }
+  }
 
-      await signInWithEmail(email);
-      setStatusMessage('Magic link sent. Open it on this device to finish linking your account.');
+  async function handleEmailAuth(mode: 'signIn' | 'signUp') {
+    setBusyProvider(mode);
+    setErrorMessage(null);
+
+    try {
+      if (mode === 'signIn') {
+        await signInWithEmailPassword(email, password);
+      } else {
+        await signUpWithEmailPassword(email, password);
+      }
+      navigation.replace('FirstScanLanding');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Authentication failed.';
       setErrorMessage(message);
@@ -71,20 +89,41 @@ export function AuthScreen({ navigation }: Props) {
       </SectionCard>
 
       <SectionCard>
-        <Text>Use email instead</Text>
-        <InputField value={email} placeholder="you@example.com" onChangeText={setEmail} />
+        <Text>Email and password</Text>
+        <InputField
+          value={email}
+          placeholder="you@example.com"
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          textContentType="emailAddress"
+        />
+        <InputField
+          value={password}
+          placeholder="Password"
+          onChangeText={setPassword}
+          autoCapitalize="none"
+          autoComplete="password"
+          secureTextEntry
+          textContentType="password"
+        />
         <PrimaryButton
-          label={busyProvider === 'email' ? 'Sending link…' : 'Continue with email'}
-          onPress={() => void handleProvider('email')}
+          label={busyProvider === 'signIn' ? 'Signing in…' : 'Sign in'}
+          onPress={() => void handleEmailAuth('signIn')}
+          disabled={busyProvider !== null}
+        />
+        <SecondaryButton
+          label={busyProvider === 'signUp' ? 'Creating account…' : 'Create account'}
+          onPress={() => void handleEmailAuth('signUp')}
           disabled={busyProvider !== null}
         />
         {busyProvider ? (
           <View style={styles.feedbackRow}>
             <ActivityIndicator color={palette.primary} />
-            <Text style={styles.feedbackText}>Working on {busyProvider} sign-in…</Text>
+            <Text style={styles.feedbackText}>Working on {busyMessage}…</Text>
           </View>
         ) : null}
-        {statusMessage ? <InfoPill label={statusMessage} tone="soft" /> : null}
         {errorMessage ? <InfoPill label={errorMessage} tone="warm" /> : null}
       </SectionCard>
     </AppScreen>

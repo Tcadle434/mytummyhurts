@@ -19,7 +19,9 @@ export const env = {
 };
 
 export const isLiveBackendConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
+export const shouldUseLiveBackend = isLiveBackendConfigured;
 export const isPostHogConfigured = Boolean(env.posthogKey);
+export const shouldUsePostHog = isPostHogConfigured;
 export const isSuperwallConfigured = Boolean(env.superwallApiKey);
 export const isGoogleAuthConfigured = Boolean(env.googleIosClientId || env.googleWebClientId);
 export const isAppleAuthConfigured = Boolean(env.appleTeamId && env.iosBundleId);

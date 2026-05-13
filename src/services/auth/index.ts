@@ -148,22 +148,50 @@ export async function signInWithApple() {
   return syncSessionToStore(data.session);
 }
 
-export async function signInWithEmail(email: string) {
+function normalizeEmailPassword(email: string, password: string) {
   const resolvedEmail = email.trim();
   if (!resolvedEmail) {
     throw new Error('Enter an email address to continue.');
   }
 
-  const { error } = await requireSupabaseClient().auth.signInWithOtp({
+  if (!password) {
+    throw new Error('Enter a password to continue.');
+  }
+
+  if (password.length < 6) {
+    throw new Error('Password must be at least 6 characters.');
+  }
+
+  return {
     email: resolvedEmail,
-    options: {
-      emailRedirectTo: redirectTo,
-    },
-  });
+    password,
+  };
+}
+
+export async function signInWithEmailPassword(email: string, password: string) {
+  const credentials = normalizeEmailPassword(email, password);
+  const { data, error } = await requireSupabaseClient().auth.signInWithPassword(credentials);
 
   if (error) {
     throw error;
   }
+
+  return syncSessionToStore(data.session);
+}
+
+export async function signUpWithEmailPassword(email: string, password: string) {
+  const credentials = normalizeEmailPassword(email, password);
+  const { data, error } = await requireSupabaseClient().auth.signUp(credentials);
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data.session) {
+    throw new Error('Account created, but Supabase email confirmation is still enabled. Disable Confirm email in Supabase Auth settings so signup returns a session.');
+  }
+
+  return syncSessionToStore(data.session);
 }
 
 export async function restoreSupabaseSession() {

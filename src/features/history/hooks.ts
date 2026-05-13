@@ -1,12 +1,13 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 
+import { isLiveBackendConfigured } from '../../config/env';
 import { apiClient } from '../../services/api/client';
 import { queryKeys } from '../../services/query/keys';
-import { MealRecord } from '../../types/domain';
+import { ScanRecord } from '../../types/domain';
 
 type HistoryGroup = {
   label: string;
-  items: MealRecord[];
+  items: ScanRecord[];
 };
 
 function formatGroupLabel(isoDate: string) {
@@ -30,13 +31,13 @@ function formatGroupLabel(isoDate: string) {
   });
 }
 
-export function groupHistoryMeals(meals: MealRecord[]) {
-  const groups = new Map<string, MealRecord[]>();
+export function groupHistoryScans(scans: ScanRecord[]) {
+  const groups = new Map<string, ScanRecord[]>();
 
-  for (const meal of meals) {
-    const label = formatGroupLabel(meal.createdAt);
+  for (const scan of scans) {
+    const label = formatGroupLabel(scan.createdAt);
     const current = groups.get(label) ?? [];
-    current.push(meal);
+    current.push(scan);
     groups.set(label, current);
   }
 
@@ -56,5 +57,6 @@ export function useHistoryFeed(pageSize = 20) {
         pageSize,
       }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
+    enabled: isLiveBackendConfigured,
   });
 }

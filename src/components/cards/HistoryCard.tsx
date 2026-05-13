@@ -1,88 +1,154 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { createRiskTone } from '../../store/useAppStore';
-import { palette, type } from '../../theme';
-import { MealRecord, RiskLevel, ScanRecord } from '../../types/domain';
-import { DetailRow, InfoPill, PrimaryButton, SectionCard, SecondaryButton } from '../common/UI';
+import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { ScanRecord } from '../../types/domain';
 
 type HistoryCardProps = {
-  meal: MealRecord;
-  scan?: ScanRecord;
+  scan: ScanRecord;
   onOpen: () => void;
-  onDidEat?: () => void;
-  onDidNotEat?: () => void;
+  onDelete?: () => void;
+  deleteDisabled?: boolean;
+  deleteLabel?: string;
 };
 
-function describeState(meal: MealRecord, level?: RiskLevel) {
-  if (meal.followupState === 'answered_no') {
-    return 'Not eaten';
-  }
-
-  if (meal.didUserEat) {
-    return 'Logged';
-  }
-
-  if (meal.followupState === 'pending') {
-    return 'Awaiting follow-up';
-  }
-
-  return 'Saved';
-}
-
-export function HistoryCard({ meal, scan, onOpen, onDidEat, onDidNotEat }: HistoryCardProps) {
-  const stateLabel = describeState(meal, scan?.overallRiskLevel);
+export function HistoryCard({ scan, onOpen, onDelete, deleteDisabled, deleteLabel }: HistoryCardProps) {
+  const tone = scan.overallRiskLevel === 'high' ? palette.high : scan.overallRiskLevel === 'medium' ? palette.medium : palette.low;
 
   return (
-    <SectionCard style={styles.card}>
-      <View style={styles.row}>
-        <View style={{ flex: 1, gap: 6 }}>
-          <Text style={styles.title}>{meal.title}</Text>
-          <Text style={styles.subtitle}>{new Date(meal.createdAt).toLocaleString()}</Text>
+    <View style={styles.card}>
+      <Pressable onPress={onOpen} style={({ pressed }) => [styles.openArea, pressed && { opacity: 0.84 }]}>
+        <View style={styles.leadingWrap}>
+          {scan.imageUri ? (
+            <Image source={{ uri: scan.imageUri }} style={styles.thumb} resizeMode="cover" />
+          ) : (
+            <View style={styles.placeholderThumb}>
+              <Text style={styles.placeholderLabel}>{scan.dishName.charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
         </View>
-        <InfoPill label={stateLabel} tone={meal.followupState === 'pending' ? 'soft' : 'default'} />
-      </View>
 
-      {scan ? (
-        <>
-          <DetailRow label="Risk" value={`${scan.overallRiskScore} • ${createRiskTone(scan.overallRiskLevel)}`} />
-          {scan.possibleTriggers.length ? (
-            <DetailRow label="Possible triggers" value={scan.possibleTriggers.slice(0, 3).join(', ')} />
-          ) : null}
-        </>
+        <View style={styles.content}>
+          <Text style={styles.title} numberOfLines={1}>
+            {scan.dishName}
+          </Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {categoryLabel(scan.scanCategory)}
+            {' • '}
+            {sourceLabel(scan.sourceType)}
+            {' • '}
+            {formatTimestamp(scan.createdAt)}
+          </Text>
+        </View>
+
+        <View style={[styles.scoreRing, { borderColor: tone }]}>
+          <Text style={[styles.scoreLabel, { color: tone }]}>{scan.overallRiskScore}</Text>
+        </View>
+      </Pressable>
+
+      {onDelete ? (
+        <Pressable
+          disabled={deleteDisabled}
+          onPress={onDelete}
+          style={({ pressed }) => [styles.deleteRow, (pressed || deleteDisabled) && { opacity: pressed ? 0.84 : 0.45 }]}
+        >
+          <Ionicons name="trash-outline" size={14} color={palette.danger} />
+          <Text style={styles.deleteLabel}>{deleteLabel ?? 'Delete'}</Text>
+        </Pressable>
       ) : null}
-
-      {meal.followupState === 'pending' ? (
-        <View style={styles.actions}>
-          {onDidEat ? <PrimaryButton label="Yes, I ate it" onPress={onDidEat} /> : null}
-          {onDidNotEat ? <SecondaryButton label="No, I didn't" onPress={onDidNotEat} /> : null}
-        </View>
-      ) : (
-        <SecondaryButton label="Open" onPress={onOpen} />
-      )}
-    </SectionCard>
+    </View>
   );
+}
+
+function categoryLabel(value: ScanRecord['scanCategory']) {
+  if (value === 'menu') return 'Menu';
+  if (value === 'grocery') return 'Grocery';
+  return 'Food';
+}
+
+function sourceLabel(value: ScanRecord['sourceType']) {
+  if (value === 'manual_text') return 'Text';
+  if (value === 'upload' || value === 'manual_upload') return 'Upload';
+  return 'Photo';
+}
+
+function formatTimestamp(value: string) {
+  const date = new Date(value);
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 const styles = StyleSheet.create({
   card: {
-    gap: 14,
+    ...components.card.default,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
-  row: {
+  openArea: {
     flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  leadingWrap: {
+    width: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  placeholderThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: tokens.color.status.success.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderLabel: {
+    color: palette.primaryDark,
+    fontFamily: type.body.bold,
+    fontSize: 18,
+  },
+  content: {
+    flex: 1,
+    gap: 3,
   },
   title: {
     color: palette.text,
     fontFamily: type.body.bold,
-    fontSize: 17,
+    fontSize: 20,
+    letterSpacing: -0.2,
   },
   subtitle: {
     color: palette.textMuted,
     fontFamily: type.body.regular,
     fontSize: 13,
   },
-  actions: {
-    gap: 10,
+  scoreRing: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreLabel: {
+    fontFamily: type.body.bold,
+    fontSize: 21,
+    letterSpacing: -0.4,
+  },
+  deleteRow: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingTop: 2,
+  },
+  deleteLabel: {
+    color: palette.danger,
+    fontFamily: type.body.medium,
+    fontSize: 13,
   },
 });

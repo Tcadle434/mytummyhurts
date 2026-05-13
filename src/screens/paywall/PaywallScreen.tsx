@@ -150,7 +150,7 @@ export function PaywallScreen({ navigation }: Props) {
       <SectionCard>
         <InfoPill label="1-week free trial" tone="soft" />
         <DetailRow label="Included scans each month" value={`${billing.monthlyAllowance}`} />
-        <DetailRow label="History and follow-ups" value="Unlimited" />
+        <DetailRow label="History and daily reports" value="Unlimited" />
         <DetailRow label="Trigger and safe-food insights" value="Included" />
         <DetailRow label="Restore purchases" value="Available in the paywall experience" />
       </SectionCard>

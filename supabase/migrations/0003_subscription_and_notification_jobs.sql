@@ -10,10 +10,6 @@ alter table public.subscriptions
   add column if not exists last_refill_period_start timestamptz,
   add column if not exists canceled_at timestamptz;
 
-alter table public.meals
-  add column if not exists followup_notified_at timestamptz,
-  add column if not exists followup_notification_count integer not null default 0;
-
 alter table public.device_tokens
   add column if not exists disabled_at timestamptz,
   add column if not exists last_sent_at timestamptz,
@@ -27,9 +23,6 @@ alter table public.token_transactions
 create unique index if not exists token_transactions_user_external_reference_idx
 on public.token_transactions (user_id, external_reference)
 where external_reference is not null;
-
-create index if not exists meals_followup_dispatch_idx
-on public.meals (followup_state, followup_due_at, followup_notified_at);
 
 create index if not exists device_tokens_active_idx
 on public.device_tokens (user_id, disabled_at)
@@ -100,23 +93,5 @@ begin
   new_balance := v_current_balance + p_delta;
   applied := true;
   return next;
-end;
-$$;
-
-create or replace function public.record_followup_notification(
-  p_meal_id uuid,
-  p_notified_at timestamptz default now()
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  update public.meals
-  set followup_notified_at = coalesce(followup_notified_at, p_notified_at),
-      followup_notification_count = followup_notification_count + 1,
-      updated_at = now()
-  where id = p_meal_id;
 end;
 $$;

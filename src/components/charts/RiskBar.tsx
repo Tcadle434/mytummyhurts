@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { palette, radii, type } from '../../theme';
+import { components, radii, tokens, type } from '../../theme';
 import { RiskLevel } from '../../types/domain';
 
 type RiskBarProps = {
@@ -10,18 +10,21 @@ type RiskBarProps = {
 };
 
 export function RiskBar({ label, score, level }: RiskBarProps) {
-  const tone = level === 'high' ? palette.high : level === 'medium' ? palette.medium : palette.low;
+  const tone =
+    level === 'high'
+      ? components.chart.risk.high
+      : level === 'medium'
+        ? components.chart.risk.medium
+        : components.chart.risk.low;
+  const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
 
   return (
     <View style={styles.row}>
-      <View style={styles.meta}>
-        <Text style={styles.label}>{label}</Text>
-        <Text style={[styles.level, { color: tone }]}>{level}</Text>
-      </View>
+      <Text style={styles.label}>{label}</Text>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${score}%`, backgroundColor: tone }]} />
       </View>
-      <Text style={styles.score}>{score}</Text>
+      <Text style={[styles.level, { color: tone }]}>{levelLabel}</Text>
     </View>
   );
 }
@@ -32,36 +35,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  meta: {
-    width: 92,
-    gap: 2,
-  },
   label: {
-    color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
+    width: 62,
+    color: tokens.color.text.primary,
+    fontFamily: type.body.medium,
+    fontSize: 14,
   },
   level: {
+    width: 54,
+    textAlign: 'right',
     fontFamily: type.body.medium,
-    fontSize: 11,
-    textTransform: 'capitalize',
+    fontSize: 13,
   },
   track: {
     flex: 1,
-    height: 10,
+    height: 6,
     borderRadius: radii.pill,
-    backgroundColor: '#E7E2D6',
+    backgroundColor: components.chart.track,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
     borderRadius: radii.pill,
-  },
-  score: {
-    width: 32,
-    textAlign: 'right',
-    color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
   },
 });

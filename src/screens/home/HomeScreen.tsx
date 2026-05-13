@@ -1,130 +1,841 @@
-import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
-import { NavigationProp, useNavigation } from '@react-navigation/native';
+import { Ionicons } from "@expo/vector-icons";
+import { NavigationProp, useNavigation } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
+import { useEffect, useMemo, useState } from "react";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Gauge } from '../../components/charts/Gauge';
+import { AppScreen, EmptyState, SectionCard, SkeletonBlock } from "../../components/common/UI";
+import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
+import { isLiveBackendConfigured } from "../../config/env";
+import { useHistoryFeed } from "../../features/history/hooks";
+import { useInsightsData } from "../../features/insights/hooks";
+import { RootStackParamList } from "../../navigation/types";
+import { trackEvent } from "../../services/analytics";
+import { useAppStore } from "../../store/useAppStore";
+import { components, palette, radii, shadows, spacing, tokens, type } from "../../theme";
+import { ScanRecord } from "../../types/domain";
+import { localDaypartGreeting, relativeTime } from "../../utils/time";
 import {
-  AppScreen,
-  AvatarButton,
-  PrimaryButton,
-  ScreenHeader,
-  SectionCard,
-  SecondaryButton,
-  Wordmark,
-} from '../../components/common/UI';
-import { useHistoryFeed } from '../../features/history/hooks';
-import { useInsightsData } from '../../features/insights/hooks';
-import { trackEvent } from '../../services/analytics';
-import { selectDueMeal, selectLatestScan, useAppStore } from '../../store/useAppStore';
-import { palette, spacing, type } from '../../theme';
-import { RootStackParamList } from '../../navigation/types';
+	buildWeeklyProgressDay,
+	buildWeeklyProgressDays,
+	yesterdayLocalDate,
+} from "../../utils/weeklyProgress";
+import { GutScoreHomeCard } from "./GutScoreHomeCard";
+import { GutScoreInfoModal } from "./GutScoreInfoModal";
+
+const MTH_TEXT_LOGO = require("../../../assets/mth_text_logo.png");
 
 export function HomeScreen() {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const fallbackMeals = useAppStore((state) => state.meals);
-  const fallbackScans = useAppStore((state) => state.scans);
-  const fallbackBilling = useAppStore((state) => state.billing);
-  const setFollowupState = useAppStore((state) => state.setFollowupState);
-  const fallbackProfile = useAppStore((state) => state.profile);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
-  const historyQuery = useHistoryFeed(12);
-  const insightsQuery = useInsightsData('');
+	const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+	const fallbackScans = useAppStore((state) => state.scans);
+	const fallbackReports = useAppStore((state) => state.dailyReports);
+	const fallbackProfile = useAppStore((state) => state.profile);
+	const fallbackBilling = useAppStore((state) => state.billing);
+	const authUser = useAppStore((state) => state.authUser);
+	const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
+	const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
+	const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
+	const [gutScoreInfoVisible, setGutScoreInfoVisible] = useState(false);
+	const [clockNow, setClockNow] = useState(() => new Date());
 
-  const firstPage = historyQuery.data?.pages[0];
-  const meals = firstPage ? [...firstPage.pendingMeals, ...firstPage.recentMeals] : fallbackMeals;
-  const scans = firstPage?.scans ?? fallbackScans;
-  const billing = insightsQuery.data?.billing ?? fallbackBilling;
-  const profile = insightsQuery.data?.profile ?? fallbackProfile;
-  const latestScan = scans[0] ? selectLatestScan(scans, scans[0].id) : undefined;
-  const dueMeal = selectDueMeal(meals);
-  const bannerScan = dueMeal?.scanId ? scans.find((scan) => scan.id === dueMeal.scanId) : undefined;
+	const greeting = localDaypartGreeting(clockNow);
+	const historyQuery = useHistoryFeed(12);
+	const insightsQuery = useInsightsData("");
+	const hasRemoteQueryData = Boolean(historyQuery.data && insightsQuery.data);
+	const isWaitingForInitialRemoteData = Boolean(
+		isLiveBackendConfigured &&
+			authUser &&
+			!hasRemoteQueryData &&
+			(!remoteDataLoaded || initialServerSyncNeeded || serverSyncInFlight) &&
+			!historyQuery.isError &&
+			!insightsQuery.isError,
+	);
+	const canUseFallbackData = !isWaitingForInitialRemoteData;
+	const firstPage = historyQuery.data?.pages[0];
+	const scans = canUseFallbackData ? firstPage?.scans ?? fallbackScans : [];
+	const dailyReports = canUseFallbackData ? firstPage?.dailyReports ?? fallbackReports : [];
+	const profile = canUseFallbackData
+		? insightsQuery.data?.profile ?? fallbackProfile
+		: insightsQuery.data?.profile;
+	const billing = canUseFallbackData
+		? insightsQuery.data?.billing ?? fallbackBilling
+		: undefined;
+	const recentScans = scans
+		.filter((scan) => (scan.scanCategory ?? "food") === "food")
+		.slice(0, 3);
+	const yesterdayDate = yesterdayLocalDate(clockNow);
+	const yesterdayReport = dailyReports.find((report) => report.localDate === yesterdayDate);
+	const needsDailyReport = !yesterdayReport;
+	const displayName = profile?.displayName?.trim();
+	const profileMeta = profile?.stomachProfile.metadata;
+	const gutScore = profileMeta?.gutScore;
 
-  useEffect(() => {
-    trackEvent('home_viewed');
-    if (dueMeal) {
-      trackEvent('followup_banner_viewed', { meal_id: dueMeal.id });
-    }
-  }, [dueMeal]);
+	const streakCount = useMemo(() => computeFoodLogStreak(scans), [scans]);
+	const weeklyProgressDays = useMemo(
+		() =>
+			buildWeeklyProgressDays({
+				scans,
+				reports: dailyReports,
+				anchorDate: clockNow,
+			}),
+		[clockNow, dailyReports, scans]
+	);
+	const featuredDailyScoreDay = useMemo(
+		() =>
+			buildWeeklyProgressDay({
+				scans,
+				reports: dailyReports,
+				localDate: yesterdayDate,
+			}),
+		[dailyReports, scans, yesterdayDate]
+	);
+	const tokensFraction = billing?.monthlyAllowance
+		? Math.min(billing.tokensRemaining / billing.monthlyAllowance, 1)
+		: 0;
 
-  return (
-    <AppScreen>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Wordmark />
-        <AvatarButton onPress={() => navigation.navigate('Settings')} />
-      </View>
+	useEffect(() => {
+		trackEvent("home_viewed");
+		trackEvent("gut_score_viewed", {
+			score: gutScore?.currentScore,
+			phase: gutScore?.phase,
+			trend_delta_7d: gutScore?.trendDelta7d,
+		});
+	}, [gutScore?.currentScore, gutScore?.phase, gutScore?.trendDelta7d]);
 
-      {dueMeal && !bannerDismissed ? (
-        <SectionCard>
-          <Text style={{ color: palette.text, fontFamily: type.body.bold, fontSize: 18 }}>
-            Earlier you scanned {bannerScan?.dishName ?? dueMeal.title}. Did you eat it?
-          </Text>
-          <Text style={{ color: palette.textMuted, fontFamily: type.body.regular, fontSize: 14 }}>
-            Close the loop so we can learn what actually affected you.
-          </Text>
-          <PrimaryButton label="Yes" onPress={() => navigation.navigate('FollowUp', { mealId: dueMeal.id })} />
-          <SecondaryButton
-            label="No"
-            onPress={() => {
-              void setFollowupState(dueMeal.id, false);
-            }}
-          />
-          <SecondaryButton
-            label="Later"
-            onPress={() => {
-              setBannerDismissed(true);
-              trackEvent('followup_banner_dismissed', { meal_id: dueMeal.id });
-            }}
-          />
-        </SectionCard>
-      ) : null}
+	useEffect(() => {
+		const interval = setInterval(() => setClockNow(new Date()), 60 * 1000);
+		return () => clearInterval(interval);
+	}, []);
 
-      <ScreenHeader
-        eyebrow="Scan-first"
-        title="Scan a meal before you eat it."
-        subtitle="We'll estimate how likely it is to trigger symptoms based on your stomach profile."
-      />
+	return (
+		<AppScreen>
+			<View style={styles.headerStack}>
+				<View style={styles.topRow}>
+					<Image
+						source={MTH_TEXT_LOGO}
+						style={styles.textLogo}
+						resizeMode="contain"
+						accessibilityLabel="MyTummyHurts"
+					/>
 
-      <SectionCard>
-        <Text style={{ color: palette.textMuted, fontFamily: type.body.regular, fontSize: 15, lineHeight: 22 }}>
-          Conditions on file: {profile?.knownConditions.length ? profile.knownConditions.join(', ') : 'General digestive logic'}
-        </Text>
-        <PrimaryButton
-          label="Take photo"
-          onPress={() => navigation.navigate('ScanCapture', { sourceType: 'camera', manualMode: false })}
-        />
-      </SectionCard>
+					<Pressable
+						accessibilityRole="button"
+						accessibilityLabel="Open settings"
+						onPress={() => {
+							navigation.navigate("Settings");
+						}}
+						style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.78 }]}
+					>
+						<Ionicons
+							name="settings-outline"
+							size={20}
+							color={tokens.color.icon.primary}
+						/>
+					</Pressable>
+				</View>
 
-      <SectionCard>
-        <Text style={{ color: palette.text, fontFamily: type.body.bold, fontSize: 18 }}>Subscription status</Text>
-        <Text style={{ color: palette.textMuted, fontFamily: type.body.regular, fontSize: 14 }}>
-          {billing.subscriptionStatus === 'trialing'
-            ? `Trial active · ${billing.tokensRemaining} scans left`
-            : `${billing.tokensRemaining} scans left`}
-        </Text>
-      </SectionCard>
+				<View style={styles.titleStack}>
+					{isWaitingForInitialRemoteData ? (
+						<>
+							<SkeletonBlock width="72%" height={30} radius={radii.sm} />
+							<SkeletonBlock width={112} height={20} radius={radii.sm} />
+						</>
+					) : (
+						<Text style={styles.greetingText} numberOfLines={1} ellipsizeMode="tail">
+							{displayName ? `${greeting}, ${displayName} 👋` : `${greeting} 👋`}
+						</Text>
+					)}
+					{!isWaitingForInitialRemoteData && streakCount > 0 ? (
+						<View style={styles.streakRow}>
+							<Text style={styles.streakIcon}>🔥</Text>
+							<Text style={styles.streakText}>{streakCount} day streak</Text>
+						</View>
+					) : null}
+				</View>
+			</View>
 
-      {latestScan ? (
-        <SectionCard>
-          <Text style={{ color: palette.text, fontFamily: type.body.bold, fontSize: 18 }}>Latest scan</Text>
-          <Gauge score={latestScan.overallRiskScore} label={latestScan.overallRiskLevel} />
-          <Text style={{ color: palette.text, fontFamily: type.body.semibold, fontSize: 17 }}>{latestScan.dishName}</Text>
-          <Text style={{ color: palette.textMuted, fontFamily: type.body.regular, fontSize: 14 }}>
-            {latestScan.interpretation}
-          </Text>
-          <SecondaryButton label="Open result" onPress={() => navigation.navigate('ScanResult', { scanId: latestScan.id, mealId: dueMeal?.id ?? createFallbackMealId(meals, latestScan.id) })} />
-        </SectionCard>
-      ) : (
-        <SectionCard>
-          <Text style={{ color: palette.text, fontFamily: type.body.bold, fontSize: 18 }}>Nothing scanned yet</Text>
-          <Text style={{ color: palette.textMuted, fontFamily: type.body.regular, fontSize: 14 }}>
-            The first scan is the magic moment. History and insights will start filling in after that.
-          </Text>
-        </SectionCard>
-      )}
-    </AppScreen>
-  );
+			{isWaitingForInitialRemoteData || !gutScore ? (
+				<GutScoreHomeCardSkeleton />
+			) : (
+				<GutScoreHomeCard
+					score={gutScore.currentScore}
+					trendDelta7d={gutScore.trendDelta7d}
+					onPress={() => {
+						trackEvent("gut_score_detail_opened", { entry_point: "home_card" });
+						navigation.navigate("GutScoreDetail");
+					}}
+					onInfoPress={() => setGutScoreInfoVisible(true)}
+				/>
+			)}
+
+			{isWaitingForInitialRemoteData ? (
+				<WeeklyProgressCardSkeleton />
+			) : (
+				<WeeklyProgressCard
+					days={weeklyProgressDays}
+					featuredDay={featuredDailyScoreDay}
+					onFeaturedMealsPress={(day) =>
+						navigation.navigate("DailyScoreDay", { localDate: day.localDate })
+					}
+					onFeaturedSymptomsPress={(day) =>
+						navigation.navigate("DailyScoreDay", { localDate: day.localDate })
+					}
+					onPress={() => {
+						trackEvent("weekly_progress_opened", { entry_point: "home_card" });
+						navigation.navigate("WeeklyProgress");
+					}}
+				/>
+			)}
+
+			<Pressable
+				onPress={() =>
+					navigation.navigate("ScanCapture", { sourceType: "camera", manualMode: false })
+				}
+				style={({ pressed }) => [styles.scanCtaShell, pressed && { opacity: 0.92 }]}
+			>
+				<LinearGradient
+					colors={[...components.scanCta.gradient]}
+					start={{ x: 0, y: 0 }}
+					end={{ x: 1, y: 1 }}
+					style={styles.scanCtaGradient}
+				>
+					<View style={styles.scanAccentLeft} />
+					<View style={styles.scanAccentRight} />
+					<Ionicons name="camera-outline" size={42} color={components.scanCta.title} />
+					<Text style={styles.scanTitle}>Scan a meal</Text>
+					<Text style={styles.scanSubtitle}>Get instant insights</Text>
+					<View style={styles.scanArrow}>
+						<Ionicons
+							name="arrow-forward"
+							size={18}
+							color={components.scanCta.arrowForeground}
+						/>
+					</View>
+				</LinearGradient>
+			</Pressable>
+
+			<View style={styles.sectionHeader}>
+				<Text style={styles.sectionTitle}>Your day</Text>
+			</View>
+
+			{isWaitingForInitialRemoteData ? (
+				<DailyReportCardSkeleton />
+			) : (
+				<Pressable
+					onPress={() =>
+						navigation.navigate("DailyGutReport", { localDate: yesterdayDate })
+					}
+					style={({ pressed }) => [
+						styles.dailyReportCard,
+						pressed && { opacity: 0.92 },
+					]}
+				>
+					<View style={styles.dailyReportIcon}>
+						<Ionicons
+							name={needsDailyReport ? "pulse-outline" : "checkmark"}
+							size={19}
+							color={palette.primary}
+						/>
+					</View>
+					<View style={styles.dailyReportCopy}>
+						<Text style={styles.dailyReportTitle}>
+							{needsDailyReport
+								? "How did your gut feel yesterday?"
+								: `Yesterday felt ${severityLabel(yesterdayReport.gutSeverity)}`}
+						</Text>
+						<Text style={styles.dailyReportSubtitle}>
+							{needsDailyReport
+								? "Log one daily report so your food history can become personalized evidence."
+								: `${yesterdayReport.gutSeverity}/10 severity. Tap to edit the report.`}
+						</Text>
+					</View>
+					<Ionicons name="chevron-forward" size={19} color={palette.textMuted} />
+				</Pressable>
+			)}
+
+			{isWaitingForInitialRemoteData || !billing ? (
+				<TokenStatSkeleton />
+			) : (
+				<SectionCard style={styles.statCard}>
+					<View style={styles.statRow}>
+						<View style={styles.statLabelWrap}>
+							<View style={[styles.statIcon, { backgroundColor: palette.softBlue }]}>
+								<Ionicons
+									name="flash-outline"
+									size={16}
+									color={tokens.color.icon.info}
+								/>
+							</View>
+							<Text style={styles.statLabel}>Scans left this month</Text>
+						</View>
+						<Text style={styles.statValue}>
+							{billing.tokensRemaining} / {billing.monthlyAllowance}
+						</Text>
+					</View>
+					<View style={styles.progressTrack}>
+						<View
+							style={[
+								styles.progressFill,
+								{ width: `${Math.max(tokensFraction * 100, 8)}%` },
+							]}
+						/>
+					</View>
+				</SectionCard>
+			)}
+
+			{isWaitingForInitialRemoteData ? (
+				<RecentScansSkeleton />
+			) : recentScans.length ? (
+				<View style={styles.recentWrap}>
+					{recentScans.map((scan) => {
+						return (
+							<Pressable
+								key={scan.id}
+								onPress={() =>
+									navigation.navigate("ScanResult", {
+										scanId: scan.id,
+									})
+								}
+								style={({ pressed }) => [
+									styles.recentCard,
+									pressed && { opacity: 0.92 },
+								]}
+							>
+								<View style={styles.recentCopy}>
+									<Text style={styles.recentTitle} numberOfLines={1}>
+										{scan.dishName}
+									</Text>
+									<Text style={styles.recentMeta}>
+										{relativeTime(scan.createdAt)}
+									</Text>
+								</View>
+								<View
+									style={[
+										styles.recentScore,
+										{ borderColor: riskTone(scan.overallRiskLevel) },
+									]}
+								>
+									<Text
+										style={[
+											styles.recentScoreText,
+											{ color: riskTone(scan.overallRiskLevel) },
+										]}
+									>
+										{scan.overallRiskScore}
+									</Text>
+								</View>
+							</Pressable>
+						);
+					})}
+				</View>
+			) : (
+				<EmptyState
+					title="Nothing logged yet"
+					subtitle="Your first food scan will start building your personalized stomach profile."
+				/>
+			)}
+
+			<GutScoreInfoModal
+				visible={gutScoreInfoVisible}
+				onClose={() => setGutScoreInfoVisible(false)}
+			/>
+		</AppScreen>
+	);
 }
 
-function createFallbackMealId(meals: ReturnType<typeof useAppStore.getState>['meals'], scanId: string) {
-  return meals.find((meal) => meal.scanId === scanId)?.id ?? meals[0]?.id ?? '';
+function GutScoreHomeCardSkeleton() {
+	return (
+		<SectionCard style={styles.gutScoreSkeletonCard}>
+			<View style={styles.skeletonCopyColumn}>
+				<View style={styles.skeletonHeaderRow}>
+					<SkeletonBlock width={96} height={24} radius={radii.sm} />
+					<SkeletonBlock width={28} height={28} radius={14} />
+				</View>
+				<View style={styles.skeletonScoreRow}>
+					<SkeletonBlock width={84} height={58} radius={radii.md} />
+					<SkeletonBlock
+						width={52}
+						height={26}
+						radius={radii.sm}
+						style={styles.skeletonScoreScale}
+					/>
+				</View>
+				<SkeletonBlock width={124} height={18} radius={radii.sm} />
+				<SkeletonBlock width={150} height={44} radius={radii.sm} />
+				<View style={styles.skeletonTrendCard}>
+					<SkeletonBlock width={88} height={16} radius={radii.sm} />
+					<SkeletonBlock width={106} height={24} radius={radii.sm} />
+					<SkeletonBlock width={82} height={18} radius={radii.sm} />
+				</View>
+			</View>
+			<View style={styles.skeletonVisualWrap}>
+				<SkeletonBlock width={150} height={118} radius={radii.xxl} />
+				<SkeletonBlock width={92} height={34} radius={radii.pill} />
+			</View>
+		</SectionCard>
+	);
 }
+
+function DailyReportCardSkeleton() {
+	return (
+		<View style={styles.dailyReportCard}>
+			<SkeletonBlock width={42} height={42} radius={21} />
+			<View style={styles.dailyReportCopy}>
+				<SkeletonBlock width="82%" height={22} radius={radii.sm} />
+				<SkeletonBlock width="96%" height={18} radius={radii.sm} />
+			</View>
+			<SkeletonBlock width={18} height={18} radius={9} />
+		</View>
+	);
+}
+
+function WeeklyProgressCardSkeleton() {
+	return (
+		<SectionCard style={styles.weeklyProgressSkeletonCard}>
+			<View style={styles.weeklyProgressSkeletonHeader}>
+				<View style={styles.skeletonCopyColumn}>
+					<SkeletonBlock width={136} height={24} radius={radii.sm} />
+				</View>
+				<SkeletonBlock width={18} height={18} radius={9} />
+			</View>
+			<View style={styles.weeklyProgressSkeletonFeature}>
+				<SkeletonBlock width={116} height={116} radius={58} />
+				<View style={styles.weeklyProgressSkeletonFeatureCopy}>
+					<SkeletonBlock width={118} height={14} radius={radii.sm} />
+					<SkeletonBlock width="90%" height={18} radius={radii.sm} />
+					<SkeletonBlock width="82%" height={18} radius={radii.sm} />
+				</View>
+			</View>
+			<View style={styles.weeklyProgressSkeletonDays}>
+				{[0, 1, 2, 3, 4, 5, 6].map((item) => (
+					<View key={item} style={styles.weeklyProgressSkeletonDay}>
+						<SkeletonBlock width={14} height={14} radius={radii.sm} />
+						<SkeletonBlock width={30} height={30} radius={15} />
+						<SkeletonBlock width={18} height={18} radius={9} />
+						<SkeletonBlock width={22} height={14} radius={radii.sm} />
+					</View>
+				))}
+			</View>
+			<SkeletonBlock width="88%" height={16} radius={radii.sm} />
+		</SectionCard>
+	);
+}
+
+function TokenStatSkeleton() {
+	return (
+		<SectionCard style={styles.statCard}>
+			<View style={styles.statRow}>
+				<View style={styles.statLabelWrap}>
+					<SkeletonBlock width={30} height={30} radius={15} />
+					<SkeletonBlock width={160} height={20} radius={radii.sm} />
+				</View>
+				<SkeletonBlock width={62} height={22} radius={radii.sm} />
+			</View>
+			<SkeletonBlock height={10} radius={radii.pill} />
+		</SectionCard>
+	);
+}
+
+function RecentScansSkeleton() {
+	return (
+		<View style={styles.recentWrap}>
+			{[0, 1].map((item) => (
+				<View key={item} style={styles.recentCard}>
+					<View style={styles.recentCopy}>
+						<SkeletonBlock width="62%" height={20} radius={radii.sm} />
+						<SkeletonBlock width="38%" height={16} radius={radii.sm} />
+					</View>
+					<SkeletonBlock width={44} height={44} radius={22} />
+				</View>
+			))}
+		</View>
+	);
+}
+
+function computeFoodLogStreak(scans: ScanRecord[]) {
+	const days = Array.from(
+		new Set(
+			scans
+				.filter((scan) => (scan.scanCategory ?? "food") === "food")
+				.map((scan) =>
+					new Date(scan.createdAt).toLocaleDateString("en-US", {
+						year: "numeric",
+						month: "2-digit",
+						day: "2-digit",
+					})
+				)
+		)
+	)
+		.map((value) => new Date(value))
+		.sort((left, right) => right.getTime() - left.getTime());
+
+	let streak = 0;
+	let cursor = new Date();
+	cursor.setHours(0, 0, 0, 0);
+
+	for (const day of days) {
+		day.setHours(0, 0, 0, 0);
+		if (day.getTime() === cursor.getTime()) {
+			streak += 1;
+			cursor.setDate(cursor.getDate() - 1);
+			continue;
+		}
+
+		if (streak === 0) {
+			const yesterday = new Date(cursor);
+			yesterday.setDate(yesterday.getDate() - 1);
+			if (day.getTime() === yesterday.getTime()) {
+				streak += 1;
+				cursor = yesterday;
+			}
+		}
+	}
+
+	return streak;
+}
+
+function riskTone(level: ScanRecord["overallRiskLevel"]) {
+	if (level === "high") {
+		return palette.high;
+	}
+
+	if (level === "medium") {
+		return palette.medium;
+	}
+
+	return palette.low;
+}
+
+function severityLabel(value: number) {
+	if (value <= 3) {
+		return "calm";
+	}
+
+	if (value <= 6) {
+		return "mixed";
+	}
+
+	return "reactive";
+}
+
+const styles = StyleSheet.create({
+	headerStack: {
+		gap: spacing.md,
+	},
+	topRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: spacing.md,
+	},
+	textLogo: {
+		width: 164,
+		height: 34,
+		flexShrink: 1,
+	},
+	titleStack: {
+		gap: spacing.xs,
+	},
+	greetingText: {
+		color: palette.text,
+		fontFamily: type.body.bold,
+		fontSize: 24,
+		lineHeight: 30,
+		letterSpacing: -0.4,
+	},
+	streakRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+	},
+	streakIcon: {
+		fontSize: 15,
+	},
+	streakText: {
+		color: palette.textMuted,
+		fontFamily: type.body.medium,
+		fontSize: 15,
+	},
+	iconButton: {
+		width: 42,
+		height: 42,
+		borderRadius: 21,
+		backgroundColor: tokens.color.surface.frosted,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	gutScoreSkeletonCard: {
+		minHeight: 224,
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: spacing.sm,
+		paddingVertical: spacing.xl,
+	},
+	skeletonCopyColumn: {
+		flex: 1,
+		minWidth: 0,
+		gap: spacing.xs,
+	},
+	skeletonHeaderRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		marginBottom: spacing.xs,
+	},
+	skeletonScoreRow: {
+		flexDirection: "row",
+		alignItems: "flex-end",
+		gap: spacing.xs,
+	},
+	skeletonScoreScale: {
+		marginBottom: 8,
+	},
+	skeletonTrendCard: {
+		alignSelf: "flex-start",
+		minWidth: 132,
+		marginTop: spacing.sm,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		borderRadius: radii.md,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.frosted,
+		gap: spacing.xs,
+	},
+	skeletonVisualWrap: {
+		width: 156,
+		alignItems: "center",
+		justifyContent: "center",
+		gap: spacing.xs,
+	},
+	weeklyProgressSkeletonCard: {
+		gap: spacing.md,
+		padding: spacing.md,
+	},
+	weeklyProgressSkeletonHeader: {
+		flexDirection: "row",
+		alignItems: "flex-start",
+		justifyContent: "space-between",
+		gap: spacing.md,
+	},
+	weeklyProgressSkeletonFeature: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.lg,
+		paddingVertical: spacing.xs,
+	},
+	weeklyProgressSkeletonFeatureCopy: {
+		flex: 1,
+		gap: spacing.xs,
+	},
+	weeklyProgressSkeletonDays: {
+		flexDirection: "row",
+		gap: spacing.xs,
+	},
+	weeklyProgressSkeletonDay: {
+		flex: 1,
+		minHeight: 142,
+		alignItems: "center",
+		justifyContent: "space-between",
+		paddingVertical: spacing.sm,
+		borderRadius: radii.md,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.frosted,
+	},
+	scanCtaShell: {
+		borderRadius: radii.xxl,
+		overflow: "hidden",
+		...shadows.lift,
+	},
+	scanCtaGradient: {
+		minHeight: 212,
+		borderRadius: radii.xxl,
+		paddingHorizontal: spacing.lg,
+		paddingVertical: spacing.xl,
+		alignItems: "center",
+		justifyContent: "center",
+		gap: spacing.sm,
+		position: "relative",
+	},
+	scanAccentLeft: {
+		position: "absolute",
+		width: 84,
+		height: 84,
+		borderRadius: 42,
+		backgroundColor: components.scanCta.ornamentLeft,
+		left: -16,
+		bottom: -10,
+	},
+	scanAccentRight: {
+		position: "absolute",
+		width: 118,
+		height: 118,
+		borderRadius: 59,
+		backgroundColor: components.scanCta.ornamentRight,
+		right: -28,
+		top: -20,
+	},
+	scanTitle: {
+		color: components.scanCta.title,
+		fontFamily: type.body.bold,
+		fontSize: 38,
+		letterSpacing: -1,
+	},
+	scanSubtitle: {
+		color: components.scanCta.subtitle,
+		fontFamily: type.body.medium,
+		fontSize: 18,
+	},
+	scanArrow: {
+		position: "absolute",
+		right: spacing.lg,
+		bottom: spacing.lg,
+		width: 42,
+		height: 42,
+		borderRadius: 21,
+		backgroundColor: components.scanCta.arrowBackground,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	sectionHeader: {
+		marginTop: 2,
+	},
+	sectionTitle: {
+		color: palette.text,
+		fontFamily: type.body.bold,
+		fontSize: 24,
+		letterSpacing: -0.4,
+	},
+	dailyReportCard: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.md,
+		backgroundColor: components.card.default.backgroundColor,
+		borderRadius: radii.xl,
+		borderWidth: 1,
+		borderColor: components.card.default.borderColor,
+		padding: spacing.lg,
+		...shadows.card,
+	},
+	dailyReportIcon: {
+		width: 42,
+		height: 42,
+		borderRadius: 21,
+		backgroundColor: tokens.color.status.success.background,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	dailyReportCopy: {
+		flex: 1,
+		gap: 3,
+	},
+	dailyReportTitle: {
+		color: palette.text,
+		fontFamily: type.body.bold,
+		fontSize: 18,
+		letterSpacing: -0.2,
+	},
+	dailyReportSubtitle: {
+		color: palette.textMuted,
+		fontFamily: type.body.medium,
+		fontSize: 14,
+		lineHeight: 20,
+	},
+	statCard: {
+		gap: spacing.sm,
+	},
+	statRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: spacing.md,
+	},
+	statLabelWrap: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.sm,
+	},
+	statIcon: {
+		width: 30,
+		height: 30,
+		borderRadius: 15,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	statLabel: {
+		color: palette.text,
+		fontFamily: type.body.semibold,
+		fontSize: 16,
+	},
+	statValue: {
+		color: palette.text,
+		fontFamily: type.body.semibold,
+		fontSize: 16,
+	},
+	progressTrack: {
+		height: 10,
+		borderRadius: radii.pill,
+		backgroundColor: palette.line,
+		overflow: "hidden",
+	},
+	progressFill: {
+		height: "100%",
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.chart.info,
+	},
+	recentWrap: {
+		gap: spacing.sm,
+	},
+	recentCard: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: spacing.md,
+		backgroundColor: tokens.color.surface.card.default,
+		borderRadius: radii.xl,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		paddingHorizontal: spacing.lg,
+		paddingVertical: spacing.md,
+	},
+	recentCopy: {
+		flex: 1,
+		gap: 3,
+	},
+	recentTitle: {
+		color: palette.text,
+		fontFamily: type.body.bold,
+		fontSize: 18,
+	},
+	recentMeta: {
+		color: palette.textMuted,
+		fontFamily: type.body.medium,
+		fontSize: 13,
+	},
+	recentScore: {
+		width: 54,
+		height: 54,
+		borderRadius: 27,
+		borderWidth: 4,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	recentScoreText: {
+		fontFamily: type.body.bold,
+		fontSize: 20,
+		letterSpacing: -0.5,
+	},
+	dismissLink: {
+		alignSelf: "center",
+		paddingVertical: 6,
+	},
+	dismissLabel: {
+		color: palette.textMuted,
+		fontFamily: type.body.medium,
+		fontSize: 14,
+	},
+});

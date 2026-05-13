@@ -4,13 +4,26 @@ import { addPlanDuration, derivePlanFromProductId } from '../_shared/billing.ts'
 import { sendApnsNotification } from '../_shared/apns.ts';
 import {
   getActiveDeviceTokens,
-  getDueFollowupMeals,
   getLatestSubscription,
   getUsersDueForRenewal,
   markDeviceTokenDelivery,
 } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody, requireInternalSecret } from '../_shared/http.ts';
+import { rebuildInsightsAndProfile } from '../_shared/profile.ts';
 import { createAdminClient } from '../_shared/supabase.ts';
+
+function requireMaintenanceSecret(request: Request) {
+  try {
+    requireInternalSecret(request, 'FOLLOWUP_DISPATCH_SECRET');
+    return;
+  } catch (error) {
+    if (!(error instanceof Error) || !['forbidden', 'internal_secret_missing'].includes(error.message)) {
+      throw error;
+    }
+  }
+
+  requireInternalSecret(request, 'MAINTENANCE_DISPATCH_SECRET');
+}
 
 async function processRenewals(limit: number) {
   const admin = createAdminClient();
@@ -79,24 +92,28 @@ async function processRenewals(limit: number) {
   return renewedCount;
 }
 
-async function markMealProcessedWithoutPush(admin: ReturnType<typeof createAdminClient>, mealId: string) {
-  const { error } = await admin
-    .from('meals')
-    .update({
-      followup_notified_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', mealId);
-
-  if (error) {
-    throw error;
-  }
+function yesterdayUtcDate() {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
 }
 
-async function processFollowups(limit: number) {
+async function processDailyReportReminders(limit: number) {
   const admin = createAdminClient();
-  const dueMeals = await getDueFollowupMeals(admin, { limit });
-  if (!dueMeals.length) {
+  const localDate = yesterdayUtcDate();
+  const { data: userRows, error: usersError } = await admin
+    .from('users')
+    .select('id')
+    .in('subscription_status', ['trialing', 'active', 'in_grace'])
+    .order('last_seen_at', { ascending: false })
+    .limit(limit);
+
+  if (usersError) {
+    throw usersError;
+  }
+
+  const userIds = (userRows ?? []).map((row) => String(row.id));
+  if (!userIds.length) {
     return {
       attempted: 0,
       sent: 0,
@@ -104,26 +121,22 @@ async function processFollowups(limit: number) {
     };
   }
 
-  const userIds = Array.from(new Set(dueMeals.map((meal) => String(meal.user_id))));
-  const scanIds = Array.from(
-    new Set(
-      dueMeals
-        .map((meal) => meal.scan_id)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0),
-    ),
-  );
-
-  const [deviceTokens, scansResult] = await Promise.all([
+  const [deviceTokens, reportsResult, remindersResult] = await Promise.all([
     getActiveDeviceTokens(admin, userIds),
-    scanIds.length
-      ? admin.from('scans').select('id, dish_name').in('id', scanIds)
-      : Promise.resolve({ data: [], error: null }),
+    admin.from('daily_gut_reports').select('user_id').eq('local_date', localDate).in('user_id', userIds),
+    admin.from('daily_gut_report_reminders').select('user_id').eq('local_date', localDate).in('user_id', userIds),
   ]);
 
-  if (scansResult.error) {
-    throw scansResult.error;
+  if (reportsResult.error) {
+    throw reportsResult.error;
   }
 
+  if (remindersResult.error) {
+    throw remindersResult.error;
+  }
+
+  const completedUserIds = new Set((reportsResult.data ?? []).map((row) => String(row.user_id)));
+  const remindedUserIds = new Set((remindersResult.data ?? []).map((row) => String(row.user_id)));
   const tokensByUser = new Map<string, Array<{ push_token: string }>>();
   for (const tokenRow of deviceTokens) {
     const current = tokensByUser.get(String(tokenRow.user_id)) ?? [];
@@ -131,40 +144,34 @@ async function processFollowups(limit: number) {
     tokensByUser.set(String(tokenRow.user_id), current);
   }
 
-  const titlesByScanId = new Map<string, string>();
-  for (const scanRow of scansResult.data ?? []) {
-    titlesByScanId.set(String(scanRow.id), String(scanRow.dish_name ?? 'that meal'));
-  }
-
   let sent = 0;
   let suppressed = 0;
+  let attempted = 0;
 
-  for (const mealRow of dueMeals) {
-    const mealId = String(mealRow.id);
-    const mealTokens = tokensByUser.get(String(mealRow.user_id)) ?? [];
-    const title = mealRow.scan_id ? titlesByScanId.get(String(mealRow.scan_id)) ?? 'that meal' : 'that meal';
+  for (const userId of userIds) {
+    if (completedUserIds.has(userId) || remindedUserIds.has(userId)) {
+      continue;
+    }
 
-    if (!mealTokens.length) {
-      await markMealProcessedWithoutPush(admin, mealId);
+    const userTokens = tokensByUser.get(userId) ?? [];
+    if (!userTokens.length) {
       suppressed += 1;
       continue;
     }
 
-    let attempted = false;
     let pushSucceeded = false;
-
-    for (const token of mealTokens) {
-      attempted = true;
+    attempted += 1;
+    for (const token of userTokens) {
       const result = await sendApnsNotification({
         pushToken: token.push_token,
         alert: {
-          title: `Did you eat ${title}?`,
-          body: 'Tell us how your stomach felt so future scans get sharper.',
+          title: 'How did your gut feel yesterday?',
+          body: 'Log one daily report so your food history gets more personal.',
         },
         data: {
-          type: 'meal_followup',
-          mealId,
-          screen: 'FollowUp',
+          type: 'daily_gut_report',
+          localDate,
+          screen: 'DailyGutReport',
         },
       });
 
@@ -181,30 +188,54 @@ async function processFollowups(limit: number) {
       });
     }
 
-    if (!attempted) {
-      await markMealProcessedWithoutPush(admin, mealId);
-      suppressed += 1;
-      continue;
-    }
-
-    const { error: mealNotificationError } = await admin.rpc('record_followup_notification', {
-      p_meal_id: mealId,
-    });
-
-    if (mealNotificationError) {
-      throw mealNotificationError;
-    }
-
     if (pushSucceeded) {
+      const { error: reminderInsertError } = await admin
+        .from('daily_gut_report_reminders')
+        .upsert(
+          {
+            user_id: userId,
+            local_date: localDate,
+            sent_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,local_date' },
+        );
+      if (reminderInsertError) {
+        throw reminderInsertError;
+      }
       sent += 1;
     }
   }
 
   return {
-    attempted: dueMeals.length,
+    attempted,
     sent,
     suppressed,
   };
+}
+
+async function processGutScoreRefresh(limit: number) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('users')
+    .select('id')
+    .in('subscription_status', ['trialing', 'active', 'in_grace'])
+    .order('last_seen_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  let refreshed = 0;
+  for (const row of data ?? []) {
+    await rebuildInsightsAndProfile(admin, String(row.id), {
+      eventType: 'daily_score_refresh',
+      sourceType: 'scheduled_maintenance',
+    });
+    refreshed += 1;
+  }
+
+  return refreshed;
 }
 
 serve(async (request) => {
@@ -217,18 +248,20 @@ serve(async (request) => {
   }
 
   try {
-    requireInternalSecret(request);
+    requireMaintenanceSecret(request);
     const body = await readJsonBody<{ limit?: number }>(request);
     const limit = Math.min(100, Math.max(1, Number(body.limit ?? 40)));
-    const [renewedSubscriptions, followups] = await Promise.all([
+    const [renewedSubscriptions, dailyReportReminders, gutScoresRefreshed] = await Promise.all([
       processRenewals(limit),
-      processFollowups(limit),
+      processDailyReportReminders(limit),
+      processGutScoreRefresh(limit),
     ]);
 
     return jsonResponse({
       ok: true,
       renewedSubscriptions,
-      followups,
+      dailyReportReminders,
+      gutScoresRefreshed,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'forbidden') {

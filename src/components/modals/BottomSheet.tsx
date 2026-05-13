@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
-import { palette, radii, shadows, spacing } from '../../theme';
+import { components, spacing } from '../../theme';
 
 type BottomSheetProps = {
   visible: boolean;
@@ -26,27 +26,18 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: palette.overlay,
+    backgroundColor: components.bottomSheet.backdrop,
   },
   sheetWrap: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: palette.card,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-    paddingTop: spacing.md,
+    ...components.bottomSheet.shell,
     gap: spacing.md,
-    ...shadows.lift,
   },
   handle: {
-    width: 52,
-    height: 5,
-    borderRadius: 99,
-    backgroundColor: palette.border,
+    ...components.bottomSheet.handle,
     alignSelf: 'center',
   },
 });
