@@ -166,8 +166,8 @@ export interface StomachProfileIngredientScore {
 
 export interface StomachProfile {
   version: number;
-  conditions: Array<{ name: string; source: 'user' | 'learned'; active: boolean }>;
-  declaredIngredientSensitivities: Array<{ name: string; source: 'user' | 'learned'; active: boolean }>;
+  conditions: { name: string; source: 'user' | 'learned'; active: boolean }[];
+  declaredIngredientSensitivities: { name: string; source: 'user' | 'learned'; active: boolean }[];
   ingredientScores: Record<string, StomachProfileIngredientScore>;
   conditionSensitivityWeights: Record<string, number>;
   freeformCustomNotes: string[];

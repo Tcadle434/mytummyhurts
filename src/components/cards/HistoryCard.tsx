@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { components, palette, spacing, tokens, type } from '../../theme';
 import { ScanRecord } from '../../types/domain';
 
 type HistoryCardProps = {

@@ -53,7 +53,7 @@ export function InsightDetailScreen({ route }: Props) {
         };
       })
       .filter(Boolean)
-      .slice(0, 6) as Array<{ id: string; mealTitle: string; note: string; when: string }>;
+      .slice(0, 6) as { id: string; mealTitle: string; note: string; when: string }[];
   }, [dailyReports, insight, scans]);
 
   if (!insight) {

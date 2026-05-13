@@ -13,7 +13,8 @@
     "test:scoring": "vitest run src/services/ai/__tests__/scoring.test.ts",
     "postinstall": "patch-package",
     "typecheck": "tsc --noEmit",
-    "prebuild:ios": "expo prebuild --platform ios"
+    "prebuild:ios": "expo prebuild --platform ios",
+    "lint": "expo lint"
   },
   "dependencies": {
     "@expo-google-fonts/instrument-serif": "^0.4.1",
@@ -65,6 +66,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~55.0.1",
     "patch-package": "^8.0.1",
     "typescript": "~5.9.2",
     "vitest": "^4.1.6"

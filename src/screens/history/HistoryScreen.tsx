@@ -15,7 +15,7 @@ import { ScanCategory, ScanRecord } from '../../types/domain';
 
 type HistoryFilter = 'food' | 'menu' | 'grocery';
 
-const filters: Array<{ id: HistoryFilter; label: string }> = [
+const filters: { id: HistoryFilter; label: string }[] = [
   { id: 'food', label: 'Food' },
   { id: 'menu', label: 'Menu' },
   { id: 'grocery', label: 'Grocery' },

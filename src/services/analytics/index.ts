@@ -2,7 +2,7 @@ import { posthogClient } from './posthog';
 
 type AnalyticsProperties = Record<string, string | number | boolean | undefined | null>;
 
-const eventLog: Array<{ name: string; properties: AnalyticsProperties; ts: string }> = [];
+const eventLog: { name: string; properties: AnalyticsProperties; ts: string }[] = [];
 
 export function trackEvent(name: string, properties: AnalyticsProperties = {}) {
   const normalizedProperties = Object.entries(properties).reduce<Record<string, string | number | boolean | null>>(

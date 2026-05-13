@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
-import { Image as RNImage, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image as RNImage, StyleSheet, Text, View } from 'react-native';
 
 import { RiskBar } from '../../components/charts/RiskBar';
 import { AppScreen, InfoPill, PipAnalysisCard, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
@@ -13,7 +13,7 @@ import { ExtractedIngredient, ScanRecord } from '../../types/domain';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanResult'>;
 
-const swapSuggestions: Array<{ match: string[]; label: string; detail: string }> = [
+const swapSuggestions: { match: string[]; label: string; detail: string }[] = [
   { match: ['dairy', 'cream', 'milk', 'cheese'], label: 'Lactose-free alternative', detail: 'Lower dairy load' },
   { match: ['garlic', 'onion'], label: 'Garlic-infused oil', detail: 'Flavor with lower fructan load' },
   { match: ['wheat', 'bread', 'pasta', 'noodle'], label: 'Gluten-free swap', detail: 'Lower wheat exposure' },

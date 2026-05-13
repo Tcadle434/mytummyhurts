@@ -61,7 +61,7 @@ export function buildWeeklyProgressDays({
 
 export function createMockWeeklyProgressDays(): WeeklyProgressDay[] {
 	const weekStart = getMondayWeekStart(new Date());
-	const mockScores: Array<number | undefined> = [82, 75, 71, 80, 66, 76, undefined];
+	const mockScores: (number | undefined)[] = [82, 75, 71, 80, 66, 76, undefined];
 	const mockMeals = [1, 1, 1, 1, 1, 1, 0];
 
 	return withDailyScoreTrends(

@@ -29,18 +29,6 @@ function normalizeDisplayName(value: string | null | undefined) {
   return normalized ? normalized : null;
 }
 
-function requestedDisplayName(request: ProfileUpdateRequest) {
-  if (typeof request.onboardingAnswers?.displayName !== 'undefined') {
-    return request.onboardingAnswers.displayName;
-  }
-
-  if (typeof request.displayName !== 'undefined') {
-    return request.displayName;
-  }
-
-  return undefined;
-}
-
 function mergeDisplayName(profile: UserProfile | null, displayName: string | null | undefined) {
   if (!profile || typeof displayName === 'undefined') {
     return profile;

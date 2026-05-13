@@ -1,7 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AppleButton } from '@invertase/react-native-apple-authentication';
 import { useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, InfoPill, InputField, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
 import {
@@ -10,17 +11,24 @@ import {
   signInWithGoogle,
   signUpWithEmailPassword,
 } from '../../services/auth';
+import { useAppStore } from '../../store/useAppStore';
 import { palette, radii, spacing } from '../../theme';
 import { OnboardingStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingAuth'>;
 
 export function AuthScreen({ navigation }: Props) {
+  const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | 'signIn' | 'signUp' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const busyMessage = busyProvider === 'signIn' ? 'signing in' : busyProvider === 'signUp' ? 'creating your account' : `${busyProvider} sign-in`;
+
+  function returnToPaywall() {
+    setOnboardingStage('paywall');
+    navigation.replace('OnboardingPaywall');
+  }
 
   async function handleProvider(provider: 'apple' | 'google') {
     setBusyProvider(provider);
@@ -64,6 +72,15 @@ export function AuthScreen({ navigation }: Props) {
 
   return (
     <AppScreen>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to paywall"
+        onPress={returnToPaywall}
+        style={({ pressed }) => [styles.tempBackButton, pressed && { opacity: 0.72 }]}
+      >
+        <Ionicons name="arrow-back" size={22} color={palette.primary} />
+      </Pressable>
+
       <ScreenHeader
         eyebrow="Account creation"
         title="Create your account"
@@ -134,6 +151,15 @@ const styles = StyleSheet.create({
   appleButton: {
     height: 54,
     borderRadius: radii.md,
+  },
+  tempBackButton: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+    width: 40,
   },
   feedbackRow: {
     alignItems: 'center',

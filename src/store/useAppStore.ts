@@ -23,7 +23,6 @@ import { queryKeys } from '../services/query/keys';
 import { uploadMealImage } from '../services/storage';
 import {
   AppUser,
-  AuthProvider,
   BillingState,
   ConditionIngredientInsight,
   DailyGutReport,

@@ -15,7 +15,7 @@ import { DailyGutReport, IngredientInsight } from '../../types/domain';
 
 type WindowKey = '7d' | '30d' | 'all';
 
-const windowOptions: Array<{ id: WindowKey; label: string }> = [
+const windowOptions: { id: WindowKey; label: string }[] = [
   { id: '7d', label: '7 Days' },
   { id: '30d', label: '30 Days' },
   { id: 'all', label: 'All Time' },
@@ -348,7 +348,7 @@ function DailyScoreChartSkeleton() {
   );
 }
 
-function LineCard({ points }: { points: Array<{ label: string; value: number }> }) {
+function LineCard({ points }: { points: { label: string; value: number }[] }) {
   const chartWidth = 290;
   const chartHeight = 120;
   const max = Math.max(...points.map((point) => point.value), 1);

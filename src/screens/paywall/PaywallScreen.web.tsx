@@ -1,15 +1,16 @@
+import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, DetailRow, InfoPill, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
 import { env } from '../../config/env';
+import { onboardingSteps } from '../../data/onboarding';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, spacing, type } from '../../theme';
-import { RootStackParamList } from '../../navigation/types';
-import { OnboardingStackParamList } from '../../navigation/types';
+import { palette, radii, spacing, type } from '../../theme';
+import { RootStackParamList, OnboardingStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingPaywall'>;
 
@@ -32,6 +33,8 @@ export function PaywallScreen({ navigation }: Props) {
   const selectPlan = useAppStore((state) => state.selectPlan);
   const completePurchase = useAppStore((state) => state.completePurchase);
   const stageEntitlementAccess = useAppStore((state) => state.stageEntitlementAccess);
+  const setOnboardingStepIndex = useAppStore((state) => state.setOnboardingStepIndex);
+  const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
   const [busyIntent, setBusyIntent] = useState<'subscribe' | 'restore' | null>(null);
 
   useEffect(() => {
@@ -51,8 +54,23 @@ export function PaywallScreen({ navigation }: Props) {
     setBusyIntent(null);
   }
 
+  function returnToOnboarding() {
+    setOnboardingStepIndex(onboardingSteps.length - 1);
+    setOnboardingStage('flow');
+    navigation.replace('OnboardingFlow');
+  }
+
   return (
     <AppScreen>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to onboarding"
+        onPress={returnToOnboarding}
+        style={({ pressed }) => [styles.tempBackButton, pressed && { opacity: 0.72 }]}
+      >
+        <Ionicons name="arrow-back" size={22} color={palette.primary} />
+      </Pressable>
+
       <ScreenHeader
         eyebrow="Subscription"
         title="Stop guessing what food will do to your stomach."
@@ -123,6 +141,15 @@ export function PaywallScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  tempBackButton: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+    width: 40,
+  },
   planHeader: {
     color: palette.text,
     fontFamily: type.body.bold,

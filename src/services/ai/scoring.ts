@@ -782,14 +782,6 @@ function baselineGutScore(answers: OnboardingAnswers) {
   return clampNumber(Math.round(75 - totalPenalty), 10, 75);
 }
 
-function reportBurdenValue(gutSeverity: number) {
-  const severity = Math.max(1, Math.min(10, Math.round(gutSeverity)));
-  if (severity <= 3) return 8 + (severity - 1) * 6;
-  if (severity <= 6) return 38 + (severity - 4) * 8;
-  if (severity <= 8) return 62 + (severity - 7) * 8;
-  return 88 + (severity - 9) * 4;
-}
-
 function symptomDailyScore(gutSeverity: number) {
   const severity = Math.max(1, Math.min(10, Math.round(gutSeverity)));
   return clamp(110 - severity * 11);
@@ -1531,13 +1523,13 @@ function linkedConditionsForReport(report: DailyGutReport, activeConditions: str
 }
 
 function groupFoodScansByLocalDate(
-  scans: Array<{
+  scans: {
     structuredAnalysis: StructuredAnalysisV2;
     overallRiskScore?: number;
     createdAt?: string;
     localDate?: string;
     scanCategory?: string;
-  }>,
+  }[],
 ) {
   const scansByDate = new Map<string, typeof scans>();
   for (const scan of scans) {
@@ -1555,7 +1547,7 @@ function groupFoodScansByLocalDate(
 }
 
 function uniqueIngredientsForScans(
-  scans: Array<{ structuredAnalysis: StructuredAnalysisV2; createdAt?: string }>,
+  scans: { structuredAnalysis: StructuredAnalysisV2; createdAt?: string }[],
 ) {
   const ingredients = new Map<string, { name: string; lastSeenAt: string }>();
 
@@ -1577,13 +1569,13 @@ function uniqueIngredientsForScans(
 }
 
 export function recomputeInsights(
-  scans: Array<{
+  scans: {
     id: string;
     structuredAnalysis: StructuredAnalysisV2;
     createdAt?: string;
     localDate?: string;
     scanCategory?: string;
-  }>,
+  }[],
   dailyReports: DailyGutReport[],
   options: {
     declaredSensitivities?: string[];
@@ -1695,13 +1687,13 @@ export function recomputeInsights(
 }
 
 export function recomputeConditionIngredientInsights(
-  scans: Array<{
+  scans: {
     id: string;
     structuredAnalysis: StructuredAnalysisV2;
     createdAt?: string;
     localDate?: string;
     scanCategory?: string;
-  }>,
+  }[],
   dailyReports: DailyGutReport[],
   options: {
     activeConditions?: string[];

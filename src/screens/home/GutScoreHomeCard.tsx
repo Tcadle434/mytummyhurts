@@ -80,7 +80,7 @@ function GutScoreVisual({ score, zone }: { score: number; zone: GutScoreZone }) 
 }
 
 function SegmentedGutScoreArc({ activeZone }: { activeZone: GutScoreZone }) {
-  const segments: Array<{ zone: GutScoreZone; start: number; end: number; color: string }> = [
+  const segments: { zone: GutScoreZone; start: number; end: number; color: string }[] = [
     { zone: 'low', start: -132, end: -52, color: tokens.color.status.risk.high.tint },
     { zone: 'medium', start: -40, end: 40, color: tokens.color.status.risk.medium.tint },
     { zone: 'high', start: 52, end: 132, color: tokens.color.status.risk.low.tint },

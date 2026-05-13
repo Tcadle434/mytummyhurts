@@ -13,11 +13,11 @@ import { DailyGutReport, GutScoreDriver, GutScoreState } from '../../types/domai
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GutScoreDetail'>;
 
-const componentCopy: Array<{
+const componentCopy: {
   key: keyof GutScoreState['components'];
   label: string;
   detail: string;
-}> = [
+}[] = [
   {
     key: 'recentDailyOutcome',
     label: 'Recent daily outcome',
