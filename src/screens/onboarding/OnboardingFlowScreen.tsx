@@ -7,11 +7,18 @@ import {
 	Modal,
 	Platform,
 	Pressable,
+	ScrollView,
 	StyleSheet,
 	Text,
 	useWindowDimensions,
 	View,
 } from "react-native";
+import Animated, {
+	Easing,
+	useAnimatedStyle,
+	useSharedValue,
+	withTiming,
+} from "react-native-reanimated";
 
 import { Gauge } from "../../components/charts/Gauge";
 import { RiskBar } from "../../components/charts/RiskBar";
@@ -96,6 +103,14 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const centerImageWidth = centerImageHeight * (1024 / 1535);
 	const isPhaseDiscoveryStep = step.id === "phase-discovery";
 	const isStartingScoreStep = step.id === "gut-score-analyzing";
+	const isChoiceStep = step.type === "multi_select" || step.type === "single_select";
+	const hasRequiredAnswer = currentStepHasRequiredAnswer();
+	const transitionOpacity = useSharedValue(1);
+	const transitionTranslateY = useSharedValue(0);
+	const transitionStyle = useAnimatedStyle(() => ({
+		opacity: transitionOpacity.value,
+		transform: [{ translateY: transitionTranslateY.value }],
+	}));
 	const headerTitle =
 		isStartingScoreStep && startingScoreState === "revealed"
 			? "Your starting Gut Score is ready"
@@ -119,18 +134,29 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		: step.cta;
 	const ctaDisabled =
 		(isPhaseDiscoveryStep && phaseDiscoveryState === "loading") ||
-		(isStartingScoreStep && startingScoreState === "loading");
+		(isStartingScoreStep && startingScoreState === "loading") ||
+		!hasRequiredAnswer;
 
 	useEffect(() => {
 		clearPhaseDiscoveryTimeout();
 		clearStartingScoreTimeout();
+		transitionOpacity.value = 0;
+		transitionTranslateY.value = 10;
+		transitionOpacity.value = withTiming(1, {
+			duration: 240,
+			easing: Easing.out(Easing.cubic),
+		});
+		transitionTranslateY.value = withTiming(0, {
+			duration: 240,
+			easing: Easing.out(Easing.cubic),
+		});
 		if (step.id === "phase-discovery") {
 			setPhaseDiscoveryState("scan");
 		}
 		if (step.id === "gut-score-analyzing") {
 			setStartingScoreState("ready");
 		}
-	}, [step.id]);
+	}, [step.id, transitionOpacity, transitionTranslateY]);
 
 	useEffect(() => {
 		return () => {
@@ -154,6 +180,10 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	}
 
 	function handleContinue() {
+		if (ctaDisabled) {
+			return;
+		}
+
 		if (isPhaseDiscoveryStep && phaseDiscoveryState === "scan") {
 			trackEvent("onboarding_phase_discovery_analyze_tapped");
 			clearPhaseDiscoveryTimeout();
@@ -213,6 +243,22 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 		setStepIndex(stepIndex - 1);
+	}
+
+	function currentStepHasRequiredAnswer() {
+		if (step.type === "single_select" && step.field) {
+			const value = answers[step.field];
+			return Array.isArray(value) ? value.length > 0 : Boolean(value);
+		}
+
+		if (step.type === "multi_select" && step.field) {
+			const value = answers[step.field];
+			const customField = customFieldForCurrentStep();
+			const customValues = customField ? answers[customField] ?? [] : [];
+			return (Array.isArray(value) && value.length > 0) || customValues.length > 0;
+		}
+
+		return true;
 	}
 
 	function renderPreview() {
@@ -466,7 +512,9 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 							label={option}
 							iconName={step.optionIcons?.[option] as IoniconName | undefined}
 							variant={pickerVariant}
-							selected={Array.isArray(values) ? values.includes(option) : false}
+							selected={
+								Array.isArray(values) ? values.includes(option) : values === option
+							}
 							onPress={() =>
 								toggleValue(
 									step.field as
@@ -565,11 +613,16 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 
 	return (
 		<AppScreen
+			scroll={false}
 			background={renderOnboardingBackground(
 				step.backgroundVariant,
 				windowWidth,
 				windowHeight
 			)}
+			contentContainerStyle={[
+				styles.onboardingContent,
+				isChoiceStep ? styles.choiceStepContent : null,
+			]}
 		>
 			<View style={styles.topBar}>
 				<Pressable
@@ -585,56 +638,69 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				</View>
 			</View>
 
-			{step.id === "welcome" ? <WelcomeFoodScene /> : null}
+			<Animated.View style={[styles.stepContent, transitionStyle]}>
+				<ScrollView
+					showsVerticalScrollIndicator={false}
+					keyboardShouldPersistTaps="handled"
+					style={styles.stepScroll}
+					contentContainerStyle={[
+						styles.stepScrollContent,
+						isChoiceStep ? styles.choiceStepScrollContent : null,
+					]}
+				>
+					{step.id === "welcome" ? <WelcomeFoodScene /> : null}
 
-			<ScreenHeader
-				title={headerTitle}
-				subtitle={headerSubtitle}
-				titleColor={titleColor}
-				titleStyle={hasImageBackground ? styles.imageBackgroundTitle : null}
-				subtitleColor={subtitleColor}
-			/>
-
-			{step.helper ? <InfoPill label={step.helper} tone="soft" /> : null}
-
-			{renderSelectionControls()}
-
-			{centerImageSource ? (
-				<View style={styles.centerImageSlot}>
-					<Image
-						source={centerImageSource}
-						style={[
-							styles.centerImage,
-							{ width: centerImageWidth, height: centerImageHeight },
-						]}
-						resizeMode="contain"
-						accessibilityIgnoresInvertColors
+					<ScreenHeader
+						title={headerTitle}
+						subtitle={headerSubtitle}
+						titleColor={titleColor}
+						titleStyle={hasImageBackground ? styles.imageBackgroundTitle : null}
+						subtitleColor={subtitleColor}
+						fullWidth
 					/>
-				</View>
-			) : null}
 
-			{step.centerGraphic ? (
-				<View style={styles.centerGraphicSlot}>
-					<OnboardingCenterGraphic
-						centerGraphic={step.centerGraphic}
-						phaseDiscoveryState={phaseDiscoveryState}
-					/>
-				</View>
-			) : null}
+					{step.helper ? <InfoPill label={step.helper} tone="soft" /> : null}
 
-			<View style={styles.footer}>
-				{step.footerBody ? (
-					<Text
-						style={[
-							styles.footerBody,
-							hasImageBackground ? styles.footerBodyOnImage : null,
-						]}
-					>
-						{step.footerBody}
-					</Text>
-				) : null}
-				<PrimaryButton label={ctaLabel} onPress={handleContinue} disabled={ctaDisabled} />
-			</View>
+					{renderSelectionControls()}
+
+					{centerImageSource ? (
+						<View style={styles.centerImageSlot}>
+							<Image
+								source={centerImageSource}
+								style={[
+									styles.centerImage,
+									{ width: centerImageWidth, height: centerImageHeight },
+								]}
+								resizeMode="contain"
+								accessibilityIgnoresInvertColors
+							/>
+						</View>
+					) : null}
+
+					{step.centerGraphic ? (
+						<View style={styles.centerGraphicSlot}>
+							<OnboardingCenterGraphic
+								centerGraphic={step.centerGraphic}
+								phaseDiscoveryState={phaseDiscoveryState}
+							/>
+						</View>
+					) : null}
+				</ScrollView>
+
+				<View style={[styles.footer, isChoiceStep ? styles.choiceFooter : null]}>
+					{step.footerBody ? (
+						<Text
+							style={[
+								styles.footerBody,
+								hasImageBackground ? styles.footerBodyOnImage : null,
+							]}
+						>
+							{step.footerBody}
+						</Text>
+					) : null}
+					<PrimaryButton label={ctaLabel} onPress={handleContinue} disabled={ctaDisabled} />
+				</View>
+			</Animated.View>
 
 			<Modal
 				animationType="fade"
@@ -776,6 +842,12 @@ const styles = StyleSheet.create({
 		...StyleSheet.absoluteFillObject,
 		backgroundColor: "rgba(19, 28, 26, 0.1)",
 	},
+	onboardingContent: {
+		paddingBottom: spacing.lg,
+	},
+	choiceStepContent: {
+		gap: spacing.md,
+	},
 	topBar: {
 		flexDirection: "row",
 		alignItems: "center",
@@ -798,6 +870,22 @@ const styles = StyleSheet.create({
 		height: "100%",
 		borderRadius: 99,
 		backgroundColor: palette.primary,
+	},
+	stepContent: {
+		flex: 1,
+		flexGrow: 1,
+		width: "100%",
+	},
+	stepScroll: {
+		flex: 1,
+	},
+	stepScrollContent: {
+		flexGrow: 1,
+		gap: spacing.lg,
+		paddingBottom: spacing.md,
+	},
+	choiceStepScrollContent: {
+		gap: spacing.md,
 	},
 	imageBackgroundTitle: {
 		textShadowColor: "rgba(64, 152, 119, 0.38)",
@@ -946,7 +1034,10 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	footer: {
-		marginTop: "auto",
+		paddingTop: spacing.md,
+	},
+	choiceFooter: {
+		paddingTop: spacing.sm,
 	},
 	footerBody: {
 		color: palette.textMuted,

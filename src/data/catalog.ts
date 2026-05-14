@@ -2,11 +2,9 @@ import { DishBlueprint, TopUpOption } from "../types/domain";
 
 export const conditionOptions = [
 	"IBS",
-	"IBD",
 	"GERD / Acid reflux",
 	"Lactose intolerance",
 	"Gluten sensitivity",
-	"Leaky gut",
 	"Unsure, just general discomfort",
 ];
 

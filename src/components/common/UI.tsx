@@ -75,6 +75,7 @@ type ScreenHeaderProps = {
   titleStyle?: StyleProp<TextStyle>;
   subtitleColor?: string;
   rightAccessory?: ReactNode;
+  fullWidth?: boolean;
 };
 
 type InputFieldProps = {
@@ -135,9 +136,30 @@ export function AppScreen({ children, scroll = true, background, contentContaine
   );
 }
 
-export function ScreenHeader({ eyebrow, title, subtitle, titleColor, titleStyle, subtitleColor, rightAccessory }: ScreenHeaderProps) {
+export function ScreenHeader({
+  eyebrow,
+  title,
+  subtitle,
+  titleColor,
+  titleStyle,
+  subtitleColor,
+  rightAccessory,
+  fullWidth,
+}: ScreenHeaderProps) {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const canGoBack = navigation.canGoBack();
+
+  if (fullWidth) {
+    return (
+      <View style={styles.headerShell}>
+        <View style={styles.headerCenterFull}>
+          {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
+          <Text style={[styles.screenTitle, titleColor ? { color: titleColor } : null, titleStyle]}>{title}</Text>
+          {subtitle ? <Text style={[styles.subtitle, subtitleColor ? { color: subtitleColor } : null]}>{subtitle}</Text> : null}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.headerShell}>
@@ -211,9 +233,13 @@ export function PrimaryButton({ label, onPress, disabled }: ButtonProps) {
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.primaryButton, (pressed || disabled) && { opacity: pressed ? 0.9 : 0.5 }]}
+      style={({ pressed }) => [
+        styles.primaryButton,
+        disabled && styles.primaryButtonDisabled,
+        pressed && !disabled && { opacity: 0.9 },
+      ]}
     >
-      <Text style={styles.primaryButtonLabel}>{label}</Text>
+      <Text style={[styles.primaryButtonLabel, disabled && styles.primaryButtonLabelDisabled]}>{label}</Text>
     </Pressable>
   );
 }
@@ -543,6 +569,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingTop: 2,
   },
+  headerCenterFull: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingTop: 2,
+  },
   eyebrow: {
     ...tokens.type.label.eyebrow,
     color: tokens.color.text.tertiary,
@@ -605,9 +637,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  primaryButtonDisabled: {
+    backgroundColor: tokens.color.chart.track,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
   primaryButtonLabel: {
     ...tokens.type.label.button,
     color: tokens.color.action.primary.foreground,
+  },
+  primaryButtonLabelDisabled: {
+    color: tokens.color.text.tertiary,
   },
   secondaryButton: {
     ...components.button.secondary,
