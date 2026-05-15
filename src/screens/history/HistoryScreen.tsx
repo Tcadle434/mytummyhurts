@@ -75,7 +75,7 @@ export function HistoryScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.content, { paddingBottom: 120 + insets.bottom }]}
       >
-        <ScreenHeader title="History" subtitle="Food logs are used for learning. Menu and grocery scans will live here too." />
+        <ScreenHeader title="Scans" subtitle="Food logs are used for learning. Menu and grocery scans will live here too." />
 
         <View style={styles.filterRail}>
           {filters.map((filter) => (

@@ -7,7 +7,6 @@ export type OnboardingStackParamList = {
   OnboardingFlow: undefined;
   OnboardingPaywall: undefined;
   OnboardingAuth: undefined;
-  FirstScanLanding: undefined;
 };
 
 export type MainTabParamList = {
@@ -24,17 +23,14 @@ export type RootStackParamList = {
   ScanCapture: {
     sourceType?: ScanInputPayload['sourceType'];
     manualMode?: boolean;
-    fromOnboarding?: boolean;
   };
   ScanAnalyzing: {
     payload: ScanInputPayload;
     manualMode?: boolean;
-    fromOnboarding?: boolean;
   };
   ScanResult: {
     scanId: string;
     manualMode?: boolean;
-    fromOnboarding?: boolean;
   };
   DailyGutReport: {
     localDate?: string;
@@ -44,7 +40,6 @@ export type RootStackParamList = {
     localDate: string;
     weekStart?: string;
   };
-  GutScoreDetail: undefined;
   ManualMeal: {
     scanId?: string;
   };

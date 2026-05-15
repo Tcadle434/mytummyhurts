@@ -29,6 +29,17 @@ const topUpOptions = [
   { id: 'topup-60', label: '60 extra scans', tokens: 60, price: '$14.99' },
 ];
 
+export type BeginScanReservation = {
+  scanId: string;
+  tokenTransactionId: string | null;
+  tokensRemaining: number;
+  requestStatus: 'reserved' | 'completed_existing' | 'processing_existing' | 'failed_existing';
+  analysisStatus: ScanRecord['analysisStatus'];
+  deduped: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -391,6 +402,149 @@ export async function ensureUserRow(admin: SupabaseClient, user: { id: string; e
   }
 }
 
+function mapBeginScanReservation(row: Record<string, unknown>): BeginScanReservation {
+  return {
+    scanId: String(row.scan_id),
+    tokenTransactionId: row.token_transaction_id ? String(row.token_transaction_id) : null,
+    tokensRemaining: Number(row.tokens_remaining ?? 0),
+    requestStatus:
+      row.request_status === 'completed_existing' ||
+      row.request_status === 'processing_existing' ||
+      row.request_status === 'failed_existing'
+        ? row.request_status
+        : 'reserved',
+    analysisStatus:
+      row.analysis_status === 'queued' || row.analysis_status === 'processing' || row.analysis_status === 'failed'
+        ? row.analysis_status
+        : 'completed',
+    deduped: Boolean(row.deduped),
+    errorCode: row.error_code ? String(row.error_code) : undefined,
+    errorMessage: row.error_message ? String(row.error_message) : undefined,
+  };
+}
+
+export async function beginScanAnalysis(
+  admin: SupabaseClient,
+  params: {
+    userId: string;
+    requestId: string;
+    sourceType: string;
+    imageStoragePath?: string | null;
+    inputText?: string | null;
+    scanCategory?: string;
+    localDate?: string | null;
+    timezone?: string | null;
+  },
+) {
+  const { data, error } = await admin.rpc('begin_scan_analysis', {
+    p_user_id: params.userId,
+    p_request_id: params.requestId,
+    p_source_type: params.sourceType,
+    p_image_storage_path: params.imageStoragePath ?? null,
+    p_input_text: params.inputText ?? null,
+    p_scan_category: params.scanCategory ?? 'food',
+    p_local_date: params.localDate ?? null,
+    p_timezone: params.timezone ?? null,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const row = data?.[0];
+  if (!row) {
+    throw new Error('missing_scan_reservation');
+  }
+
+  return mapBeginScanReservation(row as Record<string, unknown>);
+}
+
+export async function completeReservedScanAnalysis(
+  admin: SupabaseClient,
+  params: {
+    userId: string;
+    scanId: string;
+    dishName: string;
+    overallRiskScore: number;
+    overallRiskLevel: string;
+    conditionRiskScores: Record<string, unknown>;
+    possibleTriggers: string[];
+    structuredAnalysis: Record<string, unknown>;
+    scanIngredients: Array<Record<string, unknown>>;
+    extractionModel?: string | null;
+    extractionPromptVersion?: string | null;
+    extractionClarity?: string | null;
+    extractionUnclearReason?: string | null;
+    dishConfidence?: string | null;
+  },
+) {
+  const { data, error } = await admin.rpc('complete_reserved_scan_analysis', {
+    p_user_id: params.userId,
+    p_scan_id: params.scanId,
+    p_dish_name: params.dishName,
+    p_overall_risk_score: params.overallRiskScore,
+    p_overall_risk_level: params.overallRiskLevel,
+    p_condition_risk_scores: params.conditionRiskScores,
+    p_possible_triggers: params.possibleTriggers,
+    p_structured_analysis: params.structuredAnalysis,
+    p_scan_ingredients: params.scanIngredients,
+    p_extraction_model: params.extractionModel ?? null,
+    p_extraction_prompt_version: params.extractionPromptVersion ?? null,
+    p_extraction_clarity: params.extractionClarity ?? null,
+    p_extraction_unclear_reason: params.extractionUnclearReason ?? null,
+    p_dish_confidence: params.dishConfidence ?? null,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const row = data?.[0] as Record<string, unknown> | undefined;
+  if (!row) {
+    throw new Error('missing_scan_completion');
+  }
+
+  return {
+    scanId: String(row.scan_id),
+    tokenTransactionId: row.token_transaction_id ? String(row.token_transaction_id) : null,
+    tokensRemaining: Number(row.tokens_remaining ?? 0),
+  };
+}
+
+export async function failReservedScanAnalysis(
+  admin: SupabaseClient,
+  params: {
+    userId: string;
+    scanId: string;
+    errorCode: string;
+    errorMessage: string;
+    refund?: boolean;
+  },
+) {
+  const { data, error } = await admin.rpc('fail_reserved_scan_analysis', {
+    p_user_id: params.userId,
+    p_scan_id: params.scanId,
+    p_error_code: params.errorCode,
+    p_error_message: params.errorMessage,
+    p_refund: params.refund ?? true,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const row = data?.[0] as Record<string, unknown> | undefined;
+  if (!row) {
+    throw new Error('missing_scan_failure');
+  }
+
+  return {
+    scanId: String(row.scan_id),
+    tokensRemaining: Number(row.tokens_remaining ?? 0),
+    refunded: Boolean(row.refunded),
+  };
+}
+
 export async function getInsights(
   admin: SupabaseClient,
   userId: string,
@@ -448,13 +602,26 @@ export async function getConditionIngredientInsights(
   return (data ?? []).map((row) => mapConditionInsightRow(row as Record<string, unknown>));
 }
 
-export async function getGutScoreSnapshots(admin: SupabaseClient, userId: string, limit = 14): Promise<GutScoreState[]> {
-  const { data, error } = await admin
+export async function getGutScoreSnapshots(
+  admin: SupabaseClient,
+  userId: string,
+  limit = 14,
+  excludeSource?: { sourceType?: string; sourceId?: string },
+): Promise<GutScoreState[]> {
+  let query = admin
     .from('gut_score_snapshots')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
+
+  if (excludeSource?.sourceType && excludeSource.sourceId) {
+    query = query.or(
+      `source_type.is.null,source_id.is.null,source_type.neq.${excludeSource.sourceType},source_id.neq.${excludeSource.sourceId}`,
+    );
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -617,6 +784,7 @@ export async function getPaginatedScanHistory(
       .from('scans')
       .select('*', { count: 'exact' })
       .eq('user_id', userId)
+      .eq('analysis_status', 'completed')
       .order('created_at', { ascending: false })
       .range(offset, rangeEnd),
     admin
@@ -664,6 +832,7 @@ export function mapScanRow(row: Record<string, unknown>, signedUrlMap: Map<strin
 
   return {
     id: String(row.id),
+    requestId: typeof row.request_id === 'string' ? row.request_id : undefined,
     sourceType: (row.source_type as ScanRecord['sourceType']) ?? 'camera',
     scanCategory:
       row.scan_category === 'menu' || row.scan_category === 'grocery'
@@ -730,6 +899,30 @@ export async function getScanById(admin: SupabaseClient, scanId: string) {
   return mapScanRow(data as Record<string, unknown>, signedMap);
 }
 
+export async function getScanByRequestId(admin: SupabaseClient, userId: string, requestId: string) {
+  const { data, error } = await admin
+    .from('scans')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('request_id', requestId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const signedMap = await createSignedUrlMap(
+    admin,
+    typeof data.image_storage_path === 'string' && data.image_storage_path ? [data.image_storage_path] : [],
+  );
+
+  return mapScanRow(data as Record<string, unknown>, signedMap);
+}
+
 export async function createSignedStorageUrl(admin: SupabaseClient, path: string | null | undefined) {
   if (!path) {
     return null;
@@ -785,6 +978,77 @@ export async function markDeviceTokenDelivery(
         };
 
   const { error } = await admin.from('device_tokens').update(payload).eq('push_token', pushToken);
+  if (error) {
+    throw error;
+  }
+}
+
+export async function claimDailyGutReportReminder(
+  admin: SupabaseClient,
+  params: {
+    userId: string;
+    localDate: string;
+    workerId: string;
+    claimTtlSeconds?: number;
+  },
+) {
+  const { data, error } = await admin.rpc('claim_daily_gut_report_reminder', {
+    p_user_id: params.userId,
+    p_local_date: params.localDate,
+    p_worker_id: params.workerId,
+    p_claim_ttl_seconds: params.claimTtlSeconds ?? 600,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const row = data?.[0] as Record<string, unknown> | undefined;
+  return {
+    reminderId: row?.reminder_id ? String(row.reminder_id) : null,
+    claimed: Boolean(row?.claimed),
+  };
+}
+
+export async function markDailyGutReportReminderSent(
+  admin: SupabaseClient,
+  params: {
+    reminderId: string;
+    workerId: string;
+  },
+) {
+  const { error } = await admin
+    .from('daily_gut_report_reminders')
+    .update({
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      last_error: null,
+    })
+    .eq('id', params.reminderId)
+    .eq('worker_id', params.workerId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function markDailyGutReportReminderFailed(
+  admin: SupabaseClient,
+  params: {
+    reminderId: string;
+    workerId: string;
+    error: string;
+  },
+) {
+  const { error } = await admin
+    .from('daily_gut_report_reminders')
+    .update({
+      status: 'failed',
+      last_error: params.error,
+    })
+    .eq('id', params.reminderId)
+    .eq('worker_id', params.workerId);
+
   if (error) {
     throw error;
   }

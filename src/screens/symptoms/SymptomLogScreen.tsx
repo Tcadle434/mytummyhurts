@@ -269,7 +269,8 @@ function dailyScoreValue(report: DailyGutReport) {
 }
 
 function dailyScoreFromSeverity(gutSeverity: number) {
-  return Math.max(0, Math.min(100, Math.round(110 - gutSeverity * 11)));
+  const severity = Math.max(0, Math.min(10, Math.round(gutSeverity)));
+  return Math.max(0, Math.min(100, Math.round(90 - severity * 8)));
 }
 
 function scoreTone(value: number) {

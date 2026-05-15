@@ -9,7 +9,7 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const tabConfig: Record<string, { label: string; icon: IconName; iconFocused: IconName }> = {
   Home: { label: 'Home', icon: 'home-outline', iconFocused: 'home' },
-  History: { label: 'History', icon: 'time-outline', iconFocused: 'time' },
+  History: { label: 'Scans', icon: 'scan-outline', iconFocused: 'scan' },
   Insights: { label: 'Insights', icon: 'stats-chart-outline', iconFocused: 'stats-chart' },
   Symptoms: { label: 'Symptoms', icon: 'pulse-outline', iconFocused: 'pulse' },
 };

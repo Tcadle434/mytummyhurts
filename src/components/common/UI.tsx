@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ComponentProps, ReactNode } from 'react';
+import { ComponentProps, ReactNode, useEffect, useRef } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleProp,
@@ -14,11 +17,23 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import Animated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RootStackParamList } from '../../navigation/types';
 import { components, radii, spacing, tokens, type } from '../../theme';
 import { Pip } from './Pip';
+
+const PICKER_PRESS_SPRING = { damping: 16, stiffness: 360, mass: 0.6 } as const;
+const PICKER_RELEASE_SPRING = { damping: 14, stiffness: 220, mass: 0.7 } as const;
+const PICKER_POP_UP_SPRING = { damping: 11, stiffness: 280, mass: 0.55 } as const;
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -27,6 +42,7 @@ type AppScreenProps = {
   scroll?: boolean;
   background?: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  keyboardAvoiding?: boolean;
 };
 
 type ButtonProps = {
@@ -113,23 +129,46 @@ export function ScreenLayout({ title, children, scroll = true, contentContainerS
   );
 }
 
-export function AppScreen({ children, scroll = true, background, contentContainerStyle }: AppScreenProps) {
+export function AppScreen({
+  children,
+  scroll = true,
+  background,
+  contentContainerStyle,
+  keyboardAvoiding = true,
+}: AppScreenProps) {
   const insets = useSafeAreaInsets();
 
   const content = (
     <View style={[styles.content, { paddingTop: insets.top + spacing.md }, contentContainerStyle]}>{children}</View>
   );
 
+  const screenContent = scroll ? (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      contentContainerStyle={styles.scrollContent}
+    >
+      {content}
+    </ScrollView>
+  ) : (
+    content
+  );
+
   return (
     <View style={styles.screenFill}>
       {background}
       <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-        {scroll ? (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            {content}
-          </ScrollView>
+        {keyboardAvoiding ? (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={0}
+            style={styles.keyboardAvoiding}
+          >
+            {screenContent}
+          </KeyboardAvoidingView>
         ) : (
-          content
+          screenContent
         )}
       </SafeAreaView>
     </View>
@@ -290,49 +329,94 @@ export function OnboardingPickerOption({
   variant = 'plain',
 }: OnboardingPickerOptionProps) {
   const colors = getOnboardingPickerColors(variant, selected);
+  const pair = getOnboardingPickerColorPair(variant);
+  const selectedness = useSharedValue(selected ? 1 : 0);
+  const scale = useSharedValue(1);
+  const previousSelectedRef = useRef(selected);
+
+  useEffect(() => {
+    selectedness.value = withTiming(selected ? 1 : 0, { duration: 220 });
+    if (!previousSelectedRef.current && selected) {
+      scale.value = withSequence(
+        withSpring(1.04, PICKER_POP_UP_SPRING),
+        withSpring(1, PICKER_RELEASE_SPRING),
+      );
+    }
+    previousSelectedRef.current = selected;
+  }, [selected, selectedness, scale]);
+
+  const containerStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      selectedness.value,
+      [0, 1],
+      [pair.backgroundFrom, pair.backgroundTo],
+    ),
+    borderColor: interpolateColor(
+      selectedness.value,
+      [0, 1],
+      [pair.borderFrom, pair.borderTo],
+    ),
+    transform: [{ scale: scale.value }],
+  }));
+
+  function handlePressIn() {
+    scale.value = withSpring(0.97, PICKER_PRESS_SPRING);
+  }
+
+  function handlePressOut() {
+    if (!selected) {
+      scale.value = withSpring(1, PICKER_RELEASE_SPRING);
+    }
+  }
+
+  function handlePress() {
+    void Haptics.selectionAsync();
+    onPress();
+  }
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.onboardingPickerOption,
-        {
-          backgroundColor: colors.background,
-          borderColor: colors.border,
-        },
-        pressed && { opacity: 0.86 },
-      ]}
-    >
-      {iconName ? (
-        <View style={[styles.onboardingPickerIconSlot, { backgroundColor: colors.iconBackground }]}>
-          <Ionicons name={iconName} size={16} color={colors.icon} />
-        </View>
-      ) : null}
-      <View style={styles.onboardingPickerLabelWrap}>
-        <Text
-          numberOfLines={2}
-          style={[
-            styles.onboardingPickerLabel,
-            {
-              color: colors.text,
-              flex: badgeText ? 0 : 1,
-              textAlign: 'left',
-            },
-          ]}
-        >
-          {label}
-        </Text>
-        {badgeText ? (
-          <View style={[styles.onboardingPickerBadge, { backgroundColor: colors.badgeBackground }]}>
-            <Text style={[styles.onboardingPickerBadgeLabel, { color: colors.badgeText }]}>
-              {badgeText}
-            </Text>
+    <Animated.View style={[styles.onboardingPickerOption, containerStyle]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={styles.onboardingPickerHit}
+      >
+        {iconName ? (
+          <View
+            style={[styles.onboardingPickerIconSlot, { backgroundColor: colors.iconBackground }]}
+          >
+            <Ionicons name={iconName} size={16} color={colors.icon} />
           </View>
         ) : null}
-      </View>
-    </Pressable>
+        <View style={styles.onboardingPickerLabelWrap}>
+          <Text
+            numberOfLines={2}
+            style={[
+              styles.onboardingPickerLabel,
+              {
+                color: colors.text,
+                flex: badgeText ? 0 : 1,
+                textAlign: 'left',
+              },
+            ]}
+          >
+            {label}
+          </Text>
+          {badgeText ? (
+            <View
+              style={[styles.onboardingPickerBadge, { backgroundColor: colors.badgeBackground }]}
+            >
+              <Text style={[styles.onboardingPickerBadgeLabel, { color: colors.badgeText }]}>
+                {badgeText}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -486,6 +570,24 @@ function getPillStyle(tone: InfoPillTone) {
   }
 }
 
+function getOnboardingPickerColorPair(variant: OnboardingPickerVariant) {
+  if (variant === 'image') {
+    return {
+      backgroundFrom: 'rgba(255,255,255,0.94)',
+      backgroundTo: tokens.color.accent.brand,
+      borderFrom: tokens.color.border.subtle,
+      borderTo: tokens.color.accent.brand,
+    };
+  }
+
+  return {
+    backgroundFrom: tokens.color.surface.card.default,
+    backgroundTo: tokens.color.status.success.background,
+    borderFrom: tokens.color.border.subtle,
+    borderTo: tokens.color.border.emphasis,
+  };
+}
+
 function getOnboardingPickerColors(variant: OnboardingPickerVariant, selected: boolean) {
   if (variant === 'image') {
     return {
@@ -518,6 +620,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  keyboardAvoiding: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
@@ -686,11 +791,15 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: radii.md,
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
+    ...tokens.shadow.card,
+  },
+  onboardingPickerHit: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    ...tokens.shadow.card,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
   },
   onboardingPickerBadge: {
     minWidth: 28,

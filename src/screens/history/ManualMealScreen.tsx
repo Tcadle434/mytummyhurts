@@ -8,6 +8,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { createScanRequestId } from '../../utils/id';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ManualMeal'>;
 
@@ -46,7 +47,9 @@ export function ManualMealScreen({ navigation }: Props) {
     setBusy(true);
     try {
       trackEvent('manual_meal_text');
+      const requestId = createScanRequestId();
       const result = await analyzeScanInput({
+        requestId,
         sourceType: 'manual_text',
         scanCategory: 'food',
         text: buildManualMealDescription({
@@ -56,7 +59,7 @@ export function ManualMealScreen({ navigation }: Props) {
           notes,
         }),
       });
-      trackEvent('manual_meal_saved', { entry_mode: 'text', had_image: false, had_text: true });
+      trackEvent('manual_meal_saved', { request_id: requestId, entry_mode: 'text', had_image: false, had_text: true });
       navigation.replace('ScanResult', { scanId: result.scanId, manualMode: true });
     } finally {
       setBusy(false);

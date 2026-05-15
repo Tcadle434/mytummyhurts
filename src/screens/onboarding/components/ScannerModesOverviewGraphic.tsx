@@ -29,6 +29,7 @@ export function ScannerModesOverviewGraphic() {
 				iconName="restaurant-outline"
 				title="Scan menus"
 				body="See the top 3 best and worst items for your gut."
+				reversed
 			/>
 			<View style={styles.divider} />
 			<ScannerModeRow
@@ -46,14 +47,16 @@ function ScannerModeRow({
 	iconName,
 	title,
 	body,
+	reversed = false,
 }: {
 	imageSource: ImageSourcePropType;
 	iconName: IoniconName;
 	title: string;
 	body: string;
+	reversed?: boolean;
 }) {
 	return (
-		<View style={styles.row}>
+		<View style={[styles.row, reversed && styles.rowReversed]}>
 			<View style={styles.imageSlot}>
 				<Image
 					source={imageSource}
@@ -93,6 +96,9 @@ const styles = StyleSheet.create({
 		gap: spacing.md,
 		paddingVertical: spacing.xs,
 		paddingHorizontal: spacing.xs,
+	},
+	rowReversed: {
+		flexDirection: "row-reverse",
 	},
 	imageSlot: {
 		width: 140,

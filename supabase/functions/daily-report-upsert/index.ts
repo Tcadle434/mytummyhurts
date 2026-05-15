@@ -28,12 +28,15 @@ serve(async (request) => {
     }
 
     const severity = Math.round(body.gutSeverity);
-    if (severity < 1 || severity > 10) {
-      return errorResponse('gutSeverity must be between 1 and 10.', 400, 'invalid_severity');
+    if (severity < 0 || severity > 10) {
+      return errorResponse('gutSeverity must be between 0 and 10.', 400, 'invalid_severity');
     }
 
     const admin = createAdminClient();
     await ensureUserRow(admin, user);
+    const symptomTags = severity === 0
+      ? ['None']
+      : (body.symptomTags ?? []).filter((tag) => tag.trim().toLowerCase() !== 'none');
 
     const { data: reportRow, error: reportError } = await admin
       .from('daily_gut_reports')
@@ -42,7 +45,7 @@ serve(async (request) => {
           user_id: user.id,
           local_date: body.localDate,
           gut_severity: severity,
-          symptom_tags: body.symptomTags ?? [],
+          symptom_tags: symptomTags,
           notes: body.notes?.trim() || null,
           updated_at: new Date().toISOString(),
         },

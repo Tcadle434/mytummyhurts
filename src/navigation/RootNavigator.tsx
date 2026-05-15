@@ -8,12 +8,10 @@ import { AuthScreen } from '../screens/auth/AuthScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { ManualMealScreen } from '../screens/history/ManualMealScreen';
 import { DailyGutReportScreen } from '../screens/home/DailyGutReportScreen';
-import { GutScoreDetailScreen } from '../screens/home/GutScoreDetailScreen';
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { DesignSystemShowcaseScreen } from '../screens/internal/DesignSystemShowcaseScreen';
 import { InsightDetailScreen } from '../screens/insights/InsightDetailScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
-import { FirstScanLandingScreen } from '../screens/onboarding/FirstScanLandingScreen';
 import { GetStartedScreen } from '../screens/onboarding/GetStartedScreen';
 import { OnboardingFlowScreen } from '../screens/onboarding/OnboardingFlowScreen';
 import { PaywallScreen } from '../screens/paywall/PaywallScreen';
@@ -38,7 +36,6 @@ function getInitialOnboardingRoute(onboardingStage: OnboardingStage): keyof Onbo
   if (onboardingStage === 'intro') return 'GetStarted';
   if (onboardingStage === 'paywall') return 'OnboardingPaywall';
   if (onboardingStage === 'auth') return 'OnboardingAuth';
-  if (onboardingStage === 'landing') return 'FirstScanLanding';
   return 'OnboardingFlow';
 }
 
@@ -54,7 +51,6 @@ function OnboardingNavigator() {
       <OnboardingStack.Screen name="OnboardingFlow" component={OnboardingFlowScreen} />
       <OnboardingStack.Screen name="OnboardingPaywall" component={PaywallScreen} />
       <OnboardingStack.Screen name="OnboardingAuth" component={AuthScreen} />
-      <OnboardingStack.Screen name="FirstScanLanding" component={FirstScanLandingScreen} />
     </OnboardingStack.Navigator>
   );
 }
@@ -67,8 +63,8 @@ function MainTabsNavigator() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="History" component={HistoryScreen} />
-      <Tab.Screen name="Insights" component={InsightsScreen} />
       <Tab.Screen name="Symptoms" component={SymptomLogScreen} />
+      <Tab.Screen name="Insights" component={InsightsScreen} />
     </Tab.Navigator>
   );
 }
@@ -106,7 +102,6 @@ export function RootNavigator() {
         <RootStack.Screen name="DailyGutReport" component={DailyGutReportScreen} />
         <RootStack.Screen name="WeeklyProgress" component={WeeklyProgressScreen} />
         <RootStack.Screen name="DailyScoreDay" component={DailyScoreDayScreen} />
-        <RootStack.Screen name="GutScoreDetail" component={GutScoreDetailScreen} />
         <RootStack.Screen name="ManualMeal" component={ManualMealScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="InsightDetail" component={InsightDetailScreen} />
       </RootStack.Navigator>

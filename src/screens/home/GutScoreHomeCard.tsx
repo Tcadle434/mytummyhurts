@@ -9,49 +9,42 @@ import { palette, radii, spacing, tokens, type, type PipState } from '../../them
 type GutScoreHomeCardProps = {
   score: number;
   trendDelta7d?: number;
-  onPress: () => void;
   onInfoPress: () => void;
 };
 
 type GutScoreZone = 'low' | 'medium' | 'high';
 
-export function GutScoreHomeCard({ score, trendDelta7d = 0, onPress, onInfoPress }: GutScoreHomeCardProps) {
+export function GutScoreHomeCard({ score, trendDelta7d = 0, onInfoPress }: GutScoreHomeCardProps) {
   const zone = getGutScoreZone(score);
   const scoreColor = getGutScoreZoneColor(zone);
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [pressed && { opacity: 0.92 }]}>
-      <SectionCard style={styles.card}>
-        <View style={styles.copyColumn}>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>Gut Score</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="What your Gut Score means"
-              hitSlop={10}
-              onPress={(event) => {
-                event.stopPropagation();
-                onInfoPress();
-              }}
-              style={({ pressed }) => [styles.infoBadge, pressed && { opacity: 0.78 }]}
-            >
-              <Ionicons name="information-circle-outline" size={19} color={tokens.color.icon.accent} />
-            </Pressable>
-          </View>
-
-          <View style={styles.scoreRow}>
-            <Text style={[styles.scoreValue, { color: scoreColor }]}>{score}</Text>
-            <Text style={styles.scoreScale}>/100</Text>
-          </View>
-          <Text style={styles.betterText}>Higher is better</Text>
-          <Text style={styles.explainerText}>Higher score = calmer gut</Text>
-
-          <GutScoreTrendCard delta={trendDelta7d} />
+    <SectionCard style={styles.card}>
+      <View style={styles.copyColumn}>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Gut Score</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="What your Gut Score means"
+            hitSlop={10}
+            onPress={onInfoPress}
+            style={({ pressed }) => [styles.infoBadge, pressed && { opacity: 0.78 }]}
+          >
+            <Ionicons name="information-circle-outline" size={19} color={tokens.color.icon.accent} />
+          </Pressable>
         </View>
 
-        <GutScoreVisual score={score} zone={zone} />
-      </SectionCard>
-    </Pressable>
+        <View style={styles.scoreRow}>
+          <Text style={[styles.scoreValue, { color: scoreColor }]}>{score}</Text>
+          <Text style={styles.scoreScale}>/100</Text>
+        </View>
+        <Text style={styles.explainerText}>Higher score = calmer gut</Text>
+
+        <GutScoreTrendCard delta={trendDelta7d} />
+      </View>
+
+      <GutScoreVisual score={score} zone={zone} />
+    </SectionCard>
   );
 }
 
@@ -216,12 +209,6 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     paddingBottom: 7,
     marginLeft: 4,
-  },
-  betterText: {
-    color: tokens.color.status.risk.low.foreground,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-    lineHeight: 20,
   },
   explainerText: {
     maxWidth: 160,

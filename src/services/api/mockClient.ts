@@ -19,6 +19,7 @@ import {
 export const mockApiClient = {
   async analyzeImage(request: AnalyzeImageRequest): Promise<AnalyzeResponse> {
     const result = await useAppStore.getState().analyzeScanInput({
+      requestId: request.requestId,
       sourceType: request.sourceType,
       imageUri: request.imagePath,
       scanCategory: request.scanCategory,
@@ -40,6 +41,7 @@ export const mockApiClient = {
 
   async analyzeText(request: AnalyzeTextRequest): Promise<AnalyzeResponse> {
     const result = await useAppStore.getState().analyzeScanInput({
+      requestId: request.requestId,
       sourceType: request.sourceType,
       text: request.text,
       scanCategory: request.scanCategory,

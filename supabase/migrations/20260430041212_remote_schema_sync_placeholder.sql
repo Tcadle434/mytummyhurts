@@ -1,0 +1,3 @@
+-- This migration version already exists in the linked Supabase project.
+-- The SQL was applied remotely before this local migration directory was synced.
+-- Keep this placeholder so future migrations can be pushed in order.

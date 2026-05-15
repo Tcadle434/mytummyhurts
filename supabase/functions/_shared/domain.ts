@@ -208,6 +208,7 @@ export interface ScanResult {
 
 export interface ScanRecord extends ScanResult {
   id: string;
+  requestId?: string;
   sourceType: ScanSourceType;
   scanCategory: ScanCategory;
   analysisStatus: 'queued' | 'processing' | 'completed' | 'failed';

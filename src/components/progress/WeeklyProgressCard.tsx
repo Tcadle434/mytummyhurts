@@ -332,7 +332,7 @@ function dayTrend(direction: WeeklyProgressTrendDirection): {
 }
 
 function symptomSeverityLabel(gutSeverity: number | undefined) {
-	if (!gutSeverity || gutSeverity <= 1) return "no";
+	if (gutSeverity === undefined || gutSeverity <= 0) return "no";
 	if (gutSeverity <= 3) return "mild";
 	if (gutSeverity <= 6) return "medium";
 	return "severe";

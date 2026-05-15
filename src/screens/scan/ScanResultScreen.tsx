@@ -23,7 +23,6 @@ const swapSuggestions: { match: string[]; label: string; detail: string }[] = [
 export function ScanResultScreen({ navigation, route }: Props) {
   const scans = useAppStore((state) => state.scans);
   const profile = useAppStore((state) => state.profile);
-  const finishOnboarding = useAppStore((state) => state.finishOnboarding);
   const [imageFailed, setImageFailed] = useState(false);
 
   const scan = selectLatestScan(scans, route.params.scanId);
@@ -94,10 +93,6 @@ export function ScanResultScreen({ navigation, route }: Props) {
     }
 
     trackEvent('scan_result_dismissed', { scan_id: scan.id });
-
-    if (route.params.fromOnboarding) {
-      finishOnboarding();
-    }
 
     navigation.reset({
       index: 0,

@@ -4,7 +4,7 @@ export type ScanCategory = 'food' | 'menu' | 'grocery';
 export type AuthProvider = 'apple' | 'google' | 'email';
 export type SubscriptionPlan = 'monthly' | 'annual';
 export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'expired' | 'canceled';
-export type OnboardingStage = 'intro' | 'flow' | 'paywall' | 'auth' | 'landing' | 'complete';
+export type OnboardingStage = 'intro' | 'flow' | 'paywall' | 'auth' | 'complete';
 export type AnalysisStatus = 'queued' | 'processing' | 'completed' | 'failed';
 export type PatternStrength = 'weak' | 'moderate' | 'strong';
 export type IngredientConfidence = 'low' | 'medium' | 'high';
@@ -252,6 +252,7 @@ export interface ScanResult {
 
 export interface ScanRecord extends ScanResult {
   id: string;
+  requestId?: string;
   sourceType: ScanSourceType;
   scanCategory: ScanCategory;
   analysisStatus: AnalysisStatus;
@@ -356,6 +357,8 @@ export interface OnboardingStepDefinition {
     | 'summaryIntro'
     | 'scoreAnalyzing'
     | 'lowerScorePlan'
+    | 'commitmentHold'
+    | 'trialFreePreview'
     | 'recap';
 }
 
@@ -367,6 +370,7 @@ export interface DishBlueprint {
 }
 
 export interface ScanInputPayload {
+  requestId?: string;
   sourceType: ScanSourceType;
   scanCategory?: ScanCategory;
   imageUri?: string;

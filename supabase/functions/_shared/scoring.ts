@@ -875,7 +875,8 @@ function baselineGutScore(seed: ProfileSeed) {
 }
 
 function reportBurdenValue(gutSeverity: number) {
-  const severity = Math.max(1, Math.min(10, Math.round(gutSeverity)));
+  const severity = Math.max(0, Math.min(10, Math.round(gutSeverity)));
+  if (severity === 0) return 0;
   if (severity <= 3) return 8 + (severity - 1) * 6;
   if (severity <= 6) return 38 + (severity - 4) * 8;
   if (severity <= 8) return 62 + (severity - 7) * 8;
@@ -883,14 +884,8 @@ function reportBurdenValue(gutSeverity: number) {
 }
 
 function symptomDailyScore(gutSeverity: number) {
-  const severity = Math.max(1, Math.min(10, Math.round(gutSeverity)));
-  return clamp(110 - severity * 11);
-}
-
-function clampDailyScoreForSeverity(score: number, gutSeverity: number) {
-  if (gutSeverity <= 3) return Math.max(67, score);
-  if (gutSeverity <= 6) return Math.max(34, Math.min(66, score));
-  return Math.min(33, score);
+  const severity = Math.max(0, Math.min(10, Math.round(gutSeverity)));
+  return clamp(90 - severity * 8);
 }
 
 function foodExposureForDailyScore(
@@ -926,7 +921,7 @@ function foodExposureForDailyScore(
   }
 
   const weightedRisk = weightedRiskTotal / evidenceWeight;
-  const foodAdjustment = clampNumber((50 - weightedRisk) * 0.22 * Math.min(evidenceWeight, 1), -12, 10);
+  const foodAdjustment = clampNumber((50 - weightedRisk) * 0.375 * Math.min(evidenceWeight, 1), -15, 15);
 
   return {
     foodExposure: clamp(100 - weightedRisk),
@@ -943,7 +938,7 @@ export function computeDailyScoreForReport(
 ): DailyGutReport {
   const symptomScore = symptomDailyScore(report.gutSeverity);
   const food = foodExposureForDailyScore(report, scans);
-  const dailyScore = clampDailyScoreForSeverity(clamp(symptomScore + food.foodAdjustment), report.gutSeverity);
+  const dailyScore = clamp(symptomScore + food.foodAdjustment);
   const drivers: DailyGutReport['dailyScoreDrivers'] = [
     {
       id: 'symptom-severity',
@@ -1108,14 +1103,27 @@ function dataConfidenceComponent(reportCount: number, recentReports: DailyGutRep
   return clamp(100 - clamp(90 - reportCount * 7 - recentReports.length * 5));
 }
 
-function movementLimitForSource(source?: GutScoreMovementSource) {
+function dailyReportMovementLimit(latestDailyScore?: number) {
+  if (typeof latestDailyScore !== 'number') return 1;
+  if (latestDailyScore <= 10) return 4;
+  if (latestDailyScore <= 25) return 3;
+  if (latestDailyScore <= 33) return 2;
+  if (latestDailyScore <= 49) return 1;
+  if (latestDailyScore <= 66) return 1;
+  if (latestDailyScore <= 79) return 1;
+  if (latestDailyScore <= 89) return 2;
+  if (latestDailyScore <= 94) return 3;
+  return 4;
+}
+
+function movementLimitForSource(source?: GutScoreMovementSource, latestDailyScore?: number) {
   switch (source) {
     case 'scan':
-      return 2;
+      return 0;
     case 'daily_report':
-      return 8;
+      return dailyReportMovementLimit(latestDailyScore);
     case 'profile':
-      return 12;
+      return 8;
     case 'backfill':
       return undefined;
     default:
@@ -1123,8 +1131,13 @@ function movementLimitForSource(source?: GutScoreMovementSource) {
   }
 }
 
-function applyMovementLimit(rawScore: number, previousScore: GutScoreState | null | undefined, source?: GutScoreMovementSource) {
-  const limit = movementLimitForSource(source);
+function applyMovementLimit(
+  rawScore: number,
+  previousScore: GutScoreState | null | undefined,
+  source?: GutScoreMovementSource,
+  latestDailyScore?: number,
+) {
+  const limit = movementLimitForSource(source, latestDailyScore);
   if (typeof limit !== 'number' || typeof previousScore?.currentScore !== 'number') {
     return rawScore;
   }
@@ -1320,6 +1333,7 @@ export function computeGutScoreState(params: {
   const foodScanCount = params.scans.filter((scan) => (scan.scanCategory ?? 'food') === 'food').length;
   const recentReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 7, nowMs));
   const monthReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 30, nowMs));
+  const latestReport = [...recentReports].sort((left, right) => scoreEventTime(right.updatedAt) - scoreEventTime(left.updatedAt))[0];
   const recentDailyOutcome = clamp(averageScore(
     (recentReports.length ? recentReports : monthReports).map((report) => report.dailyScore ?? symptomDailyScore(report.gutSeverity)),
     baselineScore,
@@ -1342,7 +1356,12 @@ export function computeGutScoreState(params: {
   } else if (!recentReports.length) {
     currentScore = Math.min(currentScore, Math.max(28, baselineScore + 4));
   }
-  currentScore = applyMovementLimit(currentScore, params.previousGutScore, params.movementSource);
+  currentScore = applyMovementLimit(
+    currentScore,
+    params.previousGutScore,
+    params.movementSource,
+    latestReport?.dailyScore ?? (latestReport ? symptomDailyScore(latestReport.gutSeverity) : undefined),
+  );
 
   const phase = gutScorePhase(currentScore, reportCount, recentReports);
   const confidenceLevel = gutScoreConfidence(reportCount);

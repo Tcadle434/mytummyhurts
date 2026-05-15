@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ComponentProps, useEffect, useMemo, useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { ComponentProps, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Image,
 	KeyboardAvoidingView,
@@ -8,17 +9,14 @@ import {
 	Platform,
 	Pressable,
 	ScrollView,
+	StyleProp,
 	StyleSheet,
 	Text,
 	useWindowDimensions,
 	View,
+	ViewStyle,
 } from "react-native";
-import Animated, {
-	Easing,
-	useAnimatedStyle,
-	useSharedValue,
-	withTiming,
-} from "react-native-reanimated";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { Gauge } from "../../components/charts/Gauge";
 import { RiskBar } from "../../components/charts/RiskBar";
@@ -34,7 +32,7 @@ import {
 	ScreenHeader,
 	SectionCard,
 } from "../../components/common/UI";
-import { onboardingSteps } from "../../data/onboarding";
+import { getMascotStateForStep, onboardingSteps } from "../../data/onboarding";
 import { trackEvent } from "../../services/analytics";
 import { computeGutScoreState } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
@@ -48,12 +46,22 @@ import { RaiseGutScorePlanPreview } from "./components/RaiseGutScorePlanPreview"
 import { WelcomeFoodScene } from "./components/WelcomeFoodScene";
 import { type PhaseDiscoveryState } from "./components/PhaseDiscoveryGraphic";
 import { OnboardingCenterGraphic } from "./components/OnboardingCenterGraphic";
+import { OnboardingPipCompanion } from "./components/OnboardingPipCompanion";
+import { OnboardingProgressBar } from "./components/OnboardingProgressBar";
+import { CommitmentHoldCard } from "./components/CommitmentHoldCard";
+import { PersonalHealingApproach } from "./components/PersonalHealingApproach";
+import { StepTransition, StepTransitionDirection } from "./components/StepTransition";
+import { TrialFreePreview } from "./components/TrialFreePreview";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "OnboardingFlow">;
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
 const GET_STARTED_BACKGROUND_IMAGE = require("../../../assets/get_started_background_image.png");
 const GUT_ISSUES_DIAGRAM = require("../../../assets/ui/gut_issues_diagram.png");
+
+const STAGGER_BASE_MS = 80;
+const STAGGER_STEP_MS = 50;
+const ENTER_DURATION_MS = 360;
 
 export function OnboardingFlowScreen({ navigation }: Props) {
 	const stepIndex = useAppStore((state) => state.onboardingStepIndex);
@@ -68,6 +76,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const [customOptionModalVisible, setCustomOptionModalVisible] = useState(false);
 	const [phaseDiscoveryState, setPhaseDiscoveryState] = useState<PhaseDiscoveryState>("scan");
 	const [startingScoreState, setStartingScoreState] = useState<StartingScoreState>("ready");
+	const [direction, setDirection] = useState<StepTransitionDirection>("forward");
 	const phaseDiscoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const startingScoreTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -93,7 +102,25 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		trackEvent("onboarding_step_viewed", { step_id: step.id, step_number: stepNumber });
 	}, [step.id, stepNumber]);
 
-	const progress = ((stepIndex + 1) / stepCount) * 100;
+	useEffect(() => {
+		clearPhaseDiscoveryTimeout();
+		clearStartingScoreTimeout();
+		if (step.id === "phase-discovery") {
+			setPhaseDiscoveryState("scan");
+		}
+		if (step.id === "gut-score-analyzing") {
+			setStartingScoreState("ready");
+		}
+	}, [step.id]);
+
+	useEffect(() => {
+		return () => {
+			clearPhaseDiscoveryTimeout();
+			clearStartingScoreTimeout();
+		};
+	}, []);
+
+	const progress = (stepIndex + 1) / stepCount;
 	const hasImageBackground = step.backgroundVariant === "getStartedImage";
 	const backIconColor = hasImageBackground ? tokens.color.utility.white : palette.primary;
 	const titleColor = hasImageBackground ? tokens.color.utility.white : palette.primary;
@@ -103,14 +130,10 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const centerImageWidth = centerImageHeight * (1024 / 1535);
 	const isPhaseDiscoveryStep = step.id === "phase-discovery";
 	const isStartingScoreStep = step.id === "gut-score-analyzing";
+	const isCommitmentStep = step.previewVariant === "commitmentHold";
 	const isChoiceStep = step.type === "multi_select" || step.type === "single_select";
 	const hasRequiredAnswer = currentStepHasRequiredAnswer();
-	const transitionOpacity = useSharedValue(1);
-	const transitionTranslateY = useSharedValue(0);
-	const transitionStyle = useAnimatedStyle(() => ({
-		opacity: transitionOpacity.value,
-		transform: [{ translateY: transitionTranslateY.value }],
-	}));
+	const mascotState = getMascotStateForStep(step.id);
 	const headerTitle =
 		isStartingScoreStep && startingScoreState === "revealed"
 			? "Your starting Gut Score is ready"
@@ -137,34 +160,6 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		(isStartingScoreStep && startingScoreState === "loading") ||
 		!hasRequiredAnswer;
 
-	useEffect(() => {
-		clearPhaseDiscoveryTimeout();
-		clearStartingScoreTimeout();
-		transitionOpacity.value = 0;
-		transitionTranslateY.value = 10;
-		transitionOpacity.value = withTiming(1, {
-			duration: 240,
-			easing: Easing.out(Easing.cubic),
-		});
-		transitionTranslateY.value = withTiming(0, {
-			duration: 240,
-			easing: Easing.out(Easing.cubic),
-		});
-		if (step.id === "phase-discovery") {
-			setPhaseDiscoveryState("scan");
-		}
-		if (step.id === "gut-score-analyzing") {
-			setStartingScoreState("ready");
-		}
-	}, [step.id, transitionOpacity, transitionTranslateY]);
-
-	useEffect(() => {
-		return () => {
-			clearPhaseDiscoveryTimeout();
-			clearStartingScoreTimeout();
-		};
-	}, []);
-
 	function clearPhaseDiscoveryTimeout() {
 		if (phaseDiscoveryTimeoutRef.current) {
 			clearTimeout(phaseDiscoveryTimeoutRef.current);
@@ -179,10 +174,22 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		}
 	}
 
+	function advanceStep() {
+		trackEvent("onboarding_step_completed", { step_id: step.id, step_number: stepNumber });
+		if (stepIndex >= onboardingSteps.length - 1) {
+			navigation.replace("OnboardingPaywall");
+			return;
+		}
+		setDirection("forward");
+		setStepIndex(stepIndex + 1);
+	}
+
 	function handleContinue() {
 		if (ctaDisabled) {
 			return;
 		}
+
+		void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
 		if (isPhaseDiscoveryStep && phaseDiscoveryState === "scan") {
 			trackEvent("onboarding_phase_discovery_analyze_tapped");
@@ -214,17 +221,12 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 
-		trackEvent("onboarding_step_completed", { step_id: step.id, step_number: stepNumber });
-
-		if (stepIndex >= onboardingSteps.length - 1) {
-			navigation.replace("OnboardingPaywall");
-			return;
-		}
-
-		setStepIndex(stepIndex + 1);
+		advanceStep();
 	}
 
 	function handleBack() {
+		void Haptics.selectionAsync();
+
 		if (isStartingScoreStep && startingScoreState !== "ready") {
 			clearStartingScoreTimeout();
 			setStartingScoreState("ready");
@@ -242,6 +244,8 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			navigation.replace("GetStarted");
 			return;
 		}
+
+		setDirection("backward");
 		setStepIndex(stepIndex - 1);
 	}
 
@@ -320,21 +324,11 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 					</View>
 				);
 			case "trust":
-				return (
-					<SectionCard>
-						<DetailRow
-							label="Uses"
-							value="Food analysis + your profile + learned patterns"
-						/>
-						<DetailRow
-							label="Avoids"
-							value="Diagnosis language or guaranteed safety claims"
-						/>
-						<Text style={styles.previewNote}>
-							Hidden ingredients and preparation still matter.
-						</Text>
-					</SectionCard>
-				);
+				return <PersonalHealingApproach />;
+			case "commitmentHold":
+				return <CommitmentHoldCard onCommitted={advanceStep} />;
+			case "trialFreePreview":
+				return <TrialFreePreview />;
 			case "summaryIntro":
 				return (
 					<SectionCard>
@@ -367,7 +361,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 					/>
 				);
 			case "lowerScorePlan":
-				return <RaiseGutScorePlanPreview />;
+				return <RaiseGutScorePlanPreview currentScore={startingGutScore.currentScore} />;
 			case "recap":
 				return (
 					<View style={styles.metricRow}>
@@ -506,38 +500,42 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 
 			return (
 				<View style={styles.optionGrid}>
-					{step.options.map((option) => (
-						<OnboardingPickerOption
-							key={option}
-							label={option}
-							iconName={step.optionIcons?.[option] as IoniconName | undefined}
-							variant={pickerVariant}
-							selected={
-								Array.isArray(values) ? values.includes(option) : values === option
-							}
-							onPress={() =>
-								toggleValue(
-									step.field as
-										| "conditions"
-										| "ingredientSensitivities"
-										| "symptoms"
-										| "mealContexts"
-										| "currentEatingPatterns"
-										| "lifestyleFactors",
-									option
-								)
-							}
-						/>
+					{step.options.map((option, index) => (
+						<StaggerItem key={option} delayMs={optionDelayMs(index)}>
+							<OnboardingPickerOption
+								label={option}
+								iconName={step.optionIcons?.[option] as IoniconName | undefined}
+								variant={pickerVariant}
+								selected={
+									Array.isArray(values)
+										? values.includes(option)
+										: values === option
+								}
+								onPress={() =>
+									toggleValue(
+										step.field as
+											| "conditions"
+											| "ingredientSensitivities"
+											| "symptoms"
+											| "mealContexts"
+											| "currentEatingPatterns"
+											| "lifestyleFactors",
+										option
+									)
+								}
+							/>
+						</StaggerItem>
 					))}
-
 					{step.allowCustom ? (
-						<OnboardingPickerOption
-							label="Other"
-							variant={pickerVariant}
-							badgeText={customCount > 0 ? `+${customCount}` : undefined}
-							selected={false}
-							onPress={() => setCustomOptionModalVisible(true)}
-						/>
+						<StaggerItem delayMs={optionDelayMs(step.options.length)}>
+							<OnboardingPickerOption
+								label="Other"
+								variant={pickerVariant}
+								badgeText={customCount > 0 ? `+${customCount}` : undefined}
+								selected={false}
+								onPress={() => setCustomOptionModalVisible(true)}
+							/>
+						</StaggerItem>
 					) : null}
 				</View>
 			);
@@ -547,28 +545,31 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			const value = answers[step.field];
 			return (
 				<View style={styles.optionGrid}>
-					{step.options.map((option) => (
-						<OnboardingPickerOption
-							key={option}
-							label={option}
-							iconName={step.optionIcons?.[option] as IoniconName | undefined}
-							variant={pickerVariant}
-							selected={value === option}
-							onPress={() =>
-								updateField(
-									step.field as
-										| "symptomFrequency"
-										| "symptomSeverityBaseline"
-										| "triedOtherGutHealthApps"
-										| "motivation",
-									option
-								)
-							}
-						/>
+					{step.options.map((option, index) => (
+						<StaggerItem key={option} delayMs={optionDelayMs(index)}>
+							<OnboardingPickerOption
+								label={option}
+								iconName={step.optionIcons?.[option] as IoniconName | undefined}
+								variant={pickerVariant}
+								selected={value === option}
+								onPress={() =>
+									updateField(
+										step.field as
+											| "symptomFrequency"
+											| "symptomSeverityBaseline"
+											| "triedOtherGutHealthApps"
+											| "motivation",
+										option
+									)
+								}
+							/>
+						</StaggerItem>
 					))}
 				</View>
 			);
 		}
+
+		const blockDelay = STAGGER_BASE_MS + STAGGER_STEP_MS * 2;
 
 		if (
 			step.type === "text_input" &&
@@ -577,31 +578,33 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			const value =
 				step.field === "displayName" ? answers.displayName : favoriteFoodsToReintroduce;
 			return (
-				<SectionCard>
-					<InputField
-						value={value}
-						placeholder={
-							step.field === "displayName"
-								? "Enter a display name"
-								: "pizza, coffee, pasta"
-						}
-						onChangeText={(nextValue) =>
-							updateField(
-								step.field as "displayName" | "favoriteFoodsToReintroduce",
-								nextValue
-							)
-						}
-					/>
-				</SectionCard>
+				<StaggerItem delayMs={blockDelay}>
+					<SectionCard>
+						<InputField
+							value={value}
+							placeholder={
+								step.field === "displayName"
+									? "Enter a display name"
+									: "pizza, coffee, pasta"
+							}
+							onChangeText={(nextValue) =>
+								updateField(
+									step.field as "displayName" | "favoriteFoodsToReintroduce",
+									nextValue
+								)
+							}
+						/>
+					</SectionCard>
+				</StaggerItem>
 			);
 		}
 
 		if (step.type === "summary") {
-			return renderSummary();
+			return <StaggerItem delayMs={blockDelay}>{renderSummary()}</StaggerItem>;
 		}
 
 		if (step.type === "preview") {
-			return renderPreview();
+			return <StaggerItem delayMs={blockDelay}>{renderPreview()}</StaggerItem>;
 		}
 
 		return null;
@@ -619,26 +622,27 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				windowWidth,
 				windowHeight
 			)}
-			contentContainerStyle={[
-				styles.onboardingContent,
-				isChoiceStep ? styles.choiceStepContent : null,
-			]}
+			contentContainerStyle={styles.onboardingContent}
 		>
 			<View style={styles.topBar}>
 				<Pressable
 					accessibilityRole="button"
 					accessibilityLabel="Back"
 					onPress={handleBack}
+					hitSlop={8}
 					style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.7 }]}
 				>
 					<Ionicons name="chevron-back" size={26} color={backIconColor} />
 				</Pressable>
-				<View style={styles.progressTrack}>
-					<View style={[styles.progressFill, { width: `${progress}%` }]} />
-				</View>
+				<OnboardingProgressBar progress={progress} />
+				<OnboardingPipCompanion state={mascotState} />
 			</View>
 
-			<Animated.View style={[styles.stepContent, transitionStyle]}>
+			<StepTransition
+				stepKey={step.id}
+				direction={direction}
+				style={isChoiceStep ? styles.choiceStepShell : null}
+			>
 				<ScrollView
 					showsVerticalScrollIndicator={false}
 					keyboardShouldPersistTaps="handled"
@@ -648,23 +652,36 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 						isChoiceStep ? styles.choiceStepScrollContent : null,
 					]}
 				>
-					{step.id === "welcome" ? <WelcomeFoodScene /> : null}
+					{step.id === "welcome" ? (
+						<StaggerItem delayMs={0}>
+							<WelcomeFoodScene />
+						</StaggerItem>
+					) : null}
 
-					<ScreenHeader
-						title={headerTitle}
-						subtitle={headerSubtitle}
-						titleColor={titleColor}
-						titleStyle={hasImageBackground ? styles.imageBackgroundTitle : null}
-						subtitleColor={subtitleColor}
-						fullWidth
-					/>
+					<StaggerItem delayMs={STAGGER_BASE_MS}>
+						<ScreenHeader
+							title={headerTitle}
+							subtitle={headerSubtitle}
+							titleColor={titleColor}
+							titleStyle={hasImageBackground ? styles.imageBackgroundTitle : null}
+							subtitleColor={subtitleColor}
+							fullWidth
+						/>
+					</StaggerItem>
 
-					{step.helper ? <InfoPill label={step.helper} tone="soft" /> : null}
+					{step.helper ? (
+						<StaggerItem delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS}>
+							<InfoPill label={step.helper} tone="soft" />
+						</StaggerItem>
+					) : null}
 
 					{renderSelectionControls()}
 
 					{centerImageSource ? (
-						<View style={styles.centerImageSlot}>
+						<StaggerItem
+							delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS * 3}
+							style={styles.centerImageSlot}
+						>
 							<Image
 								source={centerImageSource}
 								style={[
@@ -674,33 +691,42 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 								resizeMode="contain"
 								accessibilityIgnoresInvertColors
 							/>
-						</View>
+						</StaggerItem>
 					) : null}
 
 					{step.centerGraphic ? (
-						<View style={styles.centerGraphicSlot}>
+						<StaggerItem
+							delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS * 3}
+							style={styles.centerGraphicSlot}
+						>
 							<OnboardingCenterGraphic
 								centerGraphic={step.centerGraphic}
 								phaseDiscoveryState={phaseDiscoveryState}
 							/>
-						</View>
+						</StaggerItem>
 					) : null}
 				</ScrollView>
 
-				<View style={[styles.footer, isChoiceStep ? styles.choiceFooter : null]}>
-					{step.footerBody ? (
-						<Text
-							style={[
-								styles.footerBody,
-								hasImageBackground ? styles.footerBodyOnImage : null,
-							]}
-						>
-							{step.footerBody}
-						</Text>
-					) : null}
-					<PrimaryButton label={ctaLabel} onPress={handleContinue} disabled={ctaDisabled} />
-				</View>
-			</Animated.View>
+				{isCommitmentStep ? null : (
+					<StaggerItem
+						delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS * 4}
+						style={[styles.footer, isChoiceStep ? styles.choiceFooter : null]}
+					>
+						{step.footerBody ? (
+							<Text
+								style={[
+									styles.footerBody,
+									hasImageBackground ? styles.footerBodyOnImage : null,
+									step.id === "free-trial" ? styles.trialFooterBody : null,
+								]}
+							>
+								{step.footerBody}
+							</Text>
+						) : null}
+						<PrimaryButton label={ctaLabel} onPress={handleContinue} disabled={ctaDisabled} />
+					</StaggerItem>
+				)}
+			</StepTransition>
 
 			<Modal
 				animationType="fade"
@@ -790,6 +816,29 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	);
 }
 
+function StaggerItem({
+	children,
+	delayMs,
+	style,
+}: {
+	children: ReactNode;
+	delayMs: number;
+	style?: StyleProp<ViewStyle>;
+}) {
+	return (
+		<Animated.View
+			entering={FadeInUp.duration(ENTER_DURATION_MS).delay(delayMs)}
+			style={style}
+		>
+			{children}
+		</Animated.View>
+	);
+}
+
+function optionDelayMs(index: number) {
+	return STAGGER_BASE_MS + STAGGER_STEP_MS * 2 + index * 36;
+}
+
 function renderOnboardingBackground(
 	backgroundVariant: "plain" | "getStartedImage" | undefined,
 	windowWidth: number,
@@ -845,9 +894,6 @@ const styles = StyleSheet.create({
 	onboardingContent: {
 		paddingBottom: spacing.lg,
 	},
-	choiceStepContent: {
-		gap: spacing.md,
-	},
 	topBar: {
 		flexDirection: "row",
 		alignItems: "center",
@@ -859,22 +905,8 @@ const styles = StyleSheet.create({
 		alignItems: "flex-start",
 		justifyContent: "center",
 	},
-	progressTrack: {
-		flex: 1,
-		height: 10,
-		borderRadius: 99,
-		backgroundColor: tokens.color.chart.track,
-		overflow: "hidden",
-	},
-	progressFill: {
-		height: "100%",
-		borderRadius: 99,
-		backgroundColor: palette.primary,
-	},
-	stepContent: {
-		flex: 1,
-		flexGrow: 1,
-		width: "100%",
+	choiceStepShell: {
+		gap: spacing.md,
 	},
 	stepScroll: {
 		flex: 1,
@@ -1025,14 +1057,6 @@ const styles = StyleSheet.create({
 		flexWrap: "wrap",
 		gap: spacing.sm,
 	},
-	planCard: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-	},
-	planCopy: {
-		flex: 1,
-		gap: spacing.xs,
-	},
 	footer: {
 		paddingTop: spacing.md,
 	},
@@ -1052,5 +1076,9 @@ const styles = StyleSheet.create({
 		textShadowColor: "rgba(64, 152, 119, 0.28)",
 		textShadowOffset: { width: 0, height: 1 },
 		textShadowRadius: 2,
+	},
+	trialFooterBody: {
+		color: palette.primaryDark,
+		fontFamily: type.body.semibold,
 	},
 });

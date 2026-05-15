@@ -2,6 +2,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 
 import { requireSupabaseClient } from '../supabase/client';
 import { UserProfile } from '../../types/domain';
+import { ApiError, normalizeRetryableTransportError } from './errors';
 import {
   AnalyzeImageRequest,
   AnalyzeResponse,
@@ -24,6 +25,8 @@ import {
   TokensTopUpResponse,
 } from './contracts';
 
+export { ApiError } from './errors';
+
 function normalizeDisplayName(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : null;
@@ -42,27 +45,52 @@ function mergeDisplayName(profile: UserProfile | null, displayName: string | nul
 
 async function invokeFunction<TResponse>(name: string, body: object): Promise<TResponse> {
   const client = requireSupabaseClient();
-  const { data, error } = await client.functions.invoke(name, {
-    body,
-  });
+  let response: Awaited<ReturnType<typeof client.functions.invoke>>;
+
+  try {
+    response = await client.functions.invoke(name, {
+      body,
+    });
+  } catch (error) {
+    throw normalizeRetryableTransportError(error, name) ?? error;
+  }
+
+  const { data, error } = response;
 
   if (!error) {
     return data as TResponse;
   }
 
   if (error instanceof FunctionsHttpError) {
+    let payload: {
+      error?: {
+        code?: string;
+        message?: string;
+        details?: Record<string, unknown>;
+      };
+      message?: string;
+    } = {};
+
     try {
-      const payload = await error.context.json();
-      const message =
-        payload?.error?.message ??
-        payload?.message ??
-        `The ${name} request failed.`;
-      throw new Error(message);
-    } catch (contextError) {
-      if (contextError instanceof Error) {
-        throw contextError;
-      }
+      payload = await error.context.json();
+    } catch {
+      payload = {};
     }
+
+    const message =
+      payload?.error?.message ??
+      payload?.message ??
+      `The ${name} request failed.`;
+    throw new ApiError(message, {
+      status: error.context.status,
+      code: payload?.error?.code,
+      details: payload?.error?.details,
+    });
+  }
+
+  const retryableTransportError = normalizeRetryableTransportError(error, name);
+  if (retryableTransportError) {
+    throw retryableTransportError;
   }
 
   throw error;
@@ -70,27 +98,43 @@ async function invokeFunction<TResponse>(name: string, body: object): Promise<TR
 
 async function fetchDisplayName() {
   const client = requireSupabaseClient();
+  let userResponse: Awaited<ReturnType<typeof client.auth.getUser>>;
+
+  try {
+    userResponse = await client.auth.getUser();
+  } catch (error) {
+    throw normalizeRetryableTransportError(error, 'auth.getUser') ?? error;
+  }
+
   const {
     data: { user },
     error: userError,
-  } = await client.auth.getUser();
+  } = userResponse;
 
   if (userError) {
-    throw userError;
+    throw normalizeRetryableTransportError(userError, 'auth.getUser') ?? userError;
   }
 
   if (!user) {
     return undefined;
   }
 
-  const { data, error } = await client
-    .from('user_profiles')
-    .select('display_name')
-    .eq('user_id', user.id)
-    .maybeSingle();
+  let displayNameResponse: { data: unknown; error: unknown };
+
+  try {
+    displayNameResponse = await client
+      .from('user_profiles')
+      .select('display_name')
+      .eq('user_id', user.id)
+      .maybeSingle();
+  } catch (error) {
+    throw normalizeRetryableTransportError(error, 'user_profiles.display_name') ?? error;
+  }
+
+  const { data, error } = displayNameResponse;
 
   if (error) {
-    throw error;
+    throw normalizeRetryableTransportError(error, 'user_profiles.display_name') ?? error;
   }
 
   return normalizeDisplayName((data as { display_name?: string | null } | null)?.display_name);

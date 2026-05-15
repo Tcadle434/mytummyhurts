@@ -9,13 +9,13 @@ import { AppScreen, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } 
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { components, palette, radii, shadows, spacing, tokens, type } from '../../theme';
+import { createScanRequestId } from '../../utils/id';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanCapture'>;
 
 export function ScanCaptureScreen({ navigation, route }: Props) {
   const sourceType = route.params?.sourceType ?? 'camera';
   const manualMode = route.params?.manualMode ?? false;
-  const fromOnboarding = route.params?.fromOnboarding ?? false;
   const [permission, requestPermission] = useCameraPermissions();
   const [autoOpened, setAutoOpened] = useState(false);
   const cameraRef = useRef<CameraView | null>(null);
@@ -41,11 +41,11 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
 
     navigation.replace('ScanAnalyzing', {
       payload: {
+        requestId: createScanRequestId(),
         sourceType,
         imageUri: result.assets[0].uri,
       },
       manualMode,
-      fromOnboarding,
     });
   }
 
@@ -58,11 +58,11 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
     trackEvent('scan_capture_completed', { source_type: sourceType });
     navigation.replace('ScanAnalyzing', {
       payload: {
+        requestId: createScanRequestId(),
         sourceType,
         imageUri: picture.uri,
       },
       manualMode,
-      fromOnboarding,
     });
   }
 
@@ -131,7 +131,10 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
       </View>
 
       {!permission?.granted ? (
-        <SecondaryButton label="Use demo scan" onPress={() => navigation.replace('ScanAnalyzing', { payload: { sourceType, imageUri: undefined }, manualMode, fromOnboarding })} />
+        <SecondaryButton
+          label="Use demo scan"
+          onPress={() => navigation.replace('ScanAnalyzing', { payload: { requestId: createScanRequestId(), sourceType, imageUri: undefined }, manualMode })}
+        />
       ) : null}
     </AppScreen>
   );

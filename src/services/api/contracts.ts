@@ -10,6 +10,7 @@ import {
 } from '../../types/domain';
 
 export interface AnalyzeImageRequest {
+  requestId: string;
   imagePath: string;
   sourceType: ScanInputPayload['sourceType'];
   scanCategory?: ScanCategory;
@@ -18,6 +19,7 @@ export interface AnalyzeImageRequest {
 }
 
 export interface AnalyzeTextRequest {
+  requestId: string;
   text: string;
   sourceType: ScanInputPayload['sourceType'];
   scanCategory?: ScanCategory;
@@ -27,6 +29,9 @@ export interface AnalyzeTextRequest {
 
 export interface AnalyzeResponse {
   scanId: string;
+  requestId?: string;
+  deduped?: boolean;
+  learningSyncStatus?: 'updated' | 'locked' | 'failed' | 'skipped' | 'not_applicable';
   tokensRemaining: number;
   scan: ScanRecord;
   billing: BillingState;

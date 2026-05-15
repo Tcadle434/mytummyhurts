@@ -10,6 +10,8 @@ import {
   UserProfile,
 } from './domain.ts';
 import { getGutScoreSnapshots, mapStructuredAnalysisValue } from './db.ts';
+import { errorMetadata, recordSystemEvent } from './observability.ts';
+import { sleep } from './retry.ts';
 import {
   buildGutScoreEvent,
   buildUserProfileFromSeed,
@@ -267,13 +269,81 @@ function buildDailyConditionInsights(insights: IngredientInsight[], activeCondit
     .slice(0, 24);
 }
 
-export async function rebuildInsightsAndProfile(
+export class OperationLockBusyError extends Error {
+  code = 'operation_lock_busy';
+
+  constructor(message = 'Another learning refresh is already running.') {
+    super(message);
+    this.name = 'OperationLockBusyError';
+  }
+}
+
+async function acquireLearningLock(
+  admin: SupabaseClient,
+  userId: string,
+  ownerId: string,
+  options: { skipIfLocked?: boolean } = {},
+) {
+  const maxAttempts = options.skipIfLocked ? 1 : 8;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const { data, error } = await admin.rpc('acquire_user_operation_lock', {
+      p_user_id: userId,
+      p_operation: 'learning_recompute',
+      p_owner_id: ownerId,
+      p_ttl_seconds: 45,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (data === true) {
+      if (attempt > 1) {
+        await recordSystemEvent(admin, {
+          eventType: 'learning_recompute_lock_acquired_after_wait',
+          userId,
+          operation: 'learning_recompute',
+          metadata: { attempt },
+        });
+      }
+      return;
+    }
+
+    if (attempt < maxAttempts) {
+      await sleep(250);
+    }
+  }
+
+  await recordSystemEvent(admin, {
+    eventType: 'learning_recompute_lock_busy',
+    severity: 'warn',
+    userId,
+    operation: 'learning_recompute',
+  });
+  throw new OperationLockBusyError();
+}
+
+async function releaseLearningLock(admin: SupabaseClient, userId: string, ownerId: string) {
+  const { error } = await admin.rpc('release_user_operation_lock', {
+    p_user_id: userId,
+    p_operation: 'learning_recompute',
+    p_owner_id: ownerId,
+  });
+
+  if (error) {
+    console.warn('[profile] failed to release learning lock', error);
+  }
+}
+
+async function rebuildInsightsAndProfileUnlocked(
   admin: SupabaseClient,
   userId: string,
   options: {
     eventType?: string;
     sourceType?: string;
     sourceId?: string;
+    preserveGutScore?: boolean;
   } = {},
 ): Promise<{
   insights: IngredientInsight[];
@@ -288,7 +358,11 @@ export async function rebuildInsightsAndProfile(
     { data: scanIngredientRows, error: scanIngredientsError },
   ] = await Promise.all([
     admin.from('user_profiles').select('*').eq('user_id', userId).single(),
-    admin.from('scans').select('id, scan_category, local_date, structured_analysis, overall_risk_score, created_at').eq('user_id', userId),
+    admin
+      .from('scans')
+      .select('id, scan_category, local_date, structured_analysis, overall_risk_score, created_at')
+      .eq('user_id', userId)
+      .eq('analysis_status', 'completed'),
     admin.from('daily_gut_reports').select('*').eq('user_id', userId),
     admin.from('scan_ingredients').select('scan_id, canonical_name, confidence').eq('user_id', userId),
   ]);
@@ -480,13 +554,24 @@ export async function rebuildInsightsAndProfile(
     },
   );
   const previousGutScore = profileRow.stomach_profile_blob?.metadata?.gutScore ?? null;
-  const previousHistory = await getGutScoreSnapshots(admin, userId);
+  const previousHistory = await getGutScoreSnapshots(admin, userId, 14, {
+    sourceType: options.sourceType,
+    sourceId: options.sourceId,
+  });
+  const previousGutScoreEvent = previousGutScore?.recentEvent ?? null;
+  const previousGutScoreUsesCurrentSource = Boolean(
+    options.sourceType &&
+    options.sourceId &&
+    previousGutScoreEvent?.sourceType === options.sourceType &&
+    previousGutScoreEvent?.sourceId === options.sourceId,
+  );
+  const effectivePreviousGutScore = previousHistory[0] ?? (previousGutScoreUsesCurrentSource ? null : previousGutScore) ?? null;
   const gutScore = computeGutScoreState({
     seed: profileSeed,
     insights,
     scans: recomputeScans,
     dailyReports: scoredDailyReports,
-    previousGutScore,
+    previousGutScore: effectivePreviousGutScore,
     movementSource: options.sourceType === 'scan'
       ? 'scan'
       : options.sourceType === 'daily_gut_report'
@@ -502,15 +587,18 @@ export async function rebuildInsightsAndProfile(
   const gutScoreEvent = buildGutScoreEvent({
     eventType: options.eventType ?? (previousGutScore ? 'score_recomputed' : 'onboarding_baseline'),
     score: gutScore,
-    previousScore: previousGutScore,
+    previousScore: effectivePreviousGutScore,
     sourceType: options.sourceType,
     sourceId: options.sourceId,
   });
 
-  profile.stomachProfile.metadata.gutScore = {
-    ...gutScore,
-    recentEvent: gutScoreEvent,
-  };
+  const shouldPreserveGutScore = Boolean(options.preserveGutScore && previousGutScore);
+  profile.stomachProfile.metadata.gutScore = shouldPreserveGutScore
+    ? previousGutScore
+    : {
+      ...gutScore,
+      recentEvent: gutScoreEvent,
+    };
 
   const { error: updateError } = await admin
     .from('user_profiles')
@@ -524,9 +612,11 @@ export async function rebuildInsightsAndProfile(
     throw updateError;
   }
 
-  const { error: snapshotError } = await admin.from('gut_score_snapshots').insert({
+  const snapshotPayload = {
     user_id: userId,
     score_algorithm_version: gutScore.algorithmVersion,
+    source_type: options.sourceType ?? null,
+    source_id: options.sourceId ?? null,
     score: gutScore.currentScore,
     baseline_score: gutScore.baselineScore,
     phase: gutScore.phase,
@@ -537,14 +627,26 @@ export async function rebuildInsightsAndProfile(
     window_start: gutScore.history[0]?.createdAt ?? null,
     window_end: gutScore.updatedAt,
     created_at: gutScore.updatedAt,
-  });
+  };
+
+  if (shouldPreserveGutScore) {
+    return { insights, conditionInsights, profile, dailyReports: scoredDailyReports };
+  }
+
+  const snapshotQuery = options.sourceType && options.sourceId
+    ? admin
+      .from('gut_score_snapshots')
+      .upsert(snapshotPayload, { onConflict: 'user_id,source_type,source_id' })
+    : admin.from('gut_score_snapshots').insert(snapshotPayload);
+
+  const { error: snapshotError } = await snapshotQuery;
 
   if (snapshotError) {
     throw snapshotError;
   }
 
-  if (!previousGutScore || gutScoreEvent.scoreDelta !== 0 || gutScoreEvent.phaseBefore !== gutScoreEvent.phaseAfter) {
-    const { error: eventError } = await admin.from('gut_score_events').insert({
+  if (!effectivePreviousGutScore || gutScoreEvent.scoreDelta !== 0 || gutScoreEvent.phaseBefore !== gutScoreEvent.phaseAfter) {
+    const eventPayload = {
       user_id: userId,
       event_type: gutScoreEvent.eventType,
       score_algorithm_version: gutScoreEvent.algorithmVersion ?? GUT_SCORE_ALGORITHM_VERSION,
@@ -558,7 +660,15 @@ export async function rebuildInsightsAndProfile(
       summary: gutScoreEvent.summary,
       drivers: gutScoreEvent.drivers,
       created_at: gutScoreEvent.createdAt,
-    });
+    };
+
+    const eventQuery = options.sourceType && options.sourceId
+      ? admin
+        .from('gut_score_events')
+        .upsert(eventPayload, { onConflict: 'user_id,source_type,source_id' })
+      : admin.from('gut_score_events').insert(eventPayload);
+
+    const { error: eventError } = await eventQuery;
 
     if (eventError) {
       throw eventError;
@@ -566,4 +676,57 @@ export async function rebuildInsightsAndProfile(
   }
 
   return { insights, conditionInsights, profile, dailyReports: scoredDailyReports };
+}
+
+export async function rebuildInsightsAndProfile(
+  admin: SupabaseClient,
+  userId: string,
+  options: {
+    eventType?: string;
+    sourceType?: string;
+    sourceId?: string;
+    preserveGutScore?: boolean;
+    skipIfLocked?: boolean;
+  } = {},
+) {
+  const ownerId = `${options.sourceType ?? 'profile'}:${options.sourceId ?? crypto.randomUUID()}`;
+  await acquireLearningLock(admin, userId, ownerId, { skipIfLocked: options.skipIfLocked });
+
+  try {
+    await recordSystemEvent(admin, {
+      eventType: 'learning_recompute_started',
+      userId,
+      operation: 'learning_recompute',
+      entityType: options.sourceType,
+      entityId: options.sourceId,
+      metadata: { eventType: options.eventType },
+    });
+    const result = await rebuildInsightsAndProfileUnlocked(admin, userId, options);
+    await recordSystemEvent(admin, {
+      eventType: 'learning_recompute_completed',
+      userId,
+      operation: 'learning_recompute',
+      entityType: options.sourceType,
+      entityId: options.sourceId,
+      metadata: {
+        insights: result.insights.length,
+        conditionInsights: result.conditionInsights.length,
+        dailyReports: result.dailyReports.length,
+      },
+    });
+    return result;
+  } catch (error) {
+    await recordSystemEvent(admin, {
+      eventType: 'learning_recompute_failed',
+      severity: 'error',
+      userId,
+      operation: 'learning_recompute',
+      entityType: options.sourceType,
+      entityId: options.sourceId,
+      metadata: errorMetadata(error),
+    });
+    throw error;
+  } finally {
+    await releaseLearningLock(admin, userId, ownerId);
+  }
 }

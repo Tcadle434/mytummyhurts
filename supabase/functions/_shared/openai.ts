@@ -5,6 +5,7 @@ import {
   MealComponent,
 } from './domain.ts';
 import { fallbackExtractionFromImage, fallbackExtractionFromText } from './scoring.ts';
+import { withRetry } from './retry.ts';
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') ?? '';
 const EXTRACTION_MODEL = Deno.env.get('OPENAI_EXTRACTION_MODEL') ?? 'gpt-5';
@@ -250,6 +251,29 @@ async function runResponsesRequest(input: unknown) {
   return JSON.parse(outputText) as RawExtractionPayload;
 }
 
+function isTransientOpenAiError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return true;
+  }
+
+  const match = error.message.match(/^openai_error:(\d+):/);
+  if (!match) {
+    return false;
+  }
+
+  const status = Number(match[1]);
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+async function runResponsesRequestWithRetry(input: unknown) {
+  return withRetry(() => runResponsesRequest(input), {
+    attempts: 3,
+    delayMs: 350,
+    shouldRetry: isTransientOpenAiError,
+    onRetry: (error, attempt) => console.warn('[openai] retrying request', { attempt, error }),
+  });
+}
+
 function buildImageSystemPrompt() {
   return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Separate visible ingredients from inferred ingredients. Be conservative: do not invent hidden ingredients unless strongly implied by the image. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Do not provide medical advice or risk scoring.`;
 }
@@ -292,7 +316,7 @@ function buildNormalizationPrompt(extraction: RawExtractionPayload) {
 }
 
 async function normalizeExtraction(payload: RawExtractionPayload, imageDetail: 'high' | 'not_applicable') {
-  const normalized = await runResponsesRequest({
+  const normalized = await runResponsesRequestWithRetry({
     model: NORMALIZATION_MODEL,
     input: [
       {
@@ -322,34 +346,29 @@ export async function extractMealFromText(text: string, context: { knownConditio
     return fallbackExtractionFromText(text);
   }
 
-  try {
-    const extracted = await runResponsesRequest({
-      model: EXTRACTION_MODEL,
-      input: [
-        {
-          role: 'system',
-          content: [{ type: 'input_text', text: buildTextSystemPrompt() }],
-        },
-        {
-          role: 'user',
-          content: [{ type: 'input_text', text: buildTextUserPrompt(text, context) }],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'meal_extraction_text',
-          schema: extractionSchema,
-          strict: true,
-        },
+  const extracted = await runResponsesRequestWithRetry({
+    model: EXTRACTION_MODEL,
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: buildTextSystemPrompt() }],
       },
-    });
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: buildTextUserPrompt(text, context) }],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'meal_extraction_text',
+        schema: extractionSchema,
+        strict: true,
+      },
+    },
+  });
 
-    return await normalizeExtraction(extracted, 'not_applicable');
-  } catch (error) {
-    console.warn('[openai] text extraction failed, using fallback', error);
-    return fallbackExtractionFromText(text);
-  }
+  return await normalizeExtraction(extracted, 'not_applicable');
 }
 
 export async function extractMealFromImage(
@@ -360,39 +379,34 @@ export async function extractMealFromImage(
     return fallbackExtractionFromImage();
   }
 
-  try {
-    const extracted = await runResponsesRequest({
-      model: EXTRACTION_MODEL,
-      input: [
-        {
-          role: 'system',
-          content: [{ type: 'input_text', text: buildImageSystemPrompt() }],
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'input_text', text: buildImageUserPrompt(context) },
-            {
-              type: 'input_image',
-              image_url: imageUrl,
-              detail: IMAGE_DETAIL,
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'meal_extraction_image',
-          schema: extractionSchema,
-          strict: true,
-        },
+  const extracted = await runResponsesRequestWithRetry({
+    model: EXTRACTION_MODEL,
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: buildImageSystemPrompt() }],
       },
-    });
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: buildImageUserPrompt(context) },
+          {
+            type: 'input_image',
+            image_url: imageUrl,
+            detail: IMAGE_DETAIL,
+          },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'meal_extraction_image',
+        schema: extractionSchema,
+        strict: true,
+      },
+    },
+  });
 
-    return await normalizeExtraction(extracted, 'high');
-  } catch (error) {
-    console.warn('[openai] image extraction failed, using fallback', error);
-    return fallbackExtractionFromImage();
-  }
+  return await normalizeExtraction(extracted, 'high');
 }

@@ -56,7 +56,6 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
           navigation.replace('ScanResult', {
             scanId: result.scanId,
             manualMode: route.params.manualMode,
-            fromOnboarding: route.params.fromOnboarding,
           });
         }, 220);
       })
@@ -80,7 +79,7 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
         <ScreenHeader eyebrow="Analysis failed" title="The meal could not be analyzed." subtitle={error} />
         <SectionCard>
           <Pressable
-            onPress={() => navigation.replace('ScanCapture', { sourceType: route.params.payload.sourceType, manualMode: route.params.manualMode, fromOnboarding: route.params.fromOnboarding })}
+            onPress={() => navigation.replace('ScanCapture', { sourceType: route.params.payload.sourceType, manualMode: route.params.manualMode })}
             style={({ pressed }) => [styles.primaryAction, pressed && { opacity: 0.82 }]}
           >
             <Text style={styles.primaryActionLabel}>Try again</Text>

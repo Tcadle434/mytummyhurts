@@ -57,9 +57,9 @@ export function StartingGutScoreComputeCard({
 		? "Computing"
 		: "Ready to compute";
 	const checklistItems = [
-		"Symptoms and severity",
-		"Known conditions",
-		"Declared sensitivities",
+		"Symptoms",
+		"Conditions",
+		"Sensitivities",
 		"Current patterns",
 	];
 
@@ -70,7 +70,14 @@ export function StartingGutScoreComputeCard({
 			ringProgress.value = withTiming(0.16, { duration: 240 });
 			resultOpacity.value = withTiming(0, { duration: 120 });
 			resultTranslate.value = withTiming(10, { duration: 120 });
-			ringScale.value = withTiming(1, { duration: 160 });
+			ringScale.value = withRepeat(
+				withTiming(1.035, {
+					duration: 1100,
+					easing: Easing.inOut(Easing.quad),
+				}),
+				-1,
+				true
+			);
 			return;
 		}
 
@@ -81,6 +88,7 @@ export function StartingGutScoreComputeCard({
 				duration: 2100,
 				easing: Easing.out(Easing.cubic),
 			});
+			ringScale.value = withTiming(1, { duration: 200 });
 			resultOpacity.value = withTiming(0, { duration: 120 });
 			resultTranslate.value = withTiming(10, { duration: 120 });
 			const timers = [320, 760, 1220, 1700].map((delay, index) =>
@@ -401,11 +409,11 @@ const styles = StyleSheet.create({
 	},
 	checkRow: {
 		width: "48%",
-		minHeight: 32,
+		height: 44,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.xs,
-		borderRadius: 17,
+		borderRadius: 22,
 		backgroundColor: tokens.color.surface.card.warm,
 		paddingHorizontal: spacing.xs,
 	},
