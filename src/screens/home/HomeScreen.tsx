@@ -170,8 +170,8 @@ export function HomeScreen() {
 				<View style={styles.titleStack}>
 					{isWaitingForInitialRemoteData ? (
 						<>
-							<SkeletonBlock width="72%" height={30} radius={radii.sm} />
-							<SkeletonBlock width={112} height={20} radius={radii.sm} />
+							<SkeletonBlock width="72%" height={22} radius={radii.sm} />
+							<SkeletonBlock width={112} height={18} radius={radii.sm} />
 						</>
 					) : (
 						<Text style={styles.greetingText} numberOfLines={1} ellipsizeMode="tail">
@@ -295,28 +295,27 @@ function GutScoreHomeCardSkeleton() {
 		<SectionCard style={styles.gutScoreSkeletonCard}>
 			<View style={styles.skeletonCopyColumn}>
 				<View style={styles.skeletonHeaderRow}>
-					<SkeletonBlock width={96} height={24} radius={radii.sm} />
-					<SkeletonBlock width={28} height={28} radius={14} />
+					<SkeletonBlock width={84} height={22} radius={radii.sm} />
+					<SkeletonBlock width={26} height={26} radius={13} />
 				</View>
 				<View style={styles.skeletonScoreRow}>
-					<SkeletonBlock width={84} height={58} radius={radii.md} />
+					<SkeletonBlock width={68} height={44} radius={radii.md} />
 					<SkeletonBlock
-						width={52}
-						height={26}
+						width={44}
+						height={22}
 						radius={radii.sm}
 						style={styles.skeletonScoreScale}
 					/>
 				</View>
-				<SkeletonBlock width={150} height={44} radius={radii.sm} />
-				<View style={styles.skeletonTrendCard}>
-					<SkeletonBlock width={88} height={16} radius={radii.sm} />
-					<SkeletonBlock width={106} height={24} radius={radii.sm} />
-					<SkeletonBlock width={82} height={18} radius={radii.sm} />
+				<SkeletonBlock width={138} height={36} radius={radii.sm} />
+				<View style={styles.skeletonTrendRow}>
+					<SkeletonBlock width={14} height={14} radius={7} />
+					<SkeletonBlock width={108} height={14} radius={radii.sm} />
 				</View>
 			</View>
 			<View style={styles.skeletonVisualWrap}>
-				<SkeletonBlock width={150} height={118} radius={radii.xxl} />
-				<SkeletonBlock width={92} height={34} radius={radii.pill} />
+				<SkeletonBlock width={124} height={96} radius={radii.xxl} />
+				<SkeletonBlock width={78} height={28} radius={radii.pill} />
 			</View>
 		</SectionCard>
 	);
@@ -416,10 +415,10 @@ const styles = StyleSheet.create({
 	},
 	greetingText: {
 		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 24,
-		lineHeight: 30,
-		letterSpacing: -0.4,
+		fontFamily: type.body.semibold,
+		fontSize: 17,
+		lineHeight: 22,
+		letterSpacing: -0.2,
 	},
 	streakRow: {
 		flexDirection: "row",
@@ -489,12 +488,12 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 	},
 	gutScoreSkeletonCard: {
-		minHeight: 224,
+		minHeight: 168,
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.sm,
-		paddingVertical: spacing.xl,
+		paddingVertical: spacing.md,
 	},
 	skeletonCopyColumn: {
 		flex: 1,
@@ -515,20 +514,14 @@ const styles = StyleSheet.create({
 	skeletonScoreScale: {
 		marginBottom: 8,
 	},
-	skeletonTrendCard: {
-		alignSelf: "flex-start",
-		minWidth: 132,
-		marginTop: spacing.sm,
-		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
-		borderRadius: radii.md,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
-		gap: spacing.xs,
+	skeletonTrendRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 5,
+		marginTop: spacing.xs,
 	},
 	skeletonVisualWrap: {
-		width: 156,
+		width: 132,
 		alignItems: "center",
 		justifyContent: "center",
 		gap: spacing.xs,
