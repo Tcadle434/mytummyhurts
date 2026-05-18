@@ -93,7 +93,7 @@ export function RootNavigator() {
         ) : (
           <RootStack.Screen name="OnboardingStack" component={OnboardingNavigator} />
         )}
-        <RootStack.Screen name="Settings" component={SettingsScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="Settings" component={SettingsScreen} />
         <RootStack.Screen name="LegalDocument" component={LegalDocumentScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="DesignSystemShowcase" component={DesignSystemShowcaseScreen} />
         <RootStack.Screen name="ScanCapture" component={ScanCaptureScreen} options={{ presentation: 'fullScreenModal' }} />

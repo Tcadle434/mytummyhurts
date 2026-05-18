@@ -200,7 +200,7 @@ describe('Gut Score movement', () => {
     expect(mildBaseline.currentScore - score.currentScore).toBeLessThanOrEqual(4);
   });
 
-  it('limits mixed daily reports to small Gut Score movement', () => {
+  it('lets weak mixed daily reports lower the score slightly', () => {
     const previousGutScore = {
       ...mildBaseline,
       currentScore: 30,
@@ -223,7 +223,39 @@ describe('Gut Score movement', () => {
       now: '2026-05-12T18:00:00.000Z',
     });
 
-    expect(score.currentScore - previousGutScore.currentScore).toBeLessThanOrEqual(1);
+    expect(score.currentScore - previousGutScore.currentScore).toBe(-1);
+  });
+
+  it('does not let a reactive daily report raise the score when rolling history is better', () => {
+    const previousGutScore = {
+      ...mildBaseline,
+      currentScore: 36,
+      baselineScore: 27,
+      history: [{ score: 36, createdAt: '2026-05-11T18:00:00.000Z' }],
+      updatedAt: '2026-05-11T18:00:00.000Z',
+    };
+    const score = computeGutScoreState({
+      answers: answers({
+        conditions: ['IBS', 'GERD / Acid reflux'],
+        symptoms: ['Bloating', 'Gas', 'Diarrhea', 'Nausea', 'Reflux / Heartburn'],
+        symptomFrequency: 'Almost daily',
+        symptomSeverityBaseline: 'Severe',
+      }),
+      insights: [],
+      scans: [],
+      dailyReports: [
+        report('2026-05-09', 1, 82),
+        report('2026-05-10', 2, 74),
+        report('2026-05-11', 4, 58),
+        report('2026-05-12', 8, 26),
+      ],
+      previousGutScore,
+      movementSource: 'daily_report',
+      now: '2026-05-12T18:00:00.000Z',
+    });
+
+    expect(score.currentScore).toBe(34);
+    expect(score.currentScore - previousGutScore.currentScore).toBe(-2);
   });
 
   it('lets a calm report raise the score only gradually', () => {

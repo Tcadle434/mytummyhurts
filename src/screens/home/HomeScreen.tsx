@@ -7,6 +7,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen, SectionCard, SkeletonBlock } from "../../components/common/UI";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
+import { AddScanSheet } from "../../components/scan/AddScanSheet";
 import { isLiveBackendConfigured } from "../../config/env";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { useInsightsData } from "../../features/insights/hooks";
@@ -39,9 +40,11 @@ export function HomeScreen() {
 	const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
 	const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
 	const [gutScoreInfoVisible, setGutScoreInfoVisible] = useState(false);
+	const [scanSheetVisible, setScanSheetVisible] = useState(false);
 	const [clockNow, setClockNow] = useState(() => new Date());
-	const [dismissedDailyReportPromptDate, setDismissedDailyReportPromptDate] =
-		useState<string | null>(null);
+	const [dismissedDailyReportPromptDate, setDismissedDailyReportPromptDate] = useState<
+		string | null
+	>(null);
 
 	const greeting = localDaypartGreeting(clockNow);
 	const historyQuery = useHistoryFeed(12);
@@ -53,20 +56,18 @@ export function HomeScreen() {
 			!hasRemoteQueryData &&
 			(!remoteDataLoaded || initialServerSyncNeeded || serverSyncInFlight) &&
 			!historyQuery.isError &&
-			!insightsQuery.isError,
+			!insightsQuery.isError
 	);
 	const canUseFallbackData = !isWaitingForInitialRemoteData;
 	const firstPage = historyQuery.data?.pages[0];
 	const scans = useMemo(
 		() => (canUseFallbackData ? firstPage?.scans ?? fallbackScans : EMPTY_SCANS),
-		[canUseFallbackData, fallbackScans, firstPage?.scans],
+		[canUseFallbackData, fallbackScans, firstPage?.scans]
 	);
 	const dailyReports = useMemo(
 		() =>
-			canUseFallbackData
-				? firstPage?.dailyReports ?? fallbackReports
-				: EMPTY_DAILY_REPORTS,
-		[canUseFallbackData, fallbackReports, firstPage?.dailyReports],
+			canUseFallbackData ? firstPage?.dailyReports ?? fallbackReports : EMPTY_DAILY_REPORTS,
+		[canUseFallbackData, fallbackReports, firstPage?.dailyReports]
 	);
 	const profile = canUseFallbackData
 		? insightsQuery.data?.profile ?? fallbackProfile
@@ -160,8 +161,8 @@ export function HomeScreen() {
 						style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.78 }]}
 					>
 						<Ionicons
-							name="settings-outline"
-							size={20}
+							name="person-circle-outline"
+							size={22}
 							color={tokens.color.icon.primary}
 						/>
 					</Pressable>
@@ -236,6 +237,37 @@ export function HomeScreen() {
 				/>
 			)}
 
+			<Pressable
+				onPress={() => {
+					trackEvent("add_scan_sheet_opened", { entry_point: "home_scan_cta" });
+					setScanSheetVisible(true);
+				}}
+				style={({ pressed }) => [styles.scanCtaShell, pressed && { opacity: 0.92 }]}
+			>
+				<LinearGradient
+					colors={[...components.scanCta.gradient]}
+					start={{ x: 0, y: 0 }}
+					end={{ x: 1, y: 1 }}
+					style={styles.scanCtaGradient}
+				>
+					<View style={styles.scanIconBubble}>
+						<Ionicons
+							name="camera-outline"
+							size={18}
+							color={components.scanCta.arrowForeground}
+						/>
+					</View>
+					<Text style={styles.scanTitle}>Scan a meal</Text>
+					<View style={styles.scanArrow}>
+						<Ionicons
+							name="arrow-forward"
+							size={16}
+							color={components.scanCta.arrowForeground}
+						/>
+					</View>
+				</LinearGradient>
+			</Pressable>
+
 			{isWaitingForInitialRemoteData ? (
 				<WeeklyProgressCardSkeleton />
 			) : (
@@ -255,32 +287,11 @@ export function HomeScreen() {
 				/>
 			)}
 
-			<Pressable
-				onPress={() =>
-					navigation.navigate("ScanCapture", { sourceType: "camera", manualMode: false })
-				}
-				style={({ pressed }) => [styles.scanCtaShell, pressed && { opacity: 0.92 }]}
-			>
-				<LinearGradient
-					colors={[...components.scanCta.gradient]}
-					start={{ x: 0, y: 0 }}
-					end={{ x: 1, y: 1 }}
-					style={styles.scanCtaGradient}
-				>
-					<View style={styles.scanAccentLeft} />
-					<View style={styles.scanAccentRight} />
-					<Ionicons name="camera-outline" size={42} color={components.scanCta.title} />
-					<Text style={styles.scanTitle}>Scan a meal</Text>
-					<Text style={styles.scanSubtitle}>Get instant insights</Text>
-					<View style={styles.scanArrow}>
-						<Ionicons
-							name="arrow-forward"
-							size={18}
-							color={components.scanCta.arrowForeground}
-						/>
-					</View>
-				</LinearGradient>
-			</Pressable>
+			<AddScanSheet
+				visible={scanSheetVisible}
+				onClose={() => setScanSheetVisible(false)}
+				entryPoint="home_scan_cta"
+			/>
 
 			<GutScoreInfoModal
 				visible={gutScoreInfoVisible}
@@ -326,29 +337,29 @@ function WeeklyProgressCardSkeleton() {
 		<SectionCard style={styles.weeklyProgressSkeletonCard}>
 			<View style={styles.weeklyProgressSkeletonHeader}>
 				<View style={styles.skeletonCopyColumn}>
-					<SkeletonBlock width={136} height={24} radius={radii.sm} />
+					<SkeletonBlock width={118} height={20} radius={radii.sm} />
 				</View>
-				<SkeletonBlock width={18} height={18} radius={9} />
+				<SkeletonBlock width={16} height={16} radius={8} />
 			</View>
 			<View style={styles.weeklyProgressSkeletonFeature}>
-				<SkeletonBlock width={116} height={116} radius={58} />
+				<SkeletonBlock width={92} height={92} radius={46} />
 				<View style={styles.weeklyProgressSkeletonFeatureCopy}>
-					<SkeletonBlock width={118} height={14} radius={radii.sm} />
-					<SkeletonBlock width="90%" height={18} radius={radii.sm} />
-					<SkeletonBlock width="82%" height={18} radius={radii.sm} />
+					<SkeletonBlock width={108} height={14} radius={radii.sm} />
+					<SkeletonBlock width="90%" height={16} radius={radii.sm} />
+					<SkeletonBlock width="82%" height={16} radius={radii.sm} />
 				</View>
 			</View>
 			<View style={styles.weeklyProgressSkeletonDays}>
 				{[0, 1, 2, 3, 4, 5, 6].map((item) => (
 					<View key={item} style={styles.weeklyProgressSkeletonDay}>
-						<SkeletonBlock width={14} height={14} radius={radii.sm} />
-						<SkeletonBlock width={30} height={30} radius={15} />
-						<SkeletonBlock width={18} height={18} radius={9} />
-						<SkeletonBlock width={22} height={14} radius={radii.sm} />
+						<SkeletonBlock width={12} height={12} radius={radii.sm} />
+						<SkeletonBlock width={24} height={24} radius={12} />
+						<SkeletonBlock width={14} height={14} radius={7} />
+						<SkeletonBlock width={20} height={12} radius={radii.sm} />
 					</View>
 				))}
 			</View>
-			<SkeletonBlock width="88%" height={16} radius={radii.sm} />
+			<SkeletonBlock width="78%" height={12} radius={radii.sm} />
 		</SectionCard>
 	);
 }
@@ -527,8 +538,8 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	weeklyProgressSkeletonCard: {
-		gap: spacing.md,
-		padding: spacing.md,
+		gap: spacing.sm,
+		padding: spacing.sm,
 	},
 	weeklyProgressSkeletonHeader: {
 		flexDirection: "row",
@@ -539,8 +550,7 @@ const styles = StyleSheet.create({
 	weeklyProgressSkeletonFeature: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: spacing.lg,
-		paddingVertical: spacing.xs,
+		gap: spacing.md,
 	},
 	weeklyProgressSkeletonFeatureCopy: {
 		flex: 1,
@@ -552,66 +562,49 @@ const styles = StyleSheet.create({
 	},
 	weeklyProgressSkeletonDay: {
 		flex: 1,
-		minHeight: 142,
+		minHeight: 108,
 		alignItems: "center",
 		justifyContent: "space-between",
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.xs,
 		borderRadius: radii.md,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.frosted,
 	},
 	scanCtaShell: {
-		borderRadius: radii.xxl,
+		borderRadius: radii.lg,
 		overflow: "hidden",
-		...shadows.lift,
+		...shadows.card,
 	},
 	scanCtaGradient: {
-		minHeight: 212,
-		borderRadius: radii.xxl,
-		paddingHorizontal: spacing.lg,
-		paddingVertical: spacing.xl,
+		minHeight: 60,
+		borderRadius: radii.lg,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.sm,
+	},
+	scanIconBubble: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		backgroundColor: components.scanCta.arrowBackground,
 		alignItems: "center",
 		justifyContent: "center",
-		gap: spacing.sm,
-		position: "relative",
-	},
-	scanAccentLeft: {
-		position: "absolute",
-		width: 84,
-		height: 84,
-		borderRadius: 42,
-		backgroundColor: components.scanCta.ornamentLeft,
-		left: -16,
-		bottom: -10,
-	},
-	scanAccentRight: {
-		position: "absolute",
-		width: 118,
-		height: 118,
-		borderRadius: 59,
-		backgroundColor: components.scanCta.ornamentRight,
-		right: -28,
-		top: -20,
 	},
 	scanTitle: {
+		flex: 1,
 		color: components.scanCta.title,
 		fontFamily: type.body.bold,
-		fontSize: 38,
-		letterSpacing: -1,
-	},
-	scanSubtitle: {
-		color: components.scanCta.subtitle,
-		fontFamily: type.body.medium,
-		fontSize: 18,
+		fontSize: 17,
+		letterSpacing: -0.2,
+		textAlign: "center",
 	},
 	scanArrow: {
-		position: "absolute",
-		right: spacing.lg,
-		bottom: spacing.lg,
-		width: 42,
-		height: 42,
-		borderRadius: 21,
+		width: 36,
+		height: 36,
+		borderRadius: 18,
 		backgroundColor: components.scanCta.arrowBackground,
 		alignItems: "center",
 		justifyContent: "center",

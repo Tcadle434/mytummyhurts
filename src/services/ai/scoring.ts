@@ -970,13 +970,13 @@ function dataConfidenceComponent(reportCount: number, recentReports: DailyGutRep
   return clamp(100 - clamp(90 - reportCount * 7 - recentReports.length * 5));
 }
 
-function dailyReportMovementLimit(latestDailyScore?: number) {
-  if (typeof latestDailyScore !== 'number') return 1;
-  if (latestDailyScore <= 10) return 4;
-  if (latestDailyScore <= 25) return 3;
-  if (latestDailyScore <= 33) return 2;
-  if (latestDailyScore <= 49) return 1;
-  if (latestDailyScore <= 66) return 1;
+function dailyReportMovementDelta(latestDailyScore?: number) {
+  if (typeof latestDailyScore !== 'number') return 0;
+  if (latestDailyScore <= 10) return -4;
+  if (latestDailyScore <= 25) return -3;
+  if (latestDailyScore <= 33) return -2;
+  if (latestDailyScore <= 49) return -1;
+  if (latestDailyScore <= 66) return 0;
   if (latestDailyScore <= 79) return 1;
   if (latestDailyScore <= 89) return 2;
   if (latestDailyScore <= 94) return 3;
@@ -988,7 +988,7 @@ function movementLimitForSource(source?: GutScoreMovementSource, latestDailyScor
     case 'scan':
       return 0;
     case 'daily_report':
-      return dailyReportMovementLimit(latestDailyScore);
+      return Math.abs(dailyReportMovementDelta(latestDailyScore));
     case 'profile':
       return 8;
     case 'backfill':
@@ -1007,6 +1007,10 @@ function applyMovementLimit(
   const limit = movementLimitForSource(source, latestDailyScore);
   if (typeof limit !== 'number' || typeof previousScore?.currentScore !== 'number') {
     return rawScore;
+  }
+
+  if (source === 'daily_report') {
+    return clamp(previousScore.currentScore + dailyReportMovementDelta(latestDailyScore));
   }
 
   const delta = clampNumber(rawScore - previousScore.currentScore, -limit, limit);
@@ -1150,11 +1154,12 @@ function historyWithCurrent(history: GutScoreHistoryPoint[] = [], currentScore: 
 
 function computeTrendDelta(currentScore: number, history: GutScoreHistoryPoint[], nowMs: number) {
   if (!history.length) return 0;
+  const chronologicalHistory = [...history].sort((left, right) => scoreEventTime(left.createdAt) - scoreEventTime(right.createdAt));
   const sevenDaysAgo = nowMs - 7 * 24 * 60 * 60 * 1000;
-  const oldestEligible = [...history]
+  const oldestEligible = chronologicalHistory
     .filter((point) => scoreEventTime(point.createdAt) <= sevenDaysAgo)
     .sort((left, right) => scoreEventTime(right.createdAt) - scoreEventTime(left.createdAt))[0];
-  const comparison = oldestEligible ?? history[0];
+  const comparison = oldestEligible ?? chronologicalHistory[0];
 
   return comparison ? currentScore - comparison.score : 0;
 }

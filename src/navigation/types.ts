@@ -23,6 +23,7 @@ export type RootStackParamList = {
   ScanCapture: {
     sourceType?: ScanInputPayload['sourceType'];
     manualMode?: boolean;
+    scanCategory?: ScanInputPayload['scanCategory'];
   };
   ScanAnalyzing: {
     payload: ScanInputPayload;

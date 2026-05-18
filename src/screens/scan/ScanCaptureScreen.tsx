@@ -16,6 +16,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ScanCapture'>;
 export function ScanCaptureScreen({ navigation, route }: Props) {
   const sourceType = route.params?.sourceType ?? 'camera';
   const manualMode = route.params?.manualMode ?? false;
+  const scanCategory = route.params?.scanCategory;
   const [permission, requestPermission] = useCameraPermissions();
   const [autoOpened, setAutoOpened] = useState(false);
   const cameraRef = useRef<CameraView | null>(null);
@@ -44,6 +45,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
         requestId: createScanRequestId(),
         sourceType,
         imageUri: result.assets[0].uri,
+        scanCategory,
       },
       manualMode,
     });
@@ -61,6 +63,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
         requestId: createScanRequestId(),
         sourceType,
         imageUri: picture.uri,
+        scanCategory,
       },
       manualMode,
     });
@@ -133,7 +136,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
       {!permission?.granted ? (
         <SecondaryButton
           label="Use demo scan"
-          onPress={() => navigation.replace('ScanAnalyzing', { payload: { requestId: createScanRequestId(), sourceType, imageUri: undefined }, manualMode })}
+          onPress={() => navigation.replace('ScanAnalyzing', { payload: { requestId: createScanRequestId(), sourceType, imageUri: undefined, scanCategory }, manualMode })}
         />
       ) : null}
     </AppScreen>

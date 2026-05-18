@@ -1,9 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, {
+	useAnimatedStyle,
+	useSharedValue,
+	withSequence,
+	withSpring,
+	withTiming,
+} from "react-native-reanimated";
 
-import { AppScreen, ScreenHeader } from "../../components/common/UI";
+import { AppScreen, DetailScreenHeader } from "../../components/common/UI";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { RootStackParamList } from "../../navigation/types";
@@ -12,13 +19,14 @@ import { useAppStore } from "../../store/useAppStore";
 import { components, radii, spacing, tokens, type } from "../../theme";
 import {
 	WeeklyProgressDay,
+	addDays,
 	buildWeeklyProgressDay,
 	buildWeeklyProgressDays,
-	formatDayTitle,
 	formatWeekRange,
-	getAvailableWeekStarts,
 	getCurrentWeekStart,
 	getFeaturedDailyScoreDay,
+	parseLocalDate,
+	toLocalDate,
 	yesterdayLocalDate,
 } from "../../utils/weeklyProgress";
 
@@ -30,24 +38,47 @@ export function WeeklyProgressScreen() {
 	const scans = historyQuery.data?.pages.flatMap((page) => page.scans ?? []) ?? fallbackScans;
 	const reports =
 		historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ?? fallbackReports;
-	const weekStarts = useMemo(
-		() => getAvailableWeekStarts(scans, reports),
-		[reports, scans]
-	);
+
+	const currentWeekStart = useMemo(() => getCurrentWeekStart(), []);
+	const todayLocalDate = useMemo(() => toLocalDate(new Date()), []);
+
 	const [selectedWeek, setSelectedWeek] = useState(() => getCurrentWeekStart());
-	const days = useMemo(
+	const isActiveWeek = selectedWeek === currentWeekStart;
+
+	const orderedDays = useMemo(
 		() => buildWeeklyProgressDays({ scans, reports, weekStart: selectedWeek }),
 		[reports, scans, selectedWeek]
 	);
-	const currentWeekStart = getCurrentWeekStart();
-	const featuredDay =
-		selectedWeek === currentWeekStart
-			? buildWeeklyProgressDay({
-					scans,
-					reports,
-					localDate: yesterdayLocalDate(),
-			  })
-			: getFeaturedDailyScoreDay(days);
+
+	const visibleDays = useMemo(() => {
+		const filtered = isActiveWeek
+			? orderedDays.filter((day) => day.localDate <= todayLocalDate)
+			: orderedDays;
+		return [...filtered].reverse();
+	}, [orderedDays, isActiveWeek, todayLocalDate]);
+
+	const featuredDay = isActiveWeek
+		? buildWeeklyProgressDay({
+				scans,
+				reports,
+				localDate: yesterdayLocalDate(),
+		  })
+		: getFeaturedDailyScoreDay(orderedDays);
+
+	const canGoOlder = true;
+	const canGoNewer = selectedWeek < currentWeekStart;
+
+	function goOlder() {
+		setSelectedWeek((current) => toLocalDate(addDays(parseLocalDate(current), -7)));
+	}
+
+	function goNewer() {
+		setSelectedWeek((current) => {
+			if (current >= currentWeekStart) return current;
+			const next = toLocalDate(addDays(parseLocalDate(current), 7));
+			return next > currentWeekStart ? currentWeekStart : next;
+		});
+	}
 
 	useEffect(() => {
 		trackEvent("weekly_progress_viewed", { week_start: selectedWeek });
@@ -55,48 +86,25 @@ export function WeeklyProgressScreen() {
 
 	return (
 		<AppScreen>
-			<ScreenHeader
-				title="Weekly Progress"
-				subtitle="Daily Score, meals, and symptoms by week."
+			<DetailScreenHeader
+				eyebrow="Daily Score"
+				title={formatWeekRange(selectedWeek)}
+				titleAccessory={
+					<WeekStepper
+						onOlder={goOlder}
+						onNewer={goNewer}
+						canGoOlder={canGoOlder}
+						canGoNewer={canGoNewer}
+					/>
+				}
 			/>
 
-			<ScrollView
-				horizontal
-				showsHorizontalScrollIndicator={false}
-				contentContainerStyle={styles.weekPicker}
-			>
-				{weekStarts.map((weekStart) => {
-					const selected = weekStart === selectedWeek;
-					return (
-						<Pressable
-							key={weekStart}
-							accessibilityRole="button"
-							onPress={() => setSelectedWeek(weekStart)}
-							style={({ pressed }) => [
-								styles.weekChip,
-								selected && styles.weekChipSelected,
-								pressed && { opacity: 0.82 },
-							]}
-						>
-							<Text
-								style={[
-									styles.weekChipText,
-									selected && styles.weekChipTextSelected,
-								]}
-							>
-								{formatWeekRange(weekStart)}
-							</Text>
-						</Pressable>
-					);
-				})}
-			</ScrollView>
-
 			<WeeklyProgressCard
-				days={days}
+				days={orderedDays}
 				mode="interactive"
 				showChevron={false}
 				featuredDay={featuredDay}
-				featuredLabel={selectedWeek === currentWeekStart ? "Yesterday" : "Selected day"}
+				featuredLabel={isActiveWeek ? "Yesterday" : "Selected day"}
 				onFeaturedMealsPress={(day) =>
 					navigation.navigate("DailyScoreDay", {
 						localDate: day.localDate,
@@ -109,19 +117,14 @@ export function WeeklyProgressScreen() {
 						weekStart: selectedWeek,
 					})
 				}
-				subtitle={formatWeekRange(selectedWeek)}
 			/>
 
-			<View style={styles.listHeader}>
-				<Text style={styles.sectionTitle}>Days this week</Text>
-				<Text style={styles.sectionMeta}>Mon-Sun</Text>
-			</View>
-
 			<View style={styles.dayList}>
-				{days.map((day) => (
+				{visibleDays.map((day) => (
 					<WeekDayRow
 						key={day.localDate}
 						day={day}
+						isToday={isActiveWeek && day.localDate === todayLocalDate}
 						onPress={() =>
 							navigation.navigate("DailyScoreDay", {
 								localDate: day.localDate,
@@ -135,7 +138,78 @@ export function WeeklyProgressScreen() {
 	);
 }
 
-function WeekDayRow({ day, onPress }: { day: WeeklyProgressDay; onPress: () => void }) {
+function WeekStepper({
+	onOlder,
+	onNewer,
+	canGoOlder,
+	canGoNewer,
+}: {
+	onOlder: () => void;
+	onNewer: () => void;
+	canGoOlder: boolean;
+	canGoNewer: boolean;
+}) {
+	return (
+		<View style={styles.stepperRow}>
+			<StepperButton
+				direction="back"
+				disabled={!canGoOlder}
+				onPress={onOlder}
+				accessibilityLabel="Previous week"
+			/>
+			<StepperButton
+				direction="forward"
+				disabled={!canGoNewer}
+				onPress={onNewer}
+				accessibilityLabel="Next week"
+			/>
+		</View>
+	);
+}
+
+function StepperButton({
+	direction,
+	disabled,
+	onPress,
+	accessibilityLabel,
+}: {
+	direction: "back" | "forward";
+	disabled: boolean;
+	onPress: () => void;
+	accessibilityLabel: string;
+}) {
+	return (
+		<Pressable
+			accessibilityRole="button"
+			accessibilityLabel={accessibilityLabel}
+			accessibilityState={{ disabled }}
+			disabled={disabled}
+			onPress={onPress}
+			hitSlop={6}
+			style={({ pressed }) => [
+				styles.stepperButton,
+				disabled && styles.stepperButtonDisabled,
+				pressed && !disabled && { opacity: 0.7 },
+			]}
+		>
+			<Ionicons
+				name={direction === "back" ? "chevron-back" : "chevron-forward"}
+				size={18}
+				color={disabled ? tokens.color.icon.muted : tokens.color.icon.primary}
+			/>
+		</Pressable>
+	);
+}
+
+function WeekDayRow({
+	day,
+	isToday,
+	onPress,
+}: {
+	day: WeeklyProgressDay;
+	isToday: boolean;
+	onPress: () => void;
+}) {
 	const hasScore = day.dailyScore !== undefined && day.hasReport;
 	const score = hasScore ? (day.dailyScore as number) : undefined;
 	const scoreColor = score !== undefined ? scoreTint(score) : tokens.color.text.tertiary;
@@ -145,28 +219,93 @@ function WeekDayRow({ day, onPress }: { day: WeeklyProgressDay; onPress: () => v
 			? "Report logged"
 			: "No report";
 
+	const rowScale = useSharedValue(1);
+	const pillScale = useSharedValue(1);
+
+	const rowAnimatedStyle = useAnimatedStyle(() => ({
+		transform: [{ scale: rowScale.value }],
+	}));
+
+	const pillAnimatedStyle = useAnimatedStyle(() => ({
+		transform: [{ scale: pillScale.value }],
+	}));
+
+	function handlePressIn() {
+		rowScale.value = withSpring(0.97, { damping: 18, stiffness: 360, mass: 0.6 });
+	}
+
+	function handlePressOut() {
+		rowScale.value = withSpring(1, { damping: 16, stiffness: 220, mass: 0.7 });
+	}
+
+	function handlePress() {
+		pillScale.value = withSequence(
+			withTiming(1.18, { duration: 120 }),
+			withTiming(1, { duration: 160 })
+		);
+		onPress();
+	}
+
 	return (
-		<Pressable
-			accessibilityRole="button"
-			onPress={onPress}
-			style={({ pressed }) => [styles.dayRow, pressed && { opacity: 0.9 }]}
-		>
-			<View style={styles.dayDateBadge}>
-				<Text style={styles.dayWeekday}>{day.weekdayLabel}</Text>
-			</View>
-			<View style={styles.dayCopy}>
-				<Text style={styles.dayTitle}>{formatDayTitle(day.localDate)}</Text>
-				<Text style={styles.dayMeta}>
-					{day.mealCount ? `${day.mealCount} meal${day.mealCount === 1 ? "" : "s"}` : "No meals"} · {symptomSummary}
-				</Text>
-			</View>
-			<View style={[styles.dayScorePill, score !== undefined && { backgroundColor: scoreBackground(score) }]}>
-				<Text style={[styles.dayScoreText, { color: scoreColor }]}>
-					{score !== undefined ? score : "—"}
-				</Text>
-			</View>
-			<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
-		</Pressable>
+		<Animated.View style={rowAnimatedStyle}>
+			<Pressable
+				accessibilityRole="button"
+				onPressIn={handlePressIn}
+				onPressOut={handlePressOut}
+				onPress={handlePress}
+				style={styles.dayRow}
+			>
+				<View
+					style={[
+						styles.dayDateBadge,
+						{ backgroundColor: badgeColorForScore(score) },
+						score === undefined && styles.dayDateBadgeEmpty,
+					]}
+				>
+					<Text
+						style={[
+							styles.dayBadgeMonth,
+							score === undefined && styles.dayBadgeTextEmpty,
+						]}
+					>
+						{formatMonth(day.localDate)}
+					</Text>
+					<Text
+						style={[
+							styles.dayBadgeDay,
+							score === undefined && styles.dayBadgeTextEmpty,
+						]}
+					>
+						{formatDayOfMonth(day.localDate)}
+					</Text>
+				</View>
+				<View style={styles.dayCopy}>
+					<View style={styles.dayTitleRow}>
+						<Text style={styles.dayTitle}>{formatWeekday(day.localDate)}</Text>
+						{isToday ? (
+							<View style={styles.todayPill}>
+								<Text style={styles.todayPillText}>Today</Text>
+							</View>
+						) : null}
+					</View>
+					<Text style={styles.dayMeta}>
+						{day.mealCount ? `${day.mealCount} meal${day.mealCount === 1 ? "" : "s"}` : "No meals"} · {symptomSummary}
+					</Text>
+				</View>
+				<Animated.View
+					style={[
+						styles.dayScorePill,
+						score !== undefined && { backgroundColor: scoreBackground(score) },
+						pillAnimatedStyle,
+					]}
+				>
+					<Text style={[styles.dayScoreText, { color: scoreColor }]}>
+						{score !== undefined ? `${score}%` : "—"}
+					</Text>
+				</Animated.View>
+				<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
+			</Pressable>
+		</Animated.View>
 	);
 }
 
@@ -182,49 +321,45 @@ function scoreBackground(score: number) {
 	return tokens.color.status.risk.high.background;
 }
 
+function badgeColorForScore(score: number | undefined) {
+	if (score === undefined) return tokens.color.surface.card.warm;
+	if (score >= 67) return tokens.color.status.risk.low.tint;
+	if (score >= 34) return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.high.tint;
+}
+
+function formatMonth(localDate: string) {
+	return parseLocalDate(localDate)
+		.toLocaleDateString(undefined, { month: "short" })
+		.toUpperCase();
+}
+
+function formatDayOfMonth(localDate: string) {
+	return String(parseLocalDate(localDate).getDate());
+}
+
+function formatWeekday(localDate: string) {
+	return parseLocalDate(localDate).toLocaleDateString(undefined, { weekday: "long" });
+}
+
 const styles = StyleSheet.create({
-	weekPicker: {
-		gap: spacing.sm,
-		paddingRight: spacing.md,
-	},
-	weekChip: {
-		minHeight: 38,
-		justifyContent: "center",
-		borderRadius: radii.pill,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
-		paddingHorizontal: spacing.md,
-	},
-	weekChipSelected: {
-		borderColor: tokens.color.border.emphasis,
-		backgroundColor: tokens.color.status.success.background,
-	},
-	weekChipText: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 18,
-	},
-	weekChipTextSelected: {
-		color: tokens.color.text.accent,
-	},
-	listHeader: {
+	stepperRow: {
 		flexDirection: "row",
 		alignItems: "center",
-		justifyContent: "space-between",
-		gap: spacing.md,
+		gap: spacing.xs,
 	},
-	sectionTitle: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 22,
-		lineHeight: 28,
+	stepperButton: {
+		width: 34,
+		height: 34,
+		borderRadius: 17,
+		alignItems: "center",
+		justifyContent: "center",
+		backgroundColor: tokens.color.surface.frosted,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
 	},
-	sectionMeta: {
-		color: tokens.color.text.tertiary,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
+	stepperButtonDisabled: {
+		opacity: 0.6,
 	},
 	dayList: {
 		gap: spacing.sm,
@@ -238,28 +373,64 @@ const styles = StyleSheet.create({
 		padding: spacing.md,
 	},
 	dayDateBadge: {
-		width: 42,
-		height: 42,
-		borderRadius: 21,
-		backgroundColor: tokens.color.status.success.background,
+		width: 48,
+		height: 48,
+		borderRadius: 24,
 		alignItems: "center",
 		justifyContent: "center",
+		paddingTop: 4,
+		paddingBottom: 5,
 	},
-	dayWeekday: {
-		color: tokens.color.text.accent,
+	dayDateBadgeEmpty: {
+		borderWidth: 1,
+		borderColor: tokens.color.border.strong,
+	},
+	dayBadgeMonth: {
+		color: tokens.color.text.inverse,
 		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 19,
+		fontSize: 9,
+		lineHeight: 11,
+		letterSpacing: 0.6,
+	},
+	dayBadgeDay: {
+		color: tokens.color.text.inverse,
+		fontFamily: type.body.bold,
+		fontSize: 18,
+		lineHeight: 22,
+		fontVariant: ["tabular-nums"],
+		letterSpacing: -0.3,
+	},
+	dayBadgeTextEmpty: {
+		color: tokens.color.text.tertiary,
 	},
 	dayCopy: {
 		flex: 1,
 		gap: 3,
+	},
+	dayTitleRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
 	},
 	dayTitle: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.bold,
 		fontSize: 16,
 		lineHeight: 21,
+	},
+	todayPill: {
+		paddingHorizontal: spacing.xs,
+		paddingVertical: 2,
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.status.success.background,
+	},
+	todayPillText: {
+		color: tokens.color.text.accent,
+		fontFamily: type.body.bold,
+		fontSize: 11,
+		lineHeight: 14,
+		letterSpacing: 0.4,
+		textTransform: "uppercase",
 	},
 	dayMeta: {
 		color: tokens.color.text.secondary,

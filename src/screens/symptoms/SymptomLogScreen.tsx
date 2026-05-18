@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppScreen, EmptyState, ScreenHeader, SectionCard } from '../../components/common/UI';
+import { AppScreen, EmptyState, SectionCard, TabScreenHeader } from '../../components/common/UI';
 import { useHistoryFeed } from '../../features/history/hooks';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
@@ -41,6 +41,14 @@ export function SymptomLogScreen() {
 
   const reportByDate = useMemo(() => new Map(reports.map((report) => [report.localDate, report])), [reports]);
   const calendarCells = useMemo(() => buildCalendarCells(visibleMonth), [visibleMonth]);
+  const monthReports = useMemo(
+    () => reports.filter((report) => isReportInMonth(report.localDate, visibleMonth)),
+    [reports, visibleMonth],
+  );
+  const isCurrentMonth = useMemo(
+    () => sameCursor(visibleMonth, currentMonthCursor()),
+    [visibleMonth],
+  );
 
   useEffect(() => {
     trackEvent('symptom_log_viewed', { report_count: reports.length });
@@ -53,16 +61,31 @@ export function SymptomLogScreen() {
 
   return (
     <AppScreen contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}>
-      <ScreenHeader title="Symptoms" subtitle="Daily Score history and editable gut reports." />
+      <TabScreenHeader title="Symptoms" />
 
       <SectionCard style={styles.calendarCard}>
         <View style={styles.monthHeader}>
-          <Pressable onPress={() => setVisibleMonth(addMonths(visibleMonth, -1))} style={styles.monthButton}>
+          <Pressable
+            onPress={() => setVisibleMonth(addMonths(visibleMonth, -1))}
+            style={({ pressed }) => [styles.monthButton, pressed && { opacity: 0.7 }]}
+          >
             <Ionicons name="chevron-back" size={18} color={tokens.color.icon.primary} />
           </Pressable>
           <Text style={styles.monthTitle}>{formatMonthTitle(visibleMonth)}</Text>
-          <Pressable onPress={() => setVisibleMonth(addMonths(visibleMonth, 1))} style={styles.monthButton}>
-            <Ionicons name="chevron-forward" size={18} color={tokens.color.icon.primary} />
+          <Pressable
+            disabled={isCurrentMonth}
+            onPress={() => setVisibleMonth(addMonths(visibleMonth, 1))}
+            style={({ pressed }) => [
+              styles.monthButton,
+              isCurrentMonth && styles.monthButtonDisabled,
+              pressed && !isCurrentMonth && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={isCurrentMonth ? tokens.color.icon.muted : tokens.color.icon.primary}
+            />
           </Pressable>
         </View>
 
@@ -97,17 +120,24 @@ export function SymptomLogScreen() {
 
       <View style={styles.listHeader}>
         <Text style={styles.sectionTitle}>Logged days</Text>
-        <Text style={styles.sectionMeta}>{reports.length}</Text>
+        <Text style={styles.sectionMeta}>{monthReports.length}</Text>
       </View>
 
-      {reports.length ? (
+      {monthReports.length ? (
         <View style={styles.reportList}>
-          {reports.map((report) => (
+          {monthReports.map((report) => (
             <ReportRow key={report.id} report={report} onPress={() => openReport(report.localDate)} />
           ))}
         </View>
       ) : (
-        <EmptyState title="No symptom days yet" subtitle="Your daily gut reports will appear here as you log them." />
+        <EmptyState
+          title="No reports this month"
+          subtitle={
+            isCurrentMonth
+              ? 'Tap a day above to log how your gut felt.'
+              : `Nothing was logged in ${formatMonthTitle(visibleMonth)}.`
+          }
+        />
       )}
     </AppScreen>
   );
@@ -205,6 +235,15 @@ function currentMonthCursor(): MonthCursor {
 function addMonths(cursor: MonthCursor, delta: number): MonthCursor {
   const date = new Date(cursor.year, cursor.month + delta, 1);
   return { year: date.getFullYear(), month: date.getMonth() };
+}
+
+function sameCursor(a: MonthCursor, b: MonthCursor) {
+  return a.year === b.year && a.month === b.month;
+}
+
+function isReportInMonth(localDate: string, cursor: MonthCursor) {
+  const parsed = parseLocalDate(localDate);
+  return parsed.getFullYear() === cursor.year && parsed.getMonth() === cursor.month;
 }
 
 function buildCalendarCells(cursor: MonthCursor): CalendarCell[] {
@@ -310,6 +349,9 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.surface.card.default,
     borderWidth: 1,
     borderColor: tokens.color.border.subtle,
+  },
+  monthButtonDisabled: {
+    opacity: 0.5,
   },
   monthTitle: {
     flex: 1,

@@ -4,8 +4,7 @@ import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryCard } from '../../components/cards/HistoryCard';
-import { EmptyState, ScreenHeader } from '../../components/common/UI';
-import { BottomSheet } from '../../components/modals/BottomSheet';
+import { EmptyState, TabScreenHeader } from '../../components/common/UI';
 import { groupHistoryScans, useHistoryFeed } from '../../features/history/hooks';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
@@ -26,7 +25,6 @@ export function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const fallbackScans = useAppStore((state) => state.scans);
   const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
-  const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<HistoryFilter>('food');
   const [deletingScanId, setDeletingScanId] = useState<string | null>(null);
   const historyQuery = useHistoryFeed();
@@ -71,11 +69,13 @@ export function HistoryScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingBottom: 120 + insets.bottom }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + spacing.md, paddingBottom: 120 + insets.bottom },
+        ]}
       >
-        <ScreenHeader title="Scans" subtitle="Food logs are used for learning. Menu and grocery scans will live here too." />
+        <TabScreenHeader title="Scans" />
 
         <View style={styles.filterRail}>
           {filters.map((filter) => (
@@ -125,51 +125,6 @@ export function HistoryScreen() {
           <EmptyState title="Nothing here yet" subtitle={emptyCopy(selectedFilter)} />
         )}
       </ScrollView>
-
-      <Pressable
-        onPress={() => {
-          setSheetVisible(true);
-          trackEvent('add_food_tapped');
-        }}
-        style={({ pressed }) => [styles.fab, { bottom: Math.max(insets.bottom, spacing.lg) }, pressed && { transform: [{ scale: 0.96 }] }]}
-      >
-        <Text style={styles.fabLabel}>+</Text>
-      </Pressable>
-
-      <BottomSheet visible={sheetVisible} onClose={() => setSheetVisible(false)}>
-        <Text style={styles.sheetTitle}>Log food</Text>
-        <Text style={styles.sheetSubtitle}>Food entries are assumed eaten and used with daily reports to learn your patterns.</Text>
-
-        <Pressable
-          onPress={() => {
-            setSheetVisible(false);
-            navigation.navigate('ScanCapture', { sourceType: 'manual_photo', manualMode: true });
-          }}
-          style={({ pressed }) => [styles.sheetButton, pressed && { opacity: 0.82 }]}
-        >
-          <Text style={styles.sheetButtonLabel}>Take photo</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => {
-            setSheetVisible(false);
-            navigation.navigate('ScanCapture', { sourceType: 'manual_upload', manualMode: true });
-          }}
-          style={({ pressed }) => [styles.sheetSecondaryButton, pressed && { opacity: 0.82 }]}
-        >
-          <Text style={styles.sheetSecondaryLabel}>Upload photo</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => {
-            setSheetVisible(false);
-            navigation.navigate('ManualMeal', {});
-          }}
-          style={({ pressed }) => [styles.sheetSecondaryButton, pressed && { opacity: 0.82 }]}
-        >
-          <Text style={styles.sheetSecondaryLabel}>Describe meal</Text>
-        </Pressable>
-      </BottomSheet>
     </View>
   );
 }
@@ -259,60 +214,5 @@ const styles = StyleSheet.create({
     color: palette.text,
     fontFamily: type.body.semibold,
     fontSize: 15,
-  },
-  fab: {
-    position: 'absolute',
-    right: spacing.lg,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: palette.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.lift,
-  },
-  fabLabel: {
-    color: palette.white,
-    fontFamily: type.body.medium,
-    fontSize: 34,
-    marginTop: -2,
-  },
-  sheetTitle: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 26,
-    letterSpacing: -0.5,
-  },
-  sheetSubtitle: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  sheetButton: {
-    minHeight: 56,
-    borderRadius: radii.pill,
-    backgroundColor: palette.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetButtonLabel: {
-    color: palette.white,
-    fontFamily: type.body.bold,
-    fontSize: 16,
-  },
-  sheetSecondaryButton: {
-    minHeight: 56,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetSecondaryLabel: {
-    color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 16,
   },
 });

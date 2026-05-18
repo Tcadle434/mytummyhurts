@@ -4,7 +4,7 @@ import { NavigationProp, useNavigation } from '@react-navigation/native';
 import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 
 import { InsightCard } from '../../components/cards/InsightCard';
-import { AppScreen, InputField, ScreenHeader, SectionCard, SkeletonBlock } from '../../components/common/UI';
+import { AppScreen, InputField, SectionCard, SkeletonBlock, TabScreenHeader } from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList } from '../../navigation/types';
@@ -93,7 +93,7 @@ export function InsightsScreen() {
 
   return (
     <AppScreen>
-      <ScreenHeader title="Insights" />
+      <TabScreenHeader title="Insights" />
 
       <View style={styles.segmentedRail}>
         {windowOptions.map((option) => (

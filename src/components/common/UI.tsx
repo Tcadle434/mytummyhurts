@@ -225,6 +225,77 @@ export function ScreenHeader({
   );
 }
 
+type TabScreenHeaderProps = {
+  title: string;
+};
+
+type DetailScreenHeaderProps = {
+  eyebrow: string;
+  title?: string;
+  titleAccessory?: ReactNode;
+};
+
+export function TabScreenHeader({ title }: TabScreenHeaderProps) {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+
+  return (
+    <View style={styles.tabHeaderRow}>
+      <Text style={styles.tabHeaderTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open settings"
+        onPress={() => navigation.navigate('Settings')}
+        style={({ pressed }) => [styles.tabHeaderIconButton, pressed && { opacity: 0.78 }]}
+      >
+        <Ionicons name="person-circle-outline" size={22} color={tokens.color.icon.primary} />
+      </Pressable>
+    </View>
+  );
+}
+
+export function DetailScreenHeader({ eyebrow, title, titleAccessory }: DetailScreenHeaderProps) {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const canGoBack = navigation.canGoBack();
+
+  return (
+    <View style={styles.detailHeaderShell}>
+      <View style={styles.detailHeaderTopRow}>
+        <View style={styles.detailHeaderSide}>
+          {canGoBack ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              onPress={() => navigation.goBack()}
+              hitSlop={8}
+              style={({ pressed }) => [styles.iconCircle, pressed && { opacity: 0.72 }]}
+            >
+              <Ionicons name="chevron-back" size={22} color={tokens.color.icon.primary} />
+            </Pressable>
+          ) : (
+            <View style={styles.headerSpacer} />
+          )}
+        </View>
+        <Text style={styles.detailEyebrow}>{eyebrow.toUpperCase()}</Text>
+        <View style={styles.detailHeaderSide} />
+      </View>
+      {title || titleAccessory ? (
+        <View style={styles.detailTitleRow}>
+          {title ? (
+            <Text style={styles.detailTitle} numberOfLines={2}>
+              {title}
+            </Text>
+          ) : null}
+          {titleAccessory ? (
+            <View style={styles.detailTitleAccessory}>{titleAccessory}</View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function Wordmark() {
   return (
     <Text style={styles.wordmarkWrap}>
@@ -679,6 +750,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     paddingTop: 2,
+  },
+  detailHeaderShell: {
+    width: '100%',
+    gap: spacing.md,
+  },
+  detailHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  detailHeaderSide: {
+    width: 44,
+    alignItems: 'center',
+  },
+  detailEyebrow: {
+    flex: 1,
+    ...tokens.type.label.eyebrow,
+    color: tokens.color.text.tertiary,
+    textAlign: 'center',
+    letterSpacing: 1.2,
+  },
+  detailTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  detailTitle: {
+    flex: 1,
+    ...tokens.type.title.screen,
+    color: tokens.color.text.primary,
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.6,
+  },
+  detailTitleAccessory: {
+    flexShrink: 0,
+  },
+  tabHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  tabHeaderTitle: {
+    flex: 1,
+    color: tokens.color.text.primary,
+    fontFamily: type.body.bold,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.3,
+  },
+  tabHeaderIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: tokens.color.surface.frosted,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   eyebrow: {
     ...tokens.type.label.eyebrow,
