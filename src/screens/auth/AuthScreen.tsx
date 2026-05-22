@@ -20,7 +20,6 @@ export function AuthScreen({ navigation }: Props) {
   const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [emailMode, setEmailMode] = useState<'signIn' | 'signUp'>('signUp');
   const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | 'signIn' | 'signUp' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const busyMessage = busyProvider === 'signIn' ? 'signing in' : busyProvider === 'signUp' ? 'creating your account' : `${busyProvider} sign-in`;
@@ -81,13 +80,13 @@ export function AuthScreen({ navigation }: Props) {
       busy={busyProvider !== null}
       busyMessage={busyMessage}
       errorMessage={errorMessage}
-      emailMode={emailMode}
+      emailMode="signUp"
       onBack={returnToPaywall}
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onSignIn={() => void handleEmailAuth('signIn')}
       onCreateAccount={() => void handleEmailAuth('signUp')}
-      onToggleEmailMode={() => setEmailMode((mode) => (mode === 'signIn' ? 'signUp' : 'signIn'))}
+      onToggleEmailMode={() => navigation.navigate('OnboardingSignIn')}
       providerSlot={
         <>
           {Platform.OS === 'ios' ? (

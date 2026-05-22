@@ -2,8 +2,32 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
 import { ensureUserRow, mapDailyReportRow } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
-import { rebuildInsightsAndProfile } from '../_shared/profile.ts';
+import { computeDailyScoreForReport } from '../_shared/scoring.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
+import type { ScanForInsightRecompute } from '../_shared/domain.ts';
+
+function minimalStructuredAnalysis() {
+  return {
+    dishName: 'Food',
+    dishConfidence: 'low' as const,
+    clarity: 'unclear' as const,
+    components: [],
+    visibleIngredients: [],
+    inferredIngredients: [],
+    prepStyle: [],
+    notes: [],
+    model: 'daily-report-upsert',
+    promptVersion: 'daily-report-upsert',
+    imageDetail: 'not_applicable' as const,
+  };
+}
+
+function addDays(localDate: string, offset: number) {
+  const [year, month, day] = localDate.split('-').map(Number);
+  const date = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
 
 serve(async (request) => {
   if (isOptionsRequest(request)) {
@@ -58,19 +82,52 @@ serve(async (request) => {
       throw reportError;
     }
 
-    const { profile, insights, conditionInsights, dailyReports } = await rebuildInsightsAndProfile(admin, user.id, {
-      eventType: severity <= 3 ? 'calm_daily_report' : severity >= 7 ? 'reactive_daily_report' : 'neutral_daily_report',
-      sourceType: 'daily_gut_report',
-      sourceId: String(reportRow.id),
-    });
-    const report = dailyReports.find((entry) => entry.id === String(reportRow.id)) ?? mapDailyReportRow(reportRow as Record<string, unknown>);
+    const dailyScoreWindowDates = [body.localDate, addDays(body.localDate, -1), addDays(body.localDate, -2)];
+    const { data: scanRows, error: scansError } = await admin
+      .from('scans')
+      .select('id, scan_category, local_date, overall_risk_score, created_at')
+      .eq('user_id', user.id)
+      .eq('analysis_status', 'completed')
+      .in('local_date', dailyScoreWindowDates);
+
+    if (scansError) {
+      throw scansError;
+    }
+
+    const recomputeScans: ScanForInsightRecompute[] = (scanRows ?? []).map((scan) => ({
+      id: String(scan.id),
+      structuredAnalysis: minimalStructuredAnalysis(),
+      overallRiskScore: Number(scan.overall_risk_score ?? 50),
+      createdAt: scan.created_at ? String(scan.created_at) : undefined,
+      localDate: scan.local_date ? String(scan.local_date) : undefined,
+      scanCategory: scan.scan_category === 'menu' || scan.scan_category === 'grocery' ? scan.scan_category : 'food',
+    }));
+    const scoredReport = computeDailyScoreForReport(
+      mapDailyReportRow(reportRow as Record<string, unknown>),
+      recomputeScans,
+    );
+
+    const { data: scoredReportRow, error: scoreUpdateError } = await admin
+      .from('daily_gut_reports')
+      .update({
+        daily_score: scoredReport.dailyScore ?? null,
+        daily_score_components: scoredReport.dailyScoreComponents ?? {},
+        daily_score_drivers: scoredReport.dailyScoreDrivers ?? [],
+        daily_score_updated_at: scoredReport.dailyScoreUpdatedAt ?? new Date().toISOString(),
+      })
+      .eq('id', String(reportRow.id))
+      .eq('user_id', user.id)
+      .select('*')
+      .single();
+
+    if (scoreUpdateError) {
+      throw scoreUpdateError;
+    }
 
     return jsonResponse({
       ok: true,
-      report,
-      profile,
-      insights,
-      conditionInsights,
+      report: mapDailyReportRow(scoredReportRow as Record<string, unknown>),
+      learningSyncStatus: 'queued',
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'unauthorized') {

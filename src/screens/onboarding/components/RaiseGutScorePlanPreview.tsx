@@ -15,7 +15,7 @@ const TIMELINE_STEPS: {
 }[] = [
 	{
 		phase: "Day 1",
-		title: "Start scanning your meals",
+		title: "Start scanning",
 		iconName: "camera-outline",
 		tone: "start",
 	},
@@ -73,11 +73,7 @@ export function RaiseGutScorePlanPreview({ currentScore = 0 }: { currentScore?: 
 				</View>
 
 				<View style={styles.captionRow}>
-					<Ionicons
-						name="infinite-outline"
-						size={16}
-						color={tokens.color.text.accent}
-					/>
+					<Ionicons name="infinite-outline" size={16} color={tokens.color.text.accent} />
 					<Text style={styles.caption}>
 						Your Gut Score gets more personalized every week.
 					</Text>
@@ -105,12 +101,7 @@ function TimelineStep({
 	return (
 		<View style={styles.step}>
 			<View style={styles.nodeColumn}>
-				<View
-					style={[
-						styles.nodeRing,
-						{ borderColor: colors.ring },
-					]}
-				>
+				<View style={[styles.nodeRing, { borderColor: colors.ring }]}>
 					<View style={[styles.node, { backgroundColor: colors.fill }]}>
 						<Ionicons name={iconName} size={20} color={colors.icon} />
 					</View>
@@ -139,11 +130,7 @@ function ScoreComparison({ currentScore }: { currentScore: number }) {
 					</Text>
 				</View>
 				<View style={styles.comparisonArrow}>
-					<Ionicons
-						name="arrow-forward"
-						size={20}
-						color={tokens.color.text.tertiary}
-					/>
+					<Ionicons name="arrow-forward" size={20} color={tokens.color.text.tertiary} />
 				</View>
 				<View style={styles.comparisonColumn}>
 					<Text style={styles.comparisonEyebrow}>Avg user</Text>
@@ -157,17 +144,7 @@ function ScoreComparison({ currentScore }: { currentScore: number }) {
 }
 
 function nodeColors(tone: TimelineTone) {
-	if (tone === "start") {
-		return {
-			fill: tokens.color.status.risk.medium.background,
-			ring: tokens.color.status.risk.medium.background,
-			icon: tokens.color.status.risk.medium.foreground,
-			phase: tokens.color.status.risk.medium.foreground,
-			line: tokens.color.status.risk.medium.background,
-		};
-	}
-
-	if (tone === "mid") {
+	if (tone === "start" || tone === "mid") {
 		return {
 			fill: tokens.color.status.success.background,
 			ring: tokens.color.status.success.background,
@@ -187,9 +164,9 @@ function nodeColors(tone: TimelineTone) {
 }
 
 function scoreToneColor(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.foreground;
-	if (score >= 34) return tokens.color.status.risk.medium.foreground;
-	return tokens.color.status.risk.high.foreground;
+	if (score >= 67) return tokens.color.status.risk.low.tint;
+	if (score >= 34) return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.high.tint;
 }
 
 const styles = StyleSheet.create({

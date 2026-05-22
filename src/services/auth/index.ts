@@ -211,7 +211,11 @@ export async function signOutSupabase() {
     return;
   }
 
-  await supabase.auth.signOut();
+  try {
+    await supabase.auth.signOut();
+  } catch (error) {
+    console.warn('[auth] Supabase sign out failed; clearing local session anyway.', error);
+  }
   useAppStore.getState().signOut();
 }
 

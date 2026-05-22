@@ -7,6 +7,7 @@ export type OnboardingStackParamList = {
   OnboardingFlow: undefined;
   OnboardingPaywall: undefined;
   OnboardingAuth: undefined;
+  OnboardingSignIn: undefined;
 };
 
 export type MainTabParamList = {

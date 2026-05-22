@@ -31,6 +31,11 @@ export function GetStartedScreen({ navigation }: Props) {
 		navigation.replace("OnboardingFlow");
 	}
 
+	function handleSignIn() {
+		trackEvent("existing_account_sign_in_pressed");
+		navigation.navigate("OnboardingSignIn");
+	}
+
 	return (
 		<View style={styles.screen}>
 			<VideoView
@@ -67,18 +72,30 @@ export function GetStartedScreen({ navigation }: Props) {
 					/>
 				</View>
 
-				<Pressable
-					accessibilityRole="button"
-					onPress={handleGetStarted}
-					style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-				>
-					<Text style={styles.buttonLabel}>Get started</Text>
-					<Ionicons
-						name="arrow-forward"
-						size={19}
-						color={tokens.color.action.primary.foreground}
-					/>
-				</Pressable>
+				<View style={styles.actionGroup}>
+					<Pressable
+						accessibilityRole="button"
+						onPress={handleGetStarted}
+						style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+					>
+						<Text style={styles.buttonLabel}>Get started</Text>
+						<Ionicons
+							name="arrow-forward"
+							size={19}
+							color={tokens.color.action.primary.foreground}
+						/>
+					</Pressable>
+
+					<Pressable
+						accessibilityRole="button"
+						onPress={handleSignIn}
+						style={({ pressed }) => [styles.signInLink, pressed && { opacity: 0.72 }]}
+					>
+						<Text style={styles.signInText}>
+							Already have an account? <Text style={styles.signInTextStrong}>Sign in</Text>
+						</Text>
+					</Pressable>
+				</View>
 			</View>
 		</View>
 	);
@@ -122,6 +139,11 @@ const styles = StyleSheet.create({
 		width: 250,
 		height: 250,
 	},
+	actionGroup: {
+		width: "100%",
+		alignItems: "center",
+		gap: spacing.md,
+	},
 	button: {
 		width: "100%",
 		minHeight: 58,
@@ -139,5 +161,20 @@ const styles = StyleSheet.create({
 	buttonLabel: {
 		...tokens.type.label.button,
 		color: tokens.color.action.primary.foreground,
+	},
+	signInLink: {
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.xs,
+	},
+	signInText: {
+		...tokens.type.body.small,
+		color: tokens.color.utility.white,
+		textAlign: "center",
+		textShadowColor: "rgba(19, 28, 26, 0.38)",
+		textShadowOffset: { width: 0, height: 1 },
+		textShadowRadius: 8,
+	},
+	signInTextStrong: {
+		fontFamily: tokens.type.label.button.fontFamily,
 	},
 });

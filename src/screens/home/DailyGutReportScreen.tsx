@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SeveritySlider } from '../../components/common/SeveritySlider';
-import { AppScreen, InputField, OptionChip, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
+import { AppScreen, DetailScreenHeader, InputField, OptionChip, PrimaryButton, SectionCard } from '../../components/common/UI';
 import { symptomOptions } from '../../data/catalog';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
@@ -147,10 +147,7 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
 
   return (
     <AppScreen contentContainerStyle={styles.screenContent}>
-      <ScreenHeader
-        eyebrow={dateLabel}
-        title="How did your gut feel?"
-      />
+      <DetailScreenHeader eyebrow="Daily report" title={dateLabel} />
 
       <SectionCard style={[styles.scaleCard, styles.compactCard]}>
         <View style={styles.scaleHeader}>
@@ -211,10 +208,11 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      <View style={styles.actionRow}>
-        <SecondaryButton label="Cancel" onPress={() => navigation.goBack()} />
-        <PrimaryButton label={busy ? 'Saving...' : 'Save report'} onPress={() => void handleSave()} disabled={!canSave} />
-      </View>
+      <PrimaryButton
+        label={busy ? 'Saving...' : 'Save report'}
+        onPress={() => void handleSave()}
+        disabled={!canSave}
+      />
 
       <Modal animationType="fade" transparent visible={customModalVisible} onRequestClose={closeCustomModal}>
         <View style={styles.customModalRoot}>
@@ -387,13 +385,14 @@ const styles = StyleSheet.create({
   fieldLabel: {
     color: palette.text,
     fontFamily: type.body.bold,
-    fontSize: 18,
-    letterSpacing: -0.2,
+    fontSize: 15,
+    lineHeight: 19,
+    letterSpacing: -0.1,
   },
   severityValue: {
     fontFamily: type.body.bold,
-    fontSize: 24,
-    letterSpacing: -0.5,
+    fontSize: 20,
+    letterSpacing: -0.4,
   },
   scaleLegend: {
     flexDirection: 'row',
@@ -453,10 +452,6 @@ const styles = StyleSheet.create({
     fontFamily: type.body.bold,
     fontSize: 11,
     lineHeight: 13,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
   },
   errorBanner: {
     flexDirection: 'row',

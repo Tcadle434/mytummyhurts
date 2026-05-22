@@ -10,7 +10,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { palette, radii, shadows, spacing, type } from '../../theme';
-import { ScanCategory, ScanRecord } from '../../types/domain';
+import { ScanCategory, ScanHistorySummary } from '../../types/domain';
 
 type HistoryFilter = 'food' | 'menu' | 'grocery';
 
@@ -66,6 +66,10 @@ export function HistoryScreen() {
     }
   }
 
+  function openScan(scan: ScanHistorySummary) {
+    navigation.navigate('ScanResult', { scanId: scan.id });
+  }
+
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -102,7 +106,7 @@ export function HistoryScreen() {
                   <HistoryCard
                     key={scan.id}
                     scan={scan}
-                    onOpen={() => navigation.navigate('ScanResult', { scanId: scan.id })}
+                    onOpen={() => openScan(scan)}
                     onDelete={() => confirmDeleteScan(scan.id, scan.dishName)}
                     deleteDisabled={deletingScanId === scan.id}
                     deleteLabel={deletingScanId === scan.id ? 'Deleting...' : 'Delete'}
@@ -129,7 +133,7 @@ export function HistoryScreen() {
   );
 }
 
-function filterScans(scans: ScanRecord[], filter: ScanCategory) {
+function filterScans(scans: ScanHistorySummary[], filter: ScanCategory) {
   return scans
     .filter((scan) => (scan.scanCategory ?? 'food') === filter)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
@@ -137,7 +141,7 @@ function filterScans(scans: ScanRecord[], filter: ScanCategory) {
 
 function emptyCopy(filter: HistoryFilter) {
   if (filter === 'menu') {
-    return 'Menu scanning is planned for the next milestone.';
+    return 'Scan a restaurant menu to see the best and worst options for your gut.';
   }
 
   if (filter === 'grocery') {

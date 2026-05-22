@@ -29,7 +29,7 @@ serve(async (request) => {
 
     const { data: scanRow, error: scanLookupError } = await admin
       .from('scans')
-      .select('id, image_storage_path')
+      .select('id')
       .eq('id', body.scanId)
       .eq('user_id', user.id)
       .maybeSingle();
@@ -42,18 +42,27 @@ serve(async (request) => {
       return errorResponse('Scan not found.', 404, 'scan_not_found');
     }
 
+    const { data: inputRows, error: inputsError } = await admin
+      .from('scan_inputs')
+      .select('storage_path')
+      .eq('scan_id', body.scanId)
+      .eq('user_id', user.id);
+
+    if (inputsError) {
+      throw inputsError;
+    }
+
+    const imageStoragePaths = (inputRows ?? [])
+      .map((row) => row.storage_path)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+
     const { error: scanDeleteError } = await admin.from('scans').delete().eq('id', body.scanId).eq('user_id', user.id);
     if (scanDeleteError) {
       throw scanDeleteError;
     }
 
-    const imageStoragePath =
-      typeof scanRow.image_storage_path === 'string' && scanRow.image_storage_path.length > 0
-        ? scanRow.image_storage_path
-        : null;
-
-    if (imageStoragePath) {
-      const { error: imageDeleteError } = await admin.storage.from(mealImagesBucket).remove([imageStoragePath]);
+    if (imageStoragePaths.length) {
+      const { error: imageDeleteError } = await admin.storage.from(mealImagesBucket).remove(imageStoragePaths);
       if (imageDeleteError) {
         console.warn('[scan-delete] failed to remove scan image', imageDeleteError);
       }

@@ -71,7 +71,7 @@ export function PaywallOfferContent({
 						resizeMode="contain"
 						accessibilityIgnoresInvertColors
 					/>
-					<Text style={styles.tagline}>Finally heal your gut</Text>
+					<Text style={styles.tagline}>{"Know how you'll feel before you eat"}</Text>
 					<Pip state="joy" size={96} style={styles.pip} />
 				</View>
 				<View style={styles.headerSide} />

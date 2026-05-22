@@ -2,10 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { components, palette, spacing, tokens, type } from '../../theme';
-import { ScanRecord } from '../../types/domain';
+import { ScanHistorySummary } from '../../types/domain';
 
 type HistoryCardProps = {
-  scan: ScanRecord;
+  scan: ScanHistorySummary;
   onOpen: () => void;
   onDelete?: () => void;
   deleteDisabled?: boolean;
@@ -60,13 +60,13 @@ export function HistoryCard({ scan, onOpen, onDelete, deleteDisabled, deleteLabe
   );
 }
 
-function categoryLabel(value: ScanRecord['scanCategory']) {
+function categoryLabel(value: ScanHistorySummary['scanCategory']) {
   if (value === 'menu') return 'Menu';
   if (value === 'grocery') return 'Grocery';
   return 'Food';
 }
 
-function sourceLabel(value: ScanRecord['sourceType']) {
+function sourceLabel(value: ScanHistorySummary['sourceType']) {
   if (value === 'manual_text') return 'Text';
   if (value === 'upload' || value === 'manual_upload') return 'Upload';
   return 'Photo';

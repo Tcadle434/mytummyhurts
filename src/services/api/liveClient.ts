@@ -12,13 +12,19 @@ import {
   DailyReportUpsertRequest,
   DailyReportUpsertResponse,
   DeleteAccountResponse,
+  ExistingAccountCheckRequest,
+  ExistingAccountCheckResponse,
   HistoryRequest,
   HistoryResponse,
   InsightsRequest,
   InsightsResponse,
+  LearningRecomputeRequest,
+  LearningRecomputeResponse,
   NotificationRegistrationRequest,
   ProfileUpdateRequest,
   ProfileUpdateResponse,
+  ScanGetRequest,
+  ScanGetResponse,
   ScanDeleteRequest,
   ScanDeleteResponse,
   TokensTopUpRequest,
@@ -164,14 +170,22 @@ export const liveApiClient = {
     return invokeFunction<HistoryResponse>('history-get', request);
   },
 
-  async upsertDailyReport(request: DailyReportUpsertRequest) {
+  getScan(request: ScanGetRequest) {
+    return invokeFunction<ScanGetResponse>('scan-get', request);
+  },
+
+  upsertDailyReport(request: DailyReportUpsertRequest) {
+    return invokeFunction<DailyReportUpsertResponse>('daily-report-upsert', request);
+  },
+
+  async learningRecompute(request: LearningRecomputeRequest) {
     const [response, displayName] = await Promise.all([
-      invokeFunction<DailyReportUpsertResponse>('daily-report-upsert', request),
+      invokeFunction<LearningRecomputeResponse>('learning-recompute', request),
       fetchDisplayName(),
     ]);
     return {
       ...response,
-      profile: mergeDisplayName(response.profile, displayName),
+      profile: mergeDisplayName(response.profile ?? null, displayName),
     };
   },
 
@@ -210,5 +224,9 @@ export const liveApiClient = {
 
   deleteAccount() {
     return invokeFunction<DeleteAccountResponse>('account-delete', {});
+  },
+
+  checkExistingAccount(request: ExistingAccountCheckRequest = {}) {
+    return invokeFunction<ExistingAccountCheckResponse>('auth-existing-account-check', request);
   },
 };

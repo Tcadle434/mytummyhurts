@@ -20,6 +20,11 @@ type AuthAccountContentProps = {
 	errorMessage: string | null;
 	emailMode: "signIn" | "signUp";
 	providerSlot: ReactNode;
+	eyebrow?: string;
+	title?: string;
+	subtitle?: string;
+	backAccessibilityLabel?: string;
+	showModeToggle?: boolean;
 	onBack: () => void;
 	onEmailChange: (value: string) => void;
 	onPasswordChange: (value: string) => void;
@@ -36,6 +41,11 @@ export function AuthAccountContent({
 	errorMessage,
 	emailMode,
 	providerSlot,
+	eyebrow = "Account creation",
+	title = "Create your account",
+	subtitle = "Save your profile, scans, reports, and gut insights.",
+	backAccessibilityLabel = "Go back",
+	showModeToggle = true,
 	onBack,
 	onEmailChange,
 	onPasswordChange,
@@ -51,7 +61,7 @@ export function AuthAccountContent({
 				<View style={styles.headerRow}>
 					<Pressable
 						accessibilityRole="button"
-						accessibilityLabel="Back to paywall"
+						accessibilityLabel={backAccessibilityLabel}
 						onPress={onBack}
 						hitSlop={8}
 						style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.72 }]}
@@ -64,11 +74,9 @@ export function AuthAccountContent({
 				<View style={styles.hero}>
 					<Pip state="thumbsUp" size={94} />
 					<View style={styles.heroCopy}>
-						<Text style={styles.eyebrow}>Account creation</Text>
-						<Text style={styles.title}>Create your account</Text>
-						<Text style={styles.subtitle}>
-							Save your profile, scans, reports, and gut insights.
-						</Text>
+						<Text style={styles.eyebrow}>{eyebrow}</Text>
+						<Text style={styles.title}>{title}</Text>
+						<Text style={styles.subtitle}>{subtitle}</Text>
 					</View>
 				</View>
 
@@ -108,22 +116,24 @@ export function AuthAccountContent({
 							onPress={isSignInMode ? onSignIn : onCreateAccount}
 							disabled={busy}
 						/>
-						<Pressable
-							accessibilityRole="button"
-							onPress={onToggleEmailMode}
-							disabled={busy}
-							style={({ pressed }) => [
-								styles.modeToggle,
-								pressed && !busy && { opacity: 0.72 },
-								busy && { opacity: 0.5 },
-							]}
-						>
-							<Text style={styles.modeToggleText}>
-								{isSignInMode
-									? "Need an account? Create one"
-									: "Already have an account? Sign in"}
-							</Text>
-						</Pressable>
+						{showModeToggle ? (
+							<Pressable
+								accessibilityRole="button"
+								onPress={onToggleEmailMode}
+								disabled={busy}
+								style={({ pressed }) => [
+									styles.modeToggle,
+									pressed && !busy && { opacity: 0.72 },
+									busy && { opacity: 0.5 },
+								]}
+							>
+								<Text style={styles.modeToggleText}>
+									{isSignInMode
+										? "Need an account? Create one"
+										: "Already have an account? Sign in"}
+								</Text>
+							</Pressable>
+						) : null}
 						{busy ? (
 							<View style={styles.feedbackRow}>
 								<ActivityIndicator color={palette.primary} />

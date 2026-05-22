@@ -25,7 +25,7 @@ import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
 import { radii, spacing, tokens, type } from "../../theme";
-import { ScanRecord } from "../../types/domain";
+import { ScanHistorySummary } from "../../types/domain";
 import {
 	WeeklyProgressDay,
 	buildWeeklyProgressDays,
@@ -68,6 +68,10 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 		navigation.navigate("ManualMeal", {});
 	}
 
+	function openScan(scan: ScanHistorySummary) {
+		navigation.navigate("ScanResult", { scanId: scan.id });
+	}
+
 	return (
 		<AppScreen>
 			<DetailScreenHeader eyebrow="Daily Score" title={formatDayTitle(localDate)} />
@@ -93,9 +97,7 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 								<MealRow
 									key={scan.id}
 									scan={scan}
-									onPress={() =>
-										navigation.navigate("ScanResult", { scanId: scan.id })
-									}
+									onPress={() => openScan(scan)}
 								/>
 							))}
 						</View>
@@ -196,7 +198,7 @@ function SectionEditButton({ label, onPress }: { label: string; onPress: () => v
 	);
 }
 
-function MealRow({ scan, onPress }: { scan: ScanRecord; onPress: () => void }) {
+function MealRow({ scan, onPress }: { scan: ScanHistorySummary; onPress: () => void }) {
 	const tone = riskTone(scan.overallRiskLevel);
 
 	return (
@@ -251,7 +253,7 @@ function descriptionForDay(day: WeeklyProgressDay) {
 	return "Nothing was logged for this day.";
 }
 
-function riskTone(level: ScanRecord["overallRiskLevel"]) {
+function riskTone(level: ScanHistorySummary["overallRiskLevel"]) {
 	if (level === "high") return tokens.color.status.risk.high.tint;
 	if (level === "medium") return tokens.color.status.risk.medium.tint;
 	return tokens.color.status.risk.low.tint;

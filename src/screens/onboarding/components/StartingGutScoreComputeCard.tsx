@@ -283,9 +283,9 @@ function StartingScoreLoadingDot({ color, delay }: { color: string; delay: numbe
 }
 
 function scoreTone(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.foreground;
-	if (score >= 34) return tokens.color.status.risk.medium.foreground;
-	return tokens.color.status.risk.high.foreground;
+	if (score >= 67) return tokens.color.status.risk.low.tint;
+	if (score >= 34) return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.high.tint;
 }
 
 function scoreBackground(score: number) {
@@ -322,6 +322,7 @@ const styles = StyleSheet.create({
 	card: {
 		width: "100%",
 		maxWidth: 360,
+		alignSelf: "center",
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		borderRadius: 30,
@@ -414,7 +415,9 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.xs,
 		borderRadius: 22,
-		backgroundColor: tokens.color.surface.card.warm,
+		backgroundColor: tokens.color.surface.card.default,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
 		paddingHorizontal: spacing.xs,
 	},
 	checkIcon: {

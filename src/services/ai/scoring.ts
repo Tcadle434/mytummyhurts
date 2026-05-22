@@ -18,6 +18,8 @@ import {
   OnboardingAnswers,
   PatternStrength,
   RiskLevel,
+  ScanConditionRisk,
+  ScanIngredientRisk,
   ScanInputPayload,
   ScanRecord,
   ScanResult,
@@ -189,11 +191,112 @@ function toRiskLevel(score: number): RiskLevel {
   return 'low';
 }
 
+function riskReason(level: RiskLevel, noun: string, triggers: string[] = []) {
+  if (level === 'high') {
+    return triggers.length
+      ? `${noun} is high risk here because of ${triggers.slice(0, 2).join(' and ')}.`
+      : `${noun} is high risk for your current profile.`;
+  }
+
+  if (level === 'medium') {
+    return triggers.length
+      ? `${noun} has watch-outs around ${triggers.slice(0, 2).join(' and ')}.`
+      : `${noun} has some watch-outs for your current profile.`;
+  }
+
+  return `${noun} looks lower risk for your current profile.`;
+}
+
+function buildConditionRiskRows(
+  conditionRiskScores: Record<string, ConditionRisk>,
+  possibleTriggers: string[],
+): ScanConditionRisk[] {
+  return Object.entries(conditionRiskScores).map(([conditionName, risk], index) => ({
+    conditionName,
+    riskScore: risk.score,
+    riskLevel: risk.level,
+    reason: riskReason(risk.level, conditionName, possibleTriggers),
+    displayOrder: index,
+  }));
+}
+
+function ingredientRiskReason(
+  ingredientName: string,
+  level: RiskLevel,
+  matchedSensitivity: boolean,
+  evidence: string,
+) {
+  if (matchedSensitivity) {
+    return `${ingredientName} appears in this scan and matches a risk pattern in your gut profile.`;
+  }
+
+  if (level === 'high') {
+    return `${ingredientName} is a higher-risk ingredient pattern for your profile.`;
+  }
+
+  if (level === 'medium') {
+    return evidence === 'inferred'
+      ? `${ingredientName} is inferred from the scan, so treat it as a watch-out.`
+      : `${ingredientName} has some watch-outs for your profile.`;
+  }
+
+  return `${ingredientName} looks lower risk for your current profile.`;
+}
+
+function buildIngredientRiskRows(
+  structuredAnalysis: StructuredAnalysisV2,
+  triggerScores: { name: string; score: number }[],
+  profile: UserProfile | null,
+): ScanIngredientRisk[] {
+  const triggerScoreMap = new Map(triggerScores.map((entry) => [normalizeKey(entry.name), entry.score]));
+  const rows: ScanIngredientRisk[] = [];
+  const seen = new Set<string>();
+
+  for (const ingredient of [...structuredAnalysis.visibleIngredients, ...structuredAnalysis.inferredIngredients]) {
+    const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
+    if (!canonicalName || seen.has(canonicalName)) {
+      continue;
+    }
+
+    seen.add(canonicalName);
+    const triggerScore = Math.max(0, triggerScoreMap.get(canonicalName) ?? 0);
+    const matchedSensitivity = Boolean(
+      profile?.knownIngredientSensitivities.some((sensitivity) =>
+        ingredientMatchesSensitivityLabel(canonicalName, sensitivity),
+      ),
+    );
+    const riskScore = clamp(
+      matchedSensitivity
+        ? Math.max(72, 48 + triggerScore)
+        : triggerScore >= 18
+          ? 42 + triggerScore
+          : ingredient.evidence === 'inferred'
+            ? 32
+            : 18,
+    );
+    const riskLevel = toRiskLevel(riskScore);
+
+    rows.push({
+      rawName: ingredient.rawName,
+      canonicalName,
+      riskScore,
+      riskLevel,
+      evidence: ingredient.evidence,
+      confidence: ingredient.confidence,
+      componentName: ingredient.component,
+      reason: ingredientRiskReason(canonicalName, riskLevel, matchedSensitivity, ingredient.evidence),
+      displayOrder: rows.length,
+    });
+  }
+
+  return rows;
+}
+
 function extractedIngredientToScoring(entry: ExtractedIngredient): ScoringIngredient {
   return {
     name: normalizeKey(entry.canonicalName || entry.rawName),
     confidence: entry.confidence,
-    evidence: entry.evidence,
+    evidence: entry.evidence === 'inferred' ? 'inferred' : 'visible',
   };
 }
 
@@ -1409,6 +1512,14 @@ export function analyzeMealInput(
   );
   const overallRiskLevel = toRiskLevel(overallRiskScore);
   const hasLearnedSignals = insights.some((insight) => insight.supportingEvidenceCount > 0);
+  const interpretation = createInterpretation(
+    overallRiskLevel,
+    possibleTriggers,
+    profile,
+    conditionRiskScores,
+    matchedSensitivityLabels,
+    hasLearnedSignals,
+  );
 
   return {
     dishName: structuredAnalysis.dishName,
@@ -1416,14 +1527,11 @@ export function analyzeMealInput(
     overallRiskLevel,
     conditionRiskScores,
     possibleTriggers,
-    interpretation: createInterpretation(
-      overallRiskLevel,
-      possibleTriggers,
-      profile,
-      conditionRiskScores,
-      matchedSensitivityLabels,
-      hasLearnedSignals,
-    ),
+    interpretation,
+    pipTake: interpretation,
+    summary: interpretation,
+    conditionRisks: buildConditionRiskRows(conditionRiskScores, possibleTriggers),
+    ingredientRisks: buildIngredientRiskRows(structuredAnalysis, triggerScores, profile),
     imageUri: payload.imageUri,
     structuredAnalysis,
     gutScoreImpact: computeGutScoreImpact(overallRiskScore, possibleTriggers, profile),

@@ -187,11 +187,13 @@ function ReportRow({ report, onPress }: { report: DailyGutReport; onPress: () =>
         <View style={styles.reportTitleRow}>
           <Text style={styles.reportTitle}>{formatReportDate(report.localDate)}</Text>
           <View style={[styles.severityPill, { backgroundColor: scoreBackground(score) }]}>
-            <Text style={[styles.severityPillText, { color: scoreForeground(score) }]}>{score}/100</Text>
+            <Text style={[styles.severityPillText, { color: scoreForeground(score) }]}>
+              {report.gutSeverity}/10
+            </Text>
           </View>
         </View>
         <Text style={styles.reportMeta} numberOfLines={1}>
-          Severity {report.gutSeverity}/10 - {symptomSummary}
+          {symptomSummary}
           {remainingCount ? ` +${remainingCount}` : ''}
         </Text>
         {report.notes ? (

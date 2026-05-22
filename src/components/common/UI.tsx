@@ -908,6 +908,8 @@ const styles = StyleSheet.create({
   optionChip: {
     ...components.chip.option,
     alignSelf: 'flex-start',
+    backgroundColor: 'transparent',
+    borderColor: tokens.color.border.strong,
   },
   optionChipSelected: {
     ...components.chip.optionSelected,
@@ -1013,8 +1015,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   inputMultiline: {
-    minHeight: 110,
-    paddingTop: spacing.md,
+    minHeight: 64,
+    paddingTop: spacing.sm,
     textAlignVertical: 'top',
   },
   emptyState: {

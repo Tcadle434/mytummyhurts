@@ -42,6 +42,18 @@ export function errorMetadata(error: unknown) {
     };
   }
 
+  if (error && typeof error === 'object') {
+    try {
+      return {
+        message: JSON.stringify(error),
+      };
+    } catch {
+      return {
+        message: Object.prototype.toString.call(error),
+      };
+    }
+  }
+
   return {
     message: String(error),
   };

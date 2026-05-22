@@ -49,6 +49,7 @@ import { OnboardingCenterGraphic } from "./components/OnboardingCenterGraphic";
 import { OnboardingPipCompanion } from "./components/OnboardingPipCompanion";
 import { OnboardingProgressBar } from "./components/OnboardingProgressBar";
 import { CommitmentHoldCard } from "./components/CommitmentHoldCard";
+import { KnowBeforeEatDemo, type KnowBeforeEatStage } from "./components/KnowBeforeEatDemo";
 import { PersonalHealingApproach } from "./components/PersonalHealingApproach";
 import { StepTransition, StepTransitionDirection } from "./components/StepTransition";
 import { TrialFreePreview } from "./components/TrialFreePreview";
@@ -62,6 +63,7 @@ const GUT_ISSUES_DIAGRAM = require("../../../assets/ui/gut_issues_diagram.png");
 const STAGGER_BASE_MS = 80;
 const STAGGER_STEP_MS = 50;
 const ENTER_DURATION_MS = 360;
+const INGREDIENT_SENSITIVITY_UNKNOWN_OPTION = "I'm not sure";
 
 export function OnboardingFlowScreen({ navigation }: Props) {
 	const stepIndex = useAppStore((state) => state.onboardingStepIndex);
@@ -76,9 +78,11 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const [customOptionModalVisible, setCustomOptionModalVisible] = useState(false);
 	const [phaseDiscoveryState, setPhaseDiscoveryState] = useState<PhaseDiscoveryState>("scan");
 	const [startingScoreState, setStartingScoreState] = useState<StartingScoreState>("ready");
+	const [knowBeforeEatStage, setKnowBeforeEatStage] = useState<KnowBeforeEatStage>("menu-scan");
 	const [direction, setDirection] = useState<StepTransitionDirection>("forward");
 	const phaseDiscoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const startingScoreTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const knowBeforeEatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
 	const step = onboardingSteps[Math.min(stepIndex, onboardingSteps.length - 1)]!;
@@ -105,11 +109,15 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	useEffect(() => {
 		clearPhaseDiscoveryTimeout();
 		clearStartingScoreTimeout();
+		clearKnowBeforeEatTimeout();
 		if (step.id === "phase-discovery") {
 			setPhaseDiscoveryState("scan");
 		}
 		if (step.id === "gut-score-analyzing") {
 			setStartingScoreState("ready");
+		}
+		if (step.id === "know-before-eat") {
+			setKnowBeforeEatStage("menu-scan");
 		}
 	}, [step.id]);
 
@@ -117,6 +125,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		return () => {
 			clearPhaseDiscoveryTimeout();
 			clearStartingScoreTimeout();
+			clearKnowBeforeEatTimeout();
 		};
 	}, []);
 
@@ -130,6 +139,12 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const centerImageWidth = centerImageHeight * (1024 / 1535);
 	const isPhaseDiscoveryStep = step.id === "phase-discovery";
 	const isStartingScoreStep = step.id === "gut-score-analyzing";
+	const isKnowBeforeEatStep = step.id === "know-before-eat";
+	const isKnowBeforeEatLoading =
+		isKnowBeforeEatStep &&
+		(knowBeforeEatStage === "menu-loading" ||
+			knowBeforeEatStage === "food-loading" ||
+			knowBeforeEatStage === "barcode-loading");
 	const isCommitmentStep = step.previewVariant === "commitmentHold";
 	const isChoiceStep = step.type === "multi_select" || step.type === "single_select";
 	const hasRequiredAnswer = currentStepHasRequiredAnswer();
@@ -154,10 +169,13 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			: startingScoreState === "loading"
 			? "Computing..."
 			: "Show my score"
+		: isKnowBeforeEatStep
+		? knowBeforeEatCtaLabel(knowBeforeEatStage)
 		: step.cta;
 	const ctaDisabled =
 		(isPhaseDiscoveryStep && phaseDiscoveryState === "loading") ||
 		(isStartingScoreStep && startingScoreState === "loading") ||
+		isKnowBeforeEatLoading ||
 		!hasRequiredAnswer;
 
 	function clearPhaseDiscoveryTimeout() {
@@ -171,6 +189,13 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		if (startingScoreTimeoutRef.current) {
 			clearTimeout(startingScoreTimeoutRef.current);
 			startingScoreTimeoutRef.current = null;
+		}
+	}
+
+	function clearKnowBeforeEatTimeout() {
+		if (knowBeforeEatTimeoutRef.current) {
+			clearTimeout(knowBeforeEatTimeoutRef.current);
+			knowBeforeEatTimeoutRef.current = null;
 		}
 	}
 
@@ -221,6 +246,32 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 
+		if (isKnowBeforeEatStep) {
+			const nextStage = nextKnowBeforeEatStageOnTap(knowBeforeEatStage);
+			if (nextStage === "advance") {
+				advanceStep();
+				return;
+			}
+			if (nextStage === null) {
+				return;
+			}
+			setKnowBeforeEatStage(nextStage);
+			if (nextStage.endsWith("-loading")) {
+				const resultStage: KnowBeforeEatStage =
+					nextStage === "menu-loading"
+						? "menu-result"
+						: nextStage === "food-loading"
+						? "food-result"
+						: "barcode-result";
+				clearKnowBeforeEatTimeout();
+				knowBeforeEatTimeoutRef.current = setTimeout(() => {
+					setKnowBeforeEatStage(resultStage);
+					knowBeforeEatTimeoutRef.current = null;
+				}, 1500);
+			}
+			return;
+		}
+
 		advanceStep();
 	}
 
@@ -236,6 +287,12 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		if (isPhaseDiscoveryStep && phaseDiscoveryState !== "scan") {
 			clearPhaseDiscoveryTimeout();
 			setPhaseDiscoveryState("scan");
+			return;
+		}
+
+		if (isKnowBeforeEatStep && knowBeforeEatStage !== "menu-scan") {
+			clearKnowBeforeEatTimeout();
+			setKnowBeforeEatStage(previousKnowBeforeEatStage(knowBeforeEatStage));
 			return;
 		}
 
@@ -256,6 +313,13 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		}
 
 		if (step.type === "multi_select" && step.field) {
+			if (
+				step.field === "ingredientSensitivities" &&
+				answers.ingredientSensitivitiesUnknown
+			) {
+				return true;
+			}
+
 			const value = answers[step.field];
 			const customField = customFieldForCurrentStep();
 			const customValues = customField ? answers[customField] ?? [] : [];
@@ -322,6 +386,13 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 							</SectionCard>
 						))}
 					</View>
+				);
+			case "knowBeforeEat":
+				return (
+					<KnowBeforeEatDemo
+						stage={knowBeforeEatStage}
+						imageHeight={centerImageHeight}
+					/>
 				);
 			case "trust":
 				return <PersonalHealingApproach />;
@@ -477,6 +548,10 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 
+		if (field === "customIngredientSensitivities") {
+			updateField("ingredientSensitivitiesUnknown", false);
+		}
+
 		addCustomValue(field, customEntry);
 		setCustomEntry("");
 	}
@@ -497,6 +572,38 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			const values = answers[step.field];
 			const customField = customFieldForCurrentStep();
 			const customCount = customField ? (answers[customField] ?? []).length : 0;
+			const isIngredientSensitivityStep = step.field === "ingredientSensitivities";
+
+			function handleMultiSelectOptionPress(option: string) {
+				if (isIngredientSensitivityStep) {
+					updateField("ingredientSensitivitiesUnknown", false);
+				}
+
+				toggleValue(
+					step.field as
+						| "conditions"
+						| "ingredientSensitivities"
+						| "symptoms"
+						| "mealContexts"
+						| "currentEatingPatterns"
+						| "lifestyleFactors",
+					option
+				);
+			}
+
+			function handleCustomOptionPress() {
+				if (isIngredientSensitivityStep) {
+					updateField("ingredientSensitivitiesUnknown", false);
+				}
+
+				setCustomOptionModalVisible(true);
+			}
+
+			function handleIngredientSensitivityUnknownPress() {
+				updateField("ingredientSensitivitiesUnknown", true);
+				updateField("ingredientSensitivities", []);
+				updateField("customIngredientSensitivities", []);
+			}
 
 			return (
 				<View style={styles.optionGrid}>
@@ -511,18 +618,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 										? values.includes(option)
 										: values === option
 								}
-								onPress={() =>
-									toggleValue(
-										step.field as
-											| "conditions"
-											| "ingredientSensitivities"
-											| "symptoms"
-											| "mealContexts"
-											| "currentEatingPatterns"
-											| "lifestyleFactors",
-										option
-									)
-								}
+								onPress={() => handleMultiSelectOptionPress(option)}
 							/>
 						</StaggerItem>
 					))}
@@ -533,7 +629,21 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 								variant={pickerVariant}
 								badgeText={customCount > 0 ? `+${customCount}` : undefined}
 								selected={false}
-								onPress={() => setCustomOptionModalVisible(true)}
+								onPress={handleCustomOptionPress}
+							/>
+						</StaggerItem>
+					) : null}
+					{isIngredientSensitivityStep ? (
+						<StaggerItem
+							delayMs={optionDelayMs(
+								step.options.length + (step.allowCustom ? 1 : 0)
+							)}
+						>
+							<OnboardingPickerOption
+								label={INGREDIENT_SENSITIVITY_UNKNOWN_OPTION}
+								variant={pickerVariant}
+								selected={Boolean(answers.ingredientSensitivitiesUnknown)}
+								onPress={handleIngredientSensitivityUnknownPress}
 							/>
 						</StaggerItem>
 					) : null}
@@ -723,7 +833,11 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 								{step.footerBody}
 							</Text>
 						) : null}
-						<PrimaryButton label={ctaLabel} onPress={handleContinue} disabled={ctaDisabled} />
+						<PrimaryButton
+							label={ctaLabel}
+							onPress={handleContinue}
+							disabled={ctaDisabled}
+						/>
 					</StaggerItem>
 				)}
 			</StepTransition>
@@ -826,10 +940,7 @@ function StaggerItem({
 	style?: StyleProp<ViewStyle>;
 }) {
 	return (
-		<Animated.View
-			entering={FadeInUp.duration(ENTER_DURATION_MS).delay(delayMs)}
-			style={style}
-		>
+		<Animated.View entering={FadeInUp.duration(ENTER_DURATION_MS).delay(delayMs)} style={style}>
 			{children}
 		</Animated.View>
 	);
@@ -875,6 +986,67 @@ function getCenterImageSource(centerImage: string | undefined) {
 	}
 
 	return null;
+}
+
+function knowBeforeEatCtaLabel(stage: KnowBeforeEatStage) {
+	switch (stage) {
+		case "menu-scan":
+		case "food-scan":
+		case "barcode-scan":
+			return "Scan";
+		case "menu-loading":
+		case "food-loading":
+		case "barcode-loading":
+			return "Analyzing...";
+		case "menu-result":
+			return "Scan food";
+		case "food-result":
+			return "Scan grocery item";
+		case "barcode-result":
+			return "Show me my Gut Score";
+	}
+}
+
+function nextKnowBeforeEatStageOnTap(
+	stage: KnowBeforeEatStage
+): KnowBeforeEatStage | "advance" | null {
+	switch (stage) {
+		case "menu-scan":
+			return "menu-loading";
+		case "menu-result":
+			return "food-scan";
+		case "food-scan":
+			return "food-loading";
+		case "food-result":
+			return "barcode-scan";
+		case "barcode-scan":
+			return "barcode-loading";
+		case "barcode-result":
+			return "advance";
+		default:
+			return null;
+	}
+}
+
+function previousKnowBeforeEatStage(stage: KnowBeforeEatStage): KnowBeforeEatStage {
+	switch (stage) {
+		case "menu-loading":
+		case "menu-result":
+			return "menu-scan";
+		case "food-scan":
+			return "menu-result";
+		case "food-loading":
+		case "food-result":
+			return "food-scan";
+		case "barcode-scan":
+			return "food-result";
+		case "barcode-loading":
+		case "barcode-result":
+			return "barcode-scan";
+		case "menu-scan":
+		default:
+			return "menu-scan";
+	}
 }
 
 const styles = StyleSheet.create({

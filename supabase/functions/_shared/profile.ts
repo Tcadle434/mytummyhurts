@@ -6,10 +6,11 @@ import {
   IngredientInsight,
   InsightConfidenceLevel,
   PatternStrength,
+  StructuredAnalysisV2,
   StructuredIngredient,
   UserProfile,
 } from './domain.ts';
-import { getGutScoreSnapshots, mapStructuredAnalysisValue } from './db.ts';
+import { getGutScoreSnapshots } from './db.ts';
 import { errorMetadata, recordSystemEvent } from './observability.ts';
 import { sleep } from './retry.ts';
 import {
@@ -17,7 +18,6 @@ import {
   buildUserProfileFromSeed,
   computeGutScoreState,
   GUT_SCORE_ALGORITHM_VERSION,
-  flattenStructuredIngredients,
   recomputeDailyScores,
 } from './scoring.ts';
 
@@ -27,6 +27,39 @@ function asStringArray(value: unknown): string[] {
   }
 
   return value.map((entry) => String(entry)).filter(Boolean);
+}
+
+function structuredAnalysisFromIngredientRows(
+  title: string,
+  ingredients: StructuredIngredient[],
+): StructuredAnalysisV2 {
+  return {
+    dishName: title || 'Unknown meal',
+    dishConfidence: 'medium',
+    clarity: ingredients.length ? 'clear' : 'unclear',
+    unclearReason: ingredients.length ? undefined : 'No ingredients were stored for this scan.',
+    components: title
+      ? [
+          {
+            name: title,
+            confidence: 'medium',
+            prepStyle: [],
+          },
+        ]
+      : [],
+    visibleIngredients: ingredients.map((ingredient) => ({
+      rawName: ingredient.name,
+      canonicalName: ingredient.name,
+      confidence: ingredient.confidence,
+      evidence: 'visible',
+    })),
+    inferredIngredients: [],
+    prepStyle: [],
+    notes: [],
+    model: 'stored-scan-v2',
+    promptVersion: 'stored-scan-v2',
+    imageDetail: 'not_applicable',
+  };
 }
 
 function clampScore(value: number) {
@@ -360,11 +393,11 @@ async function rebuildInsightsAndProfileUnlocked(
     admin.from('user_profiles').select('*').eq('user_id', userId).single(),
     admin
       .from('scans')
-      .select('id, scan_category, local_date, structured_analysis, overall_risk_score, created_at')
+      .select('id, scan_category, local_date, title, overall_risk_score, created_at')
       .eq('user_id', userId)
       .eq('analysis_status', 'completed'),
     admin.from('daily_gut_reports').select('*').eq('user_id', userId),
-    admin.from('scan_ingredients').select('scan_id, canonical_name, confidence').eq('user_id', userId),
+    admin.from('scan_ingredient_risks').select('scan_id, canonical_name, confidence').eq('user_id', userId),
   ]);
 
   if (profileError) {
@@ -415,10 +448,8 @@ async function rebuildInsightsAndProfileUnlocked(
   };
 
   const recomputeScans = (scanRows ?? []).map((scan) => {
-    const structuredAnalysis = mapStructuredAnalysisValue(scan.structured_analysis, {
-      fallbackDishName: 'Unknown meal',
-    });
-    const scanIngredients = scanIngredientMap.get(String(scan.id)) ?? flattenStructuredIngredients(structuredAnalysis);
+    const scanIngredients = scanIngredientMap.get(String(scan.id)) ?? [];
+    const structuredAnalysis = structuredAnalysisFromIngredientRows(String(scan.title ?? 'Unknown meal'), scanIngredients);
 
     return {
       id: scan.id,
@@ -433,14 +464,12 @@ async function rebuildInsightsAndProfileUnlocked(
   const foodScans = (scanRows ?? [])
     .filter((scan) => scan.scan_category === 'food' || !scan.scan_category)
     .map((scan) => {
-      const structuredAnalysis = mapStructuredAnalysisValue(scan.structured_analysis, {
-        fallbackDishName: 'Unknown meal',
-      });
+      const scanIngredients = scanIngredientMap.get(String(scan.id)) ?? [];
       return {
         id: String(scan.id),
         localDate: scan.local_date ? String(scan.local_date) : String(scan.created_at ?? new Date().toISOString()).slice(0, 10),
         createdAt: scan.created_at ? String(scan.created_at) : new Date().toISOString(),
-        ingredients: scanIngredientMap.get(String(scan.id)) ?? flattenStructuredIngredients(structuredAnalysis),
+        ingredients: scanIngredients,
       };
     });
   const dailyReports: DailyGutReport[] = (reportRows ?? []).map((report) => ({

@@ -8,7 +8,7 @@ export const conditionOptions = [
 	"Unsure, just general discomfort",
 ];
 
-export const ingredientSensitivityOptions = ["Dairy", "Gluten", "Garlic", "Tomato", "Spicy foods"];
+export const ingredientSensitivityOptions = ["Dairy", "Gluten", "Garlic", "Tomato"];
 
 export const symptomOptions = [
 	"Reflux / Heartburn",
@@ -61,6 +61,7 @@ export const motivationOptions = [
 	"Avoid flare-ups",
 	"Figure out triggers",
 	"Find safe foods",
+	"Feel better at restaurants",
 	"Reset my gut",
 	"Feel consitently healthier",
 ];

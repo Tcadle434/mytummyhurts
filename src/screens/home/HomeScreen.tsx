@@ -15,7 +15,7 @@ import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
 import { components, palette, radii, shadows, spacing, tokens, type } from "../../theme";
-import { DailyGutReport, ScanRecord } from "../../types/domain";
+import { DailyGutReport, ScanHistorySummary } from "../../types/domain";
 import { localDaypartGreeting } from "../../utils/time";
 import {
 	buildWeeklyProgressDay,
@@ -27,7 +27,7 @@ import { GutScoreInfoModal } from "./GutScoreInfoModal";
 
 const MTH_TEXT_LOGO = require("../../../assets/mth_text_logo.png");
 const DAILY_REPORT_PROMPT_DISMISSED_KEY = "home.dailyReportPromptDismissedDate";
-const EMPTY_SCANS: ScanRecord[] = [];
+const EMPTY_SCANS: ScanHistorySummary[] = [];
 const EMPTY_DAILY_REPORTS: DailyGutReport[] = [];
 
 export function HomeScreen() {
@@ -39,6 +39,7 @@ export function HomeScreen() {
 	const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
 	const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
 	const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
+	const learningSyncInFlight = useAppStore((state) => state.learningSyncInFlight);
 	const [gutScoreInfoVisible, setGutScoreInfoVisible] = useState(false);
 	const [scanSheetVisible, setScanSheetVisible] = useState(false);
 	const [clockNow, setClockNow] = useState(() => new Date());
@@ -58,6 +59,7 @@ export function HomeScreen() {
 			!historyQuery.isError &&
 			!insightsQuery.isError
 	);
+	const isWaitingForComputedData = isWaitingForInitialRemoteData || learningSyncInFlight;
 	const canUseFallbackData = !isWaitingForInitialRemoteData;
 	const firstPage = historyQuery.data?.pages[0];
 	const scans = useMemo(
@@ -76,7 +78,7 @@ export function HomeScreen() {
 	const yesterdayReport = dailyReports.find((report) => report.localDate === yesterdayDate);
 	const needsDailyReport = !yesterdayReport;
 	const shouldShowDailyReportBanner =
-		!isWaitingForInitialRemoteData &&
+		!isWaitingForComputedData &&
 		needsDailyReport &&
 		dismissedDailyReportPromptDate !== yesterdayDate;
 	const displayName = profile?.displayName?.trim();
@@ -227,7 +229,7 @@ export function HomeScreen() {
 				</Pressable>
 			) : null}
 
-			{isWaitingForInitialRemoteData || !gutScore ? (
+			{isWaitingForComputedData || !gutScore ? (
 				<GutScoreHomeCardSkeleton />
 			) : (
 				<GutScoreHomeCard
@@ -268,7 +270,7 @@ export function HomeScreen() {
 				</LinearGradient>
 			</Pressable>
 
-			{isWaitingForInitialRemoteData ? (
+			{isWaitingForComputedData ? (
 				<WeeklyProgressCardSkeleton />
 			) : (
 				<WeeklyProgressCard
@@ -364,7 +366,7 @@ function WeeklyProgressCardSkeleton() {
 	);
 }
 
-function computeFoodLogStreak(scans: ScanRecord[]) {
+function computeFoodLogStreak(scans: ScanHistorySummary[]) {
 	const days = Array.from(
 		new Set(
 			scans

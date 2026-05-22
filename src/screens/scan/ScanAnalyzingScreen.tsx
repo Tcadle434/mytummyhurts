@@ -18,10 +18,19 @@ const steps = [
   'Saving to your food log',
 ];
 
+const menuSteps = [
+  'Reading menu pages',
+  'Extracting menu items',
+  'Cross-checking your profile',
+  'Ranking best and worst options',
+];
+
 export function ScanAnalyzingScreen({ navigation, route }: Props) {
   const analyzeScanInput = useAppStore((state) => state.analyzeScanInput);
   const [progress, setProgress] = useState(12);
   const [error, setError] = useState<string | null>(null);
+  const isMenuScan = route.params.payload.scanCategory === 'menu';
+  const activeSteps = isMenuScan ? menuSteps : steps;
 
   const completedSteps = useMemo(() => {
     if (progress >= 88) return 4;
@@ -76,10 +85,14 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
   if (error) {
     return (
       <AppScreen>
-        <ScreenHeader eyebrow="Analysis failed" title="The meal could not be analyzed." subtitle={error} />
+        <ScreenHeader
+          eyebrow="Analysis failed"
+          title={isMenuScan ? 'The menu could not be analyzed.' : 'The meal could not be analyzed.'}
+          subtitle={error}
+        />
         <SectionCard>
           <Pressable
-            onPress={() => navigation.replace('ScanCapture', { sourceType: route.params.payload.sourceType, manualMode: route.params.manualMode })}
+            onPress={() => navigation.replace('ScanCapture', { sourceType: route.params.payload.sourceType, manualMode: route.params.manualMode, scanCategory: route.params.payload.scanCategory })}
             style={({ pressed }) => [styles.primaryAction, pressed && { opacity: 0.82 }]}
           >
             <Text style={styles.primaryActionLabel}>Try again</Text>
@@ -96,15 +109,15 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
     <AppScreen scroll={false} contentContainerStyle={styles.content}>
       <View style={styles.hero}>
         <Pip state="thinking" size={72} />
-        <Text style={styles.heroTitle}>Analyzing your meal...</Text>
+        <Text style={styles.heroTitle}>{isMenuScan ? 'Analyzing your menu...' : 'Analyzing your meal...'}</Text>
         <Text style={styles.heroSubtitle}>This usually takes a few seconds.</Text>
       </View>
 
       <ProgressRing progress={progress} />
 
       <SectionCard style={styles.checklistCard}>
-        <Text style={styles.checklistTitle}>Checking for triggers</Text>
-        {steps.map((step, index) => {
+        <Text style={styles.checklistTitle}>{isMenuScan ? 'Ranking menu options' : 'Checking for triggers'}</Text>
+        {activeSteps.map((step, index) => {
           const state = index < completedSteps ? 'done' : index === completedSteps ? 'active' : 'idle';
           return (
             <View key={step} style={styles.checkRow}>

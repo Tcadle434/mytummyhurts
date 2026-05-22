@@ -1,4 +1,4 @@
-import { DailyGutReport, ScanRecord } from "../types/domain";
+import { DailyGutReport, ScanHistorySummary } from "../types/domain";
 
 export type WeeklyProgressTrendDirection = "up" | "down" | "flat" | "none";
 
@@ -10,19 +10,19 @@ export type WeeklyProgressDay = {
 	dailyScore?: number;
 	trendDirection: WeeklyProgressTrendDirection;
 	trendDelta?: number;
-	scans: ScanRecord[];
+	scans: ScanHistorySummary[];
 	report?: DailyGutReport;
 };
 
 type BuildWeeklyProgressDaysParams = {
-	scans: ScanRecord[];
+	scans: ScanHistorySummary[];
 	reports: DailyGutReport[];
 	weekStart?: string;
 	anchorDate?: Date;
 };
 
 type BuildWeeklyProgressDayParams = {
-	scans: ScanRecord[];
+	scans: ScanHistorySummary[];
 	reports: DailyGutReport[];
 	localDate: string;
 };
@@ -148,7 +148,7 @@ export function getMondayWeekStart(date: Date) {
 }
 
 export function getAvailableWeekStarts(
-	scans: ScanRecord[],
+	scans: ScanHistorySummary[],
 	reports: DailyGutReport[],
 	anchorDate = new Date()
 ) {
@@ -285,8 +285,8 @@ function withDailyScoreTrends(days: WeeklyProgressDay[]) {
 	});
 }
 
-function groupFoodScansByLocalDate(scans: ScanRecord[]) {
-	const byDate = new Map<string, ScanRecord[]>();
+function groupFoodScansByLocalDate(scans: ScanHistorySummary[]) {
+	const byDate = new Map<string, ScanHistorySummary[]>();
 
 	for (const scan of scans) {
 		if ((scan.scanCategory ?? "food") !== "food") continue;
@@ -312,7 +312,7 @@ function groupReportsByLocalDate(reports: DailyGutReport[]) {
 	return byDate;
 }
 
-function localDateFromScan(scan: ScanRecord) {
+function localDateFromScan(scan: ScanHistorySummary) {
 	if (scan.localDate) return scan.localDate;
 	return toLocalDate(new Date(scan.completedAt ?? scan.createdAt));
 }

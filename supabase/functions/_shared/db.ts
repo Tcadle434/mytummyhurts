@@ -13,14 +13,33 @@ import {
   GutScoreState,
   IngredientConfidence,
   IngredientInsight,
+  MenuBaseFoodCategory,
+  MenuItemAnalysis,
+  MenuRecommendation,
+  MenuRiskModifier,
+  MenuScanAnalysis,
+  MenuScanResult,
   MealComponent,
+  ScanConditionRisk,
+  ScanHistorySummary,
+  ScanIngredientRisk,
+  ScanMenuItemResult,
   ScanRecord,
+  ScoreContributor,
   StomachProfile,
   StructuredAnalysisV2,
   UserProfile,
 } from './domain.ts';
 import { BillingPlanCode, normalizePlanCode } from './billing.ts';
 import { buildUserProfileFromSeed } from './scoring.ts';
+import {
+  menuBaseFoodCategoryKeys,
+  menuRiskModifierKeys,
+  menuRubricEvidenceValues,
+  type MenuBaseFoodCategoryKey,
+  type MenuRiskModifierKey,
+  type MenuRubricEvidence,
+} from './menuRubric.ts';
 
 const mealImagesBucket = 'meal-images';
 
@@ -125,6 +144,87 @@ function mapIngredientList(value: unknown, evidence: 'visible' | 'inferred', fal
   return ingredients;
 }
 
+function mapMenuItemAnalysis(entry: unknown): MenuItemAnalysis | null {
+  const record = asRecord(entry);
+  const id = String(record.id ?? '').trim();
+  const name = String(record.name ?? '').trim();
+  if (!id || !name) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    description: String(record.description ?? '').trim() || undefined,
+    section: String(record.section ?? '').trim() || undefined,
+    price: String(record.price ?? '').trim() || undefined,
+    extractedIngredients: mapIngredientList(record.extractedIngredients, 'visible', name),
+    inferredIngredients: mapIngredientList(record.inferredIngredients, 'inferred', name),
+    prepStyle: asStringArray(record.prepStyle),
+    confidence: asConfidence(record.confidence),
+    personalizedRiskScore: Number(record.personalizedRiskScore ?? 0),
+    personalizedRiskLevel:
+      record.personalizedRiskLevel === 'high' || record.personalizedRiskLevel === 'medium'
+        ? record.personalizedRiskLevel
+        : 'low',
+  };
+}
+
+function mapMenuRecommendation(entry: unknown): MenuRecommendation | null {
+  const record = asRecord(entry);
+  const itemId = String(record.itemId ?? '').trim();
+  const name = String(record.name ?? '').trim();
+  if (!itemId || !name) {
+    return null;
+  }
+
+  return {
+    rank: Number(record.rank ?? 0),
+    itemId,
+    name,
+    personalizedRiskScore: Number(record.personalizedRiskScore ?? 0),
+    personalizedRiskLevel:
+      record.personalizedRiskLevel === 'high' || record.personalizedRiskLevel === 'medium'
+        ? record.personalizedRiskLevel
+        : 'low',
+    reasons: asStringArray(record.reasons),
+    triggerIngredients: asStringArray(record.triggerIngredients),
+    saferModification: String(record.saferModification ?? '').trim() || undefined,
+  };
+}
+
+function mapMenuAnalysis(value: unknown): MenuScanAnalysis | undefined {
+  const record = asRecord(value);
+  if (record.kind !== 'menu') {
+    return undefined;
+  }
+
+  const items = Array.isArray(record.items)
+    ? record.items.map(mapMenuItemAnalysis).filter((entry): entry is MenuItemAnalysis => Boolean(entry))
+    : [];
+  const bestOptions = Array.isArray(record.bestOptions)
+    ? record.bestOptions.map(mapMenuRecommendation).filter((entry): entry is MenuRecommendation => Boolean(entry))
+    : [];
+  const eatWithCautionOptions = Array.isArray(record.eatWithCautionOptions)
+    ? record.eatWithCautionOptions.map(mapMenuRecommendation).filter((entry): entry is MenuRecommendation => Boolean(entry))
+    : [];
+  const worstOptions = Array.isArray(record.worstOptions)
+    ? record.worstOptions.map(mapMenuRecommendation).filter((entry): entry is MenuRecommendation => Boolean(entry))
+    : [];
+
+  return {
+    kind: 'menu',
+    menuTitle: String(record.menuTitle ?? 'Menu scan').trim() || 'Menu scan',
+    menuConfidence: asConfidence(record.menuConfidence),
+    inputPageCount: Number(record.inputPageCount ?? 1),
+    items,
+    bestOptions,
+    eatWithCautionOptions,
+    worstOptions,
+    summary: String(record.summary ?? '').trim(),
+  };
+}
+
 export function mapStructuredAnalysisValue(
   value: unknown,
   options: {
@@ -163,6 +263,7 @@ export function mapStructuredAnalysisValue(
     model: String(options.extractionModel ?? record.model ?? '').trim() || 'unknown',
     promptVersion: String(options.extractionPromptVersion ?? record.promptVersion ?? '').trim() || 'unknown',
     imageDetail: asImageDetail(options.imageDetail ?? record.imageDetail),
+    menuAnalysis: mapMenuAnalysis(record.menuAnalysis),
   };
 }
 
@@ -376,6 +477,373 @@ async function createSignedUrlMap(admin: SupabaseClient, storagePaths: string[])
   return signedUrls;
 }
 
+type ScanDetailRows = {
+  inputs: Record<string, unknown>[];
+  conditionRisks: Record<string, unknown>[];
+  ingredientRisks: Record<string, unknown>[];
+  menuItems: Record<string, unknown>[];
+  groceryProducts: Map<string, Record<string, unknown>>;
+};
+
+type ScanSummaryInputRows = {
+  inputs: Record<string, unknown>[];
+};
+
+function asRiskLevel(value: unknown): ScanRecord['overallRiskLevel'] {
+  return value === 'high' || value === 'medium' ? value : 'low';
+}
+
+function asIngredientEvidence(value: unknown): ScanIngredientRisk['evidence'] {
+  return value === 'inferred' || value === 'label' || value === 'database' ? value : 'visible';
+}
+
+function asScoreContributorEvidence(value: unknown): ScoreContributor['evidence'] {
+  return value === 'ingredient' ||
+    value === 'prep' ||
+    value === 'description' ||
+    value === 'profile' ||
+    value === 'learning' ||
+    value === 'uncertainty' ||
+    value === 'protective'
+    ? value
+    : 'rubric';
+}
+
+function asScoreContributors(value: unknown): ScoreContributor[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      const key = String(record.key ?? '').trim();
+      const label = String(record.label ?? '').trim();
+      const points = Number(record.points ?? 0);
+      const source = String(record.source ?? '').trim();
+      const reason = String(record.reason ?? '').trim();
+      if (!key || !label || !Number.isFinite(points) || !source || !reason) {
+        return null;
+      }
+
+      return {
+        key,
+        label,
+        points,
+        evidence: asScoreContributorEvidence(record.evidence),
+        source,
+        reason,
+      };
+    })
+    .filter((entry): entry is ScoreContributor => Boolean(entry));
+}
+
+function asMenuRubricEvidence(value: unknown): MenuRubricEvidence {
+  return menuRubricEvidenceValues.includes(value as MenuRubricEvidence)
+    ? (value as MenuRubricEvidence)
+    : 'unclear';
+}
+
+function asMenuBaseFoodCategory(value: unknown): MenuBaseFoodCategory | undefined {
+  const record = asRecord(value);
+  const key = record.key;
+  const source = String(record.source ?? '').trim();
+  if (!menuBaseFoodCategoryKeys.includes(key as MenuBaseFoodCategoryKey) || !source) {
+    return undefined;
+  }
+
+  return {
+    key: key as MenuBaseFoodCategoryKey,
+    confidence: asConfidence(record.confidence),
+    evidence: asMenuRubricEvidence(record.evidence),
+    source,
+  };
+}
+
+function asMenuRiskModifiers(value: unknown): MenuRiskModifier[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      const key = record.key;
+      const source = String(record.source ?? '').trim();
+      if (!menuRiskModifierKeys.includes(key as MenuRiskModifierKey) || !source) {
+        return null;
+      }
+
+      return {
+        key: key as MenuRiskModifierKey,
+        confidence: asConfidence(record.confidence),
+        evidence: asMenuRubricEvidence(record.evidence),
+        source,
+      };
+    })
+    .filter((entry): entry is MenuRiskModifier => Boolean(entry));
+}
+
+function mapConditionRiskRow(row: Record<string, unknown>): ScanConditionRisk {
+  const riskScore = Number(row.risk_score ?? 0);
+  return {
+    conditionName: String(row.condition_name ?? ''),
+    riskScore,
+    riskLevel: asRiskLevel(row.risk_level),
+    reason: String(row.reason ?? ''),
+    displayOrder: Number(row.display_order ?? 0),
+  };
+}
+
+function mapIngredientRiskRow(row: Record<string, unknown>): ScanIngredientRisk {
+  const canonicalName = normalizeIngredientName(String(row.canonical_name ?? row.raw_name ?? ''));
+  const riskScore = Number(row.risk_score ?? 0);
+  return {
+    id: row.id ? String(row.id) : undefined,
+    menuItemId: row.menu_item_id ? String(row.menu_item_id) : undefined,
+    menuItemSourceId: typeof row.menu_item_source_id === 'string' ? row.menu_item_source_id : undefined,
+    rawName: String(row.raw_name ?? canonicalName),
+    canonicalName,
+    riskScore,
+    riskLevel: asRiskLevel(row.risk_level),
+    evidence: asIngredientEvidence(row.evidence),
+    confidence: asConfidence(row.confidence),
+    componentName: typeof row.component_name === 'string' ? row.component_name : undefined,
+    reason: String(row.reason ?? ''),
+    displayOrder: Number(row.display_order ?? 0),
+  };
+}
+
+function ingredientRiskToExtracted(ingredient: ScanIngredientRisk): ExtractedIngredient {
+  return {
+    rawName: ingredient.rawName,
+    canonicalName: ingredient.canonicalName,
+    confidence: ingredient.confidence,
+    component: ingredient.componentName,
+    evidence: ingredient.evidence === 'inferred' ? 'inferred' : 'visible',
+  };
+}
+
+function recommendationFromMenuItem(item: ScanMenuItemResult): MenuRecommendation {
+  return {
+    rank: item.tierRank,
+    itemId: item.sourceItemId,
+    name: item.name,
+    personalizedRiskScore: item.riskScore,
+    personalizedRiskLevel: item.riskLevel,
+    reasons: [item.whyThisScore],
+    triggerIngredients: item.ingredientRisks
+      .filter((ingredient) => ingredient.riskLevel !== 'low')
+      .map((ingredient) => ingredient.canonicalName),
+    saferModification: item.gutRecommendation,
+  };
+}
+
+function menuAnalysisFromResult(menuResult: MenuScanResult): MenuScanAnalysis {
+  const allItems = (menuResult.items.length
+    ? menuResult.items
+    : [...menuResult.bestForYou, ...menuResult.eatWithCaution, ...menuResult.tryToAvoid]
+  ).sort((left, right) => left.displayOrder - right.displayOrder);
+
+  return {
+    kind: 'menu',
+    menuTitle: menuResult.menuTitle,
+    menuConfidence: 'medium',
+    inputPageCount: menuResult.inputPageCount,
+    items: allItems.map((item) => {
+      const ingredients = item.ingredientRisks.map(ingredientRiskToExtracted);
+      return {
+        id: item.sourceItemId,
+        name: item.name,
+        description: item.description,
+        section: item.section,
+        price: item.price,
+        extractedIngredients: ingredients.filter((ingredient) => ingredient.evidence !== 'inferred'),
+        inferredIngredients: ingredients.filter((ingredient) => ingredient.evidence === 'inferred'),
+        prepStyle: [],
+        confidence: item.confidence,
+        personalizedRiskScore: item.riskScore,
+        personalizedRiskLevel: item.riskLevel,
+      };
+    }),
+    bestOptions: menuResult.bestForYou.map(recommendationFromMenuItem),
+    eatWithCautionOptions: menuResult.eatWithCaution.map(recommendationFromMenuItem),
+    worstOptions: menuResult.tryToAvoid.map(recommendationFromMenuItem),
+    summary: menuResult.summary,
+  };
+}
+
+function groceryProductSummary(row: Record<string, unknown> | undefined): ScanRecord['groceryProduct'] {
+  if (!row) {
+    return undefined;
+  }
+
+  return {
+    id: String(row.id),
+    barcode: typeof row.barcode === 'string' ? row.barcode : undefined,
+    brand: typeof row.brand === 'string' ? row.brand : undefined,
+    name: String(row.name ?? 'Grocery item'),
+    ingredientText: typeof row.ingredient_text === 'string' ? row.ingredient_text : undefined,
+    nutrition: asRecord(row.nutrition),
+    allergens: asStringArray(row.allergens),
+    dataSource: typeof row.data_source === 'string' ? row.data_source : undefined,
+    sourceConfidence: asConfidence(row.source_confidence),
+  };
+}
+
+function buildMenuResult(scan: Record<string, unknown>, menuRows: Record<string, unknown>[], ingredientRisks: ScanIngredientRisk[]): MenuScanResult | undefined {
+  if (!menuRows.length) {
+    return undefined;
+  }
+
+  const pageCount = Number(asRecord(scan.analysis_metadata).inputPageCount ?? 1);
+  const rows = menuRows
+    .map((row): ScanMenuItemResult => {
+      const sourceItemId = String(row.source_item_id ?? row.id);
+      const dbId = String(row.id);
+      return {
+        id: dbId,
+        sourceItemId,
+        tier:
+          row.tier === 'best_for_you' || row.tier === 'try_to_avoid'
+            ? row.tier
+            : 'eat_with_caution',
+        tierRank: Number(row.tier_rank ?? 1),
+        displayOrder: Number(row.display_order ?? 0),
+        name: String(row.name ?? 'Menu item'),
+        description: typeof row.description === 'string' ? row.description : undefined,
+        section: typeof row.section === 'string' ? row.section : undefined,
+        price: typeof row.price === 'string' ? row.price : undefined,
+        riskScore: Number(row.risk_score ?? 0),
+        riskLevel: asRiskLevel(row.risk_level),
+        confidence: asConfidence(row.confidence),
+        scoringConfidence: asConfidence(row.scoring_confidence),
+        baseFoodCategory: asMenuBaseFoodCategory(row.base_food_category),
+        riskModifiers: asMenuRiskModifiers(row.risk_modifiers),
+        scoreContributors: asScoreContributors(row.score_contributors),
+        whyThisScore: String(row.why_this_score ?? ''),
+        gutRecommendation: typeof row.gut_recommendation === 'string' ? row.gut_recommendation : undefined,
+        ingredientRisks: ingredientRisks
+          .filter((ingredient) => ingredient.menuItemId === dbId || ingredient.menuItemSourceId === sourceItemId)
+          .sort((left, right) => left.displayOrder - right.displayOrder),
+      };
+    })
+    .sort((left, right) => left.displayOrder - right.displayOrder);
+
+  return {
+    menuTitle: String(scan.title ?? 'Menu scan'),
+    inputPageCount: pageCount || 1,
+    summary: String(scan.summary ?? 'We ranked this menu against your gut profile and ingredient patterns.'),
+    items: rows,
+    bestForYou: rows.filter((row) => row.tier === 'best_for_you').sort((left, right) => left.tierRank - right.tierRank),
+    eatWithCaution: rows.filter((row) => row.tier === 'eat_with_caution').sort((left, right) => left.tierRank - right.tierRank),
+    tryToAvoid: rows.filter((row) => row.tier === 'try_to_avoid').sort((left, right) => left.tierRank - right.tierRank),
+  };
+}
+
+async function fetchScanSummaryInputRows(admin: SupabaseClient, scanRows: Record<string, unknown>[]): Promise<ScanSummaryInputRows> {
+  const scanIds = scanRows.map((row) => String(row.id)).filter(Boolean);
+  if (!scanIds.length) {
+    return { inputs: [] };
+  }
+
+  const { data, error } = await admin
+    .from('scan_inputs')
+    .select('scan_id, storage_path, page_index')
+    .in('scan_id', scanIds)
+    .eq('input_kind', 'image')
+    .order('page_index', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    inputs: (data ?? []) as Record<string, unknown>[],
+  };
+}
+
+async function fetchScanDetailRows(admin: SupabaseClient, scanRows: Record<string, unknown>[]): Promise<ScanDetailRows> {
+  const scanIds = scanRows.map((row) => String(row.id)).filter(Boolean);
+  const groceryProductIds = scanRows
+    .map((row) => (typeof row.grocery_product_id === 'string' ? row.grocery_product_id : null))
+    .filter((value): value is string => Boolean(value));
+
+  if (!scanIds.length) {
+    return {
+      inputs: [],
+      conditionRisks: [],
+      ingredientRisks: [],
+      menuItems: [],
+      groceryProducts: new Map(),
+    };
+  }
+
+  const [
+    { data: inputs, error: inputsError },
+    { data: conditionRisks, error: conditionRisksError },
+    { data: ingredientRisks, error: ingredientRisksError },
+    { data: menuItems, error: menuItemsError },
+    { data: groceryProducts, error: groceryProductsError },
+  ] = await Promise.all([
+    admin.from('scan_inputs').select('*').in('scan_id', scanIds).order('page_index', { ascending: true }),
+    admin.from('scan_condition_risks').select('*').in('scan_id', scanIds).order('display_order', { ascending: true }),
+    admin.from('scan_ingredient_risks').select('*').in('scan_id', scanIds).order('display_order', { ascending: true }),
+    admin.from('menu_items').select('*').in('scan_id', scanIds).order('display_order', { ascending: true }),
+    groceryProductIds.length
+      ? admin.from('grocery_products').select('*').in('id', groceryProductIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const error = inputsError ?? conditionRisksError ?? ingredientRisksError ?? menuItemsError ?? groceryProductsError;
+  if (error) {
+    throw error;
+  }
+
+  return {
+    inputs: (inputs ?? []) as Record<string, unknown>[],
+    conditionRisks: (conditionRisks ?? []) as Record<string, unknown>[],
+    ingredientRisks: (ingredientRisks ?? []) as Record<string, unknown>[],
+    menuItems: (menuItems ?? []) as Record<string, unknown>[],
+    groceryProducts: new Map((groceryProducts ?? []).map((row) => [String(row.id), row as Record<string, unknown>])),
+  };
+}
+
+function mapScanHistorySummary(
+  row: Record<string, unknown>,
+  summaryInputs: ScanSummaryInputRows,
+  signedUrlMap: Map<string, string>,
+): ScanHistorySummary {
+  const scanId = String(row.id);
+  const title = String(row.title ?? 'Unknown meal');
+  const imageStoragePath = summaryInputs.inputs.find(
+    (input) => String(input.scan_id) === scanId && typeof input.storage_path === 'string',
+  )?.storage_path;
+
+  return {
+    id: scanId,
+    requestId: typeof row.request_id === 'string' ? row.request_id : undefined,
+    sourceType: (row.source_type as ScanHistorySummary['sourceType']) ?? 'camera',
+    scanCategory:
+      row.scan_category === 'menu' || row.scan_category === 'grocery'
+        ? row.scan_category
+        : 'food',
+    analysisStatus:
+      row.analysis_status === 'queued' || row.analysis_status === 'processing' || row.analysis_status === 'failed'
+        ? row.analysis_status
+        : 'completed',
+    tokenCost: 1,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    completedAt: row.completed_at ? String(row.completed_at) : undefined,
+    localDate: row.local_date ? String(row.local_date) : undefined,
+    timezone: typeof row.timezone === 'string' ? row.timezone : undefined,
+    dishName: title,
+    overallRiskScore: Number(row.overall_risk_score ?? 0),
+    overallRiskLevel: asRiskLevel(row.overall_risk_level),
+    imageUri: typeof imageStoragePath === 'string' ? signedUrlMap.get(imageStoragePath) : undefined,
+  };
+}
+
 export async function ensureUserRow(admin: SupabaseClient, user: { id: string; email: string | null }) {
   const { error } = await admin.from('users').upsert(
     {
@@ -464,35 +932,47 @@ export async function completeReservedScanAnalysis(
   params: {
     userId: string;
     scanId: string;
-    dishName: string;
+    title: string;
     overallRiskScore: number;
     overallRiskLevel: string;
-    conditionRiskScores: Record<string, unknown>;
-    possibleTriggers: string[];
-    structuredAnalysis: Record<string, unknown>;
-    scanIngredients: Array<Record<string, unknown>>;
-    extractionModel?: string | null;
-    extractionPromptVersion?: string | null;
-    extractionClarity?: string | null;
-    extractionUnclearReason?: string | null;
-    dishConfidence?: string | null;
+    pipTake: string;
+    summary?: string | null;
+    baseFoodCategory?: Record<string, unknown> | null;
+    riskModifiers?: Array<Record<string, unknown>>;
+    scoreContributors?: Array<Record<string, unknown>>;
+    scoringConfidence?: string | null;
+    gutRecommendation?: string | null;
+    rubricVersion?: string | null;
+    conditionRisks: Array<Record<string, unknown>>;
+    ingredientRisks: Array<Record<string, unknown>>;
+    menuItems?: Array<Record<string, unknown>>;
+    groceryProduct?: Record<string, unknown> | null;
+    inputRefs: Array<Record<string, unknown>>;
+    analysisMetadata?: Record<string, unknown>;
+    gutScoreImpact?: Record<string, unknown> | null;
   },
 ) {
   const { data, error } = await admin.rpc('complete_reserved_scan_analysis', {
     p_user_id: params.userId,
     p_scan_id: params.scanId,
-    p_dish_name: params.dishName,
+    p_title: params.title,
     p_overall_risk_score: params.overallRiskScore,
     p_overall_risk_level: params.overallRiskLevel,
-    p_condition_risk_scores: params.conditionRiskScores,
-    p_possible_triggers: params.possibleTriggers,
-    p_structured_analysis: params.structuredAnalysis,
-    p_scan_ingredients: params.scanIngredients,
-    p_extraction_model: params.extractionModel ?? null,
-    p_extraction_prompt_version: params.extractionPromptVersion ?? null,
-    p_extraction_clarity: params.extractionClarity ?? null,
-    p_extraction_unclear_reason: params.extractionUnclearReason ?? null,
-    p_dish_confidence: params.dishConfidence ?? null,
+    p_pip_take: params.pipTake,
+    p_summary: params.summary ?? null,
+    p_base_food_category: params.baseFoodCategory ?? null,
+    p_risk_modifiers: params.riskModifiers ?? [],
+    p_score_contributors: params.scoreContributors ?? [],
+    p_scoring_confidence: params.scoringConfidence ?? null,
+    p_gut_recommendation: params.gutRecommendation ?? null,
+    p_rubric_version: params.rubricVersion ?? null,
+    p_condition_risks: params.conditionRisks,
+    p_ingredient_risks: params.ingredientRisks,
+    p_menu_items: params.menuItems ?? [],
+    p_grocery_product: params.groceryProduct ?? null,
+    p_input_refs: params.inputRefs,
+    p_analysis_metadata: params.analysisMetadata ?? {},
+    p_gut_score_impact: params.gutScoreImpact ?? null,
   });
 
   if (error) {
@@ -543,6 +1023,90 @@ export async function failReservedScanAnalysis(
     tokensRemaining: Number(row.tokens_remaining ?? 0),
     refunded: Boolean(row.refunded),
   };
+}
+
+export type ScanAiAuditLogInput = {
+  stage: string;
+  provider?: string;
+  model?: string | null;
+  promptVersion?: string | null;
+  schemaVersion?: string | null;
+  systemPrompt?: string | null;
+  userPrompt?: string | null;
+  jsonSchema?: unknown;
+  requestMetadata?: Record<string, unknown>;
+  inputRefs?: unknown[];
+  rawResponseText?: string | null;
+  rawResponseJson?: unknown;
+  parsedResponseJson?: unknown;
+  normalizedResponseJson?: unknown;
+  status?: 'completed' | 'failed';
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  latencyMs?: number | null;
+  openaiResponseId?: string | null;
+  inputTokens?: number | null;
+  cachedInputTokens?: number | null;
+  outputTokens?: number | null;
+  reasoningTokens?: number | null;
+  totalTokens?: number | null;
+  estimatedCostUsdMicros?: number | null;
+  pricingSnapshot?: unknown;
+  billable?: boolean;
+};
+
+export async function recordScanAiAuditLogs(
+  admin: SupabaseClient,
+  params: {
+    userId: string;
+    scanId: string;
+    requestId: string;
+    logs: ScanAiAuditLogInput[];
+  },
+) {
+  if (!params.logs.length) {
+    return;
+  }
+
+  const { error } = await admin.from('scan_ai_audit_logs').insert(
+    params.logs.map((log) => ({
+      scan_id: params.scanId,
+      user_id: params.userId,
+      request_id: params.requestId,
+      stage: log.stage,
+      provider: log.provider ?? 'openai',
+      model: log.model ?? null,
+      prompt_version: log.promptVersion ?? null,
+      schema_version: log.schemaVersion ?? null,
+      system_prompt: log.systemPrompt ?? null,
+      user_prompt: log.userPrompt ?? null,
+      json_schema: log.jsonSchema ?? null,
+      request_metadata: log.requestMetadata ?? {},
+      input_refs: log.inputRefs ?? [],
+      raw_response_text: log.rawResponseText ?? null,
+      raw_response_json: log.rawResponseJson ?? null,
+      parsed_response_json: log.parsedResponseJson ?? null,
+      normalized_response_json: log.normalizedResponseJson ?? null,
+      status: log.status ?? 'completed',
+      error_code: log.errorCode ?? null,
+      error_message: log.errorMessage ?? null,
+      latency_ms: typeof log.latencyMs === 'number' ? Math.round(log.latencyMs) : null,
+      openai_response_id: log.openaiResponseId ?? null,
+      input_tokens: typeof log.inputTokens === 'number' ? Math.round(log.inputTokens) : null,
+      cached_input_tokens: typeof log.cachedInputTokens === 'number' ? Math.round(log.cachedInputTokens) : null,
+      output_tokens: typeof log.outputTokens === 'number' ? Math.round(log.outputTokens) : null,
+      reasoning_tokens: typeof log.reasoningTokens === 'number' ? Math.round(log.reasoningTokens) : null,
+      total_tokens: typeof log.totalTokens === 'number' ? Math.round(log.totalTokens) : null,
+      estimated_cost_usd_micros:
+        typeof log.estimatedCostUsdMicros === 'number' ? Math.round(log.estimatedCostUsdMicros) : null,
+      pricing_snapshot: log.pricingSnapshot ?? {},
+      billable: log.billable ?? true,
+    })),
+  );
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function getInsights(
@@ -782,7 +1346,10 @@ export async function getPaginatedScanHistory(
   const [{ data: scanRows, error: scansError, count }, { data: reportRows, error: reportsError }] = await Promise.all([
     admin
       .from('scans')
-      .select('*', { count: 'exact' })
+      .select(
+        'id, request_id, source_type, scan_category, analysis_status, title, overall_risk_score, overall_risk_level, created_at, completed_at, local_date, timezone',
+        { count: 'exact' },
+      )
       .eq('user_id', userId)
       .eq('analysis_status', 'completed')
       .order('created_at', { ascending: false })
@@ -802,8 +1369,10 @@ export async function getPaginatedScanHistory(
     throw reportsError;
   }
 
-  const storagePaths = (scanRows ?? [])
-    .map((row) => row.image_storage_path)
+  const scanRecords = (scanRows ?? []) as Record<string, unknown>[];
+  const summaryInputs = await fetchScanSummaryInputRows(admin, scanRecords);
+  const storagePaths = summaryInputs.inputs
+    .map((row) => row.storage_path)
     .filter((value): value is string => typeof value === 'string' && value.length > 0);
   const signedUrlMap = await createSignedUrlMap(admin, storagePaths);
 
@@ -811,27 +1380,88 @@ export async function getPaginatedScanHistory(
     page,
     pageSize,
     hasMore: Number(count ?? 0) > page * pageSize,
-    scans: (scanRows ?? []).map((row) => mapScanRow(row as Record<string, unknown>, signedUrlMap)),
+    scans: scanRecords.map((row) => mapScanHistorySummary(row, summaryInputs, signedUrlMap)),
     dailyReports: (reportRows ?? []).map((row) => mapDailyReportRow(row as Record<string, unknown>)),
   };
 }
 
-export function mapScanRow(row: Record<string, unknown>, signedUrlMap: Map<string, string>): ScanRecord {
-  const imageStoragePath = typeof row.image_storage_path === 'string' ? row.image_storage_path : undefined;
-  const signedUrl = imageStoragePath ? signedUrlMap.get(imageStoragePath) : undefined;
-  const structuredRecord = asRecord(row.structured_analysis);
-  const structuredAnalysis = mapStructuredAnalysisValue(row.structured_analysis, {
-    fallbackDishName: String(row.dish_name ?? 'Unknown meal'),
-    extractionModel: typeof row.extraction_model === 'string' ? row.extraction_model : null,
-    extractionPromptVersion: typeof row.extraction_prompt_version === 'string' ? row.extraction_prompt_version : null,
-    extractionClarity: typeof row.extraction_clarity === 'string' ? row.extraction_clarity : null,
-    extractionUnclearReason: typeof row.extraction_unclear_reason === 'string' ? row.extraction_unclear_reason : null,
-    dishConfidence: row.dish_confidence,
-    imageDetail: structuredRecord.imageDetail,
-  });
+export function mapScanRow(row: Record<string, unknown>, details: ScanDetailRows, signedUrlMap: Map<string, string>): ScanRecord {
+  const scanId = String(row.id);
+  const title = String(row.title ?? 'Unknown meal');
+  const inputs = details.inputs.filter((input) => String(input.scan_id) === scanId);
+  const imageStoragePath = inputs.find((input) => typeof input.storage_path === 'string')?.storage_path;
+  const signedUrl = typeof imageStoragePath === 'string' ? signedUrlMap.get(imageStoragePath) : undefined;
+  const conditionRisks = details.conditionRisks
+    .filter((risk) => String(risk.scan_id) === scanId)
+    .map(mapConditionRiskRow)
+    .sort((left, right) => left.displayOrder - right.displayOrder);
+  const ingredientRisks = details.ingredientRisks
+    .filter((risk) => String(risk.scan_id) === scanId)
+    .map(mapIngredientRiskRow)
+    .sort((left, right) => left.displayOrder - right.displayOrder);
+  const menuRows = details.menuItems.filter((menuItem) => String(menuItem.scan_id) === scanId);
+  const menuResult = buildMenuResult(row, menuRows, ingredientRisks);
+  const analysisMetadata = asRecord(row.analysis_metadata);
+  const baseFoodCategory = asMenuBaseFoodCategory(row.base_food_category);
+  const riskModifiers = asMenuRiskModifiers(row.risk_modifiers);
+  const scoreContributors = asScoreContributors(row.score_contributors);
+  const scoringConfidence = asConfidence(row.scoring_confidence);
+  const gutRecommendation = typeof row.gut_recommendation === 'string' ? row.gut_recommendation : undefined;
+  const rubricVersion = typeof row.rubric_version === 'string' ? row.rubric_version : undefined;
+  const scanLevelIngredients = ingredientRisks.filter((ingredient) => !ingredient.menuItemId && !ingredient.menuItemSourceId);
+  const allStructuredIngredients = (scanLevelIngredients.length ? scanLevelIngredients : ingredientRisks).map(ingredientRiskToExtracted);
+  const menuAnalysis = menuResult ? menuAnalysisFromResult(menuResult) : undefined;
+  const structuredAnalysis: StructuredAnalysisV2 = {
+    dishName: title,
+    dishConfidence: asConfidence(analysisMetadata.dishConfidence),
+    clarity: analysisMetadata.extractionClarity === 'unclear' ? 'unclear' : 'clear',
+    unclearReason: typeof analysisMetadata.extractionUnclearReason === 'string' ? analysisMetadata.extractionUnclearReason : undefined,
+    components: [
+      {
+        name: title,
+        confidence: asConfidence(analysisMetadata.dishConfidence),
+        prepStyle: asStringArray(analysisMetadata.prepStyle),
+      },
+    ],
+    visibleIngredients: allStructuredIngredients.filter((ingredient) => ingredient.evidence !== 'inferred'),
+    inferredIngredients: allStructuredIngredients.filter((ingredient) => ingredient.evidence === 'inferred'),
+    prepStyle: asStringArray(analysisMetadata.prepStyle),
+    notes: [],
+    baseFoodCategory,
+    riskModifiers,
+    scoreContributors,
+    scoringConfidence,
+    gutRecommendation,
+    rubricVersion,
+    model: String(analysisMetadata.extractionModel ?? 'unknown'),
+    promptVersion: String(analysisMetadata.extractionPromptVersion ?? 'unknown'),
+    imageDetail: asImageDetail(analysisMetadata.imageDetail),
+    menuAnalysis,
+  };
+  const conditionRiskScores = conditionRisks.reduce<Record<string, { score: number; level: ScanRecord['overallRiskLevel'] }>>(
+    (accumulator, risk) => {
+      accumulator[risk.conditionName] = {
+        score: risk.riskScore,
+        level: risk.riskLevel,
+      };
+      return accumulator;
+    },
+    {},
+  );
+  const possibleTriggers = Array.from(
+    new Set(
+      ingredientRisks
+        .filter((ingredient) => ingredient.riskLevel !== 'low')
+        .sort((left, right) => right.riskScore - left.riskScore)
+        .map((ingredient) => ingredient.canonicalName),
+    ),
+  ).slice(0, 5);
+  const inputText = typeof row.input_text === 'string'
+    ? row.input_text
+    : inputs.find((input) => input.input_kind === 'text' && typeof input.text_value === 'string')?.text_value;
 
   return {
-    id: String(row.id),
+    id: scanId,
     requestId: typeof row.request_id === 'string' ? row.request_id : undefined,
     sourceType: (row.source_type as ScanRecord['sourceType']) ?? 'camera',
     scanCategory:
@@ -845,25 +1475,38 @@ export function mapScanRow(row: Record<string, unknown>, signedUrlMap: Map<strin
     tokenCost: 1,
     createdAt: String(row.created_at ?? new Date().toISOString()),
     completedAt: row.completed_at ? String(row.completed_at) : undefined,
-    inputText: typeof row.input_text === 'string' ? row.input_text : undefined,
+    inputText: typeof inputText === 'string' ? inputText : undefined,
     localDate: row.local_date ? String(row.local_date) : undefined,
     timezone: typeof row.timezone === 'string' ? row.timezone : undefined,
-    dishName: String(row.dish_name ?? 'Unknown meal'),
+    dishName: title,
     overallRiskScore: Number(row.overall_risk_score ?? 0),
-    overallRiskLevel:
-      row.overall_risk_level === 'high' || row.overall_risk_level === 'medium' ? row.overall_risk_level : 'low',
-    conditionRiskScores: asRecord(row.condition_risk_scores) as ScanRecord['conditionRiskScores'],
-    possibleTriggers: asStringArray(row.possible_triggers),
+    overallRiskLevel: asRiskLevel(row.overall_risk_level),
+    conditionRiskScores,
+    possibleTriggers,
     interpretation:
-      typeof structuredRecord.interpretation === 'string'
-        ? String(structuredRecord.interpretation)
+      typeof row.pip_take === 'string' && row.pip_take.length
+        ? row.pip_take
         : Number(row.overall_risk_score ?? 0) >= 67
-          ? 'This meal may trigger symptoms for you.'
+          ? 'This may be hard on your gut based on your current profile.'
           : Number(row.overall_risk_score ?? 0) >= 34
-            ? 'This meal has some watch-outs for your stomach.'
-            : 'This meal looks relatively safe for your stomach.',
+            ? 'This has some watch-outs for your stomach.'
+            : 'This looks relatively gentle for your stomach.',
+    pipTake: typeof row.pip_take === 'string' ? row.pip_take : undefined,
+    summary: typeof row.summary === 'string' ? row.summary : undefined,
+    baseFoodCategory,
+    riskModifiers,
+    scoreContributors,
+    scoringConfidence,
+    gutRecommendation,
+    rubricVersion,
+    conditionRisks,
+    ingredientRisks,
+    menuResult,
+    groceryProduct: groceryProductSummary(
+      typeof row.grocery_product_id === 'string' ? details.groceryProducts.get(row.grocery_product_id) : undefined,
+    ),
     structuredAnalysis,
-    gutScoreImpact: asGutScoreImpact(structuredRecord.gutScoreImpact),
+    gutScoreImpact: asGutScoreImpact(analysisMetadata.gutScoreImpact),
     imageUri: signedUrl,
   };
 }
@@ -885,18 +1528,28 @@ export function mapDailyReportRow(row: Record<string, unknown>): DailyGutReport 
   };
 }
 
-export async function getScanById(admin: SupabaseClient, scanId: string) {
-  const { data, error } = await admin.from('scans').select('*').eq('id', scanId).single();
+export async function getScanById(admin: SupabaseClient, scanId: string, userId?: string) {
+  let query = admin.from('scans').select('*').eq('id', scanId);
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data, error } = await query.maybeSingle();
   if (error) {
     throw error;
   }
 
-  const signedMap = await createSignedUrlMap(
-    admin,
-    typeof data.image_storage_path === 'string' && data.image_storage_path ? [data.image_storage_path] : [],
-  );
+  if (!data) {
+    throw new Error('scan_not_found');
+  }
 
-  return mapScanRow(data as Record<string, unknown>, signedMap);
+  const details = await fetchScanDetailRows(admin, [data as Record<string, unknown>]);
+  const storagePaths = details.inputs
+    .map((row) => row.storage_path)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const signedMap = await createSignedUrlMap(admin, storagePaths);
+
+  return mapScanRow(data as Record<string, unknown>, details, signedMap);
 }
 
 export async function getScanByRequestId(admin: SupabaseClient, userId: string, requestId: string) {
@@ -915,12 +1568,13 @@ export async function getScanByRequestId(admin: SupabaseClient, userId: string, 
     return null;
   }
 
-  const signedMap = await createSignedUrlMap(
-    admin,
-    typeof data.image_storage_path === 'string' && data.image_storage_path ? [data.image_storage_path] : [],
-  );
+  const details = await fetchScanDetailRows(admin, [data as Record<string, unknown>]);
+  const storagePaths = details.inputs
+    .map((row) => row.storage_path)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const signedMap = await createSignedUrlMap(admin, storagePaths);
 
-  return mapScanRow(data as Record<string, unknown>, signedMap);
+  return mapScanRow(data as Record<string, unknown>, details, signedMap);
 }
 
 export async function createSignedStorageUrl(admin: SupabaseClient, path: string | null | undefined) {

@@ -14,16 +14,34 @@ import {
   InsightConfidenceLevel,
   InsightSourceBreakdown,
   IngredientInsight,
+  MenuBaseFoodCategory,
+  MenuItemAnalysis,
+  MenuRecommendation,
+  MenuRiskModifier,
+  MenuScanAnalysis,
   PatternStrength,
   ProfileSeed,
   RiskLevel,
+  ScanConditionRisk,
   ScanForInsightRecompute,
+  ScanIngredientRisk,
+  ScanMenuItemResult,
   ScanResult,
+  ScoreContributor,
   StomachProfile,
   StructuredAnalysisV2,
   StructuredIngredient,
   UserProfile,
 } from './domain.ts';
+import {
+  FOOD_RISK_RUBRIC_SCHEMA_VERSION,
+  menuBaseFoodCategoryRubric,
+  menuRiskModifierRubric,
+  type MenuBaseFoodCategoryKey,
+  type MenuRiskModifierKey,
+  type MenuRubricEvidence,
+  type MenuRubricRule,
+} from './menuRubric.ts';
 
 const fallbackConditions = ['IBS', 'GERD / reflux', 'Lactose intolerance', 'High FODMAP sensitivity'];
 export const GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
@@ -185,6 +203,30 @@ function normalizeKey(value: string) {
   return value.trim().toLowerCase();
 }
 
+function canonicalConditionKey(value: string) {
+  const normalized = normalizeKey(value)
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (
+    normalized === 'gerd' ||
+    normalized === 'acid reflux' ||
+    normalized === 'gerd reflux' ||
+    normalized === 'gerd acid reflux' ||
+    normalized === 'reflux heartburn'
+  ) {
+    return 'gerd reflux';
+  }
+
+  if (normalized === 'high fodmap' || normalized === 'fodmap sensitivity' || normalized === 'high fodmap sensitivity') {
+    return 'high fodmap sensitivity';
+  }
+
+  return normalized;
+}
+
 function clamp(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -224,7 +266,7 @@ function extractedIngredientToScoring(entry: ExtractedIngredient): ScoringIngred
   return {
     name: normalizeKey(entry.canonicalName || entry.rawName),
     confidence: entry.confidence,
-    evidence: entry.evidence,
+    evidence: entry.evidence === 'inferred' ? 'inferred' : 'visible',
   };
 }
 
@@ -292,8 +334,8 @@ function mealMatchesSensitivityContext(structuredAnalysis: StructuredAnalysisV2,
 }
 
 function lookupConditionImpact(impactMap: Record<string, number>, condition: string) {
-  const normalizedCondition = normalizeKey(condition);
-  const matched = Object.entries(impactMap).find(([key]) => normalizeKey(key) === normalizedCondition);
+  const normalizedCondition = canonicalConditionKey(condition);
+  const matched = Object.entries(impactMap).find(([key]) => canonicalConditionKey(key) === normalizedCondition);
   return matched?.[1] ?? 0;
 }
 
@@ -431,7 +473,7 @@ function deriveConditionSensitivityWeights(
 
   return [...conditionUniverse].reduce<Record<string, number>>((accumulator, condition) => {
     const symptomLinkedCount = symptomCounts[condition] ?? 0;
-    const knownConditionBonus = knownConditions.some((entry) => normalizeKey(entry) === normalizeKey(condition)) ? 0.06 : 0;
+    const knownConditionBonus = knownConditions.some((entry) => canonicalConditionKey(entry) === canonicalConditionKey(condition)) ? 0.06 : 0;
     const priorWeight = priorWeights[condition] ?? 1;
     const derivedWeight = 1 + knownConditionBonus + symptomLinkedCount * 0.08 + baselineBoost * 0.03;
     accumulator[condition] = roundWeight(clampNumber(derivedWeight * 0.8 + priorWeight * 0.2, 0.9, 1.7));
@@ -445,7 +487,7 @@ function conditionWeightFor(condition: string, profile: UserProfile | null) {
   }
 
   const matched = Object.entries(profile.stomachProfile.conditionSensitivityWeights ?? {}).find(
-    ([key]) => normalizeKey(key) === normalizeKey(condition),
+    ([key]) => canonicalConditionKey(key) === canonicalConditionKey(condition),
   );
   return clampNumber(matched?.[1] ?? 1, 0.9, 1.7);
 }
@@ -632,6 +674,116 @@ export function toRiskLevel(score: number): RiskLevel {
   return 'low';
 }
 
+function riskReason(level: RiskLevel, noun: string, triggers: string[] = []) {
+  if (level === 'high') {
+    return triggers.length
+      ? `${noun} is high risk here because of ${triggers.slice(0, 2).join(' and ')}.`
+      : `${noun} is high risk for your current profile.`;
+  }
+
+  if (level === 'medium') {
+    return triggers.length
+      ? `${noun} has watch-outs around ${triggers.slice(0, 2).join(' and ')}.`
+      : `${noun} has some watch-outs for your current profile.`;
+  }
+
+  return `${noun} looks lower risk for your current profile.`;
+}
+
+function buildConditionRiskRows(
+  conditionRiskScores: Record<string, ConditionRisk>,
+  possibleTriggers: string[],
+): ScanConditionRisk[] {
+  return Object.entries(conditionRiskScores).map(([conditionName, risk], index) => ({
+    conditionName,
+    riskScore: risk.score,
+    riskLevel: risk.level,
+    reason: riskReason(risk.level, conditionName, possibleTriggers),
+    displayOrder: index,
+  }));
+}
+
+function ingredientRiskReason(
+  ingredientName: string,
+  level: RiskLevel,
+  matchedSensitivity: boolean,
+  evidence: string,
+) {
+  if (matchedSensitivity) {
+    return `${ingredientName} appears in this scan and matches a risk pattern in your gut profile.`;
+  }
+
+  if (level === 'high') {
+    return `${ingredientName} is a higher-risk ingredient pattern for your profile.`;
+  }
+
+  if (level === 'medium') {
+    return evidence === 'inferred'
+      ? `${ingredientName} is inferred from the scan, so treat it as a watch-out.`
+      : `${ingredientName} has some watch-outs for your profile.`;
+  }
+
+  return `${ingredientName} looks lower risk for your current profile.`;
+}
+
+function buildIngredientRiskRows(
+  structuredAnalysis: StructuredAnalysisV2,
+  triggerScores: { name: string; score: number }[],
+  profile: UserProfile | null,
+  scoreContributors: ScoreContributor[] = [],
+): ScanIngredientRisk[] {
+  const triggerScoreMap = new Map(triggerScores.map((entry) => [normalizeKey(entry.name), entry.score]));
+  const rows: ScanIngredientRisk[] = [];
+  const seen = new Set<string>();
+  const riskContributors = scoreContributors.filter(
+    (contributor) => contributor.points > 0 && !['base_menu_risk', 'profile_context', 'stacked_load'].includes(contributor.key),
+  );
+
+  for (const ingredient of [...structuredAnalysis.visibleIngredients, ...structuredAnalysis.inferredIngredients]) {
+    const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
+    if (!canonicalName || seen.has(canonicalName)) {
+      continue;
+    }
+
+    seen.add(canonicalName);
+    const triggerScore = Math.max(0, triggerScoreMap.get(canonicalName) ?? 0);
+    const matchedSensitivity = Boolean(
+      profile?.knownIngredientSensitivities.some((sensitivity) =>
+        ingredientMatchesSensitivityLabel(canonicalName, sensitivity),
+      ),
+    );
+    const rubricPoints = riskContributors
+      .filter((contributor) => contributorMatchesIngredient(contributor, canonicalName))
+      .reduce((maxPoints, contributor) => Math.max(maxPoints, contributor.points), 0);
+    const riskScore = clamp(
+      matchedSensitivity
+        ? Math.max(72, 48 + triggerScore)
+        : rubricPoints > 0
+          ? 24 + rubricPoints * 3
+          : triggerScore >= 18
+          ? 42 + triggerScore
+          : ingredient.evidence === 'inferred'
+            ? 32
+            : 18,
+    );
+    const riskLevel = toRiskLevel(riskScore);
+
+    rows.push({
+      rawName: ingredient.rawName,
+      canonicalName,
+      riskScore,
+      riskLevel,
+      evidence: ingredient.evidence,
+      confidence: ingredient.confidence,
+      componentName: ingredient.component,
+      reason: ingredientRiskReason(canonicalName, riskLevel, matchedSensitivity, ingredient.evidence),
+      displayOrder: rows.length,
+    });
+  }
+
+  return rows;
+}
+
 function toPatternStrength(score: number): PatternStrength {
   if (score >= 67) {
     return 'strong';
@@ -715,7 +867,7 @@ function scoreCondition(
   insights: IngredientInsight[],
 ) {
   let total = 12 + baseProfileRiskBonus(profile);
-  const normalizedCondition = normalizeKey(condition);
+  const normalizedCondition = canonicalConditionKey(condition);
   const insightMap = new Map(insights.map((insight) => [normalizeKey(insight.ingredientName), insight]));
   const conditionWeight = conditionWeightFor(condition, profile);
   const learnedInsightWeight = insightConfidenceWeight(profile);
@@ -728,7 +880,7 @@ function scoreCondition(
 
     if (impactEntry) {
       for (const [conditionKey, delta] of Object.entries(impactEntry)) {
-        if (normalizeKey(conditionKey) === normalizedCondition) {
+        if (canonicalConditionKey(conditionKey) === normalizedCondition) {
           ingredientDelta += delta;
         }
       }
@@ -1528,18 +1680,538 @@ export function computeScanResultFromStructured(
   imageUri?: string,
 ): ScanResult {
   const ingredients = scoringIngredientsFromStructured(structuredAnalysis);
-  const activeConditions = profile?.knownConditions.length ? profile.knownConditions : fallbackConditions;
-  const conditionRiskScores = activeConditions.slice(0, 5).reduce<Record<string, ConditionRisk>>((accumulator, condition) => {
-    const score = scoreCondition(condition, ingredients, structuredAnalysis, profile, insights);
-    accumulator[condition] = {
-      score,
-      level: toRiskLevel(score),
-    };
-    return accumulator;
-  }, {});
+  const triggerScores = legacyIngredientTriggerScores(ingredients, profile, insights);
+  const legacyConditionRiskScores = legacyConditionScoresForStructured(structuredAnalysis, ingredients, profile, insights);
+  const legacyPossibleTriggers = possibleTriggersFromScores(triggerScores);
+  const overallSeed = Object.values(legacyConditionRiskScores).reduce((total, current) => total + current.score, 0);
+  const matchedSensitivityLabels = findMatchedSensitivityLabels(structuredAnalysis, profile);
+  const legacyOverallRiskScore = clamp(
+    overallSeed / Math.max(1, Object.keys(legacyConditionRiskScores).length || 1) +
+      (legacyPossibleTriggers.length > 1 ? 4 : 0) +
+      mealContextRiskBonus(structuredAnalysis, profile) +
+      Math.min(matchedSensitivityLabels.length * 2, 6),
+  );
+  const foodEntity = foodRiskEntityFromStructured(structuredAnalysis);
+  const rubric = scoreFoodRiskEntity(
+    foodEntity,
+    {
+      overallRiskScore: legacyOverallRiskScore,
+      possibleTriggers: legacyPossibleTriggers,
+    },
+    profile,
+    insights,
+  );
+  const overallRiskScore = rubric.score;
+  const overallRiskLevel = rubric.level;
+  const conditionRiskScores = conditionRiskScoresFromFoodEntity(
+    foodEntity,
+    structuredAnalysis,
+    ingredients,
+    profile,
+    insights,
+  );
+  const possibleTriggers = possibleTriggersFromContributorsAndIngredients(
+    rubric.contributors,
+    structuredAnalysis,
+    triggerScores,
+  );
+  const gutRecommendation = saferModificationFromContributors(rubric.contributors, overallRiskLevel, foodEntity);
+  const interpretation = createRubricInterpretation(
+    structuredAnalysis.dishName,
+    overallRiskLevel,
+    rubric.contributors,
+    conditionRiskScores,
+    profile,
+  );
+  const enrichedStructuredAnalysis: StructuredAnalysisV2 = {
+    ...structuredAnalysis,
+    baseFoodCategory: foodEntity.baseFoodCategory,
+    riskModifiers: foodEntity.riskModifiers,
+    scoreContributors: rubric.contributors,
+    scoringConfidence: rubric.confidence,
+    gutRecommendation,
+    rubricVersion: FOOD_RISK_RUBRIC_SCHEMA_VERSION,
+  };
 
+  return {
+    dishName: structuredAnalysis.dishName,
+    overallRiskScore,
+    overallRiskLevel,
+    conditionRiskScores,
+    possibleTriggers,
+    interpretation,
+    pipTake: interpretation,
+    summary: interpretation,
+    baseFoodCategory: foodEntity.baseFoodCategory,
+    riskModifiers: foodEntity.riskModifiers,
+    scoreContributors: rubric.contributors,
+    scoringConfidence: rubric.confidence,
+    gutRecommendation,
+    rubricVersion: FOOD_RISK_RUBRIC_SCHEMA_VERSION,
+    conditionRisks: buildConditionRiskRows(conditionRiskScores, possibleTriggers),
+    ingredientRisks: buildIngredientRiskRows(enrichedStructuredAnalysis, triggerScores, profile, rubric.contributors),
+    structuredAnalysis: enrichedStructuredAnalysis,
+    gutScoreImpact: computeGutScoreImpact(overallRiskScore, possibleTriggers, profile),
+    imageUri,
+  };
+}
+
+function structuredAnalysisFromMenuItem(item: MenuItemAnalysis, meta: { model: string; promptVersion: string }): StructuredAnalysisV2 {
+  return {
+    dishName: item.name,
+    dishConfidence: item.confidence,
+    clarity: 'clear',
+    components: [
+      {
+        name: item.name,
+        confidence: item.confidence,
+        prepStyle: item.prepStyle,
+      },
+    ],
+    visibleIngredients: item.extractedIngredients,
+    inferredIngredients: item.inferredIngredients,
+    prepStyle: item.prepStyle,
+    notes: [item.description, item.section].filter((entry): entry is string => Boolean(entry)),
+    baseFoodCategory: item.baseFoodCategory,
+    riskModifiers: item.riskModifiers,
+    rubricVersion: FOOD_RISK_RUBRIC_SCHEMA_VERSION,
+    model: meta.model,
+    promptVersion: meta.promptVersion,
+    imageDetail: 'high',
+  };
+}
+
+type MenuScoredItem = {
+  item: MenuItemAnalysis;
+  result: ScanResult;
+  displayTriggers: string[];
+  scoreContributors: ScoreContributor[];
+  scoringConfidence: IngredientConfidence;
+};
+
+function normalizeMenuScoringText(value: string) {
+  return normalizeKey(value)
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function menuScoringText(item: MenuItemAnalysis) {
+  return normalizeMenuScoringText(
+    [
+      item.name,
+      item.description,
+      item.section,
+      ...item.prepStyle,
+      ...item.extractedIngredients.flatMap((ingredient) => [ingredient.rawName, ingredient.canonicalName]),
+      ...item.inferredIngredients.flatMap((ingredient) => [ingredient.rawName, ingredient.canonicalName]),
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+}
+
+function menuTextHasAny(text: string, terms: readonly string[]) {
+  const padded = ` ${text} `;
+  return terms.some((term) => {
+    const normalized = normalizeMenuScoringText(term);
+    return Boolean(normalized) && (padded.includes(` ${normalized} `) || padded.includes(` ${normalized}s `));
+  });
+}
+
+function firstMenuTermMatch(text: string, terms: readonly string[]) {
+  return terms.find((term) => menuTextHasAny(text, [term]));
+}
+
+type MenuTraitMatch = {
+  source: string;
+  evidence: ScoreContributor['evidence'];
+  weight: number;
+};
+
+type MenuTraitRule = MenuRubricRule;
+
+const menuBaseFoodCategoryRules = menuBaseFoodCategoryRubric;
+const menuRiskModifierRules = menuRiskModifierRubric;
+const portionEscalationTerms = [
+  'loaded',
+  'double',
+  'triple',
+  'platter',
+  'combo',
+  'party',
+  'feast',
+  'smothered',
+  'supreme',
+  'deluxe',
+  'all you can eat',
+];
+const unclearSauceTerms = [
+  'house',
+  'special',
+  'secret',
+  'unknown',
+  'mystery',
+  'unspecified',
+  'unclear',
+  'unidentified',
+  'hidden',
+  'not specified',
+];
+
+function profileHasAnyCondition(profile: UserProfile | null, conditions: readonly string[]) {
+  if (!profile) {
+    return false;
+  }
+
+  const profileKeys = profile.knownConditions.map(canonicalConditionKey);
+  return conditions.some((condition) => profileKeys.includes(canonicalConditionKey(condition)));
+}
+
+function conditionMultiplierForRule(rule: MenuTraitRule, profile: UserProfile | null) {
+  if (!rule.conditionMultipliers?.length || !profile) {
+    return 1;
+  }
+
+  let multiplier = 1;
+  for (const entry of rule.conditionMultipliers) {
+    if (!profileHasAnyCondition(profile, entry.conditions)) {
+      continue;
+    }
+
+    const strongestConditionWeight = Math.max(
+      ...entry.conditions.map((condition) => conditionWeightFor(condition, profile)),
+      1,
+    );
+    const rawMultiplier = entry.multiplier * clampNumber(strongestConditionWeight, 1, 1.25);
+    const conditionCap = entry.multiplier >= 1.7 ? entry.multiplier * 1.15 : 1.5;
+    multiplier = Math.max(multiplier, Math.min(rawMultiplier, conditionCap));
+  }
+
+  return multiplier;
+}
+
+function sensitivityMultiplierForRule(rule: MenuTraitRule, match: MenuTraitMatch, profile: UserProfile | null) {
+  if (!profile || rule.points < 0) {
+    return 1;
+  }
+
+  for (const sensitivity of profile.knownIngredientSensitivities) {
+    const normalizedSensitivity = normalizeKey(sensitivity);
+    const matchesRuleLabel = (rule.sensitivityLabels ?? []).some((label) => {
+      const normalizedLabel = normalizeKey(label);
+      return (
+        normalizedLabel === normalizedSensitivity ||
+        ingredientMatchesSensitivityLabel(normalizedLabel, sensitivity) ||
+        ingredientMatchesSensitivityLabel(normalizedSensitivity, label)
+      );
+    });
+    const matchesSource =
+      !getSensitivityProfile(sensitivity) && ingredientMatchesSensitivityLabel(match.source, sensitivity);
+
+    if (matchesRuleLabel || matchesSource) {
+      return 1.22;
+    }
+  }
+
+  return 1;
+}
+
+function ruleIngredientMatch(rule: MenuTraitRule, ingredients: ExtractedIngredient[], fallbackWeight: number): MenuTraitMatch | null {
+  for (const ingredient of ingredients) {
+    const text = normalizeMenuScoringText([ingredient.rawName, ingredient.canonicalName].join(' '));
+    const term = firstMenuTermMatch(text, rule.terms);
+    if (!term) {
+      continue;
+    }
+
+    const scoringIngredient = extractedIngredientToScoring(ingredient);
+    return {
+      source: ingredient.rawName || ingredient.canonicalName || term,
+      evidence: rule.contributorEvidence === 'uncertainty' ? 'uncertainty' : 'ingredient',
+      weight: clampNumber(ingredientWeight(scoringIngredient) * fallbackWeight, 0.5, 1),
+    };
+  }
+
+  return null;
+}
+
+function rulePrepMatch(rule: MenuTraitRule, item: MenuItemAnalysis): MenuTraitMatch | null {
+  const prepText = normalizeMenuScoringText(item.prepStyle.join(' '));
+  const term = firstMenuTermMatch(prepText, rule.terms);
+  if (!term) {
+    return null;
+  }
+
+  return {
+    source: term,
+    evidence: rule.contributorEvidence === 'protective' ? 'protective' : 'prep',
+    weight: 0.95,
+  };
+}
+
+function ruleDescriptionMatch(rule: MenuTraitRule, item: MenuItemAnalysis): MenuTraitMatch | null {
+  const text = normalizeMenuScoringText([item.name, item.description, item.section].filter(Boolean).join(' '));
+  const term = firstMenuTermMatch(text, rule.terms);
+  if (!term) {
+    return null;
+  }
+
+  return {
+    source: term,
+    evidence: rule.contributorEvidence,
+    weight: item.name && menuTextHasAny(normalizeMenuScoringText(item.name), [term]) ? 0.9 : 0.75,
+  };
+}
+
+function menuRuleMatch(rule: MenuTraitRule, item: MenuItemAnalysis): MenuTraitMatch | null {
+  return (
+    ruleIngredientMatch(rule, item.extractedIngredients, 1) ??
+    ruleIngredientMatch(rule, item.inferredIngredients, 0.82) ??
+    rulePrepMatch(rule, item) ??
+    ruleDescriptionMatch(rule, item)
+  );
+}
+
+function shouldIgnoreRubricMatch(
+  key: MenuBaseFoodCategoryKey | MenuRiskModifierKey,
+  source: string,
+  item: MenuItemAnalysis,
+) {
+  const normalizedSource = normalizeMenuScoringText(source);
+  const normalizedItem = menuScoringText(item);
+
+  if (key === 'alcohol' && normalizedSource.includes('cocktail sauce')) {
+    return true;
+  }
+
+  if (
+    key === 'fried_or_crispy' &&
+    normalizedItem.includes('pizza') &&
+    normalizedSource.includes('pizza crust') &&
+    !menuTextHasAny(normalizedSource, ['fried', 'deep fried', 'battered', 'breaded', 'tempura'])
+  ) {
+    return true;
+  }
+
+  if (
+    key === 'large_or_loaded_portion' &&
+    normalizedItem.includes('pizza') &&
+    (normalizedSource.includes('large pizza') || normalizedSource.includes('multiple slices')) &&
+    !menuTextHasAny(normalizedSource, portionEscalationTerms)
+  ) {
+    return true;
+  }
+
+  if (
+    key === 'unknown_sauce_or_marinade' &&
+    !menuTextHasAny(normalizedSource, unclearSauceTerms)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function simplePrepWouldBeMisleading(item: MenuItemAnalysis) {
+  const conflictingRiskKeys = new Set<MenuRiskModifierKey>([
+    'fried_or_crispy',
+    'high_fat_or_rich',
+    'creamy_or_lactose',
+    'spicy_heat',
+    'large_or_loaded_portion',
+  ]);
+
+  return Boolean(item.riskModifiers?.some((modifier) => conflictingRiskKeys.has(modifier.key)));
+}
+
+function menuRuleContributor(rule: MenuTraitRule, item: MenuItemAnalysis, profile: UserProfile | null): ScoreContributor | null {
+  const match = menuRuleMatch(rule, item);
+  if (!match) {
+    return null;
+  }
+
+  if (rule.key === 'simple_prep' && simplePrepWouldBeMisleading(item)) {
+    return null;
+  }
+
+  if (shouldIgnoreRubricMatch(rule.key, match.source, item)) {
+    return null;
+  }
+
+  const conditionMultiplier = conditionMultiplierForRule(rule, profile);
+  const sensitivityMultiplier = sensitivityMultiplierForRule(rule, match, profile);
+  const points = Math.round(rule.points * match.weight * conditionMultiplier * sensitivityMultiplier);
+  if (points === 0) {
+    return null;
+  }
+
+  return {
+    key: rule.key,
+    label: rule.label,
+    points,
+    evidence: match.evidence,
+    source: match.source,
+    reason: `${match.source} matched ${rule.label.toLowerCase()}: ${rule.reason}`,
+  };
+}
+
+const menuTraitRulesByKey = new Map(
+  [...menuBaseFoodCategoryRules, ...menuRiskModifierRules].map((rule) => [rule.key, rule]),
+);
+const secondaryBaseCategoryRuleKeys: ReadonlySet<MenuBaseFoodCategoryKey> = new Set([
+  'processed_meat',
+  'fatty_or_rich_meat',
+]);
+
+type MenuRubricSignal = MenuBaseFoodCategory | MenuRiskModifier;
+
+function scoringRubricSignalWeight(signal: MenuRubricSignal) {
+  const confidenceWeight = signal.confidence === 'high' ? 1 : signal.confidence === 'medium' ? 0.84 : 0.62;
+  const evidenceWeight =
+    signal.evidence === 'ingredient' || signal.evidence === 'prep'
+      ? 1
+      : signal.evidence === 'name' || signal.evidence === 'description'
+        ? 0.88
+        : signal.evidence === 'section'
+          ? 0.72
+          : signal.evidence === 'common_dish_knowledge'
+            ? 0.68
+            : 0.55;
+  return clampNumber(confidenceWeight * evidenceWeight, 0.42, 1);
+}
+
+function scoreEvidenceFromRubricSignal(rule: MenuTraitRule, signal: MenuRubricSignal): ScoreContributor['evidence'] {
+  if (rule.contributorEvidence === 'protective' || rule.points < 0) {
+    return 'protective';
+  }
+
+  if (rule.contributorEvidence === 'uncertainty' || signal.evidence === 'unclear') {
+    return 'uncertainty';
+  }
+
+  if (signal.evidence === 'prep') {
+    return 'prep';
+  }
+
+  if (signal.evidence === 'ingredient') {
+    return 'ingredient';
+  }
+
+  return 'description';
+}
+
+function modelRubricContributor(signal: MenuRubricSignal, profile: UserProfile | null): ScoreContributor | null {
+  const rule = menuTraitRulesByKey.get(signal.key);
+  if (!rule) {
+    return null;
+  }
+
+  const match: MenuTraitMatch = {
+    source: signal.source,
+    evidence: scoreEvidenceFromRubricSignal(rule, signal),
+    weight: scoringRubricSignalWeight(signal),
+  };
+  const conditionMultiplier = conditionMultiplierForRule(rule, profile);
+  const sensitivityMultiplier = sensitivityMultiplierForRule(rule, match, profile);
+  const points = Math.round(rule.points * match.weight * conditionMultiplier * sensitivityMultiplier);
+  if (points === 0) {
+    return null;
+  }
+
+  return {
+    key: rule.key,
+    label: rule.label,
+    points,
+    evidence: match.evidence,
+    source: signal.source,
+    reason: `${signal.source} fits ${rule.label.toLowerCase()}: ${rule.reason}`,
+  };
+}
+
+function fallbackMenuBaseFoodCategoryForScoring(item: MenuItemAnalysis): MenuBaseFoodCategory {
+  const text = menuScoringText(item);
+  for (const rule of menuBaseFoodCategoryRules) {
+    if (rule.key === 'unknown') {
+      continue;
+    }
+    const source = firstMenuTermMatch(text, rule.terms);
+    if (!source) {
+      continue;
+    }
+    return {
+      key: rule.key as MenuBaseFoodCategoryKey,
+      confidence: item.confidence === 'high' ? 'medium' : item.confidence,
+      evidence: item.name && menuTextHasAny(normalizeMenuScoringText(item.name), [source]) ? 'name' : 'common_dish_knowledge',
+      source,
+    };
+  }
+
+  return {
+    key: 'unknown',
+    confidence: 'low',
+    evidence: 'unclear',
+    source: item.name,
+  };
+}
+
+function fallbackMenuRiskModifiersForScoring(item: MenuItemAnalysis) {
+  const text = menuScoringText(item);
+  const modifiers: MenuRiskModifier[] = [];
+  const seen = new Set<string>();
+  for (const rule of menuRiskModifierRules) {
+    const source = firstMenuTermMatch(text, rule.terms);
+    if (!source || seen.has(rule.key)) {
+      continue;
+    }
+    seen.add(rule.key);
+    const evidence: MenuRubricEvidence = rule.contributorEvidence === 'prep'
+      ? 'prep'
+      : rule.contributorEvidence === 'protective'
+        ? 'common_dish_knowledge'
+        : rule.contributorEvidence === 'uncertainty'
+          ? 'unclear'
+          : 'ingredient';
+    modifiers.push({
+      key: rule.key as MenuRiskModifierKey,
+      confidence: item.confidence === 'high' ? 'medium' : item.confidence,
+      evidence,
+      source,
+    });
+  }
+  return modifiers.slice(0, 10);
+}
+
+function foodRiskEntityFromStructured(structuredAnalysis: StructuredAnalysisV2): MenuItemAnalysis {
+  const item: MenuItemAnalysis = {
+    id: 'scan-food',
+    name: structuredAnalysis.dishName,
+    description: structuredAnalysis.notes.join(' '),
+    extractedIngredients: structuredAnalysis.visibleIngredients,
+    inferredIngredients: structuredAnalysis.inferredIngredients,
+    prepStyle: structuredAnalysis.prepStyle,
+    baseFoodCategory: structuredAnalysis.baseFoodCategory,
+    riskModifiers: structuredAnalysis.riskModifiers,
+    confidence: structuredAnalysis.dishConfidence,
+    personalizedRiskScore: 0,
+    personalizedRiskLevel: 'low',
+  };
+
+  return {
+    ...item,
+    baseFoodCategory: item.baseFoodCategory ?? fallbackMenuBaseFoodCategoryForScoring(item),
+    riskModifiers: item.riskModifiers?.length ? item.riskModifiers : fallbackMenuRiskModifiersForScoring(item),
+  };
+}
+
+function legacyIngredientTriggerScores(
+  ingredients: ScoringIngredient[],
+  profile: UserProfile | null,
+  insights: IngredientInsight[],
+) {
   const learnedInsightWeight = insightConfidenceWeight(profile);
-  const triggerScores = ingredients.map((ingredient) => {
+  return ingredients.map((ingredient) => {
     const normalizedIngredient = normalizeKey(ingredient.name);
     const insight = insights.find((item) => normalizeKey(item.ingredientName) === normalizedIngredient);
     const baseline = Object.values(ingredientConditionImpacts[normalizedIngredient] ?? {}).reduce(
@@ -1556,40 +2228,987 @@ export function computeScanResultFromStructured(
         Math.max(0, Math.round((insight ? insightRiskDelta(insight, learnedInsightWeight) : 0) * weight * 3)),
     };
   });
+}
 
-  const possibleTriggers = triggerScores
+function possibleTriggersFromScores(triggerScores: { name: string; score: number }[]) {
+  return triggerScores
     .filter((entry) => entry.score >= 18)
     .sort((a, b) => b.score - a.score)
     .slice(0, 4)
     .map((entry) => entry.name);
+}
 
-  const overallSeed = Object.values(conditionRiskScores).reduce((total, current) => total + current.score, 0);
-  const matchedSensitivityLabels = findMatchedSensitivityLabels(structuredAnalysis, profile);
-  const overallRiskScore = clamp(
-    overallSeed / Math.max(1, Object.keys(conditionRiskScores).length) +
-      (possibleTriggers.length > 1 ? 4 : 0) +
-      mealContextRiskBonus(structuredAnalysis, profile) +
-      Math.min(matchedSensitivityLabels.length * 2, 6),
+function legacyConditionScoresForStructured(
+  structuredAnalysis: StructuredAnalysisV2,
+  ingredients: ScoringIngredient[],
+  profile: UserProfile | null,
+  insights: IngredientInsight[],
+) {
+  const activeConditions = profile?.knownConditions.length ? profile.knownConditions : [];
+  return activeConditions.slice(0, 5).reduce<Record<string, ConditionRisk>>((accumulator, condition) => {
+    const displayName = displayConditionName(condition);
+    const scoringCondition = isGeneralDiscomfortCondition(condition) ? 'Sensitive stomach' : condition;
+    const score = scoreCondition(scoringCondition, ingredients, structuredAnalysis, profile, insights);
+    accumulator[displayName] = {
+      score,
+      level: toRiskLevel(score),
+    };
+    return accumulator;
+  }, {});
+}
+
+function profileForConditionScore(profile: UserProfile | null, condition: string): UserProfile | null {
+  if (!profile) {
+    return null;
+  }
+
+  const scoringCondition = isGeneralDiscomfortCondition(condition) ? 'Sensitive stomach' : condition;
+  return {
+    ...profile,
+    knownConditions: [scoringCondition],
+    stomachProfile: {
+      ...profile.stomachProfile,
+      conditions: [{ name: scoringCondition, source: 'user' as const, active: true }],
+    },
+  };
+}
+
+function conditionRiskScoresFromFoodEntity(
+  foodEntity: MenuItemAnalysis,
+  structuredAnalysis: StructuredAnalysisV2,
+  ingredients: ScoringIngredient[],
+  profile: UserProfile | null,
+  insights: IngredientInsight[],
+) {
+  const activeConditions = profile?.knownConditions.length ? profile.knownConditions : [];
+  return activeConditions.slice(0, 5).reduce<Record<string, ConditionRisk>>((accumulator, condition) => {
+    const displayName = displayConditionName(condition);
+    const conditionProfile = profileForConditionScore(profile, condition);
+    const legacyScore = scoreCondition(
+      isGeneralDiscomfortCondition(condition) ? 'Sensitive stomach' : condition,
+      ingredients,
+      structuredAnalysis,
+      conditionProfile,
+      insights,
+    );
+    const legacyTriggers = possibleTriggersFromScores(legacyIngredientTriggerScores(ingredients, conditionProfile, insights));
+    const rubric = scoreFoodRiskEntity(foodEntity, {
+      overallRiskScore: legacyScore,
+      possibleTriggers: legacyTriggers,
+    }, conditionProfile, insights);
+    accumulator[displayName] = {
+      score: rubric.score,
+      level: rubric.level,
+    };
+    return accumulator;
+  }, {});
+}
+
+function contributorMatchesIngredient(contributor: ScoreContributor, ingredientName: string) {
+  const ingredient = normalizeMenuScoringText(ingredientName);
+  const source = normalizeMenuScoringText(contributor.source);
+  if (!ingredient || !source) {
+    return false;
+  }
+
+  if (source.includes(ingredient) || ingredient.includes(source)) {
+    return true;
+  }
+
+  const rule = menuTraitRulesByKey.get(contributor.key as MenuBaseFoodCategoryKey | MenuRiskModifierKey);
+  return Boolean(rule && firstMenuTermMatch(ingredient, rule.terms));
+}
+
+function possibleTriggersFromContributorsAndIngredients(
+  contributors: ScoreContributor[],
+  structuredAnalysis: StructuredAnalysisV2,
+  triggerScores: { name: string; score: number }[],
+) {
+  const ingredientNames = [...structuredAnalysis.visibleIngredients, ...structuredAnalysis.inferredIngredients]
+    .map((ingredient) => normalizeKey(ingredient.canonicalName || ingredient.rawName))
+    .filter(Boolean);
+  const triggers = new Set<string>();
+  const riskContributors = contributors
+    .filter((contributor) => contributor.points > 0 && !['base_menu_risk', 'profile_context', 'stacked_load'].includes(contributor.key))
+    .sort((left, right) => right.points - left.points);
+
+  for (const contributor of riskContributors) {
+    const matchedIngredient = ingredientNames.find((ingredient) => contributorMatchesIngredient(contributor, ingredient));
+    triggers.add(matchedIngredient || contributor.label.toLowerCase());
+    if (triggers.size >= 5) {
+      break;
+    }
+  }
+
+  for (const trigger of possibleTriggersFromScores(triggerScores)) {
+    triggers.add(trigger);
+    if (triggers.size >= 5) {
+      break;
+    }
+  }
+
+  return [...triggers];
+}
+
+function compactDriverList(contributors: ScoreContributor[], limit = 3) {
+  return compactMenuList(
+    contributors
+      .filter((contributor) => contributor.points > 0 && !['base_menu_risk', 'profile_context', 'stacked_load'].includes(contributor.key))
+      .sort((left, right) => right.points - left.points)
+      .map((contributor) => contributor.label.toLowerCase()),
+    limit,
   );
-  const overallRiskLevel = toRiskLevel(overallRiskScore);
-  const hasLearnedSignals = insights.some((insight) => insight.supportingEvidenceCount > 0);
+}
+
+function createRubricInterpretation(
+  dishName: string,
+  overallRiskLevel: RiskLevel,
+  contributors: ScoreContributor[],
+  conditionRiskScores: Record<string, ConditionRisk>,
+  _profile: UserProfile | null,
+) {
+  const driverList = compactDriverList(contributors, 3);
+  const topCondition = Object.entries(conditionRiskScores).sort((left, right) => right[1].score - left[1].score)[0]?.[0];
+  const noun = dishName.trim() || 'This scan';
+
+  if (overallRiskLevel === 'high') {
+    return driverList
+      ? `${noun} looks high risk for your gut because ${driverList} stack in the same meal${topCondition ? `, especially for ${topCondition}` : ''}.`
+      : `${noun} looks high risk for your current gut profile.`;
+  }
+
+  if (overallRiskLevel === 'medium') {
+    return driverList
+      ? `${noun} has a medium gut load because ${driverList} are the main score drivers${topCondition ? ` for ${topCondition}` : ''}.`
+      : `${noun} has some watch-outs for your current gut profile.`;
+  }
+
+  return driverList
+    ? `${noun} is lower risk overall, with ${driverList} as the main watch-out.`
+    : `${noun} looks lower risk for your current gut profile.`;
+}
+
+function saferModificationFromContributors(
+  contributors: ScoreContributor[],
+  overallRiskLevel: RiskLevel,
+  item: MenuItemAnalysis,
+) {
+  const keys = new Set(contributors.filter((contributor) => contributor.points > 0).map((contributor) => contributor.key));
+  const name = normalizeKey(item.name);
+
+  if (name.includes('pizza')) {
+    return 'Try lighter cheese, skip processed meat toppings, or choose a thinner crust if those are options.';
+  }
+  if (keys.has('fried_or_crispy')) {
+    return 'Choose grilled, broiled, baked, or steamed prep instead of fried or crispy when possible.';
+  }
+  if (keys.has('creamy_or_lactose') || keys.has('dairy_based')) {
+    return 'Ask for less cheese, cream, or dairy sauce, or keep it on the side.';
+  }
+  if (keys.has('spicy_heat') || keys.has('acidic_tomato_citrus_vinegar')) {
+    return 'Ask for spicy, tomato, citrus, or vinegar-heavy sauces on the side.';
+  }
+  if (keys.has('processed_meat') || keys.has('fatty_or_rich_meat')) {
+    return 'Choose a leaner protein or smaller portion of rich or processed meat.';
+  }
+  if (keys.has('large_or_loaded_portion')) {
+    return 'Split the portion or keep loaded toppings on the side.';
+  }
+
+  return overallRiskLevel === 'high' ? 'Keep sauces and rich toppings on the side if possible.' : undefined;
+}
+
+function modelRubricContributors(item: MenuItemAnalysis, profile: UserProfile | null) {
+  const contributors: ScoreContributor[] = [];
+  const seen = new Set<string>();
+  const baseFoodCategory = item.baseFoodCategory ?? fallbackMenuBaseFoodCategoryForScoring(item);
+  const riskModifiers = item.riskModifiers?.length ? item.riskModifiers : fallbackMenuRiskModifiersForScoring(item);
+
+  for (const signal of [baseFoodCategory, ...riskModifiers]) {
+    if (seen.has(signal.key)) {
+      continue;
+    }
+
+    if (shouldIgnoreRubricMatch(signal.key, signal.source, item)) {
+      continue;
+    }
+
+    const contributor = modelRubricContributor(signal, profile);
+    if (!contributor) {
+      continue;
+    }
+
+    seen.add(signal.key);
+    contributors.push(contributor);
+  }
+
+  return contributors;
+}
+
+function learnedMenuContributors(item: MenuItemAnalysis, profile: UserProfile | null, insights: IngredientInsight[]): ScoreContributor[] {
+  if (!insights.length) {
+    return [];
+  }
+
+  const learnedInsightWeight = insightConfidenceWeight(profile);
+  const insightMap = new Map(insights.map((insight) => [normalizeKey(insight.ingredientName), insight]));
+  const labels = menuIngredientLabels(item);
+  const contributors: ScoreContributor[] = [];
+  const seen = new Set<string>();
+
+  for (const label of labels) {
+    const key = normalizeKey(label);
+    const insight = insightMap.get(key);
+    if (!insight || seen.has(key) || insight.supportingEvidenceCount <= 0) {
+      continue;
+    }
+
+    const delta = Math.round(insightRiskDelta(insight, learnedInsightWeight) * 0.55);
+    if (Math.abs(delta) < 3) {
+      continue;
+    }
+
+    seen.add(key);
+    contributors.push({
+      key: `learned_${key}`,
+      label: delta > 0 ? `Your history: ${label}` : `Usually gentler: ${label}`,
+      points: clampNumber(delta, -10, 16),
+      evidence: 'learning',
+      source: label,
+      reason:
+        delta > 0
+          ? `${label} has appeared more often around reactive daily reports.`
+          : `${label} has appeared more often around calmer daily reports.`,
+    });
+  }
+
+  return contributors;
+}
+
+function stackMenuContributors(contributors: ScoreContributor[]) {
+  const majorRiskContributors = contributors.filter(
+    (contributor) =>
+      contributor.points >= 8 &&
+      contributor.key !== 'base_menu_risk' &&
+      contributor.key !== 'profile_context' &&
+      contributor.key !== 'stacked_load',
+  );
+  if (majorRiskContributors.length < 3) {
+    return null;
+  }
+
+  const points = Math.min(14, 6 + (majorRiskContributors.length - 3) * 4);
+  return {
+    key: 'stacked_load',
+    label: 'Stacked triggers',
+    points,
+    evidence: 'rubric' as const,
+    source: majorRiskContributors.slice(0, 3).map((contributor) => contributor.label).join(', '),
+    reason: 'Multiple medium-to-high risk traits stack in the same item.',
+  };
+}
+
+function unknownMenuContributor(item: MenuItemAnalysis, contributors: ScoreContributor[]): ScoreContributor | null {
+  const hasFoodEvidence = item.extractedIngredients.length > 0 || item.inferredIngredients.length > 0 || contributors.length > 1;
+  if (hasFoodEvidence) {
+    return null;
+  }
 
   return {
-    dishName: structuredAnalysis.dishName,
-    overallRiskScore,
-    overallRiskLevel,
-    conditionRiskScores,
-    possibleTriggers,
-    interpretation: createInterpretation(
-      overallRiskLevel,
-      possibleTriggers,
+    key: 'limited_menu_detail',
+    label: 'Limited detail',
+    points: 8,
+    evidence: 'uncertainty',
+    source: item.description || item.name,
+    reason: 'The menu item has limited ingredient detail, so the score keeps some uncertainty.',
+  };
+}
+
+function menuScoringConfidence(item: MenuItemAnalysis, contributors: ScoreContributor[]): IngredientConfidence {
+  const evidenceCount = contributors.filter(
+    (contributor) =>
+      contributor.key !== 'base_menu_risk' &&
+      contributor.evidence !== 'rubric' &&
+      contributor.evidence !== 'profile',
+  ).length;
+  const hasUncertainty = contributors.some((contributor) => contributor.evidence === 'uncertainty');
+
+  if (item.confidence === 'low' || (hasUncertainty && evidenceCount <= 1)) {
+    return 'low';
+  }
+
+  if (item.confidence === 'high' && evidenceCount >= 2 && !hasUncertainty) {
+    return 'high';
+  }
+
+  return 'medium';
+}
+
+function isGeneralDiscomfortCondition(condition: string) {
+  const normalized = canonicalConditionKey(condition);
+  return (
+    normalized.includes('unsure') ||
+    normalized.includes('general discomfort') ||
+    normalized.includes('not sure') ||
+    normalized === 'sensitive stomach'
+  );
+}
+
+function displayConditionName(condition: string) {
+  return isGeneralDiscomfortCondition(condition) ? 'General gut sensitivity' : condition;
+}
+
+function hasSpecificConditionOrSensitivity(profile: UserProfile | null) {
+  if (!profile) {
+    return false;
+  }
+
+  const hasSpecificCondition = profile.knownConditions.some((condition) => !isGeneralDiscomfortCondition(condition));
+  return hasSpecificCondition || profile.knownIngredientSensitivities.length > 0;
+}
+
+function genericBaselineMultiplier(profile: UserProfile | null) {
+  return hasSpecificConditionOrSensitivity(profile) ? 1 : 0.65;
+}
+
+function calibrateContributorForProfile(contributor: ScoreContributor, profile: UserProfile | null): ScoreContributor {
+  if (
+    contributor.points <= 0 ||
+    contributor.evidence === 'learning' ||
+    contributor.key === 'base_menu_risk' ||
+    contributor.key === 'profile_context'
+  ) {
+    return contributor;
+  }
+
+  const multiplier = genericBaselineMultiplier(profile);
+  if (multiplier === 1) {
+    return contributor;
+  }
+
+  return {
+    ...contributor,
+    points: Math.max(1, Math.round(contributor.points * multiplier)),
+  };
+}
+
+function hasExtremeRiskStack(contributors: ScoreContributor[], profile: UserProfile | null) {
+  const positiveKeys = new Set(
+    contributors
+      .filter((contributor) => contributor.points > 0)
+      .map((contributor) => contributor.key),
+  );
+  const severeProfile =
+    severityRiskIndex(profile?.symptomSeverityBaseline) >= 4 &&
+    frequencyRiskIndex(profile?.symptomFrequency) >= 3;
+  const denseKnownRiskProfile =
+    (profile?.knownConditions.length ?? 0) >= 4 &&
+    (profile?.knownIngredientSensitivities.length ?? 0) >= 5;
+
+  return (
+    severeProfile ||
+    denseKnownRiskProfile ||
+    positiveKeys.has('fried_or_crispy') ||
+    positiveKeys.has('large_or_loaded_portion') ||
+    positiveKeys.has('spicy_heat') ||
+    positiveKeys.has('alcohol') ||
+    positiveKeys.has('sweet_polyol') ||
+    positiveKeys.has('raw_or_undercooked')
+  );
+}
+
+function finalizeFoodRiskScore(rawScore: number, contributors: ScoreContributor[], profile: UserProfile | null) {
+  const clamped = clamp(rawScore);
+  if (clamped <= 80 || hasExtremeRiskStack(contributors, profile)) {
+    return clamped;
+  }
+
+  return 80;
+}
+
+function scoreFoodRiskEntity(
+  item: MenuItemAnalysis,
+  result: { overallRiskScore: number; possibleTriggers: string[] },
+  profile: UserProfile | null,
+  insights: IngredientInsight[],
+) {
+  const basePoints = clampNumber(10 + baseProfileRiskBonus(profile), 8, 18);
+  const contributors: ScoreContributor[] = [
+    {
+      key: 'base_menu_risk',
+      label: 'Base menu risk',
+      points: basePoints,
+      evidence: 'rubric',
+      source: 'menu scoring rubric',
+      reason: 'Every menu item starts with a small baseline before ingredient and prep traits are applied.',
+    },
+  ];
+
+  const profileBonus = Math.max(0, Math.round(result.overallRiskScore * 0.12) - Math.round(basePoints * 0.2));
+  if (profileBonus > 0) {
+    contributors.push({
+      key: 'profile_context',
+      label: 'Profile context',
+      points: Math.min(profileBonus, 6),
+      evidence: 'profile',
+      source: result.possibleTriggers.slice(0, 2).join(', ') || 'condition profile',
+      reason: 'The food-scan scorer found ingredient pressure for your current profile.',
+    });
+  }
+
+  const modelContributors = modelRubricContributors(item, profile).map((contributor) =>
+    calibrateContributorForProfile(contributor, profile),
+  );
+  contributors.push(...modelContributors);
+  const modelRubricKeys = new Set(modelContributors.map((contributor) => contributor.key));
+
+  for (const rule of menuBaseFoodCategoryRules) {
+    if (!secondaryBaseCategoryRuleKeys.has(rule.key as MenuBaseFoodCategoryKey) || modelRubricKeys.has(rule.key)) {
+      continue;
+    }
+
+    const contributor = menuRuleContributor(rule, item, profile);
+    if (contributor) {
+      contributors.push(calibrateContributorForProfile(contributor, profile));
+      modelRubricKeys.add(contributor.key);
+    }
+  }
+
+  for (const rule of menuRiskModifierRules) {
+    if (modelRubricKeys.has(rule.key)) {
+      continue;
+    }
+
+    const contributor = menuRuleContributor(rule, item, profile);
+    if (contributor) {
+      contributors.push(calibrateContributorForProfile(contributor, profile));
+    }
+  }
+
+  contributors.push(...learnedMenuContributors(item, profile, insights));
+
+  const stacked = stackMenuContributors(contributors);
+  if (stacked) {
+    contributors.push(calibrateContributorForProfile(stacked, profile));
+  }
+
+  const unknown = unknownMenuContributor(item, contributors);
+  if (unknown) {
+    contributors.push(calibrateContributorForProfile(unknown, profile));
+  }
+
+  const rawScore = contributors.reduce((total, contributor) => total + contributor.points, 0);
+  const score = Math.max(5, finalizeFoodRiskScore(rawScore, contributors, profile));
+  const sortedContributors = contributors
+    .filter((contributor) => contributor.points !== 0)
+    .sort((left, right) => Math.abs(right.points) - Math.abs(left.points) || right.points - left.points)
+    .slice(0, 12);
+
+  return {
+    score,
+    level: toRiskLevel(score),
+    contributors: sortedContributors,
+    confidence: menuScoringConfidence(item, sortedContributors),
+  };
+}
+
+function scoreMenuItemWithRubric(
+  item: MenuItemAnalysis,
+  result: ScanResult,
+  profile: UserProfile | null,
+  insights: IngredientInsight[],
+) {
+  return scoreFoodRiskEntity(item, result, profile, insights);
+}
+
+function menuDisplayTriggers(_item: MenuItemAnalysis, result: ScanResult, contributors: ScoreContributor[] = []) {
+  const triggers = new Set<string>();
+
+  for (const contributor of contributors
+    .filter((entry) => entry.points > 0 && entry.key !== 'base_menu_risk' && entry.key !== 'profile_context' && entry.key !== 'unknown')
+    .sort((left, right) => right.points - left.points)) {
+    triggers.add(contributor.label);
+  }
+
+  for (const trigger of result.possibleTriggers.map(normalizeKey).filter(Boolean)) {
+    triggers.add(trigger);
+  }
+
+  return [...triggers].slice(0, 4);
+}
+
+function compactMenuList(values: string[], limit = 2) {
+  const seen = new Set<string>();
+  const items = values
+    .map((value) => value.trim())
+    .filter((value) => {
+      const key = normalizeKey(value);
+      if (!value || !key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+  if (items.length <= 1) {
+    return items[0] ?? '';
+  }
+
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+function menuWatchOutParts(triggerList: string) {
+  const plural = triggerList.includes(' and ') || triggerList.includes(',');
+  return {
+    subjectVerb: `${triggerList} ${plural ? 'are' : 'is'}`,
+    noun: plural ? 'watch-outs' : 'a watch-out',
+  };
+}
+
+function menuIngredientLabels(item: MenuItemAnalysis) {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const ingredient of [...item.extractedIngredients, ...item.inferredIngredients]) {
+    const label = (ingredient.rawName || ingredient.canonicalName).trim();
+    const key = normalizeKey(label);
+    if (!label || !key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    labels.push(label);
+  }
+  return labels;
+}
+
+function menuPrimaryPrepStyle(item: MenuItemAnalysis) {
+  const preferredPrep = ['steamed', 'grilled', 'broiled', 'raw', 'poached', 'baked', 'roasted', 'fried', 'crispy', 'creamy', 'spicy', 'sauced'];
+  const styles = item.prepStyle.map((style) => normalizeKey(style)).filter(Boolean);
+  return preferredPrep.find((style) => styles.some((candidate) => candidate.includes(style))) ?? styles[0];
+}
+
+function dishSpecificRecommendationReason(
+  result: ScanResult,
+  item: MenuItemAnalysis,
+  kind: 'best' | 'caution' | 'worst',
+  displayTriggers: string[],
+  scoreContributors: ScoreContributor[] = [],
+) {
+  const ingredients = menuIngredientLabels(item);
+  const ingredientList = compactMenuList(ingredients, 3);
+  const triggerList = compactMenuList([...displayTriggers, ...result.possibleTriggers], 2);
+  const prepStyle = menuPrimaryPrepStyle(item);
+  const dishName = item.name.trim() || 'This option';
+  const riskDrivers = scoreContributors
+    .filter((contributor) => contributor.points > 0 && contributor.key !== 'base_menu_risk' && contributor.key !== 'profile_context')
+    .sort((left, right) => right.points - left.points);
+  const gentlerDrivers = scoreContributors
+    .filter((contributor) => contributor.points < 0)
+    .sort((left, right) => left.points - right.points);
+  const riskDriverList = compactMenuList(riskDrivers.map((contributor) => contributor.label.toLowerCase()), 2);
+  const gentlerDriverList = compactMenuList(gentlerDrivers.map((contributor) => contributor.label.toLowerCase()), 2);
+
+  if (kind === 'best') {
+    if (riskDriverList && gentlerDriverList) {
+      return `${dishName} ranks well because ${gentlerDriverList} help offset ${riskDriverList}.`;
+    }
+    if (gentlerDriverList) {
+      return `${dishName} ranks well because ${gentlerDriverList} keep the score lower than richer options.`;
+    }
+    if (riskDriverList) {
+      return `${dishName} is still a lower-risk pick here, with ${riskDriverList} as the main watch-out.`;
+    }
+    if (item.personalizedRiskScore >= 67 && triggerList) {
+      const watchOut = menuWatchOutParts(triggerList);
+      return `${dishName} is only a relative best here; ${watchOut.subjectVerb} still ${watchOut.noun}.`;
+    }
+    if (item.personalizedRiskScore >= 34 && triggerList) {
+      return `${dishName} is one of the lighter picks here, but ${menuWatchOutParts(triggerList).subjectVerb} still worth watching.`;
+    }
+    if (ingredientList) {
+      return `${dishName} leans on ${ingredientList}, which keeps the gut load lower than richer menu items.`;
+    }
+    if (prepStyle) {
+      return `${dishName} uses a lighter ${prepStyle} prep, so it ranks gentler than heavier options here.`;
+    }
+    return `${dishName} has fewer obvious trigger cues than the rest of this menu.`;
+  }
+
+  if (kind === 'caution') {
+    if (riskDriverList && gentlerDriverList) {
+      return `${dishName} lands in caution because ${riskDriverList} raise risk while ${gentlerDriverList} keep it from ranking worse.`;
+    }
+    if (riskDriverList) {
+      return `${dishName} lands in caution because ${riskDriverList} are the main score drivers.`;
+    }
+    if (triggerList) {
+      const watchOut = menuWatchOutParts(triggerList);
+      return `${dishName} lands in caution because ${watchOut.subjectVerb} the main ${watchOut.noun}.`;
+    }
+    if (ingredientList) {
+      return `${dishName} looks moderate: ${ingredientList} are fine for many people, but portion and sauce matter.`;
+    }
+    if (item.description?.trim()) {
+      return `${dishName} sits in the middle because sauce, portion, or prep details could change the risk.`;
+    }
+    return `${dishName} has a mixed risk profile compared with the rest of this menu.`;
+  }
+
+  if (riskDriverList) {
+    return `${dishName} ranks high because ${riskDriverList} stack hardest for your profile.`;
+  }
+  if (triggerList) {
+    return `${dishName} ranks high because ${triggerList} stack several gut-trigger cues.`;
+  }
+  if (ingredientList) {
+    return `${dishName} ranks high because ${ingredientList} make it a heavier choice for this profile.`;
+  }
+  return `${dishName} has the strongest risk pattern on this menu for your current profile.`;
+}
+
+function recommendationReasons(
+  result: ScanResult,
+  item: MenuItemAnalysis,
+  kind: 'best' | 'caution' | 'worst',
+  displayTriggers: string[],
+  scoreContributors: ScoreContributor[] = [],
+) {
+  const reasons: string[] = [];
+  reasons.push(dishSpecificRecommendationReason(result, item, kind, displayTriggers, scoreContributors));
+
+  if (item.prepStyle.length) {
+    reasons.push(`Preparation cues: ${item.prepStyle.slice(0, 2).join(', ')}.`);
+  }
+
+  return reasons;
+}
+
+function saferModificationForItem(result: ScanResult, displayTriggers: string[]) {
+  const triggers = [...result.possibleTriggers, ...displayTriggers].map(normalizeKey);
+  if (triggers.some((trigger) => trigger.includes('garlic') || trigger.includes('onion'))) {
+    return 'Ask if garlic or onion can be left out or served on the side.';
+  }
+  if (triggers.some((trigger) => trigger.includes('cream') || trigger.includes('cheese') || trigger.includes('dairy'))) {
+    return 'Ask for sauce or dairy on the side if possible.';
+  }
+  if (triggers.some((trigger) => trigger.includes('tomato') || trigger.includes('hot sauce'))) {
+    return 'Ask for acidic or spicy sauces on the side.';
+  }
+  return result.overallRiskLevel === 'high' ? 'Ask for sauces and toppings on the side.' : undefined;
+}
+
+function buildRecommendation(
+  item: MenuItemAnalysis,
+  result: ScanResult,
+  displayTriggers: string[],
+  scoreContributors: ScoreContributor[],
+  rank: number,
+  kind: 'best' | 'caution' | 'worst',
+): MenuRecommendation {
+  return {
+    rank,
+    itemId: item.id,
+    name: item.name,
+    personalizedRiskScore: item.personalizedRiskScore,
+    personalizedRiskLevel: item.personalizedRiskLevel,
+    reasons: recommendationReasons(result, item, kind, displayTriggers, scoreContributors),
+    triggerIngredients: displayTriggers,
+    saferModification: saferModificationForItem(result, displayTriggers),
+  };
+}
+
+function menuTierForRiskLevel(level: RiskLevel): ScanMenuItemResult['tier'] {
+  if (level === 'high') {
+    return 'try_to_avoid';
+  }
+  if (level === 'medium') {
+    return 'eat_with_caution';
+  }
+  return 'best_for_you';
+}
+
+function recommendationKindForTier(tier: ScanMenuItemResult['tier']) {
+  if (tier === 'try_to_avoid') {
+    return 'worst';
+  }
+  if (tier === 'eat_with_caution') {
+    return 'caution';
+  }
+  return 'best';
+}
+
+const menuFallbackIngredientTerms: Array<{ label: string; terms: string[] }> = [
+  { label: 'soy beans', terms: ['edamame', 'soy bean', 'soy beans'] },
+  { label: 'squid', terms: ['yakiika', 'yai kika', 'ika', 'squid'] },
+  { label: 'black cod', terms: ['black cod', 'cod'] },
+  { label: 'salmon', terms: ['salmon', 'shake'] },
+  { label: 'yellowtail', terms: ['yellowtail', 'hamachi'] },
+  { label: 'tuna', terms: ['tuna'] },
+  { label: 'shrimp', terms: ['shrimp', 'ebi'] },
+  { label: 'rice', terms: ['rice', 'sushi', 'roll'] },
+  { label: 'seaweed', terms: ['seaweed', 'nori'] },
+  { label: 'miso', terms: ['miso'] },
+  { label: 'chicken', terms: ['chicken'] },
+  { label: 'beef', terms: ['beef', 'burger', 'patty'] },
+  { label: 'pork', terms: ['pork', 'bacon'] },
+  { label: 'cheese', terms: ['cheese', 'mozzarella', 'queso'] },
+  { label: 'fries', terms: ['fries', 'potato'] },
+  { label: 'tomato', terms: ['tomato', 'marinara', 'salsa'] },
+  { label: 'onion', terms: ['onion', 'garlic'] },
+  { label: 'sauce', terms: ['sauce', 'dressing', 'ranch', 'aioli', 'mayo'] },
+];
+
+function fallbackMenuIngredientNames(option: MenuRecommendation, item: MenuItemAnalysis | undefined) {
+  const text = normalizeMenuScoringText([option.name, item?.description, item?.section].filter(Boolean).join(' '));
+  const matches: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of menuFallbackIngredientTerms) {
+    if (entry.terms.some((term) => menuTextHasAny(text, [term]))) {
+      const key = normalizeKey(entry.label);
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push(entry.label);
+      }
+    }
+  }
+
+  if (matches.length) {
+    return matches.slice(0, 3);
+  }
+
+  const parenthetical = option.name.match(/\(([^)]+)\)/)?.[1]?.trim();
+  if (parenthetical) {
+    return [parenthetical];
+  }
+
+  return [option.name];
+}
+
+function menuResultItem(
+  option: MenuRecommendation,
+  item: MenuItemAnalysis | undefined,
+  tier: ScanMenuItemResult['tier'],
+  displayOrder: number,
+  scoreContributors: ScoreContributor[] = [],
+  scoringConfidence: IngredientConfidence = item?.confidence ?? 'medium',
+): ScanMenuItemResult {
+  const ingredients = [...(item?.extractedIngredients ?? []), ...(item?.inferredIngredients ?? [])];
+  const triggerSet = new Set(option.triggerIngredients.map(normalizeKey));
+  const ingredientRisks: ScanIngredientRisk[] = ingredients
+    .filter((ingredient, index, source) => {
+      const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
+      return canonicalName && source.findIndex((candidate) => normalizeKey(candidate.canonicalName || candidate.rawName) === canonicalName) === index;
+    })
+    .slice(0, 4)
+    .map((ingredient, index) => {
+      const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
+      const triggerMatch = triggerSet.has(canonicalName);
+      const score = triggerMatch
+        ? Math.max(67, option.personalizedRiskScore)
+        : option.personalizedRiskScore >= 67
+          ? 55
+          : option.personalizedRiskScore >= 34
+            ? 40
+            : 18;
+      const level = toRiskLevel(score);
+
+      return {
+        menuItemSourceId: option.itemId,
+        rawName: ingredient.rawName,
+        canonicalName,
+        riskScore: score,
+        riskLevel: level,
+        evidence: ingredient.evidence,
+        confidence: ingredient.confidence,
+        componentName: ingredient.component ?? option.name,
+        reason: ingredientRiskReason(canonicalName, level, triggerMatch, ingredient.evidence),
+        displayOrder: index,
+      };
+    });
+
+  const fallbackNames = option.triggerIngredients.length
+    ? option.triggerIngredients.slice(0, 3)
+    : fallbackMenuIngredientNames(option, item);
+  const fallbackIngredientRisks: ScanIngredientRisk[] = fallbackNames.map((trigger, index) => {
+    const triggerMatch = option.triggerIngredients.some((candidate) => normalizeKey(candidate) === normalizeKey(trigger));
+    const score = triggerMatch
+      ? Math.max(67, option.personalizedRiskScore)
+      : option.personalizedRiskScore >= 67
+        ? 55
+        : option.personalizedRiskScore >= 34
+          ? 40
+          : 18;
+    const level = toRiskLevel(score);
+    return {
+      menuItemSourceId: option.itemId,
+      rawName: trigger,
+      canonicalName: normalizeKey(trigger),
+      riskScore: score,
+      riskLevel: level,
+      evidence: 'inferred',
+      confidence: triggerMatch ? 'medium' : 'low',
+      componentName: option.name,
+      reason: ingredientRiskReason(trigger, level, triggerMatch, 'inferred'),
+      displayOrder: index,
+    };
+  });
+
+  return {
+    id: option.itemId,
+    sourceItemId: option.itemId,
+    tier,
+    tierRank: option.rank,
+    displayOrder,
+    name: option.name,
+    description: item?.description,
+    section: item?.section,
+    price: item?.price,
+    riskScore: option.personalizedRiskScore,
+    riskLevel: option.personalizedRiskLevel,
+    confidence: item?.confidence ?? 'medium',
+    scoringConfidence,
+    baseFoodCategory: item?.baseFoodCategory,
+    riskModifiers: item?.riskModifiers,
+    scoreContributors,
+    whyThisScore: option.reasons[0] ?? riskReason(option.personalizedRiskLevel, option.name, option.triggerIngredients),
+    gutRecommendation: option.saferModification,
+    ingredientRisks: ingredientRisks.length ? ingredientRisks : fallbackIngredientRisks,
+  };
+}
+
+function recommendationFromMenuResultItem(item: ScanMenuItemResult): MenuRecommendation {
+  return {
+    rank: item.tierRank,
+    itemId: item.sourceItemId,
+    name: item.name,
+    personalizedRiskScore: item.riskScore,
+    personalizedRiskLevel: item.riskLevel,
+    reasons: [item.whyThisScore],
+    triggerIngredients: item.ingredientRisks
+      .filter((ingredient) => ingredient.riskLevel !== 'low')
+      .map((ingredient) => ingredient.canonicalName),
+    saferModification: item.gutRecommendation,
+  };
+}
+
+export function computeMenuScanResultFromExtraction(
+  menuAnalysis: MenuScanAnalysis,
+  profile: UserProfile | null,
+  insights: IngredientInsight[],
+  imageUri?: string,
+): ScanResult {
+  const scoredItems: MenuScoredItem[] = menuAnalysis.items.map((item) => {
+    const itemResult = computeScanResultFromStructured(
+      structuredAnalysisFromMenuItem(item, {
+        model: 'menu-item-scorer',
+        promptVersion: 'mytummyhurts_menu_score_v1',
+      }),
       profile,
-      conditionRiskScores,
-      matchedSensitivityLabels,
-      hasLearnedSignals,
-    ),
-    structuredAnalysis,
-    gutScoreImpact: computeGutScoreImpact(overallRiskScore, possibleTriggers, profile),
+      insights,
+    );
+    const rubric = {
+      score: itemResult.overallRiskScore,
+      level: itemResult.overallRiskLevel,
+      contributors: itemResult.scoreContributors ?? [],
+      confidence: itemResult.scoringConfidence ?? item.confidence,
+    };
+    const displayScore = rubric.score;
+    const displayLevel = rubric.level;
+    const displayTriggers = menuDisplayTriggers(item, itemResult, rubric.contributors);
+
+    return {
+      item: {
+        ...item,
+        personalizedRiskScore: displayScore,
+        personalizedRiskLevel: displayLevel,
+      },
+      result: itemResult,
+      displayTriggers,
+      scoreContributors: rubric.contributors,
+      scoringConfidence: rubric.confidence,
+    };
+  });
+
+  const rankedLow = [...scoredItems]
+    .sort((left, right) => left.item.personalizedRiskScore - right.item.personalizedRiskScore)
+    .slice(0, 100);
+  const rankedMenuItems = rankedLow.map((entry, index) => {
+    const tier = menuTierForRiskLevel(entry.item.personalizedRiskLevel);
+    const recommendation = buildRecommendation(
+      entry.item,
+      entry.result,
+      entry.displayTriggers,
+      entry.scoreContributors,
+      index + 1,
+      recommendationKindForTier(tier),
+    );
+    return menuResultItem(recommendation, entry.item, tier, index, entry.scoreContributors, entry.scoringConfidence);
+  });
+  const bestOptions = rankedMenuItems
+    .filter((item) => item.tier === 'best_for_you')
+    .map(recommendationFromMenuResultItem);
+  const eatWithCautionOptions = rankedMenuItems
+    .filter((item) => item.tier === 'eat_with_caution')
+    .map(recommendationFromMenuResultItem);
+  const worstOptions = rankedMenuItems
+    .filter((item) => item.tier === 'try_to_avoid')
+    .map(recommendationFromMenuResultItem);
+  const averageRisk = scoredItems.length
+    ? clamp(scoredItems.reduce((total, entry) => total + entry.item.personalizedRiskScore, 0) / scoredItems.length)
+    : 0;
+  const topTriggers = Array.from(
+    new Set(rankedMenuItems.flatMap((item) => item.ingredientRisks.map((ingredient) => ingredient.riskLevel !== 'low' ? ingredient.canonicalName : '')).filter(Boolean)),
+  ).slice(0, 5);
+  const finalizedMenuAnalysis: MenuScanAnalysis = {
+    ...menuAnalysis,
+    items: scoredItems.map((entry) => entry.item),
+    bestOptions,
+    eatWithCautionOptions,
+    worstOptions,
+    summary: scoredItems.length
+      ? `We scored ${rankedMenuItems.length} menu item${rankedMenuItems.length === 1 ? '' : 's'} against your gut profile and ingredient patterns.`
+      : 'We could not extract enough menu items to rank this menu.',
+  };
+  const menuResult = {
+    menuTitle: finalizedMenuAnalysis.menuTitle,
+    inputPageCount: finalizedMenuAnalysis.inputPageCount,
+    summary: finalizedMenuAnalysis.summary,
+    items: rankedMenuItems,
+    bestForYou: rankedMenuItems.filter((item) => item.tier === 'best_for_you'),
+    eatWithCaution: rankedMenuItems.filter((item) => item.tier === 'eat_with_caution'),
+    tryToAvoid: rankedMenuItems.filter((item) => item.tier === 'try_to_avoid'),
+  };
+
+  return {
+    dishName: menuAnalysis.menuTitle || 'Menu scan',
+    overallRiskScore: averageRisk,
+    overallRiskLevel: toRiskLevel(averageRisk),
+    conditionRiskScores: {},
+    possibleTriggers: topTriggers,
+    interpretation: finalizedMenuAnalysis.summary,
+    pipTake: finalizedMenuAnalysis.summary,
+    summary: finalizedMenuAnalysis.summary,
+    conditionRisks: [],
+    ingredientRisks: [],
+    menuResult,
+    structuredAnalysis: {
+      dishName: menuAnalysis.menuTitle || 'Menu scan',
+      dishConfidence: menuAnalysis.menuConfidence,
+      clarity: scoredItems.length ? 'clear' : 'unclear',
+      unclearReason: scoredItems.length ? undefined : 'No menu items were found.',
+      components: scoredItems.map((entry) => ({
+        name: entry.item.name,
+        confidence: entry.item.confidence,
+        prepStyle: entry.item.prepStyle,
+      })),
+      visibleIngredients: scoredItems.flatMap((entry) => entry.item.extractedIngredients),
+      inferredIngredients: scoredItems.flatMap((entry) => entry.item.inferredIngredients),
+      prepStyle: [],
+      notes: [],
+      model: 'menu-scorer',
+      promptVersion: 'mytummyhurts_menu_score_v1',
+      imageDetail: 'high',
+      menuAnalysis: finalizedMenuAnalysis,
+    },
     imageUri,
   };
 }

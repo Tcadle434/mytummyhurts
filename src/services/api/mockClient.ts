@@ -5,16 +5,39 @@ import {
   AnalyzeTextRequest,
   BillingSyncRequest,
   DeleteAccountResponse,
+  ExistingAccountCheckRequest,
+  ExistingAccountCheckResponse,
   HistoryRequest,
   HistoryResponse,
   InsightsRequest,
   InsightsResponse,
   DailyReportUpsertRequest,
+  LearningRecomputeRequest,
   NotificationRegistrationRequest,
   ProfileUpdateRequest,
   ScanDeleteRequest,
   TokensTopUpRequest,
 } from './contracts';
+import { ScanRecord } from '../../types/domain';
+
+function scanHistorySummary(scan: ScanRecord) {
+  return {
+    id: scan.id,
+    requestId: scan.requestId,
+    sourceType: scan.sourceType,
+    scanCategory: scan.scanCategory,
+    analysisStatus: scan.analysisStatus,
+    tokenCost: scan.tokenCost,
+    createdAt: scan.createdAt,
+    completedAt: scan.completedAt,
+    localDate: scan.localDate,
+    timezone: scan.timezone,
+    dishName: scan.dishName,
+    overallRiskScore: scan.overallRiskScore,
+    overallRiskLevel: scan.overallRiskLevel,
+    imageUri: scan.imageUri,
+  };
+}
 
 export const mockApiClient = {
   async analyzeImage(request: AnalyzeImageRequest): Promise<AnalyzeResponse> {
@@ -22,6 +45,9 @@ export const mockApiClient = {
       requestId: request.requestId,
       sourceType: request.sourceType,
       imageUri: request.imagePath,
+      imageUris: request.imagePaths,
+      imageDataUrl: request.imageDataUrl,
+      imageDataUrls: request.imageDataUrls,
       scanCategory: request.scanCategory,
       localDate: request.localDate,
       timezone: request.timezone,
@@ -83,8 +109,20 @@ export const mockApiClient = {
       page,
       pageSize,
       hasMore: start + pageSize < state.scans.length,
-      scans,
+      scans: scans.map(scanHistorySummary),
       dailyReports: state.dailyReports,
+    };
+  },
+
+  async getScan(request: { scanId: string }) {
+    const scan = useAppStore.getState().scans.find((entry) => entry.id === request.scanId);
+    if (!scan) {
+      throw new Error('Scan not found.');
+    }
+
+    return {
+      ok: true as const,
+      scan,
     };
   },
 
@@ -95,9 +133,19 @@ export const mockApiClient = {
     return {
       ok: true as const,
       report,
+      learningSyncStatus: 'skipped' as const,
+    };
+  },
+
+  async learningRecompute(_request: LearningRecomputeRequest) {
+    const state = useAppStore.getState();
+    return {
+      ok: true as const,
+      learningSyncStatus: 'updated' as const,
       profile: state.profile,
       insights: state.insights,
       conditionInsights: state.conditionInsights,
+      dailyReports: state.dailyReports,
     };
   },
 
@@ -161,5 +209,23 @@ export const mockApiClient = {
   async deleteAccount(): Promise<DeleteAccountResponse> {
     useAppStore.getState().signOut();
     return { ok: true };
+  },
+
+  async checkExistingAccount(_request: ExistingAccountCheckRequest = {}): Promise<ExistingAccountCheckResponse> {
+    const state = useAppStore.getState();
+    const profile = state.profile;
+    const hasProfile =
+      Boolean(profile?.knownConditions.length) ||
+      Boolean(profile?.knownIngredientSensitivities.length) ||
+      Boolean(profile?.commonSymptoms.length) ||
+      Boolean(profile?.symptomFrequency) ||
+      Boolean(profile?.symptomSeverityBaseline);
+    const hasEntitlement = state.billing.subscriptionStatus === 'trialing' || state.billing.subscriptionStatus === 'active';
+
+    return {
+      ok: true,
+      allowed: hasEntitlement && hasProfile,
+      reason: hasEntitlement ? 'incomplete_profile' : 'missing_entitlement',
+    };
   },
 };

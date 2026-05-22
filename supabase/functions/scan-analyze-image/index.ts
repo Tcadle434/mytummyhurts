@@ -6,6 +6,9 @@ import { errorMetadata, recordSystemEvent } from '../_shared/observability.ts';
 import { analyzeReservedScan } from '../_shared/scanAnalysis.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
 
+const SCAN_ANALYZE_IMAGE_DEPLOY_MARKER = 'food-risk-rubric-v2-20260522';
+void SCAN_ANALYZE_IMAGE_DEPLOY_MARKER;
+
 serve(async (request) => {
   if (isOptionsRequest(request)) {
     return jsonResponse({ ok: true });
@@ -22,6 +25,9 @@ serve(async (request) => {
     const body = await readJsonBody<{
       requestId?: string;
       imagePath?: string;
+      imagePaths?: string[];
+      imageDataUrl?: string;
+      imageDataUrls?: string[];
       sourceType?: string;
       scanCategory?: string;
       localDate?: string;
@@ -32,6 +38,7 @@ serve(async (request) => {
     const response = await analyzeReservedScan(admin, user, {
       kind: 'image',
       imagePath: body.imagePath,
+      imagePaths: body.imagePaths,
       body,
     });
 

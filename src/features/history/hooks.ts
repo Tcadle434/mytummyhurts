@@ -1,13 +1,13 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { isLiveBackendConfigured } from '../../config/env';
 import { apiClient } from '../../services/api/client';
 import { queryKeys } from '../../services/query/keys';
-import { ScanRecord } from '../../types/domain';
+import { ScanHistorySummary } from '../../types/domain';
 
 type HistoryGroup = {
   label: string;
-  items: ScanRecord[];
+  items: ScanHistorySummary[];
 };
 
 function formatGroupLabel(isoDate: string) {
@@ -31,8 +31,8 @@ function formatGroupLabel(isoDate: string) {
   });
 }
 
-export function groupHistoryScans(scans: ScanRecord[]) {
-  const groups = new Map<string, ScanRecord[]>();
+export function groupHistoryScans(scans: ScanHistorySummary[]) {
+  const groups = new Map<string, ScanHistorySummary[]>();
 
   for (const scan of scans) {
     const label = formatGroupLabel(scan.createdAt);
@@ -58,5 +58,13 @@ export function useHistoryFeed(pageSize = 20) {
       }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     enabled: isLiveBackendConfigured,
+  });
+}
+
+export function useScanDetail(scanId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.scan(scanId),
+    queryFn: () => apiClient.getScan({ scanId }),
+    enabled: isLiveBackendConfigured && enabled,
   });
 }

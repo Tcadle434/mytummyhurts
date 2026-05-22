@@ -30,6 +30,20 @@ If you want local StoreKit purchase testing in Xcode, attach [MyTummyHurts.store
 - Superwall placement integration, billing sync, restore handling, and StoreKit local config
 - Patch-package guards for Expo SDK pods that require newer Xcode SDKs than the local Xcode 16.2 toolchain
 
+## Product direction
+
+- [Product Direction](docs/product-direction.md): ICP, positioning, Gut Score role, symptom reporting cadence, feature priorities, monetization, and implementation guardrails.
+
+## Scan regression tests
+
+Run the live scan E2E harness whenever the scan capture, upload, Edge Function, scoring, audit-log, or result DTO paths change:
+
+```bash
+npm run test:scan:e2e
+```
+
+The harness uses `assets/tests/sushi_den_menu_1.png`, `assets/tests/sushi_den_menu_2.png`, and `assets/tests/pizza_meal.jpeg`; creates a temporary subscribed Supabase user; uploads the fixture images; invokes the deployed scan function; validates raw AI audit logs, normalized responses, and `scan-get` UI data; then deletes the test user and uploaded files.
+
 ## Still requires credentials for production wiring
 
 - Optional hosted privacy policy URL if you want an external link instead of the in-app draft policy

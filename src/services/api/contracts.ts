@@ -4,6 +4,7 @@ import {
   DailyGutReport,
   IngredientInsight,
   ScanCategory,
+  ScanHistorySummary,
   ScanInputPayload,
   ScanRecord,
   UserProfile,
@@ -11,7 +12,10 @@ import {
 
 export interface AnalyzeImageRequest {
   requestId: string;
-  imagePath: string;
+  imagePath?: string;
+  imagePaths?: string[];
+  imageDataUrl?: string;
+  imageDataUrls?: string[];
   sourceType: ScanInputPayload['sourceType'];
   scanCategory?: ScanCategory;
   localDate?: string;
@@ -52,6 +56,15 @@ export interface ScanDeleteResponse {
   conditionInsights: ConditionIngredientInsight[];
 }
 
+export interface ScanGetRequest {
+  scanId: string;
+}
+
+export interface ScanGetResponse {
+  ok: true;
+  scan: ScanRecord;
+}
+
 export interface DailyReportUpsertRequest {
   localDate: string;
   gutSeverity: number;
@@ -62,9 +75,22 @@ export interface DailyReportUpsertRequest {
 export interface DailyReportUpsertResponse {
   ok: true;
   report: DailyGutReport;
-  profile: UserProfile | null;
-  insights: IngredientInsight[];
-  conditionInsights: ConditionIngredientInsight[];
+  learningSyncStatus: 'queued' | 'skipped';
+}
+
+export interface LearningRecomputeRequest {
+  sourceType: 'daily_gut_report' | 'scan' | 'profile';
+  sourceId?: string;
+  eventType?: string;
+}
+
+export interface LearningRecomputeResponse {
+  ok: true;
+  learningSyncStatus: 'updated' | 'locked' | 'failed';
+  profile?: UserProfile | null;
+  insights?: IngredientInsight[];
+  conditionInsights?: ConditionIngredientInsight[];
+  dailyReports?: DailyGutReport[];
 }
 
 export interface HistoryRequest {
@@ -76,7 +102,7 @@ export interface HistoryResponse {
   page: number;
   pageSize: number;
   hasMore: boolean;
-  scans: ScanRecord[];
+  scans: ScanHistorySummary[];
   dailyReports: DailyGutReport[];
 }
 
@@ -167,4 +193,15 @@ export interface NotificationRegistrationRequest {
 
 export interface DeleteAccountResponse {
   ok: true;
+}
+
+export interface ExistingAccountCheckRequest {
+  cleanupFreshUnentitledUser?: boolean;
+}
+
+export interface ExistingAccountCheckResponse {
+  ok: true;
+  allowed: boolean;
+  reason?: 'missing_entitlement' | 'incomplete_profile' | 'fresh_orphan_deleted' | 'not_found';
+  deletedOrphan?: boolean;
 }

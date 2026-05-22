@@ -7,11 +7,12 @@ import { topUpOptions } from '../data/catalog';
 import { defaultOnboardingAnswers } from '../data/onboarding';
 import { trackEvent } from '../services/analytics';
 import { apiClient } from '../services/api/client';
-import { ProfileUpdateRequest } from '../services/api/contracts';
+import { LearningRecomputeRequest, ProfileUpdateRequest } from '../services/api/contracts';
 import {
   analyzeMealInput,
   buildGutScoreEvent,
   buildUserProfile,
+  computeDailyScoreForReport,
   computeGutScoreState,
   recomputeConditionIngredientInsights,
   recomputeDailyScores,
@@ -52,7 +53,11 @@ type AppStoreState = {
   initialServerSyncNeeded: boolean;
   serverSyncInFlight: boolean;
   serverSyncError: string | null;
+  learningSyncInFlight: boolean;
+  learningSyncRequestId: string | null;
+  learningSyncError: string | null;
   remoteDataLoaded: boolean;
+  cacheScanRecord: (scan: ScanRecord) => void;
   updateOnboardingField: <K extends keyof OnboardingAnswers>(field: K, value: OnboardingAnswers[K]) => void;
   toggleOnboardingValue: (
     field: 'conditions' | 'ingredientSensitivities' | 'symptoms' | 'mealContexts' | 'currentEatingPatterns' | 'lifestyleFactors',
@@ -68,6 +73,7 @@ type AppStoreState = {
   syncAuthUser: (user: AppUser) => void;
   refreshRemoteState: () => Promise<void>;
   syncInitialAccountState: () => Promise<void>;
+  triggerLearningRecompute: (request: LearningRecomputeRequest) => void;
   updateProfileSettings: (request: ProfileUpdateRequest) => Promise<void>;
   applyBillingState: (billing: BillingState) => void;
   analyzeScanInput: (payload: ScanInputPayload) => Promise<{ scanId: string }>;
@@ -123,6 +129,14 @@ function apiErrorCode(error: unknown) {
 
 function mergeById<T extends { id: string }>(items: T[], incoming: T) {
   return [incoming, ...items.filter((item) => item.id !== incoming.id)];
+}
+
+function mergeDailyReportByLocalDate(items: DailyGutReport[], incoming: DailyGutReport) {
+  return [incoming, ...items.filter((item) => item.localDate !== incoming.localDate)];
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function createLocalProfile(userId: string, answers: OnboardingAnswers, insights: IngredientInsight[]) {
@@ -182,7 +196,7 @@ function rebuildLocalLearningState(
 
 function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
   AppStoreState,
-  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'initialServerSyncNeeded' | 'onboardingStage'
+  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'learningSyncInFlight' | 'learningSyncRequestId' | 'learningSyncError' | 'initialServerSyncNeeded' | 'onboardingStage'
 > {
   return {
     authUser: null,
@@ -198,6 +212,9 @@ function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
     remoteDataLoaded: false,
     serverSyncError: null,
     serverSyncInFlight: false,
+    learningSyncInFlight: false,
+    learningSyncRequestId: null,
+    learningSyncError: null,
     initialServerSyncNeeded: false,
     onboardingStage: 'auth',
   };
@@ -219,7 +236,96 @@ export const useAppStore = create<AppStoreState>()(
       initialServerSyncNeeded: false,
       serverSyncInFlight: false,
       serverSyncError: null,
+      learningSyncInFlight: false,
+      learningSyncRequestId: null,
+      learningSyncError: null,
       remoteDataLoaded: false,
+      cacheScanRecord: (scan) => {
+        set((state) => ({
+          scans: mergeById(state.scans, scan),
+        }));
+      },
+      triggerLearningRecompute: (request) => {
+        if (!isLiveBackendConfigured || !get().authUser) {
+          return;
+        }
+
+        const syncRequestId = createId('learning-sync');
+        set({
+          learningSyncInFlight: true,
+          learningSyncRequestId: syncRequestId,
+          learningSyncError: null,
+        });
+
+        const run = async (attempt = 0): Promise<void> => {
+          try {
+            const response = await apiClient.learningRecompute(request);
+
+            if (response.learningSyncStatus === 'locked' && attempt === 0) {
+              await sleep(1000);
+              return run(1);
+            }
+
+            if (response.learningSyncStatus === 'updated') {
+              set((state) => {
+                if (state.learningSyncRequestId !== syncRequestId) {
+                  return state;
+                }
+
+                return {
+                  profile: response.profile ?? state.profile,
+                  insights: response.insights ?? state.insights,
+                  conditionInsights: response.conditionInsights ?? state.conditionInsights,
+                  dailyReports: response.dailyReports
+                    ? response.dailyReports.sort(
+                        (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+                      )
+                    : state.dailyReports,
+                };
+              });
+
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+              ]);
+            }
+
+            if (response.learningSyncStatus === 'failed' || response.learningSyncStatus === 'locked') {
+              trackEvent('learning_recompute_failed', {
+                source_type: request.sourceType,
+                source_id: request.sourceId,
+                status: response.learningSyncStatus,
+              });
+            }
+          } catch (error) {
+            trackEvent('learning_recompute_failed', {
+              source_type: request.sourceType,
+              source_id: request.sourceId,
+              error_code: apiErrorCode(error),
+            });
+            set((state) =>
+              state.learningSyncRequestId === syncRequestId
+                ? {
+                    learningSyncError:
+                      error instanceof Error ? error.message : 'Learning refresh could not be completed.',
+                  }
+                : state,
+            );
+          } finally {
+            set((state) =>
+              state.learningSyncRequestId === syncRequestId
+                ? {
+                    learningSyncInFlight: false,
+                    learningSyncRequestId: null,
+                  }
+                : state,
+            );
+          }
+        };
+
+        void run();
+      },
       updateOnboardingField: (field, value) => {
         set((state) => ({
           onboardingAnswers: {
@@ -325,7 +431,7 @@ export const useAppStore = create<AppStoreState>()(
         ]);
 
         set((currentState) => ({
-          scans: history.scans,
+          scans: currentState.scans,
           dailyReports: history.dailyReports ?? [],
           profile: insightsResponse.profile ?? currentState.profile,
           insights: insightsResponse.insights,
@@ -476,15 +582,40 @@ export const useAppStore = create<AppStoreState>()(
         trackEvent('scan_analysis_started', { request_id: requestId, source_type: payload.sourceType, scan_category: scanCategory });
 
         if (isLiveBackendConfigured && state.authUser) {
+          const authUser = state.authUser;
           if (state.initialServerSyncNeeded) {
             await get().syncInitialAccountState();
           }
 
           try {
-            const response = payload.imageUri
+            const imageUris = payload.imageUris?.length ? payload.imageUris : payload.imageUri ? [payload.imageUri] : [];
+            const imageDataUrls = payload.imageDataUrls?.length
+              ? payload.imageDataUrls
+              : payload.imageDataUrl
+                ? [payload.imageDataUrl]
+                : [];
+            const imageUploadResults = imageUris.length
+              ? (
+                  await Promise.all(
+                    imageUris.map((imageUri, index) =>
+                      uploadMealImage(imageUri, authUser.id, imageDataUrls[index]).catch((error) => {
+                        console.warn('[scan] image thumbnail upload failed; continuing with inline image data.', error);
+                        return null;
+                      }),
+                    ),
+                  )
+                )
+              : [];
+            const imagePaths = imageUploadResults.filter((path): path is string => Boolean(path));
+            const inlineImageDataUrls = imageDataUrls;
+            const inlineImageDataUrl = inlineImageDataUrls[0];
+            const response = imageUris.length || imageDataUrls.length
               ? await apiClient.analyzeImage({
                   requestId,
-                  imagePath: await uploadMealImage(payload.imageUri, state.authUser.id),
+                  imagePath: imagePaths[0],
+                  imagePaths: imagePaths.length > 1 ? imagePaths : undefined,
+                  imageDataUrl: inlineImageDataUrl,
+                  imageDataUrls: inlineImageDataUrls.length > 1 ? inlineImageDataUrls : undefined,
                   sourceType: payload.sourceType,
                   scanCategory,
                   localDate,
@@ -573,9 +704,6 @@ export const useAppStore = create<AppStoreState>()(
       },
       deleteScanRecord: async (scanId) => {
         const existingScan = get().scans.find((scan) => scan.id === scanId);
-        if (!existingScan) {
-          return;
-        }
 
         if (isLiveBackendConfigured && get().authUser) {
           const response = await apiClient.deleteScan({ scanId });
@@ -586,6 +714,10 @@ export const useAppStore = create<AppStoreState>()(
             conditionInsights: response.conditionInsights,
           }));
         } else {
+          if (!existingScan) {
+            return;
+          }
+
           set((state) => {
             const scans = state.scans.filter((scan) => scan.id !== scanId);
             return {
@@ -597,36 +729,87 @@ export const useAppStore = create<AppStoreState>()(
 
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+          queryClient.removeQueries({ queryKey: queryKeys.scan(scanId) }),
           queryClient.invalidateQueries({ queryKey: queryKeys.home }),
           queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
         ]);
 
         trackEvent('history_item_deleted', {
           scan_id: scanId,
-          scan_category: existingScan.scanCategory,
-          source_type: existingScan.sourceType,
+          scan_category: existingScan?.scanCategory ?? 'unknown',
+          source_type: existingScan?.sourceType ?? 'unknown',
         });
       },
       upsertDailyReport: async ({ localDate, gutSeverity, symptomTags = [], notes }) => {
         const normalizedSymptomTags = gutSeverity === 0
           ? ['None']
           : symptomTags.filter((tag) => tag.trim().toLowerCase() !== 'none');
-        if (isLiveBackendConfigured && get().authUser) {
-          const response = await apiClient.upsertDailyReport({
-            localDate,
-            gutSeverity,
-            symptomTags: normalizedSymptomTags,
-            notes,
-          });
+        const authUser = get().authUser;
+        if (isLiveBackendConfigured && authUser) {
+          const state = get();
+          const existing = state.dailyReports.find((report) => report.localDate === localDate);
+          const timestamp = now();
+          const optimisticReport = computeDailyScoreForReport(
+            {
+              id: existing?.id ?? createId('report'),
+              userId: authUser.id,
+              localDate,
+              gutSeverity,
+              symptomTags: normalizedSymptomTags,
+              notes: notes?.trim() || undefined,
+              createdAt: existing?.createdAt ?? timestamp,
+              updatedAt: timestamp,
+            },
+            state.scans,
+            timestamp,
+          );
 
-          set((state) => ({
-            dailyReports: mergeById(state.dailyReports, response.report).sort(
+          set((currentState) => ({
+            dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, optimisticReport).sort(
               (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
             ),
-            profile: response.profile ?? state.profile,
-            insights: response.insights,
-            conditionInsights: response.conditionInsights,
+            learningSyncInFlight: true,
+            learningSyncRequestId: optimisticReport.id,
+            learningSyncError: null,
           }));
+          void queryClient.invalidateQueries({ queryKey: queryKeys.history });
+          void (async () => {
+            try {
+              const response = await apiClient.upsertDailyReport({
+                localDate,
+                gutSeverity,
+                symptomTags: normalizedSymptomTags,
+                notes,
+              });
+
+              set((currentState) => ({
+                dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
+                  (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+                ),
+              }));
+              void queryClient.invalidateQueries({ queryKey: queryKeys.history });
+              get().triggerLearningRecompute({
+                sourceType: 'daily_gut_report',
+                sourceId: response.report.id,
+                eventType: gutSeverity <= 3 ? 'calm_daily_report' : gutSeverity >= 7 ? 'reactive_daily_report' : 'neutral_daily_report',
+              });
+            } catch (error) {
+              set((currentState) =>
+                currentState.learningSyncRequestId === optimisticReport.id
+                  ? {
+                      learningSyncInFlight: false,
+                      learningSyncRequestId: null,
+                      learningSyncError:
+                        error instanceof Error ? error.message : 'Daily report could not be saved.',
+                    }
+                  : currentState,
+              );
+              trackEvent('daily_gut_report_save_failed', {
+                local_date: localDate,
+                error_code: apiErrorCode(error),
+              });
+            }
+          })();
         } else {
           const existing = get().dailyReports.find((report) => report.localDate === localDate);
           const timestamp = now();
@@ -657,11 +840,13 @@ export const useAppStore = create<AppStoreState>()(
           });
         }
 
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-        ]);
+        if (!isLiveBackendConfigured || !get().authUser) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          ]);
+        }
 
         trackEvent('daily_gut_report_saved', {
           local_date: localDate,

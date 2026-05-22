@@ -97,6 +97,8 @@ function scan(localDate: string, index: number, input: SimulatedScan): ScanRecor
     conditionRiskScores: {},
     possibleTriggers: [],
     interpretation: '',
+    conditionRisks: [],
+    ingredientRisks: [],
     structuredAnalysis: analysis(input.ingredients),
   };
 }

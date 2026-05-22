@@ -90,6 +90,8 @@ function scan(localDate: string, ingredients: string[], overallRiskScore: number
     conditionRiskScores: {},
     possibleTriggers: [],
     interpretation: '',
+    conditionRisks: [],
+    ingredientRisks: [],
     structuredAnalysis: analysis(ingredients),
   };
 }

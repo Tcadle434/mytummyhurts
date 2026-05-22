@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { CustomTabBar } from './CustomTabBar';
 import { MainTabParamList, OnboardingStackParamList, RootStackParamList } from './types';
 import { AuthScreen } from '../screens/auth/AuthScreen';
+import { ExistingAccountSignInScreen } from '../screens/auth/ExistingAccountSignInScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { ManualMealScreen } from '../screens/history/ManualMealScreen';
 import { DailyGutReportScreen } from '../screens/home/DailyGutReportScreen';
@@ -51,6 +52,7 @@ function OnboardingNavigator() {
       <OnboardingStack.Screen name="OnboardingFlow" component={OnboardingFlowScreen} />
       <OnboardingStack.Screen name="OnboardingPaywall" component={PaywallScreen} />
       <OnboardingStack.Screen name="OnboardingAuth" component={AuthScreen} />
+      <OnboardingStack.Screen name="OnboardingSignIn" component={ExistingAccountSignInScreen} />
     </OnboardingStack.Navigator>
   );
 }

@@ -42,6 +42,7 @@
           }
         }
       ],
+      "./plugins/with-expo-modules-jsi-cxx20",
       "expo-secure-store",
       "expo-image",
       "expo-font",
