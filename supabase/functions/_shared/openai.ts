@@ -1,5 +1,7 @@
 import {
   ExtractionResult,
+  DietFitHypothesis,
+  DietPreference,
   ExtractionImageDetail,
   ExtractedIngredient,
   IngredientConfidence,
@@ -7,6 +9,8 @@ import {
   MenuItemAnalysis,
   MenuScanAnalysis,
   MealComponent,
+  ConditionSeverity,
+  ConditionSeverityBand,
 } from './domain.ts';
 import {
   buildMenuRubricPromptText,
@@ -21,6 +25,12 @@ import {
   type MenuRiskModifierKey,
   type MenuRubricEvidence,
 } from './menuRubric.ts';
+import {
+  dietFitStatusValues,
+  dietPreferenceKeys,
+  dietPromptText,
+  normalizeDietPreferenceKey,
+} from './dietRubric.ts';
 import {
   aggregateOpenAiCostSnapshots,
   estimateOpenAiCost,
@@ -40,8 +50,11 @@ const IMAGE_DETAIL = (Deno.env.get('OPENAI_IMAGE_DETAIL') ?? 'high') === 'low' ?
 const MENU_IMAGE_DETAIL = (Deno.env.get('OPENAI_MENU_IMAGE_DETAIL') ?? 'high') === 'low' ? 'low' : 'high';
 const OPENAI_TIMEOUT_MS = positiveNumberEnv('OPENAI_TIMEOUT_MS', 65_000);
 const OPENAI_MENU_TIMEOUT_MS = positiveNumberEnv('OPENAI_MENU_TIMEOUT_MS', 115_000);
-const OPENAI_MENU_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_MENU_MAX_OUTPUT_TOKENS', 9_000);
+const OPENAI_MENU_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_MENU_MAX_OUTPUT_TOKENS', 12_000);
 const MENU_ITEM_LIMIT = 100;
+// When off, menu extraction skips per-condition LLM bands and the engine falls
+// back to mechanism-only scoring for menus (revert lever for cost/latency).
+const MENU_LLM_BANDS = (Deno.env.get('MENU_LLM_BANDS') ?? 'on') !== 'off';
 
 export type OpenAiAuditLog = {
   stage: string;
@@ -76,6 +89,12 @@ export type OpenAiAuditLog = {
 export type ExtractionWithAudit<T> = {
   result: T;
   audits: OpenAiAuditLog[];
+};
+
+type ExtractionContext = {
+  knownConditions: string[];
+  knownIngredients: string[];
+  dietPreferences?: DietPreference[];
 };
 
 type ResponseAuditDescriptor = {
@@ -161,6 +180,14 @@ type RawExtractionPayload = {
   notes?: unknown;
   baseFoodCategory?: unknown;
   riskModifiers?: unknown;
+  conditionSeverities?: unknown;
+  dietFitHypotheses?: unknown;
+};
+
+type RawScanCategoryClassificationPayload = {
+  category?: unknown;
+  confidence?: unknown;
+  reason?: unknown;
 };
 
 type RawMenuPayload = {
@@ -179,6 +206,8 @@ type RawMenuItemPayload = {
   price?: unknown;
   baseFoodCategory?: unknown;
   riskModifiers?: unknown;
+  conditionSeverities?: unknown;
+  dietFitHypotheses?: unknown;
   ingredientCallouts?: unknown;
   explicitIngredients?: unknown;
   inferredIngredients?: unknown;
@@ -199,6 +228,63 @@ type RawMenuRiskModifierPayload = {
   evidence?: unknown;
   source?: unknown;
 };
+
+type RawDietFitHypothesisPayload = {
+  dietKey?: unknown;
+  status?: unknown;
+  confidence?: unknown;
+  evidence?: unknown;
+  conflicts?: unknown;
+  missingInfo?: unknown;
+  reason?: unknown;
+};
+
+const dietFitHypothesisSchema = {
+  type: 'array',
+  maxItems: 8,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      dietKey: { type: 'string', enum: dietPreferenceKeys },
+      status: { type: 'string', enum: dietFitStatusValues },
+      confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+      evidence: {
+        type: 'array',
+        maxItems: 4,
+        items: { type: 'string' },
+      },
+      conflicts: {
+        type: 'array',
+        maxItems: 4,
+        items: { type: 'string' },
+      },
+      missingInfo: {
+        type: 'array',
+        maxItems: 4,
+        items: { type: 'string' },
+      },
+      reason: { type: 'string' },
+    },
+    required: ['dietKey', 'status', 'confidence', 'evidence', 'conflicts', 'missingInfo', 'reason'],
+  },
+} as const;
+
+const conditionSeverityArraySchema = {
+  type: 'array',
+  maxItems: 8,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      condition: { type: 'string' },
+      band: { type: 'string', enum: ['none', 'mild', 'moderate', 'high', 'severe'] },
+      drivers: { type: 'array', maxItems: 6, items: { type: 'string' } },
+      rationale: { type: 'string' },
+    },
+    required: ['condition', 'band', 'drivers', 'rationale'],
+  },
+} as const;
 
 const extractionSchema = {
   type: 'object',
@@ -288,6 +374,8 @@ const extractionSchema = {
         required: ['key', 'confidence', 'evidence', 'source'],
       },
     },
+    conditionSeverities: conditionSeverityArraySchema,
+    dietFitHypotheses: dietFitHypothesisSchema,
   },
   required: [
     'dishName',
@@ -301,7 +389,20 @@ const extractionSchema = {
     'notes',
     'baseFoodCategory',
     'riskModifiers',
+    'conditionSeverities',
+    'dietFitHypotheses',
   ],
+} as const;
+
+const scanCategoryClassificationSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    category: { type: 'string', enum: ['food', 'menu'] },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+    reason: { type: 'string' },
+  },
+  required: ['category', 'confidence', 'reason'],
 } as const;
 
 const menuExtractionSchema = {
@@ -314,6 +415,7 @@ const menuExtractionSchema = {
     menuConfidence: { type: 'string', enum: ['low', 'medium', 'high'] },
     items: {
       type: 'array',
+      maxItems: MENU_ITEM_LIMIT,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -336,7 +438,7 @@ const menuExtractionSchema = {
           },
           riskModifiers: {
             type: 'array',
-            maxItems: 10,
+            maxItems: 5,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -349,6 +451,8 @@ const menuExtractionSchema = {
               required: ['key', 'confidence', 'evidence', 'source'],
             },
           },
+          conditionSeverities: conditionSeverityArraySchema,
+          dietFitHypotheses: dietFitHypothesisSchema,
           ingredientCallouts: {
             type: 'array',
             maxItems: 3,
@@ -369,6 +473,8 @@ const menuExtractionSchema = {
           'price',
           'baseFoodCategory',
           'riskModifiers',
+          'conditionSeverities',
+          'dietFitHypotheses',
           'ingredientCallouts',
           'prepStyle',
           'confidence',
@@ -389,6 +495,15 @@ function asStringArray(value: unknown): string[] {
 
 function asConfidence(value: unknown): IngredientConfidence {
   return value === 'high' || value === 'low' ? value : 'medium';
+}
+
+function coerceScanCategoryClassification(payload: RawScanCategoryClassificationPayload) {
+  const category: 'food' | 'menu' = payload.category === 'menu' ? 'menu' : 'food';
+  return {
+    category,
+    confidence: asConfidence(payload.confidence),
+    reason: String(payload.reason ?? `${category} scan`).trim() || `${category} scan`,
+  };
 }
 
 function asMenuBaseFoodCategoryKey(value: unknown): MenuBaseFoodCategoryKey {
@@ -639,6 +754,72 @@ function coerceMenuRiskModifier(value: RawMenuRiskModifierPayload, itemName: str
   };
 }
 
+function asDietFitStatus(value: unknown) {
+  return dietFitStatusValues.includes(value as DietFitHypothesis['status'])
+    ? (value as DietFitHypothesis['status'])
+    : 'unknown';
+}
+
+function coerceDietFitHypothesis(value: RawDietFitHypothesisPayload): DietFitHypothesis | null {
+  const dietKey = normalizeDietPreferenceKey(value.dietKey);
+  if (!dietKey) {
+    return null;
+  }
+
+  return {
+    dietKey,
+    status: asDietFitStatus(value.status),
+    confidence: asConfidence(value.confidence),
+    evidence: asStringArray(value.evidence).slice(0, 4),
+    conflicts: asStringArray(value.conflicts).slice(0, 4),
+    missingInfo: asStringArray(value.missingInfo).slice(0, 4),
+    reason: String(value.reason ?? '').trim() || 'Diet fit was estimated from the visible food details.',
+  };
+}
+
+function coerceDietFitHypotheses(value: unknown): DietFitHypothesis[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => coerceDietFitHypothesis(entry as RawDietFitHypothesisPayload))
+    .filter((entry): entry is DietFitHypothesis => Boolean(entry));
+}
+
+const conditionSeverityBands: readonly ConditionSeverityBand[] = ['none', 'mild', 'moderate', 'high', 'severe'];
+
+function asConditionSeverityBand(value: unknown): ConditionSeverityBand {
+  return conditionSeverityBands.includes(value as ConditionSeverityBand) ? (value as ConditionSeverityBand) : 'mild';
+}
+
+function coerceConditionSeverities(value: unknown): ConditionSeverity[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry): ConditionSeverity | null => {
+      const payload = (entry ?? {}) as { condition?: unknown; band?: unknown; drivers?: unknown; rationale?: unknown };
+      const condition = String(payload.condition ?? '').trim();
+      if (!condition) {
+        return null;
+      }
+      const rationale = String(payload.rationale ?? '').trim();
+      const severity: ConditionSeverity = {
+        condition,
+        band: asConditionSeverityBand(payload.band),
+        drivers: asStringArray(payload.drivers).slice(0, 6),
+      };
+      if (rationale) {
+        severity.rationale = rationale;
+      }
+      return severity;
+    })
+    .filter((entry): entry is ConditionSeverity => Boolean(entry))
+    .slice(0, 8);
+}
+
 function firstRubricTermSource(text: string, terms: readonly string[]) {
   return terms.find((term) => menuTextContains(text, term));
 }
@@ -763,6 +944,8 @@ function coerceMenuItem(value: RawMenuItemPayload, index: number, knownIngredien
     prepStyle: resolvedPrepStyle,
     baseFoodCategory,
     riskModifiers: resolvedRiskModifiers,
+    conditionSeverities: MENU_LLM_BANDS ? coerceConditionSeverities(value.conditionSeverities) : [],
+    dietFitHypotheses: coerceDietFitHypotheses(value.dietFitHypotheses),
     confidence: asConfidence(value.confidence),
     personalizedRiskScore: 0,
     personalizedRiskLevel: 'low',
@@ -845,6 +1028,8 @@ function coerceExtraction(payload: RawExtractionPayload, meta: { model: string; 
     notes,
     baseFoodCategory,
     riskModifiers: resolvedRiskModifiers,
+    conditionSeverities: coerceConditionSeverities(payload.conditionSeverities),
+    dietFitHypotheses: coerceDietFitHypotheses(payload.dietFitHypotheses),
     model: meta.model,
     promptVersion: PROMPT_VERSION,
     imageDetail: meta.imageDetail,
@@ -1024,7 +1209,48 @@ async function runResponsesRequestWithAudit<TPayload extends Record<string, unkn
     });
   }
 
-  const parsed = JSON.parse(outputText) as TPayload;
+  const responseStatus = typeof payload.status === 'string' ? payload.status : null;
+  const incompleteDetails = payload.incomplete_details;
+  if (responseStatus === 'incomplete' || incompleteDetails) {
+    const errorMessage = `OpenAI response was incomplete${incompleteDetails ? `: ${JSON.stringify(incompleteDetails)}` : '.'}`;
+    throw Object.assign(new Error('openai_incomplete_output'), {
+      audit: {
+        ...completeAudit,
+        provider: 'openai' as const,
+        promptVersion: PROMPT_VERSION,
+        rawResponseText: outputText,
+        rawResponseJson,
+        parsedResponseJson: null,
+        status: 'failed' as const,
+        errorCode: 'openai_incomplete_output',
+        errorMessage,
+        latencyMs: Date.now() - startedAt,
+        ...openAiCostFieldsFromSnapshot(costSnapshot),
+      } satisfies OpenAiAuditLog,
+    });
+  }
+
+  let parsed: TPayload;
+  try {
+    parsed = JSON.parse(outputText) as TPayload;
+  } catch (error) {
+    throw Object.assign(new Error('openai_invalid_json'), {
+      audit: {
+        ...completeAudit,
+        provider: 'openai' as const,
+        promptVersion: PROMPT_VERSION,
+        rawResponseText: outputText,
+        rawResponseJson,
+        parsedResponseJson: null,
+        status: 'failed' as const,
+        errorCode: 'openai_invalid_json',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        latencyMs: Date.now() - startedAt,
+        ...openAiCostFieldsFromSnapshot(costSnapshot),
+      } satisfies OpenAiAuditLog,
+    });
+  }
+
   return {
     parsed,
     audit: {
@@ -1077,19 +1303,59 @@ async function runResponsesRequestWithAuditRetry<TPayload extends Record<string,
   });
 }
 
+function conditionPromptText(knownConditions: string[] | undefined) {
+  const conditions = (knownConditions ?? []).map((condition) => condition.trim()).filter(Boolean);
+  if (!conditions.length) {
+    return 'No diagnosed gut conditions are on file. Return a single conditionSeverities entry with condition "general" judging overall gut difficulty as none/mild/moderate/high/severe, with cited drivers and a one-line rationale.';
+  }
+  return [
+    `The person has these gut conditions: ${conditions.join(', ')}.`,
+    'For EACH listed condition, add one conditionSeverities entry: condition (exactly as written above), band (none/mild/moderate/high/severe) for how risky THIS food is for THAT condition, drivers (the specific ingredients or prep that justify the band), and a one-line rationale.',
+    'Judge holistically and realistically: an ordinary balanced meal is usually none or mild even if it contains a small amount of a trigger; reserve high or severe for genuinely aggressive or trigger-dense dishes.',
+  ].join('\n');
+}
+
 function buildImageSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Separate visible ingredients from inferred ingredients. Be conservative: do not invent hidden ingredients unless strongly implied by the image. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Do not provide medical advice or risk scoring.
+  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Separate visible ingredients from inferred ingredients. Be conservative: do not invent hidden ingredients unless strongly implied by the image. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
 
-function buildImageUserPrompt(_context: { knownConditions: string[]; knownIngredients: string[] }) {
+function buildImageUserPrompt(context: ExtractionContext) {
   return [
     'Analyze this single meal photo for structured food recognition.',
     'Represent multi-item plates in the components array.',
     'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
+    conditionPromptText(context.knownConditions),
+    dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching this exact schema.',
     JSON.stringify(extractionSchema),
+  ].join('\n');
+}
+
+function buildMultiImageUserPrompt(context: ExtractionContext & { imageCount: number }) {
+  return [
+    `Analyze these ${context.imageCount} food images as one scan.`,
+    'They may show multiple angles, a receipt-like food list, or multiple items from the same meal. Combine them into one structured food recognition result.',
+    'Represent multi-item meals in the components array.',
+    'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
+    conditionPromptText(context.knownConditions),
+    dietPromptText(context.dietPreferences ?? []),
+    'Return JSON matching this exact schema.',
+    JSON.stringify(extractionSchema),
+  ].join('\n');
+}
+
+function buildScanClassificationSystemPrompt() {
+  return `You classify scan images for routing only. Return only JSON matching the provided schema. Choose category "menu" only when the image(s) primarily show a restaurant menu, menu screenshot, catering menu, or food item list with multiple orderable items. Choose category "food" for plated food, packaged products, grocery labels, receipts without menu items, or anything that should be analyzed as a meal/product rather than a restaurant menu.`;
+}
+
+function buildScanClassificationUserPrompt(imageCount: number) {
+  return [
+    `Classify these ${imageCount} scan image(s) as food or menu.`,
+    'If multiple images are provided and any image is clearly a menu page, choose menu.',
+    'Return JSON matching this exact schema.',
+    JSON.stringify(scanCategoryClassificationSchema),
   ].join('\n');
 }
 
@@ -1101,35 +1367,46 @@ Completeness is more important than beautiful descriptions. Treat the task like 
 - Include every visible food or drink item, including simple sushi/sashimi lines, drinks, sides, add-ons, and items with no description.
 - Do not skip an item just because it lacks price, description, photo, or ingredients.
 - Do not collapse neighboring rows into one item unless the menu clearly shows they are the same item.
-- Preserve section names, item names, short descriptions, and prices when visible.
+- Preserve section names, item names, compact descriptions, and prices when visible.
+- Keep descriptions to 10 words or fewer. If the printed description is long, compress it to the decisive ingredients/prep only.
 - Include ingredientCallouts as 0-3 short ingredient names from visible text or strong common dish knowledge.
 - Include prepStyle cues such as raw, grilled, broiled, steamed, fried, tempura, creamy, spicy, sauced, or pickled.
-- Keep per-item arrays concise: at most 3 ingredientCallouts and 4 prepStyle cues.
+- Keep per-item arrays concise: at most 3 ingredientCallouts, 4 prepStyle cues, and the 5 strongest riskModifiers.
+- Keep baseFoodCategory.source and riskModifiers.source to the shortest exact menu words or common cue, not a sentence.
+- You must return complete valid JSON. If output budget is tight, shorten descriptions and sources first; never end mid-object or mid-array.
+- If diet goals are provided, include one dietFitHypotheses entry per selected diet for each item. These are hypotheses only; do not make guaranteed allergy/celiac safety claims. If no diet goals are provided, return an empty dietFitHypotheses array for every item.
+${MENU_LLM_BANDS ? '- For each item, also include a conditionSeverities array as instructed in the user prompt (one per-condition severity band). Judge realistically; an ordinary item is usually none or mild.' : '- Return an empty conditionSeverities array for every item.'}
 
 ${buildMenuRubricPromptText()}
 
-Do not rank items, score risk, give medical advice, or make guaranteed safety claims.`;
+Do not output a final numeric risk score or make guaranteed safety claims.`;
 }
 
-function buildMenuUserPrompt(context: { knownConditions: string[]; knownIngredients: string[]; pageCount: number }) {
+function buildMenuUserPrompt(context: ExtractionContext & { pageCount: number }) {
   return [
     `Analyze these ${context.pageCount} menu image(s) as one complete menu.`,
     `Extract no more than ${MENU_ITEM_LIMIT} items.`,
     'Before returning JSON, internally recount each visible item row across all columns and make sure none were omitted.',
     'Each item must include exactly one baseFoodCategory and a riskModifiers array, even when the array is empty.',
+    MENU_LLM_BANDS
+      ? `Apply this per item: ${conditionPromptText(context.knownConditions)}`
+      : 'Return an empty conditionSeverities array for every item.',
+    dietPromptText(context.dietPreferences ?? []),
   ].join('\n');
 }
 
 function buildTextSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Separate explicit ingredients from inferred ingredients conservatively. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Do not provide medical advice or risk scoring.
+  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Separate explicit ingredients from inferred ingredients conservatively. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
 
-function buildTextUserPrompt(text: string, _context: { knownConditions: string[]; knownIngredients: string[] }) {
+function buildTextUserPrompt(text: string, context: ExtractionContext) {
   return [
     'Analyze this meal description for structured food recognition.',
     'Represent multi-item meals in the components array when needed.',
+    conditionPromptText(context.knownConditions),
+    dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching this exact schema.',
     JSON.stringify(extractionSchema),
     `Meal description: ${text}`,
@@ -1140,6 +1417,7 @@ function buildNormalizationPrompt(extraction: RawExtractionPayload) {
   return [
     'Normalize this meal extraction JSON for storage.',
     'Merge duplicates, canonicalize ingredient names, keep visible and inferred ingredients separate, preserve conservative uncertainty, and preserve or correct the controlled baseFoodCategory/riskModifiers.',
+    'Preserve the conditionSeverities array exactly as provided; do not re-judge, drop, or add any severity band.',
     'Return JSON matching the exact same schema.',
     JSON.stringify(extractionSchema),
     JSON.stringify(extraction),
@@ -1221,13 +1499,13 @@ async function normalizeExtractionWithAudit(
   };
 }
 
-export async function extractMealFromText(text: string, context: { knownConditions: string[]; knownIngredients: string[] }) {
+export async function extractMealFromText(text: string, context: ExtractionContext) {
   return (await extractMealFromTextWithAudit(text, context)).result;
 }
 
 export async function extractMealFromTextWithAudit(
   text: string,
-  context: { knownConditions: string[]; knownIngredients: string[] },
+  context: ExtractionContext,
 ): Promise<ExtractionWithAudit<ExtractionResult>> {
   if (!OPENAI_API_KEY) {
     return { result: fallbackExtractionFromText(text), audits: [] };
@@ -1275,16 +1553,90 @@ export async function extractMealFromTextWithAudit(
   };
 }
 
+export async function classifyScanImagesWithAudit(
+  imageUrls: string[],
+): Promise<ExtractionWithAudit<{ category: 'food' | 'menu'; confidence: IngredientConfidence; reason: string }>> {
+  if (!imageUrls.length || !OPENAI_API_KEY) {
+    const fallbackCategory = imageUrls.length > 1 ? 'menu' : 'food';
+    return {
+      result: {
+        category: fallbackCategory,
+        confidence: 'low',
+        reason: imageUrls.length > 1 ? 'Multiple images usually indicate a menu scan.' : 'Default single-image scan route.',
+      },
+      audits: [],
+    };
+  }
+
+  const systemPrompt = buildScanClassificationSystemPrompt();
+  const userPrompt = buildScanClassificationUserPrompt(imageUrls.length);
+  const request = {
+    model: IMAGE_EXTRACTION_MODEL,
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: systemPrompt }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: userPrompt },
+          ...imageUrls.map((imageUrl) => ({
+            type: 'input_image',
+            image_url: imageUrl,
+            detail: IMAGE_DETAIL,
+          })),
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'scan_category_classification',
+        schema: scanCategoryClassificationSchema,
+        strict: true,
+      },
+    },
+  };
+
+  const inputRefs = imageUrls.map((imageUrl, index) => ({
+    inputKind: 'image',
+    pageIndex: index,
+    imageRef: imageUrl.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url',
+  }));
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawScanCategoryClassificationPayload>(request, {
+    stage: 'scan_category_classification',
+    model: IMAGE_EXTRACTION_MODEL,
+    systemPrompt,
+    userPrompt,
+    jsonSchema: scanCategoryClassificationSchema,
+    schemaVersion: 'scan_category_classification_v1',
+    requestMetadata: { imageCount: imageUrls.length, imageDetail: IMAGE_DETAIL },
+    inputRefs,
+  });
+  const result = coerceScanCategoryClassification(parsed);
+
+  return {
+    result,
+    audits: [
+      {
+        ...audit,
+        normalizedResponseJson: result,
+      },
+    ],
+  };
+}
+
 export async function extractMealFromImage(
   imageUrl: string | null,
-  context: { knownConditions: string[]; knownIngredients: string[] },
+  context: ExtractionContext,
 ) {
   return (await extractMealFromImageWithAudit(imageUrl, context)).result;
 }
 
 export async function extractMealFromImageWithAudit(
   imageUrl: string | null,
-  context: { knownConditions: string[]; knownIngredients: string[] },
+  context: ExtractionContext,
 ): Promise<ExtractionWithAudit<ExtractionResult>> {
   if (!imageUrl || !OPENAI_API_KEY) {
     return { result: fallbackExtractionFromImage(), audits: [] };
@@ -1340,16 +1692,83 @@ export async function extractMealFromImageWithAudit(
   };
 }
 
+export async function extractMealFromImagesWithAudit(
+  imageUrls: string[],
+  context: ExtractionContext,
+): Promise<ExtractionWithAudit<ExtractionResult>> {
+  if (imageUrls.length <= 1) {
+    return extractMealFromImageWithAudit(imageUrls[0] ?? null, context);
+  }
+
+  if (!OPENAI_API_KEY) {
+    return { result: fallbackExtractionFromImage(), audits: [] };
+  }
+
+  const systemPrompt = buildImageSystemPrompt();
+  const userPrompt = buildMultiImageUserPrompt({ ...context, imageCount: imageUrls.length });
+  const request = {
+    model: IMAGE_EXTRACTION_MODEL,
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: systemPrompt }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: userPrompt },
+          ...imageUrls.map((imageUrl) => ({
+            type: 'input_image',
+            image_url: imageUrl,
+            detail: IMAGE_DETAIL,
+          })),
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'meal_extraction_images',
+        schema: extractionSchema,
+        strict: true,
+      },
+    },
+  };
+
+  const inputRefs = imageUrls.map((imageUrl, index) => ({
+    inputKind: 'image',
+    imageRole: 'meal',
+    pageIndex: index,
+    imageRef: imageUrl.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url',
+  }));
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
+    stage: 'food_multi_image_extraction',
+    model: IMAGE_EXTRACTION_MODEL,
+    systemPrompt,
+    userPrompt,
+    jsonSchema: extractionSchema,
+    schemaVersion: 'meal_extraction_v2',
+    requestMetadata: { imageDetail: IMAGE_DETAIL, imageCount: imageUrls.length },
+    inputRefs,
+  });
+  const normalized = await normalizeExtractionWithAudit(parsed, IMAGE_DETAIL, inputRefs);
+
+  return {
+    result: normalized.result,
+    audits: [audit, normalized.audit],
+  };
+}
+
 export async function extractMenuFromImages(
   imageUrls: string[],
-  context: { knownConditions: string[]; knownIngredients: string[] },
+  context: ExtractionContext,
 ) {
   return (await extractMenuFromImagesWithAudit(imageUrls, context)).result;
 }
 
 async function requestMenuExtraction(
   imageUrls: string[],
-  context: { knownConditions: string[]; knownIngredients: string[] },
+  context: ExtractionContext,
   options: { stage: string; pageOffset: number; totalPageCount: number; splitByPage: boolean },
 ) {
   const systemPrompt = buildMenuSystemPrompt();
@@ -1493,7 +1912,7 @@ function combineMenuPageExtractions(pageResults: Array<{ result: MenuScanAnalysi
 function combinedMenuAudit(
   pageResults: Array<{ parsed: RawMenuPayload; audit: OpenAiAuditLog }>,
   result: MenuScanAnalysis,
-  context: { knownConditions: string[]; knownIngredients: string[] },
+  context: ExtractionContext,
   imageUrls: string[],
 ): OpenAiAuditLog {
   const systemPrompt = buildMenuSystemPrompt();
@@ -1555,7 +1974,7 @@ function combinedMenuAudit(
 
 export async function extractMenuFromImagesWithAudit(
   imageUrls: string[],
-  context: { knownConditions: string[]; knownIngredients: string[] },
+  context: ExtractionContext,
 ): Promise<ExtractionWithAudit<MenuScanAnalysis>> {
   if (!imageUrls.length) {
     return {

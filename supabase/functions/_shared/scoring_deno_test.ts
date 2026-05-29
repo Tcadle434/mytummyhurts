@@ -272,6 +272,168 @@ Deno.test('pepperoni pizza scores medium-high for a generic discomfort profile',
   }
 });
 
+Deno.test('selected diet goals produce normalized scan diet evaluations', () => {
+  const profile = buildUserProfileFromSeed({
+    userId: 'diet-fit-test',
+    knownConditions: ['GERD / Acid reflux'],
+    knownIngredientSensitivities: [],
+    commonSymptoms: ['Reflux / Heartburn'],
+    symptomFrequency: 'A few times a week',
+    symptomSeverityBaseline: 'Moderate',
+    mealContexts: ['restaurants'],
+    currentEatingPatterns: [],
+    lifestyleFactors: [],
+    foodsToReintroduce: [],
+    dietPreferences: [
+      { key: 'gerd_friendly', label: 'GERD / reflux-friendly', strictness: 'standard', source: 'onboarding' },
+      { key: 'anti_inflammatory', label: 'Anti-inflammatory', strictness: 'standard', source: 'onboarding' },
+    ],
+  });
+  const result = computeScanResultFromStructured(pepperoniPizzaAnalysis(), profile, []);
+
+  if (result.dietEvaluations.length !== 2) {
+    throw new Error(`Expected two diet evaluations, got ${JSON.stringify(result.dietEvaluations)}`);
+  }
+
+  const refluxFit = result.dietEvaluations.find((evaluation) => evaluation.dietKey === 'gerd_friendly');
+  if (!refluxFit || refluxFit.status === 'fits') {
+    throw new Error(`Expected pepperoni pizza to be a GERD caution/non-fit, got ${JSON.stringify(refluxFit)}`);
+  }
+});
+
+Deno.test('menu diet evaluations attach to each returned menu item', () => {
+  const profile = buildUserProfileFromSeed({
+    userId: 'menu-diet-fit-test',
+    knownConditions: [],
+    knownIngredientSensitivities: [],
+    commonSymptoms: [],
+    mealContexts: [],
+    dietPreferences: [
+      { key: 'gluten_free', label: 'Gluten-free', strictness: 'standard', source: 'settings' },
+    ],
+  });
+  const menu: MenuScanAnalysis = {
+    kind: 'menu',
+    menuTitle: 'Diet Menu',
+    menuConfidence: 'high',
+    inputPageCount: 1,
+    items: [
+      {
+        id: 'pizza',
+        name: 'Pepperoni Pizza',
+        description: 'Pepperoni, cheese, tomato sauce, wheat crust.',
+        section: 'Pizza',
+        extractedIngredients: ['pepperoni', 'cheese', 'tomato sauce', 'wheat crust'].map(ingredient),
+        inferredIngredients: [],
+        prepStyle: ['baked'],
+        confidence: 'high',
+        personalizedRiskScore: 0,
+        personalizedRiskLevel: 'low',
+      },
+      {
+        id: 'rice',
+        name: 'Steamed Rice',
+        description: 'Plain rice.',
+        section: 'Sides',
+        extractedIngredients: [ingredient('rice')],
+        inferredIngredients: [],
+        prepStyle: ['steamed'],
+        confidence: 'high',
+        personalizedRiskScore: 0,
+        personalizedRiskLevel: 'low',
+      },
+    ],
+    bestOptions: [],
+    eatWithCautionOptions: [],
+    worstOptions: [],
+    summary: '',
+  };
+  const result = computeMenuScanResultFromExtraction(menu, profile, []);
+  const pizza = result.menuResult?.items.find((item) => item.name === 'Pepperoni Pizza');
+  const rice = result.menuResult?.items.find((item) => item.name === 'Steamed Rice');
+
+  if (pizza?.dietEvaluations[0]?.status !== 'does_not_fit') {
+    throw new Error(`Expected pizza to fail gluten-free, got ${JSON.stringify(pizza?.dietEvaluations)}`);
+  }
+
+  if (!rice?.dietEvaluations.length) {
+    throw new Error('Expected rice menu item to carry a gluten-free evaluation.');
+  }
+});
+
+Deno.test('seed oil-free diet flags fried and generic oil evidence', () => {
+  const profile = buildUserProfileFromSeed({
+    userId: 'seed-oil-free-test',
+    knownConditions: [],
+    knownIngredientSensitivities: [],
+    commonSymptoms: [],
+    mealContexts: [],
+    dietPreferences: [
+      { key: 'seed_oil_free', label: 'Seed oil-free', strictness: 'standard', source: 'settings' },
+    ],
+  });
+  const friedFood: StructuredAnalysisV2 = {
+    dishName: 'fried chicken tenders',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [{ name: 'fried chicken tenders', confidence: 'high', prepStyle: ['fried'] }],
+    visibleIngredients: ['chicken', 'breading', 'vegetable oil'].map(ingredient),
+    inferredIngredients: [],
+    prepStyle: ['fried'],
+    notes: [],
+    baseFoodCategory: { key: 'mixed_dish_or_entree', confidence: 'high', evidence: 'name', source: 'fried chicken tenders' },
+    riskModifiers: [
+      { key: 'fried_or_crispy', confidence: 'high', evidence: 'prep', source: 'fried' },
+      { key: 'unknown_sauce_or_marinade', confidence: 'medium', evidence: 'unclear', source: 'fryer oil' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'not_applicable',
+  };
+  const result = computeScanResultFromStructured(friedFood, profile, []);
+  const evaluation = result.dietEvaluations.find((entry) => entry.dietKey === 'seed_oil_free');
+
+  if (!evaluation || evaluation.status !== 'does_not_fit') {
+    throw new Error(`Expected fried vegetable-oil food to fail seed oil-free, got ${JSON.stringify(evaluation)}`);
+  }
+});
+
+Deno.test('low histamine diet flags fermented and aged foods', () => {
+  const profile = buildUserProfileFromSeed({
+    userId: 'low-histamine-test',
+    knownConditions: [],
+    knownIngredientSensitivities: [],
+    commonSymptoms: [],
+    mealContexts: [],
+    dietPreferences: [
+      { key: 'low_histamine', label: 'Low histamine', strictness: 'standard', source: 'settings' },
+    ],
+  });
+  const fermentedFood: StructuredAnalysisV2 = {
+    dishName: 'kimchi tuna bowl',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [{ name: 'kimchi tuna bowl', confidence: 'high', prepStyle: ['assembled'] }],
+    visibleIngredients: ['kimchi', 'tuna', 'soy sauce', 'rice'].map(ingredient),
+    inferredIngredients: [],
+    prepStyle: ['assembled'],
+    notes: [],
+    baseFoodCategory: { key: 'mixed_dish_or_entree', confidence: 'high', evidence: 'name', source: 'kimchi tuna bowl' },
+    riskModifiers: [
+      { key: 'fermented_or_histamine', confidence: 'high', evidence: 'ingredient', source: 'kimchi and soy sauce' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'not_applicable',
+  };
+  const result = computeScanResultFromStructured(fermentedFood, profile, []);
+  const evaluation = result.dietEvaluations.find((entry) => entry.dietKey === 'low_histamine');
+
+  if (!evaluation || evaluation.status !== 'does_not_fit') {
+    throw new Error(`Expected fermented tuna bowl to fail low histamine, got ${JSON.stringify(evaluation)}`);
+  }
+});
+
 Deno.test('pepperoni pizza does not max out for a moderate personalized profile', () => {
   const result = computeScanResultFromStructured(extractedPizzaFixtureAnalysis(), moderatePersonalizedProfile(), []);
 
@@ -1191,5 +1353,263 @@ Deno.test('menu score contributors are returned with item-level explanations', (
 
   if (edamame.scoringConfidence !== 'high') {
     throw new Error(`Expected high scoring confidence for explicit edamame ingredients, got ${edamame.scoringConfidence}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GOLDEN SET — calibration fixtures (rebuild plan Phase 0+)
+// [locked]  tests guard already-correct behavior during the rebuild (green now).
+// [target]  tests encode the desired end state and run with ignore:true until
+//           the phase that makes them pass lands, then they are unignored.
+//           Tag [phaseN] marks which phase turns each one green.
+// ---------------------------------------------------------------------------
+
+function lactoseGerdProfile() {
+  return buildUserProfileFromSeed({
+    userId: 'lactose-gerd',
+    knownConditions: ['Lactose intolerance', 'GERD / Acid reflux'],
+    knownIngredientSensitivities: [],
+    commonSymptoms: ['Reflux / Heartburn', 'Bloating'],
+    symptomFrequency: 'A few times a week',
+    symptomSeverityBaseline: 'Moderate',
+    mealContexts: ['restaurants', 'takeout'],
+    currentEatingPatterns: [],
+    lifestyleFactors: [],
+    foodsToReintroduce: [],
+  });
+}
+
+// Turkey sandwich with pickles, mustard, chili + a side of kettle chips.
+// Reflects CORRECT extraction: mayonnaise is an egg/oil emulsion (fat), NOT lactose.
+function turkeySandwichAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'turkey sandwich with pickles and kettle chips',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [
+      { name: 'turkey sandwich', confidence: 'high', prepStyle: ['cold'] },
+      { name: 'kettle chips', confidence: 'high', prepStyle: ['fried'] },
+    ],
+    visibleIngredients: [
+      ingredient('bread'),
+      ingredient('turkey'),
+      ingredient('lettuce'),
+      ingredient('cucumber'),
+      ingredient('mayonnaise'),
+      ingredient('mustard'),
+      ingredient('pickle'),
+      ingredient('red chili pepper'),
+      ingredient('potato chip'),
+    ],
+    inferredIngredients: [],
+    prepStyle: ['cold'],
+    notes: ['sandwich with a side of kettle chips'],
+    baseFoodCategory: { key: 'mixed_dish_or_entree', confidence: 'high', evidence: 'name', source: 'sandwich' },
+    riskModifiers: [
+      { key: 'wheat_fructan_or_gluten', confidence: 'high', evidence: 'ingredient', source: 'bread' },
+      { key: 'high_fat_or_rich', confidence: 'medium', evidence: 'ingredient', source: 'mayonnaise' },
+      { key: 'acidic_tomato_citrus_vinegar', confidence: 'high', evidence: 'ingredient', source: 'mustard and pickle' },
+      { key: 'spicy_heat', confidence: 'medium', evidence: 'ingredient', source: 'red chili pepper' },
+      { key: 'fried_or_crispy', confidence: 'high', evidence: 'prep', source: 'kettle chips (side)' },
+      { key: 'lean_protein', confidence: 'high', evidence: 'ingredient', source: 'turkey' },
+      { key: 'low_fermentation_plant', confidence: 'high', evidence: 'ingredient', source: 'lettuce and cucumber' },
+    ],
+    conditionSeverities: [
+      { condition: 'Lactose intolerance', band: 'none', drivers: [], rationale: 'No dairy; mayonnaise is egg/oil.' },
+      { condition: 'GERD / Acid reflux', band: 'moderate', drivers: ['mustard', 'pickle', 'red chili pepper', 'kettle chips'], rationale: 'Some acid and spice plus a fried side.' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
+// Same sandwich but the model returned NO modifiers, forcing the rubric's
+// term-matching fallback — proves mayo is not bucketed as lactose by the rubric.
+function turkeySandwichNoModifiers(): StructuredAnalysisV2 {
+  return { ...turkeySandwichAnalysis(), riskModifiers: [], baseFoodCategory: undefined };
+}
+
+function grilledChickenRiceAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'grilled chicken with steamed rice',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [{ name: 'grilled chicken with steamed rice', confidence: 'high', prepStyle: ['grilled', 'steamed'] }],
+    visibleIngredients: [ingredient('chicken breast'), ingredient('rice'), ingredient('zucchini')],
+    inferredIngredients: [],
+    prepStyle: ['grilled', 'steamed'],
+    notes: [],
+    baseFoodCategory: { key: 'lean_meat_poultry', confidence: 'high', evidence: 'ingredient', source: 'chicken breast' },
+    riskModifiers: [
+      { key: 'lean_protein', confidence: 'high', evidence: 'ingredient', source: 'chicken breast' },
+      { key: 'rice_or_simple_starch', confidence: 'high', evidence: 'ingredient', source: 'rice' },
+      { key: 'simple_prep', confidence: 'high', evidence: 'prep', source: 'grilled and steamed' },
+      { key: 'low_fermentation_plant', confidence: 'high', evidence: 'ingredient', source: 'zucchini' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
+function findConditionRow(result: ReturnType<typeof computeScanResultFromStructured>, substr: string) {
+  const needle = substr.toLowerCase();
+  return result.conditionRisks.find((row) => row.conditionName.toLowerCase().includes(needle));
+}
+
+Deno.test('GOLDEN [locked]: gentle grilled chicken + rice stays low risk for a moderate profile', () => {
+  const result = computeScanResultFromStructured(grilledChickenRiceAnalysis(), moderatePersonalizedProfile(), []);
+
+  if (result.overallRiskScore > 40) {
+    throw new Error(`Expected gentle meal to stay <= 40, got ${result.overallRiskScore}`);
+  }
+  if (result.overallRiskLevel === 'high') {
+    throw new Error(`Expected gentle meal not to be high risk, got ${result.overallRiskLevel}`);
+  }
+});
+
+Deno.test({
+  name: 'GOLDEN [phase4]: turkey sandwich lands medium, not maxed out',
+  ignore: false,
+  fn: () => {
+    const result = computeScanResultFromStructured(turkeySandwichAnalysis(), lactoseGerdProfile(), []);
+
+    // The LLM band (Phase 4) is what pulls a normal sandwich out of the high
+    // band; saturation alone (Phase 1) only caps it at the 80 soft ceiling.
+    if (result.overallRiskScore < 35 || result.overallRiskScore > 66) {
+      throw new Error(`Expected turkey sandwich 35-66, got ${result.overallRiskScore}`);
+    }
+    if (result.overallRiskLevel === 'high') {
+      throw new Error(`Expected turkey sandwich not high, got ${result.overallRiskLevel} (${result.overallRiskScore})`);
+    }
+    const lactose = findConditionRow(result, 'lactose');
+    if (lactose && lactose.riskLevel === 'high') {
+      throw new Error(`Expected lactose not high for a mayo sandwich, got ${lactose.riskLevel} (${lactose.riskScore})`);
+    }
+  },
+});
+
+Deno.test({
+  name: 'GOLDEN [phase5-mayo]: mayo is not classified as lactose by the rubric fallback',
+  ignore: false,
+  fn: () => {
+    const result = computeScanResultFromStructured(turkeySandwichNoModifiers(), lactoseGerdProfile(), []);
+
+    if (result.scoreContributors?.some((contributor) => contributor.key === 'creamy_or_lactose')) {
+      throw new Error(`Mayo should not produce a creamy_or_lactose contributor: ${JSON.stringify(result.scoreContributors)}`);
+    }
+    const lactose = findConditionRow(result, 'lactose');
+    if (lactose && lactose.riskScore >= 67) {
+      throw new Error(`Expected lactose row not high for a mayo sandwich, got ${lactose.riskScore}`);
+    }
+  },
+});
+
+function friesMainAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'large french fries',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [{ name: 'french fries', confidence: 'high', prepStyle: ['fried'] }],
+    visibleIngredients: [ingredient('potato'), ingredient('oil')],
+    inferredIngredients: [],
+    prepStyle: ['fried'],
+    notes: [],
+    baseFoodCategory: { key: 'root_tuber_starch_based', confidence: 'high', evidence: 'ingredient', source: 'potato' },
+    riskModifiers: [{ key: 'fried_or_crispy', confidence: 'high', evidence: 'prep', source: 'french fries' }],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
+function friesSideAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'grilled chicken plate with french fries',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [
+      { name: 'grilled chicken', confidence: 'high', prepStyle: ['grilled'] },
+      { name: 'french fries', confidence: 'high', prepStyle: ['fried'] },
+    ],
+    visibleIngredients: [ingredient('chicken breast'), ingredient('potato'), ingredient('oil')],
+    inferredIngredients: [],
+    prepStyle: ['grilled', 'fried'],
+    notes: [],
+    baseFoodCategory: { key: 'lean_meat_poultry', confidence: 'high', evidence: 'ingredient', source: 'chicken breast' },
+    riskModifiers: [
+      { key: 'fried_or_crispy', confidence: 'high', evidence: 'prep', source: 'french fries' },
+      { key: 'lean_protein', confidence: 'high', evidence: 'ingredient', source: 'chicken breast' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
+Deno.test('GOLDEN [phase2]: the same fried item is down-weighted as a side vs as the main', () => {
+  const main = computeScanResultFromStructured(friesMainAnalysis(), moderatePersonalizedProfile(), []);
+  const side = computeScanResultFromStructured(friesSideAnalysis(), moderatePersonalizedProfile(), []);
+
+  const mainFried = main.scoreContributors?.find((contributor) => contributor.key === 'fried_or_crispy');
+  const sideFried = side.scoreContributors?.find((contributor) => contributor.key === 'fried_or_crispy');
+  if (!mainFried || !sideFried) {
+    throw new Error(`Expected a fried contributor in both, got main=${JSON.stringify(mainFried)} side=${JSON.stringify(sideFried)}`);
+  }
+  if (!(sideFried.points < mainFried.points)) {
+    throw new Error(`Expected side fries (${sideFried.points}) to score below main fries (${mainFried.points})`);
+  }
+});
+
+Deno.test('GOLDEN [phase5]: a fried ingredient is not shown as easier on your gut while the headline cites it', () => {
+  const result = computeScanResultFromStructured(turkeySandwichAnalysis(), lactoseGerdProfile(), []);
+  const chip = result.ingredientRisks.find((row) => row.canonicalName.includes('chip'));
+  if (!chip) {
+    throw new Error(`Expected a chip ingredient row, got ${JSON.stringify(result.ingredientRisks.map((row) => row.canonicalName))}`);
+  }
+  if (chip.riskLevel === 'low') {
+    throw new Error(`Expected fried chips not to read as low/easier, got ${chip.riskLevel} (${chip.riskScore})`);
+  }
+});
+
+// The model under-rates an aggressive fried/spicy/acidic platter as "mild" for
+// GERD; the ±1-band guardrail should nudge it up one band to medium.
+function underRatedSpicyFriedAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'fried hot wings platter',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [{ name: 'fried hot wings platter', confidence: 'high', prepStyle: ['fried', 'spicy'] }],
+    visibleIngredients: ['chicken wing', 'hot sauce', 'butter', 'vinegar'].map(ingredient),
+    inferredIngredients: [],
+    prepStyle: ['fried', 'spicy'],
+    notes: [],
+    baseFoodCategory: { key: 'mixed_dish_or_entree', confidence: 'high', evidence: 'name', source: 'platter' },
+    riskModifiers: [
+      { key: 'fried_or_crispy', confidence: 'high', evidence: 'prep', source: 'fried wings' },
+      { key: 'spicy_heat', confidence: 'high', evidence: 'ingredient', source: 'hot sauce' },
+      { key: 'high_fat_or_rich', confidence: 'high', evidence: 'ingredient', source: 'butter' },
+      { key: 'acidic_tomato_citrus_vinegar', confidence: 'high', evidence: 'ingredient', source: 'vinegar hot sauce' },
+    ],
+    conditionSeverities: [
+      { condition: 'GERD / Acid reflux', band: 'mild', drivers: [], rationale: 'Deliberately under-rated for the test.' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
+Deno.test('GOLDEN [phase7]: the guardrail nudges an under-rated aggressive meal up one band', () => {
+  const result = computeScanResultFromStructured(underRatedSpicyFriedAnalysis(), stoneyProfile(), []);
+  const gerd = findConditionRow(result, 'gerd');
+  if (!gerd) {
+    throw new Error(`Expected a GERD condition row, got ${JSON.stringify(result.conditionRisks.map((row) => row.conditionName))}`);
+  }
+  // Mild anchor alone would land ~38 (low/mild); the one-band nudge to moderate
+  // should lift it into medium, but not all the way to high.
+  if (gerd.riskLevel !== 'medium') {
+    throw new Error(`Expected GERD nudged to medium, got ${gerd.riskLevel} (${gerd.riskScore})`);
   }
 });

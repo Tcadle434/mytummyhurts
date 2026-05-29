@@ -373,9 +373,9 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
     key: 'high_fat_or_rich',
     label: 'High-fat/rich',
     points: 16,
-    prompt: 'Heavy fat load from rich meat, butter, cream, oils, cheese, avocado-heavy, nuts-heavy, creamy sauce, or loaded toppings.',
+    prompt: 'Heavy fat load from rich meat, butter, cream, oils, cheese, avocado-heavy, nuts-heavy, creamy sauce, mayonnaise, aioli, or loaded toppings.',
     reason: 'Rich, high-fat foods can slow digestion and worsen reflux for some profiles.',
-    terms: ['rich', 'butter', 'buttery', 'cream', 'creamy', 'loaded', 'smothered', 'pork belly', 'ribeye', 'bacon', 'queso', 'cheese sauce', 'avocado', 'oil'],
+    terms: ['rich', 'butter', 'buttery', 'cream', 'creamy', 'mayo', 'mayonnaise', 'aioli', 'loaded', 'smothered', 'pork belly', 'ribeye', 'bacon', 'queso', 'cheese sauce', 'avocado', 'oil'],
     contributorEvidence: 'ingredient',
     conditionMultipliers: [
       { conditions: ['GERD / reflux', 'GERD / Acid reflux', 'Gastroparesis'], multiplier: 1.35 },
@@ -387,9 +387,9 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
     key: 'creamy_or_lactose',
     label: 'Dairy/cream/lactose',
     points: 17,
-    prompt: 'Milk, cream, cheese, queso, sour cream, yogurt, ranch, aioli, mayo-based creamy sauces, ice cream, or lactose-forward dairy.',
+    prompt: 'Milk, cream, cheese, queso, sour cream, yogurt, ranch, ice cream, or lactose-forward dairy. Do NOT use for egg/oil emulsions like mayonnaise or aioli — those are high-fat, not lactose.',
     reason: 'Creamy dairy can be harder for lactose, reflux, and IBS patterns.',
-    terms: ['milk', 'cream', 'cheese', 'queso', 'sour cream', 'yogurt', 'ranch', 'aioli', 'mayo', 'mayonnaise', 'ice cream', 'mozzarella', 'bleu cheese', 'blue cheese'],
+    terms: ['milk', 'cream', 'cheese', 'queso', 'sour cream', 'yogurt', 'ranch', 'ice cream', 'mozzarella', 'bleu cheese', 'blue cheese'],
     contributorEvidence: 'ingredient',
     conditionMultipliers: [
       { conditions: ['Lactose intolerance'], multiplier: 1.75 },

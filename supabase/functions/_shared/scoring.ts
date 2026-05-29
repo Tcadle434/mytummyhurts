@@ -1,6 +1,8 @@
 import {
   ConditionRisk,
   ConditionIngredientInsight,
+  ConditionSeverity,
+  ConditionSeverityBand,
   DailyGutReport,
   ExtractionResult,
   ExtractedIngredient,
@@ -42,6 +44,10 @@ import {
   type MenuRubricEvidence,
   type MenuRubricRule,
 } from './menuRubric.ts';
+import {
+  evaluateDietForMenuItem,
+  evaluateDietForStructuredAnalysis,
+} from './dietRubric.ts';
 
 const fallbackConditions = ['IBS', 'GERD / reflux', 'Lactose intolerance', 'High FODMAP sensitivity'];
 export const GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
@@ -270,15 +276,6 @@ function extractedIngredientToScoring(entry: ExtractedIngredient): ScoringIngred
   };
 }
 
-function getAllStructuredKeywords(structuredAnalysis: StructuredAnalysisV2) {
-  return [
-    structuredAnalysis.dishName,
-    ...structuredAnalysis.prepStyle,
-    ...structuredAnalysis.notes,
-    ...structuredAnalysis.components.map((component) => component.name),
-  ].map(normalizeKey);
-}
-
 function getSensitivityProfile(label: string) {
   const normalizedLabel = normalizeKey(label);
   if (declaredSensitivityProfiles[normalizedLabel]) {
@@ -315,28 +312,6 @@ function ingredientMatchesSensitivityLabel(ingredientName: string, label: string
       normalizedAlias.includes(normalizedIngredient)
     );
   });
-}
-
-function mealMatchesSensitivityContext(structuredAnalysis: StructuredAnalysisV2, label: string) {
-  const profile = getSensitivityProfile(label);
-  if (!profile) {
-    return false;
-  }
-
-  const prepStyles = structuredAnalysis.prepStyle.map(normalizeKey);
-  const keywords = getAllStructuredKeywords(structuredAnalysis);
-
-  return (
-    (profile.prepStyles ?? []).some((prepStyle) => prepStyles.includes(normalizeKey(prepStyle))) ||
-    (profile.noteKeywords ?? []).some((keyword) => keywords.some((entry) => entry.includes(normalizeKey(keyword)))) ||
-    (profile.dishKeywords ?? []).some((keyword) => keywords.some((entry) => entry.includes(normalizeKey(keyword))))
-  );
-}
-
-function lookupConditionImpact(impactMap: Record<string, number>, condition: string) {
-  const normalizedCondition = canonicalConditionKey(condition);
-  const matched = Object.entries(impactMap).find(([key]) => canonicalConditionKey(key) === normalizedCondition);
-  return matched?.[1] ?? 0;
 }
 
 function frequencyRiskIndex(symptomFrequency?: string) {
@@ -453,6 +428,7 @@ function deriveConditionSensitivityWeights(
     currentEatingPatterns: [],
     lifestyleFactors: [],
     foodsToReintroduce: [],
+    dietPreferences: [],
     stomachProfile: {
       version: 1,
       conditions: [],
@@ -492,103 +468,6 @@ function conditionWeightFor(condition: string, profile: UserProfile | null) {
   return clampNumber(matched?.[1] ?? 1, 0.9, 1.7);
 }
 
-function ingredientDeclaredSensitivityBonus(
-  ingredient: ScoringIngredient,
-  condition: string,
-  profile: UserProfile | null,
-) {
-  if (!profile) {
-    return 0;
-  }
-
-  let total = 0;
-  for (const sensitivity of profile.knownIngredientSensitivities) {
-    if (!ingredientMatchesSensitivityLabel(ingredient.name, sensitivity)) {
-      continue;
-    }
-
-    const profileMatch = getSensitivityProfile(sensitivity);
-    if (profileMatch) {
-      total += lookupConditionImpact(profileMatch.conditionImpacts, condition);
-      continue;
-    }
-
-    total += 16;
-  }
-
-  return Math.min(total, 32);
-}
-
-function contextualDeclaredSensitivityBonus(
-  structuredAnalysis: StructuredAnalysisV2,
-  condition: string,
-  profile: UserProfile | null,
-) {
-  if (!profile) {
-    return 0;
-  }
-
-  let total = 0;
-  for (const sensitivity of profile.knownIngredientSensitivities) {
-    const profileMatch = getSensitivityProfile(sensitivity);
-    if (!profileMatch || !mealMatchesSensitivityContext(structuredAnalysis, sensitivity)) {
-      continue;
-    }
-
-    total += Math.round(lookupConditionImpact(profileMatch.conditionImpacts, condition) * 0.55);
-  }
-
-  return Math.min(total, 14);
-}
-
-function structuredUncertaintyScore(structuredAnalysis: StructuredAnalysisV2) {
-  let total = structuredAnalysis.inferredIngredients.length * 2;
-  total += structuredAnalysis.components.length > 1 ? 1 : 0;
-  total += structuredAnalysis.dishConfidence === 'low' ? 3 : structuredAnalysis.dishConfidence === 'medium' ? 1 : 0;
-  total += structuredAnalysis.notes.reduce((score, note) => {
-    const normalized = normalizeKey(note);
-    if (
-      normalized.includes('uncertainty') ||
-      normalized.includes('restaurant') ||
-      normalized.includes('sauce') ||
-      normalized.includes('dressing') ||
-      normalized.includes('mixed')
-    ) {
-      return score + 2;
-    }
-
-    return score;
-  }, 0);
-  return total;
-}
-
-function mealContextRiskBonus(structuredAnalysis: StructuredAnalysisV2, profile: UserProfile | null) {
-  if (!profile) {
-    return 0;
-  }
-
-  const contexts = new Set(profile.mealContexts.map(normalizeKey));
-  const uncertainty = structuredUncertaintyScore(structuredAnalysis);
-  let bonus = 0;
-
-  if (
-    uncertainty >= 3 &&
-    (contexts.has('restaurants') || contexts.has('takeout') || contexts.has('grocery or packaged foods'))
-  ) {
-    bonus += 4;
-  }
-
-  if (contexts.has('snacks on the go') && structuredAnalysis.components.length <= 1 && uncertainty >= 2) {
-    bonus += 2;
-  }
-
-  if (contexts.has('home-cooked meals') && uncertainty >= 4) {
-    bonus += 2;
-  }
-
-  return bonus;
-}
-
 function declaredSensitivityTriggerBonus(ingredient: ScoringIngredient, profile: UserProfile | null) {
   if (!profile) {
     return 0;
@@ -602,19 +481,6 @@ function declaredSensitivityTriggerBonus(ingredient: ScoringIngredient, profile:
   }
 
   return Math.min(total, 28);
-}
-
-function findMatchedSensitivityLabels(structuredAnalysis: StructuredAnalysisV2, profile: UserProfile | null) {
-  if (!profile) {
-    return [];
-  }
-
-  const ingredients = scoringIngredientsFromStructured(structuredAnalysis);
-  return profile.knownIngredientSensitivities.filter(
-    (sensitivity) =>
-      ingredients.some((ingredient) => ingredientMatchesSensitivityLabel(ingredient.name, sensitivity)) ||
-      mealMatchesSensitivityContext(structuredAnalysis, sensitivity),
-  );
 }
 
 export function flattenStructuredIngredients(structuredAnalysis: StructuredAnalysisV2): StructuredIngredient[] {
@@ -703,36 +569,12 @@ function buildConditionRiskRows(
   }));
 }
 
-function ingredientRiskReason(
-  ingredientName: string,
-  level: RiskLevel,
-  matchedSensitivity: boolean,
-  evidence: string,
-) {
-  if (matchedSensitivity) {
-    return `${ingredientName} appears in this scan and matches a risk pattern in your gut profile.`;
-  }
-
-  if (level === 'high') {
-    return `${ingredientName} is a higher-risk ingredient pattern for your profile.`;
-  }
-
-  if (level === 'medium') {
-    return evidence === 'inferred'
-      ? `${ingredientName} is inferred from the scan, so treat it as a watch-out.`
-      : `${ingredientName} has some watch-outs for your profile.`;
-  }
-
-  return `${ingredientName} looks lower risk for your current profile.`;
-}
-
 function buildIngredientRiskRows(
   structuredAnalysis: StructuredAnalysisV2,
-  triggerScores: { name: string; score: number }[],
+  _triggerScores: { name: string; score: number }[],
   profile: UserProfile | null,
   scoreContributors: ScoreContributor[] = [],
 ): ScanIngredientRisk[] {
-  const triggerScoreMap = new Map(triggerScores.map((entry) => [normalizeKey(entry.name), entry.score]));
   const rows: ScanIngredientRisk[] = [];
   const seen = new Set<string>();
   const riskContributors = scoreContributors.filter(
@@ -746,25 +588,26 @@ function buildIngredientRiskRows(
     }
 
     seen.add(canonicalName);
-    const triggerScore = Math.max(0, triggerScoreMap.get(canonicalName) ?? 0);
     const matchedSensitivity = Boolean(
       profile?.knownIngredientSensitivities.some((sensitivity) =>
         ingredientMatchesSensitivityLabel(canonicalName, sensitivity),
       ),
     );
-    const rubricPoints = riskContributors
+    // Unified with the headline: an ingredient's risk comes from the same risk
+    // contributors that drive the overall score (not a separate legacy table),
+    // so a fried side can never read "easier on your gut" while the headline
+    // cites fried/crispy prep.
+    const matchedPoints = riskContributors
       .filter((contributor) => contributorMatchesIngredient(contributor, canonicalName))
       .reduce((maxPoints, contributor) => Math.max(maxPoints, contributor.points), 0);
     const riskScore = clamp(
       matchedSensitivity
-        ? Math.max(72, 48 + triggerScore)
-        : rubricPoints > 0
-          ? 24 + rubricPoints * 3
-          : triggerScore >= 18
-          ? 42 + triggerScore
+        ? 72
+        : matchedPoints > 0
+          ? clampNumber(28 + matchedPoints * 1.4, 30, 90)
           : ingredient.evidence === 'inferred'
-            ? 32
-            : 18,
+            ? 22
+            : 14,
     );
     const riskLevel = toRiskLevel(riskScore);
 
@@ -776,7 +619,7 @@ function buildIngredientRiskRows(
       evidence: ingredient.evidence,
       confidence: ingredient.confidence,
       componentName: ingredient.component,
-      reason: ingredientRiskReason(canonicalName, riskLevel, matchedSensitivity, ingredient.evidence),
+      reason: '',
       displayOrder: rows.length,
     });
   }
@@ -857,98 +700,6 @@ function profileConfidenceLevel(reportCount: number) {
   }
 
   return 'early' as const;
-}
-
-function scoreCondition(
-  condition: string,
-  ingredients: ScoringIngredient[],
-  structuredAnalysis: StructuredAnalysisV2,
-  profile: UserProfile | null,
-  insights: IngredientInsight[],
-) {
-  let total = 12 + baseProfileRiskBonus(profile);
-  const normalizedCondition = canonicalConditionKey(condition);
-  const insightMap = new Map(insights.map((insight) => [normalizeKey(insight.ingredientName), insight]));
-  const conditionWeight = conditionWeightFor(condition, profile);
-  const learnedInsightWeight = insightConfidenceWeight(profile);
-
-  for (const ingredient of ingredients) {
-    const normalizedIngredient = normalizeKey(ingredient.name);
-    const impactEntry = ingredientConditionImpacts[normalizedIngredient];
-    const weight = ingredientWeight(ingredient);
-    let ingredientDelta = 0;
-
-    if (impactEntry) {
-      for (const [conditionKey, delta] of Object.entries(impactEntry)) {
-        if (canonicalConditionKey(conditionKey) === normalizedCondition) {
-          ingredientDelta += delta;
-        }
-      }
-    }
-
-    ingredientDelta += ingredientDeclaredSensitivityBonus(ingredient, condition, profile);
-
-    const insight = insightMap.get(normalizedIngredient);
-    if (insight) {
-      ingredientDelta += insightRiskDelta(insight, learnedInsightWeight);
-    }
-
-    total += Math.round(ingredientDelta * weight * conditionWeight);
-  }
-
-  total += contextualDeclaredSensitivityBonus(structuredAnalysis, condition, profile);
-  total += mealContextRiskBonus(structuredAnalysis, profile);
-
-  return clamp(total);
-}
-
-function createInterpretation(
-  overallRiskLevel: RiskLevel,
-  triggers: string[],
-  profile: UserProfile | null,
-  conditionRiskScores: Record<string, ConditionRisk>,
-  matchedSensitivityLabels: string[],
-  hasLearnedSignals: boolean,
-) {
-  const topCondition = Object.entries(conditionRiskScores).sort((left, right) => right[1].score - left[1].score)[0]?.[0];
-  const symptomReference = profile?.commonSymptoms.slice(0, 2).join(' and ');
-  const sensitivityReference = matchedSensitivityLabels.slice(0, 2).join(' and ');
-
-  if (overallRiskLevel === 'high') {
-    if (sensitivityReference) {
-      return `This looks risky for you because it lines up with your ${sensitivityReference} sensitivity, especially around ${triggers.slice(0, 2).join(' and ')}.`;
-    }
-
-    if (topCondition && symptomReference) {
-      return `This meal looks high-risk for your ${topCondition} pattern and the symptoms you track, especially around ${triggers.slice(0, 2).join(' and ')}.`;
-    }
-
-    if (hasLearnedSignals) {
-      return `This meal may trigger symptoms for you based on your daily report history, especially around ${triggers.slice(0, 2).join(' and ')}.`;
-    }
-
-    return `This meal may trigger symptoms for you, especially around ${triggers.slice(0, 2).join(' and ')}.`;
-  }
-
-  if (overallRiskLevel === 'medium') {
-    if (hasLearnedSignals) {
-      return 'This score blends your declared profile, known condition patterns, and your daily report outcomes.';
-    }
-
-    if (topCondition) {
-      return `This meal has some watch-outs for your stomach, with the biggest pressure on ${topCondition}.`;
-    }
-
-    return 'This meal has some watch-outs for your stomach, but it may still be manageable depending on portion and preparation.';
-  }
-
-  if (profile?.knownConditions.length || profile?.knownIngredientSensitivities.length) {
-    return hasLearnedSignals
-      ? 'This meal looks relatively safer based on your current profile and what your daily reports have shown so far.'
-      : 'This meal looks relatively safer for your stomach based on your current profile and food patterns.';
-  }
-
-  return 'This meal looks relatively safe for your stomach based on what we know so far.';
 }
 
 function toIngredientScores(insights: IngredientInsight[]) {
@@ -1648,6 +1399,7 @@ export function buildUserProfileFromSeed(
     currentEatingPatterns: seed.currentEatingPatterns ?? [],
     lifestyleFactors: seed.lifestyleFactors ?? [],
     foodsToReintroduce: seed.foodsToReintroduce ?? [],
+    dietPreferences: seed.dietPreferences ?? [],
     stomachProfile: {
       version: 3,
       conditions: knownConditions.map((name) => ({ name, source: 'user' as const, active: true })),
@@ -1673,6 +1425,113 @@ export function buildUserProfileFromSeed(
   };
 }
 
+// ---- LLM-primary per-condition band scoring (rebuild Phase 4) ----
+// The LLM severity band sets the anchor; the deterministic mechanism score may
+// nudge it within ±BAND_MECH_DELTA so the LLM stays the primary judge. When no
+// band is present the engine falls back to the pure mechanism score.
+// Anchors are intentionally aligned with the downstream thresholds so the new
+// distribution stays coherent without re-tuning them: toRiskLevel cuts (34/67),
+// computeGutScoreImpact deltas (25/45/70), and the daily-attribution pivot (~50)
+// in src/services/ai/scoring.ts. Keep those in sync if you move these anchors.
+const BAND_ANCHORS: Record<ConditionSeverityBand, number> = {
+  none: 8,
+  mild: 28,
+  moderate: 52,
+  high: 74,
+  severe: 92,
+};
+const BAND_MECH_DELTA = 10;
+const BAND_ORDER: readonly ConditionSeverityBand[] = ['none', 'mild', 'moderate', 'high', 'severe'];
+
+// Inverse of BAND_ANCHORS: the band a pure mechanism score would land in, using
+// the midpoints between anchors as cut points.
+function bandFromScore(score: number): ConditionSeverityBand {
+  if (score < 18) {
+    return 'none';
+  }
+  if (score < 40) {
+    return 'mild';
+  }
+  if (score < 63) {
+    return 'moderate';
+  }
+  if (score < 83) {
+    return 'high';
+  }
+  return 'severe';
+}
+
+function matchConditionBand(
+  bands: ConditionSeverity[] | undefined,
+  condition: string,
+): ConditionSeverity | undefined {
+  if (!bands?.length) {
+    return undefined;
+  }
+  const target = canonicalConditionKey(condition);
+  const generalTarget = isGeneralDiscomfortCondition(condition) || target === 'general';
+  const exact = bands.find((entry) => canonicalConditionKey(entry.condition) === target);
+  if (exact) {
+    return exact;
+  }
+  return bands.find((entry) => {
+    const key = canonicalConditionKey(entry.condition);
+    if (!key) {
+      return false;
+    }
+    if (generalTarget && key.includes('general')) {
+      return true;
+    }
+    return key.includes(target) || target.includes(key);
+  });
+}
+
+function scoreConditionFromBand(band: ConditionSeverity, mechanismScore: number): number {
+  // ±1-band consistency guardrail (LLM-primary, code corrects at most one band):
+  // if the deterministic mechanism reads two or more bands hotter than the LLM
+  // (e.g. the model said "mild" but fried + creamy + spicy all fired), nudge the
+  // band up exactly one. When the LLM reads hotter than the mechanism we keep its
+  // band — it may know condition-specific risk the rubric cannot see.
+  const llmIndex = BAND_ORDER.indexOf(band.band);
+  const mechIndex = BAND_ORDER.indexOf(bandFromScore(mechanismScore));
+  const effectiveBand = mechIndex - llmIndex >= 2
+    ? BAND_ORDER[Math.min(BAND_ORDER.length - 1, llmIndex + 1)]
+    : band.band;
+  const anchor = BAND_ANCHORS[effectiveBand];
+  return clamp(anchor + clampNumber(mechanismScore - anchor, -BAND_MECH_DELTA, BAND_MECH_DELTA));
+}
+
+// The mechanism "opinion" for a single condition: only contributors that
+// actually affect that condition (plus the base and protective ones). Without
+// this, a fried/spicy meal would read hot for EVERY condition — including
+// lactose with no dairy — and wrongly drag the guardrail away from the LLM's
+// correct per-condition judgment.
+function conditionRelevantMechScore(contributors: ScoreContributor[], conditionProfile: UserProfile | null): number {
+  const relevant = contributors.filter((contributor) => {
+    if (contributor.key === 'base_menu_risk' || contributor.points < 0) {
+      return true;
+    }
+    const rule = menuTraitRulesByKey.get(contributor.key as MenuBaseFoodCategoryKey | MenuRiskModifierKey);
+    return rule ? conditionMultiplierForRule(rule, conditionProfile) > 1 : false;
+  });
+  return combineSaturating(relevant);
+}
+
+// Overall is derived from the per-condition scores: anchored to the worst
+// condition, with additional conditions stacking with diminishing returns, so
+// the headline can never disagree with the condition bars.
+function deriveOverallFromConditions(perConditionScores: number[]): number {
+  if (!perConditionScores.length) {
+    return 0;
+  }
+  const sorted = [...perConditionScores].sort((left, right) => right - left);
+  let overall = sorted[0];
+  for (let index = 1; index < sorted.length; index += 1) {
+    overall += (sorted[index] * 0.5 * (100 - overall)) / 100;
+  }
+  return clamp(overall);
+}
+
 export function computeScanResultFromStructured(
   structuredAnalysis: StructuredAnalysisV2,
   profile: UserProfile | null,
@@ -1681,28 +1540,8 @@ export function computeScanResultFromStructured(
 ): ScanResult {
   const ingredients = scoringIngredientsFromStructured(structuredAnalysis);
   const triggerScores = legacyIngredientTriggerScores(ingredients, profile, insights);
-  const legacyConditionRiskScores = legacyConditionScoresForStructured(structuredAnalysis, ingredients, profile, insights);
-  const legacyPossibleTriggers = possibleTriggersFromScores(triggerScores);
-  const overallSeed = Object.values(legacyConditionRiskScores).reduce((total, current) => total + current.score, 0);
-  const matchedSensitivityLabels = findMatchedSensitivityLabels(structuredAnalysis, profile);
-  const legacyOverallRiskScore = clamp(
-    overallSeed / Math.max(1, Object.keys(legacyConditionRiskScores).length || 1) +
-      (legacyPossibleTriggers.length > 1 ? 4 : 0) +
-      mealContextRiskBonus(structuredAnalysis, profile) +
-      Math.min(matchedSensitivityLabels.length * 2, 6),
-  );
   const foodEntity = foodRiskEntityFromStructured(structuredAnalysis);
-  const rubric = scoreFoodRiskEntity(
-    foodEntity,
-    {
-      overallRiskScore: legacyOverallRiskScore,
-      possibleTriggers: legacyPossibleTriggers,
-    },
-    profile,
-    insights,
-  );
-  const overallRiskScore = rubric.score;
-  const overallRiskLevel = rubric.level;
+  const rubric = scoreFoodRiskEntity(foodEntity, profile, insights);
   const conditionRiskScores = conditionRiskScoresFromFoodEntity(
     foodEntity,
     structuredAnalysis,
@@ -1710,6 +1549,21 @@ export function computeScanResultFromStructured(
     profile,
     insights,
   );
+  // LLM-primary: when the model returned per-condition bands, derive the overall
+  // from the (band-anchored) condition scores so the headline and the condition
+  // bars are always coherent. With no bands, fall back to the mechanism score.
+  const conditionScoreValues = Object.values(conditionRiskScores).map((entry) => entry.score);
+  const hasBands = (structuredAnalysis.conditionSeverities?.length ?? 0) > 0;
+  let overallRiskScore = rubric.score;
+  if (hasBands && conditionScoreValues.length) {
+    overallRiskScore = deriveOverallFromConditions(conditionScoreValues);
+  } else if (hasBands) {
+    const generalBand = matchConditionBand(structuredAnalysis.conditionSeverities, 'general');
+    if (generalBand) {
+      overallRiskScore = scoreConditionFromBand(generalBand, rubric.score);
+    }
+  }
+  const overallRiskLevel = toRiskLevel(overallRiskScore);
   const possibleTriggers = possibleTriggersFromContributorsAndIngredients(
     rubric.contributors,
     structuredAnalysis,
@@ -1732,6 +1586,7 @@ export function computeScanResultFromStructured(
     gutRecommendation,
     rubricVersion: FOOD_RISK_RUBRIC_SCHEMA_VERSION,
   };
+  const dietEvaluations = evaluateDietForStructuredAnalysis(enrichedStructuredAnalysis, profile?.dietPreferences ?? []);
 
   return {
     dishName: structuredAnalysis.dishName,
@@ -1750,6 +1605,7 @@ export function computeScanResultFromStructured(
     rubricVersion: FOOD_RISK_RUBRIC_SCHEMA_VERSION,
     conditionRisks: buildConditionRiskRows(conditionRiskScores, possibleTriggers),
     ingredientRisks: buildIngredientRiskRows(enrichedStructuredAnalysis, triggerScores, profile, rubric.contributors),
+    dietEvaluations,
     structuredAnalysis: enrichedStructuredAnalysis,
     gutScoreImpact: computeGutScoreImpact(overallRiskScore, possibleTriggers, profile),
     imageUri,
@@ -1774,6 +1630,8 @@ function structuredAnalysisFromMenuItem(item: MenuItemAnalysis, meta: { model: s
     notes: [item.description, item.section].filter((entry): entry is string => Boolean(entry)),
     baseFoodCategory: item.baseFoodCategory,
     riskModifiers: item.riskModifiers,
+    conditionSeverities: item.conditionSeverities,
+    dietFitHypotheses: item.dietFitHypotheses,
     rubricVersion: FOOD_RISK_RUBRIC_SCHEMA_VERSION,
     model: meta.model,
     promptVersion: meta.promptVersion,
@@ -2042,7 +1900,8 @@ function menuRuleContributor(rule: MenuTraitRule, item: MenuItemAnalysis, profil
 
   const conditionMultiplier = conditionMultiplierForRule(rule, profile);
   const sensitivityMultiplier = sensitivityMultiplierForRule(rule, match, profile);
-  const points = Math.round(rule.points * match.weight * conditionMultiplier * sensitivityMultiplier);
+  const roleWeight = roleWeightForSignal(match.source, item);
+  const points = Math.round(rule.points * match.weight * conditionMultiplier * sensitivityMultiplier * roleWeight);
   if (points === 0) {
     return null;
   }
@@ -2102,7 +1961,7 @@ function scoreEvidenceFromRubricSignal(rule: MenuTraitRule, signal: MenuRubricSi
   return 'description';
 }
 
-function modelRubricContributor(signal: MenuRubricSignal, profile: UserProfile | null): ScoreContributor | null {
+function modelRubricContributor(signal: MenuRubricSignal, profile: UserProfile | null, item: MenuItemAnalysis): ScoreContributor | null {
   const rule = menuTraitRulesByKey.get(signal.key);
   if (!rule) {
     return null;
@@ -2115,7 +1974,8 @@ function modelRubricContributor(signal: MenuRubricSignal, profile: UserProfile |
   };
   const conditionMultiplier = conditionMultiplierForRule(rule, profile);
   const sensitivityMultiplier = sensitivityMultiplierForRule(rule, match, profile);
-  const points = Math.round(rule.points * match.weight * conditionMultiplier * sensitivityMultiplier);
+  const roleWeight = roleWeightForSignal(signal.source, item);
+  const points = Math.round(rule.points * match.weight * conditionMultiplier * sensitivityMultiplier * roleWeight);
   if (points === 0) {
     return null;
   }
@@ -2183,6 +2043,55 @@ function fallbackMenuRiskModifiersForScoring(item: MenuItemAnalysis) {
   return modifiers.slice(0, 10);
 }
 
+const SIDE_ROLE_WEIGHT = 0.6;
+
+// Names of non-dominant components (sides, condiments, drinks). The dominant
+// component is the one whose name overlaps the dish name most; everything else
+// is treated as a side. Only applies to multi-component food scans; menu items
+// (single component, componentRoles undefined) are unaffected.
+function secondaryComponentNames(components: { name: string }[], dishName: string): string[] {
+  if (components.length < 2) {
+    return [];
+  }
+
+  const normalizedDish = normalizeMenuScoringText(dishName);
+  let dominantIndex = 0;
+  let bestOverlap = -1;
+  components.forEach((component, index) => {
+    const tokens = normalizeMenuScoringText(component.name).split(' ').filter(Boolean);
+    const overlap = tokens.filter((token) => normalizedDish.includes(token)).length;
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      dominantIndex = index;
+    }
+  });
+
+  return components
+    .filter((_component, index) => index !== dominantIndex)
+    .map((component) => component.name)
+    .filter(Boolean);
+}
+
+// Down-weights a contributor whose source maps to a side/condiment/drink so a
+// side of fries does not score like a fried entree.
+function roleWeightForSignal(source: string, item: MenuItemAnalysis): number {
+  const secondary = item.componentRoles?.secondaryComponents ?? [];
+  if (!secondary.length) {
+    return 1;
+  }
+
+  const normalizedSource = normalizeMenuScoringText(source);
+  if (!normalizedSource) {
+    return 1;
+  }
+
+  const isSecondary = secondary.some((name) => {
+    const normalizedName = normalizeMenuScoringText(name);
+    return Boolean(normalizedName) && (normalizedSource.includes(normalizedName) || normalizedName.includes(normalizedSource));
+  });
+  return isSecondary ? SIDE_ROLE_WEIGHT : 1;
+}
+
 function foodRiskEntityFromStructured(structuredAnalysis: StructuredAnalysisV2): MenuItemAnalysis {
   const item: MenuItemAnalysis = {
     id: 'scan-food',
@@ -2196,6 +2105,9 @@ function foodRiskEntityFromStructured(structuredAnalysis: StructuredAnalysisV2):
     confidence: structuredAnalysis.dishConfidence,
     personalizedRiskScore: 0,
     personalizedRiskLevel: 'low',
+    componentRoles: {
+      secondaryComponents: secondaryComponentNames(structuredAnalysis.components ?? [], structuredAnalysis.dishName),
+    },
   };
 
   return {
@@ -2238,25 +2150,6 @@ function possibleTriggersFromScores(triggerScores: { name: string; score: number
     .map((entry) => entry.name);
 }
 
-function legacyConditionScoresForStructured(
-  structuredAnalysis: StructuredAnalysisV2,
-  ingredients: ScoringIngredient[],
-  profile: UserProfile | null,
-  insights: IngredientInsight[],
-) {
-  const activeConditions = profile?.knownConditions.length ? profile.knownConditions : [];
-  return activeConditions.slice(0, 5).reduce<Record<string, ConditionRisk>>((accumulator, condition) => {
-    const displayName = displayConditionName(condition);
-    const scoringCondition = isGeneralDiscomfortCondition(condition) ? 'Sensitive stomach' : condition;
-    const score = scoreCondition(scoringCondition, ingredients, structuredAnalysis, profile, insights);
-    accumulator[displayName] = {
-      score,
-      level: toRiskLevel(score),
-    };
-    return accumulator;
-  }, {});
-}
-
 function profileForConditionScore(profile: UserProfile | null, condition: string): UserProfile | null {
   if (!profile) {
     return null;
@@ -2284,21 +2177,13 @@ function conditionRiskScoresFromFoodEntity(
   return activeConditions.slice(0, 5).reduce<Record<string, ConditionRisk>>((accumulator, condition) => {
     const displayName = displayConditionName(condition);
     const conditionProfile = profileForConditionScore(profile, condition);
-    const legacyScore = scoreCondition(
-      isGeneralDiscomfortCondition(condition) ? 'Sensitive stomach' : condition,
-      ingredients,
-      structuredAnalysis,
-      conditionProfile,
-      insights,
-    );
-    const legacyTriggers = possibleTriggersFromScores(legacyIngredientTriggerScores(ingredients, conditionProfile, insights));
-    const rubric = scoreFoodRiskEntity(foodEntity, {
-      overallRiskScore: legacyScore,
-      possibleTriggers: legacyTriggers,
-    }, conditionProfile, insights);
+    const rubric = scoreFoodRiskEntity(foodEntity, conditionProfile, insights);
+    const band = matchConditionBand(structuredAnalysis.conditionSeverities, condition);
+    const relevantMech = conditionRelevantMechScore(rubric.contributors, conditionProfile);
+    const score = band ? scoreConditionFromBand(band, relevantMech) : rubric.score;
     accumulator[displayName] = {
-      score: rubric.score,
-      level: rubric.level,
+      score,
+      level: toRiskLevel(score),
     };
     return accumulator;
   }, {});
@@ -2316,7 +2201,20 @@ function contributorMatchesIngredient(contributor: ScoreContributor, ingredientN
   }
 
   const rule = menuTraitRulesByKey.get(contributor.key as MenuBaseFoodCategoryKey | MenuRiskModifierKey);
-  return Boolean(rule && firstMenuTermMatch(ingredient, rule.terms));
+  if (!rule) {
+    return false;
+  }
+  if (firstMenuTermMatch(ingredient, rule.terms)) {
+    return true;
+  }
+  // Singular/plural-tolerant token match so e.g. "potato chip" maps to the
+  // fried "chips" term and the ingredient row agrees with the headline driver.
+  const stem = (word: string) => word.replace(/s$/, '');
+  const ingredientTokens = new Set(ingredient.split(' ').filter(Boolean).map(stem));
+  return rule.terms.some((term) => {
+    const termTokens = normalizeMenuScoringText(term).split(' ').filter(Boolean).map(stem);
+    return termTokens.length > 0 && termTokens.every((token) => ingredientTokens.has(token));
+  });
 }
 
 function possibleTriggersFromContributorsAndIngredients(
@@ -2433,7 +2331,7 @@ function modelRubricContributors(item: MenuItemAnalysis, profile: UserProfile | 
       continue;
     }
 
-    const contributor = modelRubricContributor(signal, profile);
+    const contributor = modelRubricContributor(signal, profile, item);
     if (!contributor) {
       continue;
     }
@@ -2592,12 +2490,10 @@ function calibrateContributorForProfile(contributor: ScoreContributor, profile: 
   };
 }
 
-function hasExtremeRiskStack(contributors: ScoreContributor[], profile: UserProfile | null) {
-  const positiveKeys = new Set(
-    contributors
-      .filter((contributor) => contributor.points > 0)
-      .map((contributor) => contributor.key),
-  );
+function hasExtremeRiskStack(_contributors: ScoreContributor[], profile: UserProfile | null) {
+  // Only a severe or dense-known-risk profile can push a meal past the 80 soft
+  // cap toward a near-100 reading. Meal traits alone never unlock it — letting a
+  // single fried/spicy item unlock 100 was the original over-scoring bug.
   const severeProfile =
     severityRiskIndex(profile?.symptomSeverityBaseline) >= 4 &&
     frequencyRiskIndex(profile?.symptomFrequency) >= 3;
@@ -2605,16 +2501,23 @@ function hasExtremeRiskStack(contributors: ScoreContributor[], profile: UserProf
     (profile?.knownConditions.length ?? 0) >= 4 &&
     (profile?.knownIngredientSensitivities.length ?? 0) >= 5;
 
-  return (
-    severeProfile ||
-    denseKnownRiskProfile ||
-    positiveKeys.has('fried_or_crispy') ||
-    positiveKeys.has('large_or_loaded_portion') ||
-    positiveKeys.has('spicy_heat') ||
-    positiveKeys.has('alcohol') ||
-    positiveKeys.has('sweet_polyol') ||
-    positiveKeys.has('raw_or_undercooked')
-  );
+  return severeProfile || denseKnownRiskProfile;
+}
+
+// Saturating combine (soft knee): below the knee the contributor sum is linear
+// (preserving calibrated mid-range behavior); above it, extra load compresses
+// exponentially toward the ceiling so stacking many triggers asymptotes toward
+// 100 instead of additively blowing past it. Server-only (no client mirror).
+const SATURATION_KNEE = 58;
+const SATURATION_SCALE = 45;
+
+function combineSaturating(contributors: ScoreContributor[]) {
+  const CEIL = 100;
+  const additive = contributors.reduce((total, contributor) => total + contributor.points, 0);
+  if (additive <= SATURATION_KNEE) {
+    return additive;
+  }
+  return SATURATION_KNEE + (CEIL - SATURATION_KNEE) * (1 - Math.exp(-(additive - SATURATION_KNEE) / SATURATION_SCALE));
 }
 
 function finalizeFoodRiskScore(rawScore: number, contributors: ScoreContributor[], profile: UserProfile | null) {
@@ -2628,7 +2531,6 @@ function finalizeFoodRiskScore(rawScore: number, contributors: ScoreContributor[
 
 function scoreFoodRiskEntity(
   item: MenuItemAnalysis,
-  result: { overallRiskScore: number; possibleTriggers: string[] },
   profile: UserProfile | null,
   insights: IngredientInsight[],
 ) {
@@ -2643,18 +2545,6 @@ function scoreFoodRiskEntity(
       reason: 'Every menu item starts with a small baseline before ingredient and prep traits are applied.',
     },
   ];
-
-  const profileBonus = Math.max(0, Math.round(result.overallRiskScore * 0.12) - Math.round(basePoints * 0.2));
-  if (profileBonus > 0) {
-    contributors.push({
-      key: 'profile_context',
-      label: 'Profile context',
-      points: Math.min(profileBonus, 6),
-      evidence: 'profile',
-      source: result.possibleTriggers.slice(0, 2).join(', ') || 'condition profile',
-      reason: 'The food-scan scorer found ingredient pressure for your current profile.',
-    });
-  }
 
   const modelContributors = modelRubricContributors(item, profile).map((contributor) =>
     calibrateContributorForProfile(contributor, profile),
@@ -2697,7 +2587,7 @@ function scoreFoodRiskEntity(
     contributors.push(calibrateContributorForProfile(unknown, profile));
   }
 
-  const rawScore = contributors.reduce((total, contributor) => total + contributor.points, 0);
+  const rawScore = combineSaturating(contributors);
   const score = Math.max(5, finalizeFoodRiskScore(rawScore, contributors, profile));
   const sortedContributors = contributors
     .filter((contributor) => contributor.points !== 0)
@@ -2710,15 +2600,6 @@ function scoreFoodRiskEntity(
     contributors: sortedContributors,
     confidence: menuScoringConfidence(item, sortedContributors),
   };
-}
-
-function scoreMenuItemWithRubric(
-  item: MenuItemAnalysis,
-  result: ScanResult,
-  profile: UserProfile | null,
-  insights: IngredientInsight[],
-) {
-  return scoreFoodRiskEntity(item, result, profile, insights);
 }
 
 function menuDisplayTriggers(_item: MenuItemAnalysis, result: ScanResult, contributors: ScoreContributor[] = []) {
@@ -2990,6 +2871,7 @@ function menuResultItem(
   displayOrder: number,
   scoreContributors: ScoreContributor[] = [],
   scoringConfidence: IngredientConfidence = item?.confidence ?? 'medium',
+  dietEvaluations = item ? evaluateDietForMenuItem(item, []) : [],
 ): ScanMenuItemResult {
   const ingredients = [...(item?.extractedIngredients ?? []), ...(item?.inferredIngredients ?? [])];
   const triggerSet = new Set(option.triggerIngredients.map(normalizeKey));
@@ -3020,7 +2902,7 @@ function menuResultItem(
         evidence: ingredient.evidence,
         confidence: ingredient.confidence,
         componentName: ingredient.component ?? option.name,
-        reason: ingredientRiskReason(canonicalName, level, triggerMatch, ingredient.evidence),
+        reason: '',
         displayOrder: index,
       };
     });
@@ -3047,7 +2929,7 @@ function menuResultItem(
       evidence: 'inferred',
       confidence: triggerMatch ? 'medium' : 'low',
       componentName: option.name,
-      reason: ingredientRiskReason(trigger, level, triggerMatch, 'inferred'),
+      reason: '',
       displayOrder: index,
     };
   });
@@ -3072,6 +2954,7 @@ function menuResultItem(
     whyThisScore: option.reasons[0] ?? riskReason(option.personalizedRiskLevel, option.name, option.triggerIngredients),
     gutRecommendation: option.saferModification,
     ingredientRisks: ingredientRisks.length ? ingredientRisks : fallbackIngredientRisks,
+    dietEvaluations,
   };
 }
 
@@ -3141,7 +3024,18 @@ export function computeMenuScanResultFromExtraction(
       index + 1,
       recommendationKindForTier(tier),
     );
-    return menuResultItem(recommendation, entry.item, tier, index, entry.scoreContributors, entry.scoringConfidence);
+    return menuResultItem(
+      recommendation,
+      entry.item,
+      tier,
+      index,
+      entry.scoreContributors,
+      entry.scoringConfidence,
+      entry.result.dietEvaluations.map((evaluation) => ({
+        ...evaluation,
+        menuItemSourceId: entry.item.id,
+      })),
+    );
   });
   const bestOptions = rankedMenuItems
     .filter((item) => item.tier === 'best_for_you')
@@ -3189,6 +3083,7 @@ export function computeMenuScanResultFromExtraction(
     summary: finalizedMenuAnalysis.summary,
     conditionRisks: [],
     ingredientRisks: [],
+    dietEvaluations: [],
     menuResult,
     structuredAnalysis: {
       dishName: menuAnalysis.menuTitle || 'Menu scan',
