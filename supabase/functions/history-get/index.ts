@@ -17,14 +17,16 @@ serve(async (request) => {
     const user = await requireUser(request);
     const admin = createAdminClient();
     await ensureUserRow(admin, user);
-    const body = request.method === 'POST' ? await readJsonBody<{ page?: number; pageSize?: number }>(request) : {};
+    const body = request.method === 'POST'
+      ? await readJsonBody<{ page?: number; pageSize?: number; includeDailyReports?: boolean }>(request)
+      : {};
     const history = await getPaginatedScanHistory(admin, user.id, body);
     return jsonResponse({
       page: history.page,
       pageSize: history.pageSize,
       hasMore: history.hasMore,
       scans: history.scans,
-      dailyReports: history.dailyReports,
+      ...(history.dailyReports ? { dailyReports: history.dailyReports } : {}),
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'unauthorized') {

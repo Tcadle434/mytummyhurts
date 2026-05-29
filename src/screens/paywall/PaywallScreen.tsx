@@ -6,7 +6,6 @@ import { usePlacement } from 'expo-superwall';
 
 import { AppScreen } from '../../components/common/UI';
 import { env, isSuperwallConfigured } from '../../config/env';
-import { onboardingSteps } from '../../data/onboarding';
 import { remoteConfig } from '../../config/remoteConfig';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
@@ -22,8 +21,6 @@ export function PaywallScreen({ navigation }: Props) {
   const selectPlan = useAppStore((state) => state.selectPlan);
   const completePurchase = useAppStore((state) => state.completePurchase);
   const stageEntitlementAccess = useAppStore((state) => state.stageEntitlementAccess);
-  const setOnboardingStepIndex = useAppStore((state) => state.setOnboardingStepIndex);
-  const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [busyIntent, setBusyIntent] = useState<'subscribe' | 'restore' | null>(null);
   const { registerPlacement, state } = usePlacement({
@@ -111,12 +108,6 @@ export function PaywallScreen({ navigation }: Props) {
     }
   }
 
-  function returnToOnboarding() {
-    setOnboardingStepIndex(onboardingSteps.length - 1);
-    setOnboardingStage('flow');
-    navigation.replace('OnboardingFlow');
-  }
-
   return (
     <AppScreen scroll={false} contentContainerStyle={styles.screenContent}>
       <PaywallOfferContent
@@ -132,7 +123,6 @@ export function PaywallScreen({ navigation }: Props) {
         onPrivacy={() => {
           void openLegalSurface(env.privacyUrl, () => rootNavigation.navigate('LegalDocument', { document: 'privacy' }));
         }}
-        onBack={returnToOnboarding}
       />
     </AppScreen>
   );

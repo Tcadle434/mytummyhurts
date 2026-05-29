@@ -3,6 +3,10 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.99.1';
 import {
   ConditionIngredientInsight,
   DailyGutReport,
+  DietEvaluation,
+  DietFitStatus,
+  DietPreference,
+  DietPreferenceKey,
   ExtractionImageDetail,
   ExtractedIngredient,
   GutScoreDriver,
@@ -40,6 +44,12 @@ import {
   type MenuRiskModifierKey,
   type MenuRubricEvidence,
 } from './menuRubric.ts';
+import {
+  dietFitStatusValues,
+  dietPreferenceLabels,
+  normalizeDietPreferences,
+  normalizeDietPreferenceKey,
+} from './dietRubric.ts';
 
 const mealImagesBucket = 'meal-images';
 
@@ -481,6 +491,7 @@ type ScanDetailRows = {
   inputs: Record<string, unknown>[];
   conditionRisks: Record<string, unknown>[];
   ingredientRisks: Record<string, unknown>[];
+  dietEvaluations: Record<string, unknown>[];
   menuItems: Record<string, unknown>[];
   groceryProducts: Map<string, Record<string, unknown>>;
 };
@@ -614,6 +625,38 @@ function mapIngredientRiskRow(row: Record<string, unknown>): ScanIngredientRisk 
   };
 }
 
+function asDietPreferenceKey(value: unknown): DietPreferenceKey {
+  return normalizeDietPreferenceKey(value) ?? 'anti_inflammatory';
+}
+
+function asDietFitStatus(value: unknown): DietFitStatus {
+  return dietFitStatusValues.includes(value as DietFitStatus) ? (value as DietFitStatus) : 'unknown';
+}
+
+function mapDietEvaluationRow(row: Record<string, unknown>): DietEvaluation {
+  const dietKey = asDietPreferenceKey(row.diet_key);
+  return {
+    id: row.id ? String(row.id) : undefined,
+    menuItemId: row.menu_item_id ? String(row.menu_item_id) : undefined,
+    menuItemSourceId: typeof row.menu_item_source_id === 'string' ? row.menu_item_source_id : undefined,
+    dietKey,
+    dietLabel: String(row.diet_label ?? dietPreferenceLabels[dietKey]),
+    status: asDietFitStatus(row.status),
+    confidence: asConfidence(row.confidence),
+    reason: String(row.reason ?? ''),
+    supportingFactors: asStringArray(row.supporting_factors),
+    conflicts: asStringArray(row.conflicts),
+    missingInfo: asStringArray(row.missing_info),
+    scoreAdjustment: Number(row.score_adjustment ?? 0),
+    modelStatus: row.model_status ? asDietFitStatus(row.model_status) : undefined,
+    modelConfidence: row.model_confidence ? asConfidence(row.model_confidence) : undefined,
+    modelReason: typeof row.model_reason === 'string' ? row.model_reason : undefined,
+    acceptedModelStatus: Boolean(row.accepted_model_status),
+    rubricVersion: String(row.rubric_version ?? ''),
+    displayOrder: Number(row.display_order ?? 0),
+  };
+}
+
 function ingredientRiskToExtracted(ingredient: ScanIngredientRisk): ExtractedIngredient {
   return {
     rawName: ingredient.rawName,
@@ -691,7 +734,12 @@ function groceryProductSummary(row: Record<string, unknown> | undefined): ScanRe
   };
 }
 
-function buildMenuResult(scan: Record<string, unknown>, menuRows: Record<string, unknown>[], ingredientRisks: ScanIngredientRisk[]): MenuScanResult | undefined {
+function buildMenuResult(
+  scan: Record<string, unknown>,
+  menuRows: Record<string, unknown>[],
+  ingredientRisks: ScanIngredientRisk[],
+  dietEvaluations: DietEvaluation[],
+): MenuScanResult | undefined {
   if (!menuRows.length) {
     return undefined;
   }
@@ -726,6 +774,9 @@ function buildMenuResult(scan: Record<string, unknown>, menuRows: Record<string,
         ingredientRisks: ingredientRisks
           .filter((ingredient) => ingredient.menuItemId === dbId || ingredient.menuItemSourceId === sourceItemId)
           .sort((left, right) => left.displayOrder - right.displayOrder),
+        dietEvaluations: dietEvaluations
+          .filter((evaluation) => evaluation.menuItemId === dbId || evaluation.menuItemSourceId === sourceItemId)
+          .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0)),
       };
     })
     .sort((left, right) => left.displayOrder - right.displayOrder);
@@ -749,7 +800,7 @@ async function fetchScanSummaryInputRows(admin: SupabaseClient, scanRows: Record
 
   const { data, error } = await admin
     .from('scan_inputs')
-    .select('scan_id, storage_path, page_index')
+    .select('scan_id, thumbnail_storage_path, page_index')
     .in('scan_id', scanIds)
     .eq('input_kind', 'image')
     .order('page_index', { ascending: true });
@@ -763,6 +814,24 @@ async function fetchScanSummaryInputRows(admin: SupabaseClient, scanRows: Record
   };
 }
 
+function displayStoragePaths(inputs: Record<string, unknown>[]) {
+  const paths = new Set<string>();
+  for (const input of inputs) {
+    const thumbnailPath = input.thumbnail_storage_path;
+    if (typeof thumbnailPath === 'string' && thumbnailPath.length > 0) {
+      paths.add(thumbnailPath);
+      continue;
+    }
+
+    const originalPath = input.storage_path;
+    if (typeof originalPath === 'string' && originalPath.length > 0) {
+      paths.add(originalPath);
+    }
+  }
+
+  return Array.from(paths);
+}
+
 async function fetchScanDetailRows(admin: SupabaseClient, scanRows: Record<string, unknown>[]): Promise<ScanDetailRows> {
   const scanIds = scanRows.map((row) => String(row.id)).filter(Boolean);
   const groceryProductIds = scanRows
@@ -774,6 +843,7 @@ async function fetchScanDetailRows(admin: SupabaseClient, scanRows: Record<strin
       inputs: [],
       conditionRisks: [],
       ingredientRisks: [],
+      dietEvaluations: [],
       menuItems: [],
       groceryProducts: new Map(),
     };
@@ -783,19 +853,21 @@ async function fetchScanDetailRows(admin: SupabaseClient, scanRows: Record<strin
     { data: inputs, error: inputsError },
     { data: conditionRisks, error: conditionRisksError },
     { data: ingredientRisks, error: ingredientRisksError },
+    { data: dietEvaluations, error: dietEvaluationsError },
     { data: menuItems, error: menuItemsError },
     { data: groceryProducts, error: groceryProductsError },
   ] = await Promise.all([
     admin.from('scan_inputs').select('*').in('scan_id', scanIds).order('page_index', { ascending: true }),
     admin.from('scan_condition_risks').select('*').in('scan_id', scanIds).order('display_order', { ascending: true }),
     admin.from('scan_ingredient_risks').select('*').in('scan_id', scanIds).order('display_order', { ascending: true }),
+    admin.from('scan_diet_evaluations').select('*').in('scan_id', scanIds).order('display_order', { ascending: true }),
     admin.from('menu_items').select('*').in('scan_id', scanIds).order('display_order', { ascending: true }),
     groceryProductIds.length
       ? admin.from('grocery_products').select('*').in('id', groceryProductIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
-  const error = inputsError ?? conditionRisksError ?? ingredientRisksError ?? menuItemsError ?? groceryProductsError;
+  const error = inputsError ?? conditionRisksError ?? ingredientRisksError ?? dietEvaluationsError ?? menuItemsError ?? groceryProductsError;
   if (error) {
     throw error;
   }
@@ -804,21 +876,22 @@ async function fetchScanDetailRows(admin: SupabaseClient, scanRows: Record<strin
     inputs: (inputs ?? []) as Record<string, unknown>[],
     conditionRisks: (conditionRisks ?? []) as Record<string, unknown>[],
     ingredientRisks: (ingredientRisks ?? []) as Record<string, unknown>[],
+    dietEvaluations: (dietEvaluations ?? []) as Record<string, unknown>[],
     menuItems: (menuItems ?? []) as Record<string, unknown>[],
     groceryProducts: new Map((groceryProducts ?? []).map((row) => [String(row.id), row as Record<string, unknown>])),
   };
 }
 
-function mapScanHistorySummary(
+export function mapScanHistorySummary(
   row: Record<string, unknown>,
   summaryInputs: ScanSummaryInputRows,
   signedUrlMap: Map<string, string>,
 ): ScanHistorySummary {
   const scanId = String(row.id);
   const title = String(row.title ?? 'Unknown meal');
-  const imageStoragePath = summaryInputs.inputs.find(
-    (input) => String(input.scan_id) === scanId && typeof input.storage_path === 'string',
-  )?.storage_path;
+  const thumbnailStoragePath = summaryInputs.inputs.find(
+    (input) => String(input.scan_id) === scanId && typeof input.thumbnail_storage_path === 'string',
+  )?.thumbnail_storage_path;
 
   return {
     id: scanId,
@@ -840,7 +913,7 @@ function mapScanHistorySummary(
     dishName: title,
     overallRiskScore: Number(row.overall_risk_score ?? 0),
     overallRiskLevel: asRiskLevel(row.overall_risk_level),
-    imageUri: typeof imageStoragePath === 'string' ? signedUrlMap.get(imageStoragePath) : undefined,
+    imageUri: typeof thumbnailStoragePath === 'string' ? signedUrlMap.get(thumbnailStoragePath) : undefined,
   };
 }
 
@@ -945,6 +1018,7 @@ export async function completeReservedScanAnalysis(
     rubricVersion?: string | null;
     conditionRisks: Array<Record<string, unknown>>;
     ingredientRisks: Array<Record<string, unknown>>;
+    dietEvaluations?: Array<Record<string, unknown>>;
     menuItems?: Array<Record<string, unknown>>;
     groceryProduct?: Record<string, unknown> | null;
     inputRefs: Array<Record<string, unknown>>;
@@ -968,6 +1042,7 @@ export async function completeReservedScanAnalysis(
     p_rubric_version: params.rubricVersion ?? null,
     p_condition_risks: params.conditionRisks,
     p_ingredient_risks: params.ingredientRisks,
+    p_diet_evaluations: params.dietEvaluations ?? [],
     p_menu_items: params.menuItems ?? [],
     p_grocery_product: params.groceryProduct ?? null,
     p_input_refs: params.inputRefs,
@@ -1166,6 +1241,63 @@ export async function getConditionIngredientInsights(
   return (data ?? []).map((row) => mapConditionInsightRow(row as Record<string, unknown>));
 }
 
+export async function getUserDietPreferences(admin: SupabaseClient, userId: string): Promise<DietPreference[]> {
+  const { data, error } = await admin
+    .from('user_diet_preferences')
+    .select('diet_key, diet_label, strictness, source')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('priority', { ascending: true });
+
+  if (error) {
+    if (String(error.message ?? '').includes('user_diet_preferences')) {
+      return [];
+    }
+    throw error;
+  }
+
+  return normalizeDietPreferences(
+    (data ?? []).map((row) => ({
+      key: row.diet_key,
+      label: row.diet_label,
+      strictness: row.strictness,
+      source: row.source,
+    })),
+  );
+}
+
+export async function replaceUserDietPreferences(
+  admin: SupabaseClient,
+  userId: string,
+  preferences: DietPreference[],
+) {
+  const normalizedPreferences = normalizeDietPreferences(preferences);
+  const { error: deleteError } = await admin.from('user_diet_preferences').delete().eq('user_id', userId);
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  if (!normalizedPreferences.length) {
+    return;
+  }
+
+  const { error: insertError } = await admin.from('user_diet_preferences').insert(
+    normalizedPreferences.map((preference, index) => ({
+      user_id: userId,
+      diet_key: preference.key,
+      diet_label: preference.label || dietPreferenceLabels[preference.key],
+      strictness: preference.strictness,
+      source: preference.source,
+      priority: index,
+      status: 'active',
+    })),
+  );
+
+  if (insertError) {
+    throw insertError;
+  }
+}
+
 export async function getGutScoreSnapshots(
   admin: SupabaseClient,
   userId: string,
@@ -1219,10 +1351,11 @@ export async function getProfile(admin: SupabaseClient, userId: string): Promise
     return null;
   }
 
-  const [insights, gutScoreSnapshots, gutScoreEvents] = await Promise.all([
+  const [insights, gutScoreSnapshots, gutScoreEvents, dietPreferences] = await Promise.all([
     getInsights(admin, userId),
     getGutScoreSnapshots(admin, userId),
     getGutScoreEvents(admin, userId, 1),
+    getUserDietPreferences(admin, userId),
   ]);
   const stomachProfileBlob = (data.stomach_profile_blob as StomachProfile | null) ?? null;
 
@@ -1240,6 +1373,7 @@ export async function getProfile(admin: SupabaseClient, userId: string): Promise
       currentEatingPatterns: asStringArray(data.current_eating_patterns),
       lifestyleFactors: asStringArray(data.lifestyle_factors),
       foodsToReintroduce: asStringArray(data.foods_to_reintroduce),
+      dietPreferences,
     },
     insights,
     {
@@ -1336,10 +1470,11 @@ export async function getBillingState(admin: SupabaseClient, userId: string) {
 export async function getPaginatedScanHistory(
   admin: SupabaseClient,
   userId: string,
-  options: { page?: number; pageSize?: number } = {},
+  options: { page?: number; pageSize?: number; includeDailyReports?: boolean } = {},
 ) {
   const page = Math.max(1, Number(options.page ?? 1));
   const pageSize = Math.min(40, Math.max(5, Number(options.pageSize ?? 20)));
+  const includeDailyReports = options.includeDailyReports !== false;
   const offset = (page - 1) * pageSize;
   const rangeEnd = offset + pageSize - 1;
 
@@ -1354,11 +1489,13 @@ export async function getPaginatedScanHistory(
       .eq('analysis_status', 'completed')
       .order('created_at', { ascending: false })
       .range(offset, rangeEnd),
-    admin
-      .from('daily_gut_reports')
-      .select('*')
-      .eq('user_id', userId)
-      .order('local_date', { ascending: false }),
+    includeDailyReports
+      ? admin
+          .from('daily_gut_reports')
+          .select('*')
+          .eq('user_id', userId)
+          .order('local_date', { ascending: false })
+      : Promise.resolve({ data: undefined, error: null }),
   ]);
 
   if (scansError) {
@@ -1372,7 +1509,7 @@ export async function getPaginatedScanHistory(
   const scanRecords = (scanRows ?? []) as Record<string, unknown>[];
   const summaryInputs = await fetchScanSummaryInputRows(admin, scanRecords);
   const storagePaths = summaryInputs.inputs
-    .map((row) => row.storage_path)
+    .map((row) => row.thumbnail_storage_path)
     .filter((value): value is string => typeof value === 'string' && value.length > 0);
   const signedUrlMap = await createSignedUrlMap(admin, storagePaths);
 
@@ -1381,7 +1518,9 @@ export async function getPaginatedScanHistory(
     pageSize,
     hasMore: Number(count ?? 0) > page * pageSize,
     scans: scanRecords.map((row) => mapScanHistorySummary(row, summaryInputs, signedUrlMap)),
-    dailyReports: (reportRows ?? []).map((row) => mapDailyReportRow(row as Record<string, unknown>)),
+    dailyReports: includeDailyReports
+      ? (reportRows ?? []).map((row) => mapDailyReportRow(row as Record<string, unknown>))
+      : undefined,
   };
 }
 
@@ -1389,8 +1528,17 @@ export function mapScanRow(row: Record<string, unknown>, details: ScanDetailRows
   const scanId = String(row.id);
   const title = String(row.title ?? 'Unknown meal');
   const inputs = details.inputs.filter((input) => String(input.scan_id) === scanId);
-  const imageStoragePath = inputs.find((input) => typeof input.storage_path === 'string')?.storage_path;
-  const signedUrl = typeof imageStoragePath === 'string' ? signedUrlMap.get(imageStoragePath) : undefined;
+  const primaryImageInput = inputs.find(
+    (input) => typeof input.thumbnail_storage_path === 'string' || typeof input.storage_path === 'string',
+  );
+  const thumbnailStoragePath = primaryImageInput?.thumbnail_storage_path;
+  const imageStoragePath = primaryImageInput?.storage_path;
+  const signedUrl =
+    typeof thumbnailStoragePath === 'string'
+      ? signedUrlMap.get(thumbnailStoragePath)
+      : typeof imageStoragePath === 'string'
+        ? signedUrlMap.get(imageStoragePath)
+        : undefined;
   const conditionRisks = details.conditionRisks
     .filter((risk) => String(risk.scan_id) === scanId)
     .map(mapConditionRiskRow)
@@ -1399,8 +1547,12 @@ export function mapScanRow(row: Record<string, unknown>, details: ScanDetailRows
     .filter((risk) => String(risk.scan_id) === scanId)
     .map(mapIngredientRiskRow)
     .sort((left, right) => left.displayOrder - right.displayOrder);
+  const dietEvaluations = details.dietEvaluations
+    .filter((evaluation) => String(evaluation.scan_id) === scanId)
+    .map(mapDietEvaluationRow)
+    .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0));
   const menuRows = details.menuItems.filter((menuItem) => String(menuItem.scan_id) === scanId);
-  const menuResult = buildMenuResult(row, menuRows, ingredientRisks);
+  const menuResult = buildMenuResult(row, menuRows, ingredientRisks, dietEvaluations);
   const analysisMetadata = asRecord(row.analysis_metadata);
   const baseFoodCategory = asMenuBaseFoodCategory(row.base_food_category);
   const riskModifiers = asMenuRiskModifiers(row.risk_modifiers);
@@ -1501,6 +1653,7 @@ export function mapScanRow(row: Record<string, unknown>, details: ScanDetailRows
     rubricVersion,
     conditionRisks,
     ingredientRisks,
+    dietEvaluations: dietEvaluations.filter((evaluation) => !evaluation.menuItemId && !evaluation.menuItemSourceId),
     menuResult,
     groceryProduct: groceryProductSummary(
       typeof row.grocery_product_id === 'string' ? details.groceryProducts.get(row.grocery_product_id) : undefined,
@@ -1544,9 +1697,7 @@ export async function getScanById(admin: SupabaseClient, scanId: string, userId?
   }
 
   const details = await fetchScanDetailRows(admin, [data as Record<string, unknown>]);
-  const storagePaths = details.inputs
-    .map((row) => row.storage_path)
-    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const storagePaths = displayStoragePaths(details.inputs);
   const signedMap = await createSignedUrlMap(admin, storagePaths);
 
   return mapScanRow(data as Record<string, unknown>, details, signedMap);
@@ -1569,9 +1720,7 @@ export async function getScanByRequestId(admin: SupabaseClient, userId: string, 
   }
 
   const details = await fetchScanDetailRows(admin, [data as Record<string, unknown>]);
-  const storagePaths = details.inputs
-    .map((row) => row.storage_path)
-    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const storagePaths = displayStoragePaths(details.inputs);
   const signedMap = await createSignedUrlMap(admin, storagePaths);
 
   return mapScanRow(data as Record<string, unknown>, details, signedMap);

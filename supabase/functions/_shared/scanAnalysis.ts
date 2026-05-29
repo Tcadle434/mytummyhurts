@@ -14,18 +14,26 @@ import {
 } from './db.ts';
 import { ApiError } from './http.ts';
 import { inlineImageDataUrlByteLength, normalizeInlineImageDataUrl } from './imageData.ts';
+import { enqueueLearningJob } from './learningJobs.ts';
 import { errorMetadata, recordSystemEvent } from './observability.ts';
-import { extractMealFromImageWithAudit, extractMealFromTextWithAudit, extractMenuFromImagesWithAudit } from './openai.ts';
-import { OperationLockBusyError, rebuildInsightsAndProfile } from './profile.ts';
+import {
+  classifyScanImagesWithAudit,
+  extractMealFromImagesWithAudit,
+  extractMealFromTextWithAudit,
+  extractMenuFromImagesWithAudit,
+} from './openai.ts';
+import { fetchOpenFoodFactsProduct, normalizeBarcode } from './openFoodFacts.ts';
 import { computeMenuScanResultFromExtraction, computeScanResultFromStructured } from './scoring.ts';
 
 type ScanAnalyzeBody = {
   requestId?: string;
   sourceType?: string;
   scanCategory?: string;
+  barcode?: string;
   localDate?: string;
   timezone?: string;
   imagePaths?: string[];
+  thumbnailImagePaths?: (string | null)[];
   imageDataUrl?: string;
   imageDataUrls?: string[];
 };
@@ -40,6 +48,11 @@ type AnalyzeReservedScanOptions =
   | {
       kind: 'text';
       text?: string;
+      body: ScanAnalyzeBody;
+    }
+  | {
+      kind: 'barcode';
+      barcode?: string;
       body: ScanAnalyzeBody;
     };
 
@@ -57,7 +70,7 @@ function normalizeRequestId(value: string | undefined) {
 }
 
 function normalizeScanCategory(value: string | undefined) {
-  return value === 'menu' || value === 'grocery' ? value : 'food';
+  return value === 'menu' || value === 'grocery' || value === 'auto' ? value : 'food';
 }
 
 function errorFromReservationFailure(error: unknown): ApiError {
@@ -93,6 +106,30 @@ async function fetchLearningState(admin: SupabaseClient, userId: string) {
   return { profile, insights, conditionInsights };
 }
 
+async function assertScanAllowed(admin: SupabaseClient, userId: string) {
+  const billing = await getBillingState(admin, userId);
+  if (!['trialing', 'active', 'in_grace'].includes(String(billing.subscriptionStatus))) {
+    throw new ApiError('A subscription is required before running scans.', 402, 'subscription_required');
+  }
+
+  if (billing.tokensRemaining <= 0) {
+    throw new ApiError('You are out of scan tokens.', 402, 'token_exhausted');
+  }
+}
+
+function groceryProductCompletionPayload(product: Awaited<ReturnType<typeof fetchOpenFoodFactsProduct>>) {
+  return {
+    barcode: product.barcode,
+    brand: product.brand ?? null,
+    name: product.name,
+    ingredient_text: product.ingredientText,
+    nutrition: product.nutrition,
+    allergens: product.allergens,
+    data_source: product.dataSource,
+    source_confidence: product.sourceConfidence,
+  };
+}
+
 function normalizeImagePaths(options: Extract<AnalyzeReservedScanOptions, { kind: 'image' }>) {
   const paths = [
     ...(Array.isArray(options.imagePaths) ? options.imagePaths : []),
@@ -116,13 +153,34 @@ function normalizeImageDataUrls(options: Extract<AnalyzeReservedScanOptions, { k
   return Array.from(new Set(dataUrls));
 }
 
+function normalizeThumbnailImagePaths(options: Extract<AnalyzeReservedScanOptions, { kind: 'image' }>) {
+  const paths = Array.isArray(options.body.thumbnailImagePaths) ? options.body.thumbnailImagePaths : [];
+  return paths.map((path) => {
+    const normalizedPath = typeof path === 'string' ? path.trim() : '';
+    return normalizedPath || null;
+  });
+}
+
 function buildInputRefs(params: {
   kind: AnalyzeReservedScanOptions['kind'];
   scanCategory: string;
   inputText?: string | null;
+  barcode?: string | null;
   imagePaths: string[];
+  thumbnailImagePaths: (string | null)[];
   imageDataUrls: string[];
 }) {
+  if (params.kind === 'barcode') {
+    return [
+      {
+        input_kind: 'barcode',
+        barcode_value: params.barcode ?? '',
+        page_index: 0,
+        metadata: {},
+      },
+    ];
+  }
+
   if (params.kind === 'text') {
     return [
       {
@@ -134,16 +192,18 @@ function buildInputRefs(params: {
     ];
   }
 
-  const count = Math.max(params.imagePaths.length, params.imageDataUrls.length);
+  const count = Math.max(params.imagePaths.length, params.thumbnailImagePaths.length, params.imageDataUrls.length);
   return Array.from({ length: count }).map((_, index) => ({
     input_kind: 'image',
     image_role: params.scanCategory === 'menu' ? 'menu_page' : params.scanCategory === 'grocery' ? 'product_front' : 'meal',
     storage_path: params.imagePaths[index] ?? null,
+    thumbnail_storage_path: params.thumbnailImagePaths[index] ?? null,
     page_index: index,
     byte_size: params.imageDataUrls[index] ? inlineImageDataUrlByteLength(params.imageDataUrls[index]) : null,
     metadata: {
       inlineImageProvided: Boolean(params.imageDataUrls[index]),
       storagePathProvided: Boolean(params.imagePaths[index]),
+      thumbnailStoragePathProvided: Boolean(params.thumbnailImagePaths[index]),
     },
   }));
 }
@@ -173,10 +233,34 @@ function ingredientRiskPayload(result: ReturnType<typeof computeScanResultFromSt
   }));
 }
 
+function dietEvaluationPayload(
+  evaluations: ReturnType<typeof computeScanResultFromStructured>['dietEvaluations'],
+  menuItemSourceId?: string,
+) {
+  return evaluations.map((evaluation, index) => ({
+    menu_item_source_id: menuItemSourceId ?? evaluation.menuItemSourceId ?? null,
+    diet_key: evaluation.dietKey,
+    diet_label: evaluation.dietLabel,
+    status: evaluation.status,
+    confidence: evaluation.confidence,
+    reason: evaluation.reason,
+    supporting_factors: evaluation.supportingFactors,
+    conflicts: evaluation.conflicts,
+    missing_info: evaluation.missingInfo,
+    score_adjustment: evaluation.scoreAdjustment,
+    model_status: evaluation.modelStatus ?? null,
+    model_confidence: evaluation.modelConfidence ?? null,
+    model_reason: evaluation.modelReason ?? null,
+    accepted_model_status: evaluation.acceptedModelStatus,
+    rubric_version: evaluation.rubricVersion,
+    display_order: evaluation.displayOrder ?? index,
+  }));
+}
+
 function menuResultPayload(result: ReturnType<typeof computeMenuScanResultFromExtraction>) {
   const menu = result.menuResult;
   if (!menu) {
-    return { menuItems: [], ingredientRisks: [] };
+    return { menuItems: [], ingredientRisks: [], dietEvaluations: [] };
   }
 
   const items = menu.items.length
@@ -216,6 +300,7 @@ function menuResultPayload(result: ReturnType<typeof computeMenuScanResultFromEx
         display_order: ingredient.displayOrder,
       })),
     ),
+    dietEvaluations: items.flatMap((item) => dietEvaluationPayload(item.dietEvaluations, item.sourceItemId)),
   };
 }
 
@@ -248,7 +333,7 @@ async function buildCompletedResponse(
     scanId: string;
     requestId: string;
     deduped: boolean;
-    learningSyncStatus: 'updated' | 'locked' | 'failed' | 'skipped' | 'not_applicable';
+    learningSyncStatus: 'updated' | 'locked' | 'failed' | 'queued' | 'skipped' | 'not_applicable';
   },
 ) {
   const [scan, billing] = await Promise.all([
@@ -279,17 +364,46 @@ export async function analyzeReservedScan(
   options: AnalyzeReservedScanOptions,
 ) {
   const requestId = normalizeRequestId(options.body.requestId);
-  const scanCategory = normalizeScanCategory(options.body.scanCategory);
-  const sourceType = options.body.sourceType ?? (options.kind === 'image' ? 'camera' : 'manual_text');
+  const requestedScanCategory = normalizeScanCategory(options.body.scanCategory);
+  let scanCategory: 'food' | 'menu' | 'grocery' =
+    requestedScanCategory === 'menu' || requestedScanCategory === 'grocery'
+      ? requestedScanCategory
+      : 'food';
+  const sourceType = options.body.sourceType ?? (options.kind === 'image' ? 'camera' : options.kind === 'barcode' ? 'barcode' : 'manual_text');
   const inputText = options.kind === 'text' ? options.text?.trim() : null;
+  const barcode = options.kind === 'barcode' ? normalizeBarcode(options.barcode ?? options.body.barcode) : null;
   const imagePaths = options.kind === 'image' ? normalizeImagePaths(options) : [];
+  const thumbnailImagePaths = options.kind === 'image' ? normalizeThumbnailImagePaths(options) : [];
   const imageDataUrls = options.kind === 'image' ? normalizeImageDataUrls(options) : [];
-  const inputRefs = buildInputRefs({ kind: options.kind, scanCategory, inputText, imagePaths, imageDataUrls });
+  let autoClassification: Awaited<ReturnType<typeof classifyScanImagesWithAudit>> | null = null;
   let reservation;
 
   if (options.kind === 'text' && !inputText) {
     throw new ApiError('A meal description is required.', 400, 'missing_text');
   }
+
+  if (options.kind === 'barcode' && !barcode) {
+    throw new ApiError('Scan a valid product barcode.', 400, 'invalid_barcode');
+  }
+
+  if (options.kind === 'image' && requestedScanCategory === 'auto') {
+    await assertScanAllowed(admin, user.id);
+    const classificationImageUrls = imageDataUrls.length
+      ? imageDataUrls
+      : await Promise.all(imagePaths.map((path) => createRequiredSignedImageUrl(admin, path, 'meal')));
+    autoClassification = await classifyScanImagesWithAudit(classificationImageUrls);
+    scanCategory = autoClassification.result.category;
+  }
+
+  const inputRefs = buildInputRefs({
+    kind: options.kind,
+    scanCategory,
+    inputText,
+    barcode,
+    imagePaths,
+    thumbnailImagePaths,
+    imageDataUrls,
+  });
 
   let scanCompleted = false;
 
@@ -319,6 +433,8 @@ export async function analyzeReservedScan(
       requestStatus: reservation.requestStatus,
       analysisStatus: reservation.analysisStatus,
       scanCategory,
+      requestedScanCategory,
+      autoClassification: autoClassification?.result ?? null,
       sourceType,
       tokensRemaining: reservation.tokensRemaining,
     },
@@ -345,12 +461,94 @@ export async function analyzeReservedScan(
     throw errorFromExistingFailure(reservation.errorCode, reservation.errorMessage, requestId);
   }
 
+  if (autoClassification?.audits.length) {
+    await recordScanAiAuditLogs(admin, {
+      userId: user.id,
+      scanId: reservation.scanId,
+      requestId,
+      logs: autoClassification.audits,
+    });
+  }
+
   try {
     const [profile, insights] = await Promise.all([getProfile(admin, user.id), getInsights(admin, user.id)]);
     const context = {
       knownConditions: profile?.knownConditions ?? [],
       knownIngredients: profile?.knownIngredientSensitivities ?? [],
+      dietPreferences: profile?.dietPreferences ?? [],
     };
+
+    if (options.kind === 'barcode') {
+      const product = await fetchOpenFoodFactsProduct(barcode!);
+      const productDescription = [
+        `Packaged grocery product: ${product.brand ? `${product.brand} ` : ''}${product.name}.`,
+        `Barcode: ${product.barcode}.`,
+        `Ingredients: ${product.ingredientText}.`,
+        product.allergens.length ? `Allergens: ${product.allergens.join(', ')}.` : '',
+      ].filter(Boolean).join(' ');
+      const extractionResult = await extractMealFromTextWithAudit(productDescription, context);
+      const extraction = extractionResult.result;
+      await recordScanAiAuditLogs(admin, {
+        userId: user.id,
+        scanId: reservation.scanId,
+        requestId,
+        logs: extractionResult.audits,
+      });
+
+      const result = computeScanResultFromStructured(extraction, profile, insights);
+      const finalized = await completeReservedScanAnalysis(admin, {
+        userId: user.id,
+        scanId: reservation.scanId,
+        title: product.brand ? `${product.brand} ${product.name}` : product.name,
+        overallRiskScore: result.overallRiskScore,
+        overallRiskLevel: result.overallRiskLevel,
+        pipTake: result.pipTake ?? result.interpretation,
+        summary: result.summary ?? result.interpretation,
+        baseFoodCategory: result.baseFoodCategory as unknown as Record<string, unknown> | null | undefined,
+        riskModifiers: (result.riskModifiers ?? []) as unknown as Array<Record<string, unknown>>,
+        scoreContributors: (result.scoreContributors ?? []) as unknown as Array<Record<string, unknown>>,
+        scoringConfidence: result.scoringConfidence ?? product.sourceConfidence,
+        gutRecommendation: result.gutRecommendation ?? null,
+        rubricVersion: result.rubricVersion ?? null,
+        conditionRisks: conditionRiskPayload(result),
+        ingredientRisks: ingredientRiskPayload(result),
+        dietEvaluations: dietEvaluationPayload(result.dietEvaluations),
+        groceryProduct: groceryProductCompletionPayload(product),
+        inputRefs,
+        analysisMetadata: {
+          ...analysisMetadata(result),
+          requestedScanCategory,
+          barcodeDataSource: product.dataSource,
+        },
+        gutScoreImpact: result.gutScoreImpact as Record<string, unknown> | null | undefined,
+      });
+      scanCompleted = true;
+
+      await recordSystemEvent(admin, {
+        eventType: 'scan_analysis_completed',
+        userId: user.id,
+        operation: 'scan_analysis',
+        entityType: 'scan',
+        entityId: finalized.scanId,
+        requestId,
+        metadata: {
+          scanCategory,
+          requestedScanCategory,
+          sourceType,
+          barcode: product.barcode,
+          tokensRemaining: finalized.tokensRemaining,
+          learningSyncStatus: 'not_applicable',
+        },
+      });
+
+      return buildCompletedResponse(admin, {
+        userId: user.id,
+        scanId: finalized.scanId,
+        requestId,
+        deduped: false,
+        learningSyncStatus: 'not_applicable',
+      });
+    }
 
     if (scanCategory === 'menu') {
       if (options.kind !== 'image') {
@@ -433,9 +631,14 @@ export async function analyzeReservedScan(
         rubricVersion: result.rubricVersion ?? null,
         conditionRisks: [],
         ingredientRisks: menuPayload.ingredientRisks,
+        dietEvaluations: menuPayload.dietEvaluations,
         menuItems: menuPayload.menuItems,
         inputRefs,
-        analysisMetadata: analysisMetadata(result),
+        analysisMetadata: {
+          ...analysisMetadata(result),
+          requestedScanCategory,
+          autoClassification: autoClassification?.result ?? null,
+        },
         gutScoreImpact: result.gutScoreImpact as Record<string, unknown> | null | undefined,
       });
       scanCompleted = true;
@@ -449,6 +652,8 @@ export async function analyzeReservedScan(
         requestId,
         metadata: {
           scanCategory,
+          requestedScanCategory,
+          autoClassification: autoClassification?.result ?? null,
           sourceType,
           tokensRemaining: finalized.tokensRemaining,
           learningSyncStatus: 'not_applicable',
@@ -467,12 +672,14 @@ export async function analyzeReservedScan(
       });
     }
 
+    const mealImageUrls = options.kind === 'image'
+      ? imageDataUrls.length
+        ? imageDataUrls
+        : await Promise.all(imagePaths.map((path) => createRequiredSignedImageUrl(admin, path, 'meal')))
+      : [];
     const extractionResult =
       options.kind === 'image'
-        ? await extractMealFromImageWithAudit(
-            imageDataUrls[0] ?? await createRequiredSignedImageUrl(admin, imagePaths[0], 'meal'),
-            context,
-          )
+        ? await extractMealFromImagesWithAudit(mealImageUrls, context)
         : await extractMealFromTextWithAudit(inputText!, context);
     const extraction = extractionResult.result;
     await recordScanAiAuditLogs(admin, {
@@ -496,7 +703,7 @@ export async function analyzeReservedScan(
       extraction,
       profile,
       insights,
-      options.kind === 'image' ? await createSignedStorageUrl(admin, options.imagePath) ?? undefined : undefined,
+      options.kind === 'image' ? await createSignedStorageUrl(admin, imagePaths[0]) ?? undefined : undefined,
     );
 
     const finalized = await completeReservedScanAnalysis(admin, {
@@ -515,27 +722,38 @@ export async function analyzeReservedScan(
       rubricVersion: result.rubricVersion ?? null,
       conditionRisks: conditionRiskPayload(result),
       ingredientRisks: ingredientRiskPayload(result),
+      dietEvaluations: dietEvaluationPayload(result.dietEvaluations),
       inputRefs,
-      analysisMetadata: analysisMetadata(result),
+      analysisMetadata: {
+        ...analysisMetadata(result),
+        requestedScanCategory,
+        autoClassification: autoClassification?.result ?? null,
+      },
       gutScoreImpact: result.gutScoreImpact as Record<string, unknown> | null | undefined,
     });
     scanCompleted = true;
 
-    let learningSyncStatus: 'updated' | 'locked' | 'failed' | 'not_applicable' =
-      scanCategory === 'food' ? 'updated' : 'not_applicable';
+    let learningSyncStatus: 'queued' | 'failed' | 'not_applicable' =
+      scanCategory === 'food' ? 'queued' : 'not_applicable';
 
     if (scanCategory === 'food') {
       try {
-        await rebuildInsightsAndProfile(admin, user.id, {
+        await enqueueLearningJob(admin, {
+          userId: user.id,
           eventType: 'scan_completed',
           sourceType: 'scan',
           sourceId: finalized.scanId,
+          metadata: {
+            requestId,
+            scanCategory,
+            sourceType,
+          },
         });
       } catch (error) {
-        learningSyncStatus = error instanceof OperationLockBusyError ? 'locked' : 'failed';
+        learningSyncStatus = 'failed';
         await recordSystemEvent(admin, {
-          eventType: 'scan_learning_recompute_failed',
-          severity: error instanceof OperationLockBusyError ? 'warn' : 'error',
+          eventType: 'scan_learning_job_enqueue_failed',
+          severity: 'error',
           userId: user.id,
           operation: 'scan_analysis',
           entityType: 'scan',
@@ -555,6 +773,8 @@ export async function analyzeReservedScan(
       requestId,
       metadata: {
         scanCategory,
+        requestedScanCategory,
+        autoClassification: autoClassification?.result ?? null,
         sourceType,
         tokensRemaining: finalized.tokensRemaining,
         learningSyncStatus,
@@ -596,7 +816,11 @@ export async function analyzeReservedScan(
       error instanceof ApiError
         ? error
         : new ApiError(
-            scanCategory === 'menu' ? 'The menu could not be analyzed.' : 'The meal could not be analyzed.',
+            scanCategory === 'menu'
+              ? 'The menu could not be analyzed.'
+              : scanCategory === 'grocery'
+                ? 'The grocery item could not be analyzed.'
+                : 'The meal could not be analyzed.',
             500,
             'analysis_failed',
             errorMetadata(error),

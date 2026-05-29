@@ -1,9 +1,64 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
-import { ensureUserRow, getBillingState } from '../_shared/db.ts';
+import {
+  ensureUserRow,
+  getBillingState,
+  getConditionIngredientInsights,
+  getInsights,
+  getProfile,
+  replaceUserDietPreferences,
+} from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
-import { rebuildInsightsAndProfile } from '../_shared/profile.ts';
+import { enqueueLearningJob } from '../_shared/learningJobs.ts';
+import { errorMetadata, recordSystemEvent } from '../_shared/observability.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
+import { dietPreferenceLabels, normalizeDietPreferenceKey, normalizeDietPreferences } from '../_shared/dietRubric.ts';
+
+type ProfileUpdateBody = {
+  onboardingAnswers?: {
+    displayName?: string | null;
+    conditions?: string[];
+    customConditions?: string[];
+    ingredientSensitivities?: string[];
+    customIngredientSensitivities?: string[];
+    symptoms?: string[];
+    customSymptoms?: string[];
+    symptomFrequency?: string;
+    symptomSeverityBaseline?: string;
+    mealContexts?: string[];
+    motivation?: string;
+    currentEatingPatterns?: string[];
+    lifestyleFactors?: string[];
+    favoriteFoodsToReintroduce?: string;
+    dietPreferenceKeys?: string[];
+  };
+  displayName?: string | null;
+  knownConditions?: string[];
+  knownIngredientSensitivities?: string[];
+  commonSymptoms?: string[];
+  symptomFrequency?: string;
+  symptomSeverityBaseline?: string;
+  mealContexts?: string[];
+  motivation?: string;
+  currentEatingPatterns?: string[];
+  lifestyleFactors?: string[];
+  foodsToReintroduce?: string[];
+  dietPreferences?: Array<{ key?: string; dietKey?: string; label?: string; strictness?: string; source?: string }>;
+};
+
+const profileUpdateFieldKeys: Array<keyof Omit<ProfileUpdateBody, 'displayName' | 'onboardingAnswers'>> = [
+  'knownConditions',
+  'knownIngredientSensitivities',
+  'commonSymptoms',
+  'symptomFrequency',
+  'symptomSeverityBaseline',
+  'mealContexts',
+  'motivation',
+  'currentEatingPatterns',
+  'lifestyleFactors',
+  'foodsToReintroduce',
+  'dietPreferences',
+];
 
 function unique(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -12,6 +67,18 @@ function unique(values: string[]) {
 function normalizeOptionalText(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function hasOwnKey<T extends object>(value: T, key: PropertyKey) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isDisplayNameOnlyUpdate(body: ProfileUpdateBody) {
+  return (
+    !body.onboardingAnswers &&
+    hasOwnKey(body, 'displayName') &&
+    profileUpdateFieldKeys.every((key) => !hasOwnKey(body, key))
+  );
 }
 
 serve(async (request) => {
@@ -25,38 +92,31 @@ serve(async (request) => {
 
   try {
     const user = await requireUser(request);
-    const body = await readJsonBody<{
-      onboardingAnswers?: {
-        displayName?: string | null;
-        conditions?: string[];
-        customConditions?: string[];
-        ingredientSensitivities?: string[];
-        customIngredientSensitivities?: string[];
-        symptoms?: string[];
-        customSymptoms?: string[];
-        symptomFrequency?: string;
-        symptomSeverityBaseline?: string;
-        mealContexts?: string[];
-        motivation?: string;
-        currentEatingPatterns?: string[];
-        lifestyleFactors?: string[];
-        favoriteFoodsToReintroduce?: string;
-      };
-      displayName?: string | null;
-      knownConditions?: string[];
-      knownIngredientSensitivities?: string[];
-      commonSymptoms?: string[];
-      symptomFrequency?: string;
-      symptomSeverityBaseline?: string;
-      mealContexts?: string[];
-      motivation?: string;
-      currentEatingPatterns?: string[];
-      lifestyleFactors?: string[];
-      foodsToReintroduce?: string[];
-    }>(request);
+    const body = await readJsonBody<ProfileUpdateBody>(request);
 
     const admin = createAdminClient();
     await ensureUserRow(admin, user);
+
+    if (isDisplayNameOnlyUpdate(body)) {
+      const displayName = normalizeOptionalText(body.displayName);
+      const { error: displayNameError } = await admin.from('user_profiles').upsert(
+        {
+          user_id: user.id,
+          display_name: displayName,
+        },
+        { onConflict: 'user_id' },
+      );
+
+      if (displayNameError) {
+        throw displayNameError;
+      }
+
+      return jsonResponse({
+        ok: true,
+        displayName,
+        learningSyncStatus: 'skipped',
+      });
+    }
 
     const { data: existingRow, error: existingError } = await admin
       .from('user_profiles')
@@ -93,6 +153,21 @@ serve(async (request) => {
     const foodsToReintroduce = onboardingAnswers
       ? unique(String(onboardingAnswers.favoriteFoodsToReintroduce ?? '').split(/[\n,]/))
       : unique(body.foodsToReintroduce ?? existingRow.foods_to_reintroduce ?? []);
+    const dietPreferences = onboardingAnswers
+      ? normalizeDietPreferences(
+          (onboardingAnswers.dietPreferenceKeys ?? [])
+            .map((entry) => normalizeDietPreferenceKey(entry))
+            .filter((entry): entry is NonNullable<ReturnType<typeof normalizeDietPreferenceKey>> => Boolean(entry))
+            .map((key) => ({
+              key,
+              label: dietPreferenceLabels[key],
+              strictness: 'standard',
+              source: 'onboarding',
+            })),
+        )
+      : typeof body.dietPreferences === 'undefined'
+        ? null
+        : normalizeDietPreferences(body.dietPreferences);
     const displayName = onboardingAnswers
       ? normalizeOptionalText(onboardingAnswers.displayName)
       : normalizeOptionalText(body.displayName ?? existingRow.display_name ?? null);
@@ -121,6 +196,10 @@ serve(async (request) => {
 
     if (upsertError) {
       throw upsertError;
+    }
+
+    if (dietPreferences) {
+      await replaceUserDietPreferences(admin, user.id, dietPreferences);
     }
 
     if (foodsToReintroduce.length > 0) {
@@ -153,11 +232,29 @@ serve(async (request) => {
       }
     }
 
-    const [{ profile, insights, conditionInsights }, billing] = await Promise.all([
-      rebuildInsightsAndProfile(admin, user.id, {
+    let learningSyncStatus: 'queued' | 'failed' = 'queued';
+    try {
+      await enqueueLearningJob(admin, {
+        userId: user.id,
         eventType: onboardingAnswers ? 'onboarding_profile_created' : 'profile_updated',
         sourceType: 'profile',
-      }),
+      });
+    } catch (error) {
+      learningSyncStatus = 'failed';
+      await recordSystemEvent(admin, {
+        eventType: 'profile_learning_job_enqueue_failed',
+        severity: 'error',
+        userId: user.id,
+        operation: 'profile_update',
+        entityType: 'profile',
+        metadata: errorMetadata(error),
+      });
+    }
+
+    const [profile, insights, conditionInsights, billing] = await Promise.all([
+      getProfile(admin, user.id),
+      getInsights(admin, user.id),
+      getConditionIngredientInsights(admin, user.id),
       getBillingState(admin, user.id),
     ]);
 
@@ -167,6 +264,7 @@ serve(async (request) => {
       insights,
       conditionInsights,
       billing,
+      learningSyncStatus,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'unauthorized') {

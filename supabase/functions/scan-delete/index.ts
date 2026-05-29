@@ -2,7 +2,8 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
 import { ensureUserRow } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
-import { rebuildInsightsAndProfile } from '../_shared/profile.ts';
+import { enqueueLearningJob } from '../_shared/learningJobs.ts';
+import { errorMetadata, recordSystemEvent } from '../_shared/observability.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
 
 const mealImagesBucket = 'meal-images';
@@ -44,7 +45,7 @@ serve(async (request) => {
 
     const { data: inputRows, error: inputsError } = await admin
       .from('scan_inputs')
-      .select('storage_path')
+      .select('storage_path, thumbnail_storage_path')
       .eq('scan_id', body.scanId)
       .eq('user_id', user.id);
 
@@ -52,9 +53,13 @@ serve(async (request) => {
       throw inputsError;
     }
 
-    const imageStoragePaths = (inputRows ?? [])
-      .map((row) => row.storage_path)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const imageStoragePaths = Array.from(
+      new Set(
+        (inputRows ?? [])
+          .flatMap((row) => [row.storage_path, row.thumbnail_storage_path])
+          .filter((value): value is string => typeof value === 'string' && value.length > 0),
+      ),
+    );
 
     const { error: scanDeleteError } = await admin.from('scans').delete().eq('id', body.scanId).eq('user_id', user.id);
     if (scanDeleteError) {
@@ -68,18 +73,31 @@ serve(async (request) => {
       }
     }
 
-    const { profile, insights, conditionInsights } = await rebuildInsightsAndProfile(admin, user.id, {
-      eventType: 'scan_deleted',
-      sourceType: 'scan',
-      sourceId: body.scanId,
-    });
+    let learningSyncStatus: 'queued' | 'failed' = 'queued';
+    try {
+      await enqueueLearningJob(admin, {
+        userId: user.id,
+        eventType: 'scan_deleted',
+        sourceType: 'scan',
+        sourceId: body.scanId,
+      });
+    } catch (error) {
+      learningSyncStatus = 'failed';
+      await recordSystemEvent(admin, {
+        eventType: 'scan_delete_learning_job_enqueue_failed',
+        severity: 'error',
+        userId: user.id,
+        operation: 'scan_delete',
+        entityType: 'scan',
+        entityId: body.scanId,
+        metadata: errorMetadata(error),
+      });
+    }
 
     return jsonResponse({
       ok: true,
       scanId: body.scanId,
-      profile,
-      insights,
-      conditionInsights,
+      learningSyncStatus,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'unauthorized') {

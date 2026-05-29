@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, ScreenHeader, SectionCard } from '../../components/common/UI';
+import { EmptyHint } from './InsightsScreen';
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList } from '../../navigation/types';
 import { useAppStore } from '../../store/useAppStore';
@@ -127,9 +128,9 @@ export function InsightDetailScreen({ route }: Props) {
         </SectionCard>
       ) : null}
 
-      <SectionCard>
-        <Text style={styles.cardTitle}>Examples from your log</Text>
-        {examples.length ? (
+      {examples.length ? (
+        <SectionCard>
+          <Text style={styles.cardTitle}>Examples from your log</Text>
           <View style={styles.exampleList}>
             {examples.map((example) => (
               <View key={example.id} style={styles.exampleRow}>
@@ -152,10 +153,14 @@ export function InsightDetailScreen({ route }: Props) {
               </View>
             ))}
           </View>
-        ) : (
-          <Text style={styles.cardBody}>No linked foods are stored locally yet. This insight will strengthen as more foods and daily reports are logged.</Text>
-        )}
-      </SectionCard>
+        </SectionCard>
+      ) : (
+        <EmptyHint
+          pipState="thinking"
+          title="No linked meals yet"
+          subtitle="Scans and reports referencing this ingredient will land here."
+        />
+      )}
 
       <SectionCard>
         <Text style={styles.cardTitle}>What to try</Text>

@@ -47,17 +47,26 @@ export function groupHistoryScans(scans: ScanHistorySummary[]) {
   }));
 }
 
-export function useHistoryFeed(pageSize = 20) {
+type HistoryFeedOptions = {
+  includeDailyReports?: boolean;
+};
+
+export function useHistoryFeed(pageSize = 20, options: HistoryFeedOptions = {}) {
+  const includeDailyReports = options.includeDailyReports ?? true;
+
   return useInfiniteQuery({
-    queryKey: [...queryKeys.history, pageSize],
+    queryKey: [...queryKeys.history, pageSize, includeDailyReports],
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       apiClient.getHistory({
         page: pageParam,
         pageSize,
+        includeDailyReports,
       }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     enabled: isLiveBackendConfigured,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
   });
 }
 
@@ -66,5 +75,7 @@ export function useScanDetail(scanId: string, enabled = true) {
     queryKey: queryKeys.scan(scanId),
     queryFn: () => apiClient.getScan({ scanId }),
     enabled: isLiveBackendConfigured && enabled,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
   });
 }

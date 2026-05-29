@@ -1,5 +1,6 @@
 import {
 	conditionOptions,
+	dietPreferenceOnboardingOptions,
 	ingredientSensitivityOptions,
 	motivationOptions,
 	symptomFrequencyOptions,
@@ -23,7 +24,69 @@ export const defaultOnboardingAnswers: OnboardingAnswers = {
 	currentEatingPatterns: [],
 	lifestyleFactors: [],
 	favoriteFoodsToReintroduce: "",
+	dietPreferenceKeys: [],
+	dietPreferenceNone: false,
+	motivations: [],
 };
+
+function stringArray(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((entry): entry is string => typeof entry === "string")
+		: [];
+}
+
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+export function normalizeOnboardingAnswers(
+	answers: Partial<OnboardingAnswers> | null | undefined
+): OnboardingAnswers {
+	const current = answers ?? {};
+	const motivations = stringArray(current.motivations);
+	const legacyMotivation = optionalString(current.motivation);
+	return {
+		...defaultOnboardingAnswers,
+		...current,
+		displayName: optionalString(current.displayName) ?? defaultOnboardingAnswers.displayName,
+		conditions: stringArray(current.conditions),
+		customConditions: stringArray(current.customConditions),
+		ingredientSensitivities: stringArray(current.ingredientSensitivities),
+		customIngredientSensitivities: stringArray(current.customIngredientSensitivities),
+		ingredientSensitivitiesUnknown: Boolean(current.ingredientSensitivitiesUnknown),
+		symptoms: stringArray(current.symptoms),
+		customSymptoms: stringArray(current.customSymptoms),
+		symptomFrequency: optionalString(current.symptomFrequency),
+		symptomSeverityBaseline: optionalString(current.symptomSeverityBaseline),
+		mealContexts: stringArray(current.mealContexts),
+		triedOtherGutHealthApps: optionalString(current.triedOtherGutHealthApps),
+		motivation: getOnboardingMotivationSummary({
+			motivations,
+			motivation: legacyMotivation,
+		}),
+		motivations: motivations.length > 0 ? motivations : legacyMotivation ? [legacyMotivation] : [],
+		currentEatingPatterns: stringArray(current.currentEatingPatterns),
+		lifestyleFactors: stringArray(current.lifestyleFactors),
+		favoriteFoodsToReintroduce:
+			optionalString(current.favoriteFoodsToReintroduce) ??
+			defaultOnboardingAnswers.favoriteFoodsToReintroduce,
+		dietPreferenceKeys: stringArray(
+			current.dietPreferenceKeys
+		) as OnboardingAnswers["dietPreferenceKeys"],
+		dietPreferenceNone: Boolean(current.dietPreferenceNone),
+	};
+}
+
+export function getOnboardingMotivationSummary(
+	answers: Pick<Partial<OnboardingAnswers>, "motivation" | "motivations">
+) {
+	const motivations = stringArray(answers.motivations);
+	if (motivations.length > 0) {
+		return motivations.join(", ");
+	}
+
+	return optionalString(answers.motivation);
+}
 
 export const onboardingSteps: OnboardingStepDefinition[] = [
 	{
@@ -112,8 +175,19 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 		options: symptomSeverityOptions,
 	},
 	{
-		id: "know-before-eat",
+		id: "diet-goal-select",
 		step: 9,
+		type: "multi_select",
+		backgroundVariant: "getStartedImage",
+		headline: "Are you trying to follow a specific diet?",
+		body: "If you are, we'll help you follow it.",
+		cta: "Continue",
+		field: "dietPreferenceKeys",
+		options: dietPreferenceOnboardingOptions,
+	},
+	{
+		id: "know-before-eat",
+		step: 10,
 		type: "preview",
 		headline: "Know before you eat",
 		body: "Our promise is to learn your stomach and help you learn how you'll feel BEFORE you eat.",
@@ -243,7 +317,7 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 		headline: "What are your main goals?",
 		body: "We use this personalize your experience.",
 		cta: "Continue",
-		field: "motivation",
+		field: "motivations",
 		options: motivationOptions,
 	},
 	{
@@ -328,8 +402,17 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 		previewVariant: "commitmentHold",
 	},
 	{
-		id: "free-trial",
+		id: "app-store-rating",
 		step: 26,
+		type: "preview",
+		headline: "Help more people feel better",
+		body: "A quick rating helps other people find gut clarity before they eat.",
+		cta: "Submit rating",
+		previewVariant: "appStoreReview",
+	},
+	{
+		id: "free-trial",
+		step: 27,
 		type: "preview",
 		headline: "We offer 7 days free so everyone can try",
 		body: "",
@@ -392,6 +475,7 @@ const stepMascotStates: Partial<Record<string, PipState>> = {
 	"lower-score-plan": "love",
 	"trust-and-clarity": "thinking",
 	"commit-to-healing": "love",
+	"app-store-rating": "love",
 	"free-trial": "thumbsUp",
 	"summary-intro": "thumbsUp",
 	"personalized-summary": "love",

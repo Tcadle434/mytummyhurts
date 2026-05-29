@@ -73,6 +73,7 @@ export function requireInternalSecret(request: Request, envKey = 'FOLLOWUP_DISPA
   const provided =
     request.headers.get('x-dispatch-secret') ??
     request.headers.get('x-internal-secret') ??
+    request.headers.get('x-maintenance-secret') ??
     request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() ??
     '';
 

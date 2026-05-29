@@ -1,12 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import * as Haptics from 'expo-haptics';
-import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AddScanSheet } from '../components/scan/AddScanSheet';
+import { navigationRef } from './navigationRef';
 import { trackEvent } from '../services/analytics';
 import { components, palette, shadows, spacing, tokens, type } from '../theme';
 
@@ -28,15 +27,21 @@ const TAB_LAYOUT_TRANSITION = LinearTransition.springify().damping(22).stiffness
 
 export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const [scanSheetVisible, setScanSheetVisible] = useState(false);
   const splitIndex = Math.ceil(state.routes.length / 2);
   const leftRoutes = state.routes.slice(0, splitIndex);
   const rightRoutes = state.routes.slice(splitIndex);
 
   function handleScanPress() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    trackEvent('add_scan_sheet_opened', { entry_point: 'tab_bar_plus' });
-    setScanSheetVisible(true);
+    trackEvent('scan_camera_opened', { entry_point: 'tab_bar_plus' });
+    if (navigationRef.isReady()) {
+      navigationRef.navigate('ScanCapture', {
+        sourceType: 'camera',
+        manualMode: false,
+        scanCategory: 'food',
+        initialMode: 'food',
+      });
+    }
   }
 
   function handleTabPress(routeName: string, isFocused: boolean) {
@@ -119,12 +124,6 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       >
         <Ionicons name="add" size={32} color={tokens.color.text.inverse} />
       </Pressable>
-
-      <AddScanSheet
-        visible={scanSheetVisible}
-        onClose={() => setScanSheetVisible(false)}
-        entryPoint="tab_bar_plus"
-      />
     </View>
   );
 }

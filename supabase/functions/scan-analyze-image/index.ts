@@ -26,6 +26,7 @@ serve(async (request) => {
       requestId?: string;
       imagePath?: string;
       imagePaths?: string[];
+      thumbnailImagePaths?: (string | null)[];
       imageDataUrl?: string;
       imageDataUrls?: string[];
       sourceType?: string;

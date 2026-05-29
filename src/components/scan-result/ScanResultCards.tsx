@@ -3,7 +3,7 @@ import { LayoutAnimation, Platform, Pressable, StyleSheet, Text, UIManager, View
 
 import { InfoPill } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
-import type { ScoreContributor } from "../../types/domain";
+import type { DietEvaluation, DietFitStatus, ScoreContributor } from "../../types/domain";
 
 if (
 	Platform.OS === "android" &&
@@ -17,7 +17,6 @@ export type RiskLevel = "low" | "medium" | "high";
 export type ScanIngredient = {
 	name: string;
 	level: RiskLevel;
-	note?: string;
 };
 
 export type MenuTierItem = {
@@ -33,6 +32,7 @@ export type MenuTierItem = {
 	triggers?: string[];
 	scoreContributors?: ScoreContributor[];
 	scoringConfidence?: "low" | "medium" | "high";
+	dietEvaluations?: DietEvaluation[];
 	saferSwap?: string;
 };
 
@@ -92,12 +92,13 @@ export function IngredientsBreakdownCard({
 	ingredients,
 }: {
 	title?: string;
-	ingredients: ScanIngredient[];
+	ingredients?: ScanIngredient[];
 }) {
+	const safeIngredients = ingredients ?? [];
 	const groups: { level: RiskLevel; label: string; items: ScanIngredient[] }[] = [
-		{ level: "high", label: "Higher risk", items: ingredients.filter((i) => i.level === "high") },
-		{ level: "medium", label: "Watch for", items: ingredients.filter((i) => i.level === "medium") },
-		{ level: "low", label: "Easier on your gut", items: ingredients.filter((i) => i.level === "low") },
+		{ level: "high", label: "Higher risk", items: safeIngredients.filter((i) => i.level === "high") },
+		{ level: "medium", label: "Watch for", items: safeIngredients.filter((i) => i.level === "medium") },
+		{ level: "low", label: "Easier on your gut", items: safeIngredients.filter((i) => i.level === "low") },
 	];
 	const visibleGroups = groups.filter((group) => group.items.length > 0);
 
@@ -117,6 +118,35 @@ export function IngredientsBreakdownCard({
 						items={group.items}
 					/>
 				))}
+			</View>
+		</View>
+	);
+}
+
+export function DietFitCard({ evaluations }: { evaluations?: DietEvaluation[] }) {
+	const safeEvaluations = evaluations ?? [];
+	if (!safeEvaluations.length) {
+		return null;
+	}
+
+	return (
+		<View style={styles.resultCard}>
+			<Text style={styles.cardTitle}>Diet fit</Text>
+			<View style={styles.dietRows}>
+				{safeEvaluations.map((evaluation) => {
+					const color = colorForDietStatus(evaluation.status);
+					return (
+						<View key={evaluation.dietKey} style={styles.dietRow}>
+							<View style={[styles.dietStatusDot, { backgroundColor: color }]} />
+							<View style={styles.dietRowBody}>
+								<Text style={styles.dietTitle}>
+									{dietStatusLabel(evaluation.status)} {evaluation.dietLabel}
+								</Text>
+								<Text style={styles.dietReason}>{evaluation.reason}</Text>
+							</View>
+						</View>
+					);
+				})}
 			</View>
 		</View>
 	);
@@ -157,9 +187,6 @@ function IngredientCard({ ingredient }: { ingredient: ScanIngredient }) {
 			<View style={[styles.ingredientCardStripe, { backgroundColor: color }]} />
 			<View style={styles.ingredientCardBody}>
 				<Text style={styles.ingredientCardName}>{ingredient.name}</Text>
-				{ingredient.note ? (
-					<Text style={styles.ingredientCardNote}>{ingredient.note}</Text>
-				) : null}
 			</View>
 		</View>
 	);
@@ -253,7 +280,11 @@ function MenuRow({
 		.filter((driver) => driver.key !== "base_menu_risk" && driver.key !== "profile_context")
 		.slice(0, 4);
 	const hasExpandedContent =
-		Boolean(item.insight) || scoreDrivers.length > 0 || Boolean(item.triggers?.length) || Boolean(item.saferSwap);
+		Boolean(item.insight) ||
+		scoreDrivers.length > 0 ||
+		Boolean(item.triggers?.length) ||
+		Boolean(item.dietEvaluations?.length) ||
+		Boolean(item.saferSwap);
 	return (
 		<Pressable
 			onPress={hasExpandedContent ? onToggle : undefined}
@@ -318,6 +349,27 @@ function MenuRow({
 							})}
 						</View>
 					) : null}
+					{item.dietEvaluations && item.dietEvaluations.length > 0 ? (
+						<View style={styles.scoreDrivers}>
+							<Text style={styles.insightLabel}>Diet fit</Text>
+							{item.dietEvaluations.map((evaluation) => (
+								<View key={evaluation.dietKey} style={styles.dietChipRow}>
+									<View
+										style={[
+											styles.dietStatusDot,
+											{ backgroundColor: colorForDietStatus(evaluation.status) },
+										]}
+									/>
+									<View style={styles.scoreDriverBody}>
+										<Text style={styles.scoreDriverLabel}>
+											{dietStatusLabel(evaluation.status)} {evaluation.dietLabel}
+										</Text>
+										<Text style={styles.scoreDriverReason}>{evaluation.reason}</Text>
+									</View>
+								</View>
+							))}
+						</View>
+					) : null}
 					{item.saferSwap ? (
 						<View style={styles.saferSwapRow}>
 							<Ionicons name="chatbubble-ellipses-outline" size={16} color={palette.primary} />
@@ -328,6 +380,19 @@ function MenuRow({
 			) : null}
 		</Pressable>
 	);
+}
+
+function colorForDietStatus(status: DietFitStatus) {
+	if (status === "does_not_fit") return tokens.color.status.risk.high.tint;
+	if (status === "caution" || status === "unknown") return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.low.tint;
+}
+
+function dietStatusLabel(status: DietFitStatus) {
+	if (status === "does_not_fit") return "Doesn't fit";
+	if (status === "caution") return "Use caution for";
+	if (status === "unknown") return "Cannot verify";
+	return "Fits";
 }
 
 export function toggleExpandedId(
@@ -617,6 +682,49 @@ const styles = StyleSheet.create({
 	ingredientGroups: {
 		gap: spacing.md,
 	},
+	dietRows: {
+		gap: spacing.sm,
+	},
+	dietRow: {
+		flexDirection: "row",
+		alignItems: "flex-start",
+		gap: spacing.sm,
+		borderRadius: 16,
+		backgroundColor: tokens.color.surface.card.warm,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.sm,
+	},
+	dietChipRow: {
+		flexDirection: "row",
+		alignItems: "flex-start",
+		gap: spacing.sm,
+		borderRadius: 14,
+		backgroundColor: tokens.color.surface.card.warm,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+	},
+	dietStatusDot: {
+		width: 10,
+		height: 10,
+		borderRadius: 5,
+		marginTop: 5,
+	},
+	dietRowBody: {
+		flex: 1,
+		gap: 2,
+	},
+	dietTitle: {
+		color: palette.text,
+		fontFamily: type.body.semibold,
+		fontSize: 14,
+		lineHeight: 19,
+	},
+	dietReason: {
+		color: palette.textMuted,
+		fontFamily: type.body.regular,
+		fontSize: 13,
+		lineHeight: 18,
+	},
 	ingredientGroup: {
 		gap: spacing.xs,
 	},
@@ -671,11 +779,5 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.semibold,
 		fontSize: 15,
 		lineHeight: 20,
-	},
-	ingredientCardNote: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 });

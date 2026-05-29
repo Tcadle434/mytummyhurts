@@ -1,4 +1,4 @@
-import { DishBlueprint, TopUpOption } from "../types/domain";
+import type { DietPreferenceKey, DishBlueprint, TopUpOption } from "../types/domain";
 
 export const conditionOptions = [
 	"IBS",
@@ -28,6 +28,42 @@ export const symptomFrequencyOptions = [
 ];
 
 export const symptomSeverityOptions = ["Mild", "Moderate", "Severe", "It varies a lot"];
+
+export const noSpecificDietOption = "No specific diet, just help me feel better";
+
+export const dietPreferenceOptions: { key: DietPreferenceKey; label: string }[] = [
+	{ key: "low_fodmap", label: "Low FODMAP" },
+	{ key: "anti_inflammatory", label: "Anti-inflammatory" },
+	{ key: "dairy_free", label: "Dairy-free / lactose-free" },
+	{ key: "gluten_free", label: "Gluten-free" },
+	{ key: "seed_oil_free", label: "Seed oil-free" },
+	{ key: "low_histamine", label: "Low histamine" },
+	{ key: "gerd_friendly", label: "GERD / reflux-friendly" },
+	{ key: "low_fat_gentle", label: "Low-fat / gentle digestion" },
+	{ key: "vegetarian", label: "Vegetarian" },
+	{ key: "vegan", label: "Vegan" },
+];
+
+export const dietPreferenceLabels = dietPreferenceOptions.reduce<Record<DietPreferenceKey, string>>(
+	(accumulator, option) => {
+		accumulator[option.key] = option.label;
+		return accumulator;
+	},
+	{} as Record<DietPreferenceKey, string>
+);
+
+export const dietPreferenceOnboardingOptions = [
+	noSpecificDietOption,
+	...dietPreferenceOptions.map((option) => option.label),
+];
+
+export function dietPreferenceKeyFromLabel(label: string): DietPreferenceKey | null {
+	return dietPreferenceOptions.find((option) => option.label === label)?.key ?? null;
+}
+
+export function dietPreferenceLabelFromKey(key: DietPreferenceKey) {
+	return dietPreferenceLabels[key] ?? key;
+}
 
 export const mealContextOptions = [
 	"Restaurants",

@@ -10,7 +10,7 @@ import {
   StructuredIngredient,
   UserProfile,
 } from './domain.ts';
-import { getGutScoreSnapshots } from './db.ts';
+import { getGutScoreSnapshots, getUserDietPreferences } from './db.ts';
 import { errorMetadata, recordSystemEvent } from './observability.ts';
 import { sleep } from './retry.ts';
 import {
@@ -389,6 +389,7 @@ async function rebuildInsightsAndProfileUnlocked(
     { data: scanRows, error: scansError },
     { data: reportRows, error: reportsError },
     { data: scanIngredientRows, error: scanIngredientsError },
+    dietPreferences,
   ] = await Promise.all([
     admin.from('user_profiles').select('*').eq('user_id', userId).single(),
     admin
@@ -398,6 +399,7 @@ async function rebuildInsightsAndProfileUnlocked(
       .eq('analysis_status', 'completed'),
     admin.from('daily_gut_reports').select('*').eq('user_id', userId),
     admin.from('scan_ingredient_risks').select('scan_id, canonical_name, confidence').eq('user_id', userId),
+    getUserDietPreferences(admin, userId),
   ]);
 
   if (profileError) {
@@ -445,6 +447,7 @@ async function rebuildInsightsAndProfileUnlocked(
     currentEatingPatterns: asStringArray(profileRow.current_eating_patterns),
     lifestyleFactors: asStringArray(profileRow.lifestyle_factors),
     foodsToReintroduce: asStringArray(profileRow.foods_to_reintroduce),
+    dietPreferences,
   };
 
   const recomputeScans = (scanRows ?? []).map((scan) => {

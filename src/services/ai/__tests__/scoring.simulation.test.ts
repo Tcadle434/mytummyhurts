@@ -25,6 +25,8 @@ const baseAnswers: OnboardingAnswers = {
   currentEatingPatterns: [],
   lifestyleFactors: [],
   favoriteFoodsToReintroduce: '',
+  dietPreferenceKeys: [],
+  motivations: [],
 };
 
 type SimulatedScan = {
@@ -99,6 +101,7 @@ function scan(localDate: string, index: number, input: SimulatedScan): ScanRecor
     interpretation: '',
     conditionRisks: [],
     ingredientRisks: [],
+    dietEvaluations: [],
     structuredAnalysis: analysis(input.ingredients),
   };
 }

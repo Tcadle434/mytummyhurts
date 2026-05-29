@@ -50,8 +50,16 @@ function OnboardingNavigator() {
     >
       <OnboardingStack.Screen name="GetStarted" component={GetStartedScreen} />
       <OnboardingStack.Screen name="OnboardingFlow" component={OnboardingFlowScreen} />
-      <OnboardingStack.Screen name="OnboardingPaywall" component={PaywallScreen} />
-      <OnboardingStack.Screen name="OnboardingAuth" component={AuthScreen} />
+      <OnboardingStack.Screen
+        name="OnboardingPaywall"
+        component={PaywallScreen}
+        options={{ gestureEnabled: false }}
+      />
+      <OnboardingStack.Screen
+        name="OnboardingAuth"
+        component={AuthScreen}
+        options={{ gestureEnabled: false }}
+      />
       <OnboardingStack.Screen name="OnboardingSignIn" component={ExistingAccountSignInScreen} />
     </OnboardingStack.Navigator>
   );

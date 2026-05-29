@@ -1,18 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
-import { Image as RNImage, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RiskBar } from '../../components/charts/RiskBar';
 import {
   IngredientsBreakdownCard,
+  DietFitCard,
   MenuRankingCard,
   RiskHeroCard,
   type MenuTierItem,
   type ScanIngredient,
   toggleExpandedId,
 } from '../../components/scan-result/ScanResultCards';
-import { AppScreen, InfoPill, PipAnalysisCard, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
+import { ScanResultSkeleton } from '../../components/scan-result/ScanResultSkeleton';
+import { SkeletonImage } from '../../components/common/SkeletonImage';
+import { AppScreen, PipAnalysisCard, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useScanDetail } from '../../features/history/hooks';
 import { RootStackParamList } from '../../navigation/types';
@@ -20,7 +23,7 @@ import { trackEvent } from '../../services/analytics';
 import { selectLatestScan, useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
 import { ScanIngredientRisk, ScanRecord } from '../../types/domain';
-import { selectPreferredScan } from './resultSelection';
+import { normalizeScanRecord, selectPreferredScan } from './resultSelection';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanResult'>;
 
@@ -34,12 +37,14 @@ const swapSuggestions: { match: string[]; label: string; detail: string }[] = [
 export function ScanResultScreen({ navigation, route }: Props) {
   const scans = useAppStore((state) => state.scans);
   const authUser = useAppStore((state) => state.authUser);
-  const [imageFailed, setImageFailed] = useState(false);
+  const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
+  const [isDeleting, setIsDeleting] = useState(false);
   const storeScan = selectLatestScan(scans, route.params.scanId);
   const shouldFetchDetail = Boolean(isLiveBackendConfigured && authUser);
   const scanDetailQuery = useScanDetail(route.params.scanId, shouldFetchDetail);
   const detailScan = scanDetailQuery.data?.scan;
-  const scan = useMemo(() => selectPreferredScan(storeScan, detailScan), [detailScan, storeScan]);
+  const rawScan = useMemo(() => selectPreferredScan(storeScan, detailScan), [detailScan, storeScan]);
+  const scan = useMemo(() => (rawScan ? normalizeScanRecord(rawScan) : undefined), [rawScan]);
   const ingredientRisks = useMemo(() => (scan ? scan.ingredientRisks : []), [scan]);
   const swapSuggestion = useMemo(() => (scan ? findSwapSuggestion(scan, ingredientRisks) : null), [scan, ingredientRisks]);
 
@@ -47,15 +52,11 @@ export function ScanResultScreen({ navigation, route }: Props) {
     trackEvent('scan_result_viewed', { scan_id: route.params.scanId });
   }, [route.params.scanId]);
 
-  useEffect(() => {
-    setImageFailed(false);
-  }, [scan?.id]);
-
   if (!scan) {
     if (scanDetailQuery.isLoading || scanDetailQuery.isFetching) {
       return (
         <AppScreen>
-          <ScreenHeader eyebrow="Loading scan" title="Loading that result..." subtitle="Give us a moment to pull the saved analysis." />
+          <ScanResultSkeleton />
         </AppScreen>
       );
     }
@@ -63,31 +64,63 @@ export function ScanResultScreen({ navigation, route }: Props) {
     return (
       <AppScreen>
         <ScreenHeader eyebrow="Missing scan" title="We couldn't find that result." subtitle="Try scanning the meal again." />
-        <PrimaryButton label="Scan again" onPress={() => navigation.replace('ScanCapture', {})} />
+        <PrimaryButton label="Scan again" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'food', initialMode: 'food' })} />
       </AppScreen>
     );
   }
 
   if (scan.scanCategory === 'menu') {
     if (scan.menuResult) {
-      return <MenuScanResult scan={scan} navigation={navigation} imageFailed={imageFailed} setImageFailed={setImageFailed} />;
+      return <MenuScanResult scan={scan} navigation={navigation} />;
     }
 
     return <MenuResultUnavailable navigation={navigation} scan={scan} />;
   }
 
-  function handleDone() {
+  function confirmDelete() {
+    if (!scan || isDeleting) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete this scan?',
+      `Remove "${scan.dishName}" from your history? This removes it from learning evidence too.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDelete();
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleDelete() {
     if (!scan) {
       return;
     }
 
-    trackEvent('scan_result_dismissed', { scan_id: scan.id });
-
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'MainTabs' }],
-    });
+    setIsDeleting(true);
+    try {
+      await deleteScanRecord(scan.id);
+      trackEvent('scan_result_deleted', { scan_id: scan.id });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (error) {
+      setIsDeleting(false);
+      Alert.alert('Could not delete scan', error instanceof Error ? error.message : 'Please try again.');
+    }
   }
+
+  const scanAnotherParams =
+    scan.sourceType === 'barcode'
+      ? { sourceType: 'barcode' as const, scanCategory: 'grocery' as const, initialMode: 'barcode' as const }
+      : { sourceType: 'camera' as const, scanCategory: 'food' as const, initialMode: 'food' as const };
 
   return (
     <AppScreen>
@@ -99,11 +132,20 @@ export function ScanResultScreen({ navigation, route }: Props) {
           <Text style={styles.heroMeta}>{formatTimestamp(scan.createdAt)}</Text>
         </View>
 
-        {scan.imageUri && !imageFailed ? (
-          <RNImage source={{ uri: scan.imageUri }} style={styles.heroImage} resizeMode="cover" onError={() => setImageFailed(true)} />
-        ) : (
-          <ResultImageFallback title={scan.dishName} compact subtitle={imageFailed ? 'Photo unavailable' : undefined} />
-        )}
+        <SkeletonImage
+          uri={scan.imageUri}
+          style={styles.heroImage}
+          resizeMode="cover"
+          skeletonRadius={28}
+          accessibilityLabel={`${scan.dishName} photo`}
+          fallback={
+            <ResultImageFallback
+              title={scan.dishName}
+              compact
+              subtitle={scan.imageUri ? 'Photo unavailable' : undefined}
+            />
+          }
+        />
       </View>
 
       <RiskHeroCard
@@ -130,16 +172,13 @@ export function ScanResultScreen({ navigation, route }: Props) {
         </View>
       </SectionCard>
 
-      {scan.possibleTriggers.length ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Likely triggers</Text>
-          <View style={styles.chipWrap}>
-            {scan.possibleTriggers.map((trigger) => (
-              <InfoPill key={trigger} label={trigger} tone="warm" />
-            ))}
-          </View>
-        </SectionCard>
-      ) : null}
+      <DietFitCard evaluations={scan.dietEvaluations} />
+
+      <PipAnalysisCard title="Pip's take" body={scan.pipTake ?? scan.interpretation} />
+
+      <IngredientsBreakdownCard
+        ingredients={ingredientRisks.map(toScanIngredient)}
+      />
 
       {swapSuggestion ? (
         <SectionCard>
@@ -157,45 +196,75 @@ export function ScanResultScreen({ navigation, route }: Props) {
         </SectionCard>
       ) : null}
 
-      <IngredientsBreakdownCard
-        ingredients={ingredientRisks.map(toScanIngredient)}
-      />
-
-      <PipAnalysisCard title="Pip's take" body={scan.pipTake ?? scan.interpretation} />
-
       <View style={styles.actionStack}>
-        {route.params.manualMode ? (
-          <PrimaryButton label="Done" onPress={handleDone} />
-        ) : (
-          <PrimaryButton label="Scan another" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera' })} />
+        {route.params.manualMode ? null : (
+          <PrimaryButton label={scan.sourceType === 'barcode' ? 'Scan another barcode' : 'Scan another'} onPress={() => navigation.replace('ScanCapture', scanAnotherParams)} />
         )}
-        {route.params.manualMode ? null : <SecondaryButton label="Done" onPress={handleDone} />}
+        <DeleteAction onPress={confirmDelete} isDeleting={isDeleting} />
       </View>
     </AppScreen>
+  );
+}
+
+function DeleteAction({ onPress, isDeleting }: { onPress: () => void; isDeleting: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isDeleting}
+      style={({ pressed }) => [styles.deleteAction, (pressed || isDeleting) && { opacity: pressed ? 0.7 : 0.5 }]}
+    >
+      <Text style={styles.deleteActionLabel}>{isDeleting ? 'Deleting…' : 'Delete'}</Text>
+    </Pressable>
   );
 }
 
 function MenuScanResult({
   scan,
   navigation,
-  imageFailed,
-  setImageFailed,
 }: {
   scan: ScanRecord;
   navigation: Props['navigation'];
-  imageFailed: boolean;
-  setImageFailed: (failed: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
+  const [isDeleting, setIsDeleting] = useState(false);
   const menu = scan.menuResult!;
   const rankedItems = rankedMenuItems(menu);
 
-  function handleDone() {
-    trackEvent('scan_result_dismissed', { scan_id: scan.id, scan_category: 'menu' });
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'MainTabs' }],
-    });
+  function confirmDelete() {
+    if (isDeleting) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete this scan?',
+      `Remove "${menu.menuTitle}" from your history? This removes it from learning evidence too.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDelete();
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      await deleteScanRecord(scan.id);
+      trackEvent('scan_result_deleted', { scan_id: scan.id, scan_category: 'menu' });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (error) {
+      setIsDeleting(false);
+      Alert.alert('Could not delete scan', error instanceof Error ? error.message : 'Please try again.');
+    }
   }
 
   return (
@@ -210,11 +279,20 @@ function MenuScanResult({
           </Text>
         </View>
 
-        {scan.imageUri && !imageFailed ? (
-          <RNImage source={{ uri: scan.imageUri }} style={styles.heroImage} resizeMode="cover" onError={() => setImageFailed(true)} />
-        ) : (
-          <ResultImageFallback title="Menu" compact subtitle={imageFailed ? 'Photo unavailable' : undefined} />
-        )}
+        <SkeletonImage
+          uri={scan.imageUri}
+          style={styles.heroImage}
+          resizeMode="cover"
+          skeletonRadius={28}
+          accessibilityLabel={`${menu.menuTitle} photo`}
+          fallback={
+            <ResultImageFallback
+              title="Menu"
+              compact
+              subtitle={scan.imageUri ? 'Photo unavailable' : undefined}
+            />
+          }
+        />
       </View>
 
       {menu.summary ? (
@@ -242,8 +320,8 @@ function MenuScanResult({
       ) : null}
 
       <View style={styles.actionStack}>
-        <PrimaryButton label="Scan another menu" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'menu' })} />
-        <SecondaryButton label="Done" onPress={handleDone} />
+        <PrimaryButton label="Scan another" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'menu', initialMode: 'menu' })} />
+        <DeleteAction onPress={confirmDelete} isDeleting={isDeleting} />
       </View>
     </AppScreen>
   );
@@ -256,6 +334,45 @@ function MenuResultUnavailable({
   navigation: Props['navigation'];
   scan: ScanRecord;
 }) {
+  const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  function confirmDelete() {
+    if (isDeleting) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete this scan?',
+      `Remove "${scan.dishName || 'this menu scan'}" from your history? This removes it from learning evidence too.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDelete();
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      await deleteScanRecord(scan.id);
+      trackEvent('scan_result_deleted', { scan_id: scan.id, scan_category: 'menu' });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (error) {
+      setIsDeleting(false);
+      Alert.alert('Could not delete scan', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
+
   return (
     <AppScreen>
       <ScreenHeader
@@ -273,18 +390,10 @@ function MenuResultUnavailable({
 
       <View style={styles.actionStack}>
         <PrimaryButton
-          label="Scan another menu"
-          onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'menu' })}
+          label="Scan another"
+          onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'menu', initialMode: 'menu' })}
         />
-        <SecondaryButton
-          label="Done"
-          onPress={() =>
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'MainTabs' }],
-            })
-          }
-        />
+        <DeleteAction onPress={confirmDelete} isDeleting={isDeleting} />
       </View>
     </AppScreen>
   );
@@ -311,6 +420,7 @@ function toMenuTierItem(item: NonNullable<ScanRecord['menuResult']>['items'][num
     triggers: item.ingredientRisks.length ? item.ingredientRisks.slice(0, 3).map((ingredient) => ingredient.canonicalName) : undefined,
     scoreContributors: item.scoreContributors,
     scoringConfidence: item.scoringConfidence,
+    dietEvaluations: item.dietEvaluations,
     saferSwap: item.gutRecommendation,
   };
 }
@@ -319,7 +429,6 @@ function toScanIngredient(ingredient: ScanIngredientRisk): ScanIngredient {
   return {
     name: ingredient.canonicalName,
     level: ingredient.riskLevel,
-    note: ingredient.reason || (ingredient.evidence === 'inferred' ? 'Likely inferred from scan' : undefined),
   };
 }
 
@@ -552,11 +661,6 @@ const styles = StyleSheet.create({
   barList: {
     gap: spacing.md,
   },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
   swapCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -652,6 +756,17 @@ const styles = StyleSheet.create({
   },
   actionStack: {
     gap: spacing.sm,
+  },
+  deleteAction: {
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteActionLabel: {
+    color: palette.danger,
+    fontFamily: type.body.semibold,
+    fontSize: 16,
+    letterSpacing: 0.1,
   },
   fallbackImage: {
     alignItems: 'center',

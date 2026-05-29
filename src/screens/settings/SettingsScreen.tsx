@@ -23,7 +23,13 @@ import {
   SecondaryButton,
 } from '../../components/common/UI';
 import { env } from '../../config/env';
-import { conditionOptions, ingredientSensitivityOptions, symptomOptions } from '../../data/catalog';
+import {
+  conditionOptions,
+  dietPreferenceLabelFromKey,
+  dietPreferenceOptions,
+  ingredientSensitivityOptions,
+  symptomOptions,
+} from '../../data/catalog';
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList } from '../../navigation/types';
 import { apiClient } from '../../services/api/client';
@@ -37,7 +43,24 @@ import { useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
-type ExpandedSection = 'account' | 'profile' | 'subscription' | 'notifications' | null;
+type ExpandedSection =
+  | 'account'
+  | 'conditions'
+  | 'sensitivities'
+  | 'symptoms'
+  | 'diet'
+  | 'subscription'
+  | 'notifications'
+  | null;
+type BusySection =
+  | 'account'
+  | 'conditions'
+  | 'sensitivities'
+  | 'symptoms'
+  | 'diet'
+  | 'notifications'
+  | 'delete'
+  | null;
 type CustomCategory = 'conditions' | 'sensitivities' | 'symptoms';
 
 const CUSTOM_CATEGORY_COPY: Record<
@@ -93,9 +116,10 @@ export function SettingsScreen() {
   const [customSymptoms, setCustomSymptoms] = useState<string[]>(() =>
     splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions).custom,
   );
-  const [busySection, setBusySection] = useState<
-    'account' | 'profile' | 'notifications' | 'delete' | null
-  >(null);
+  const [selectedDietKeys, setSelectedDietKeys] = useState(() =>
+    (profile?.dietPreferences ?? []).map((preference) => preference.key),
+  );
+  const [busySection, setBusySection] = useState<BusySection>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [customModalCategory, setCustomModalCategory] = useState<CustomCategory | null>(null);
@@ -115,8 +139,10 @@ export function SettingsScreen() {
     const symptomsSplit = splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions);
     setSelectedSymptoms(symptomsSplit.predefined);
     setCustomSymptoms(symptomsSplit.custom);
+    setSelectedDietKeys((profile?.dietPreferences ?? []).map((preference) => preference.key));
   }, [
     profile?.commonSymptoms,
+    profile?.dietPreferences,
     profile?.displayName,
     profile?.knownConditions,
     profile?.knownIngredientSensitivities,
@@ -146,31 +172,92 @@ export function SettingsScreen() {
     setExpandedSection((current) => (current === next ? null : next));
   }
 
-  async function handleSaveProfile() {
-    setBusySection('profile');
+  async function handleSaveConditions() {
+    setBusySection('conditions');
     setStatusMessage(null);
     const mergedConditions = [...selectedConditions, ...customConditions];
-    const mergedSensitivities = [...selectedSensitivities, ...customSensitivities];
-    const mergedSymptoms = [...selectedSymptoms, ...customSymptoms];
     try {
       await updateProfileSettings({
         knownConditions: mergedConditions,
-        knownIngredientSensitivities: mergedSensitivities,
-        commonSymptoms: mergedSymptoms,
-        symptomFrequency: profile?.symptomFrequency,
-        symptomSeverityBaseline: profile?.symptomSeverityBaseline,
-        mealContexts: profile?.mealContexts ?? [],
-        motivation: profile?.motivation,
       });
       trackEvent('profile_saved', {
         conditions_count: mergedConditions.length,
-        sensitivities_count: mergedSensitivities.length,
       });
-      setStatusMessage('Profile changes saved.');
+      setStatusMessage('Conditions saved.');
       setExpandedSection(null);
     } catch (error) {
       setStatusMessage(
-        error instanceof Error ? error.message : 'Profile changes could not be saved.',
+        error instanceof Error ? error.message : 'Conditions could not be saved.',
+      );
+    } finally {
+      setBusySection(null);
+    }
+  }
+
+  async function handleSaveSensitivities() {
+    setBusySection('sensitivities');
+    setStatusMessage(null);
+    const mergedSensitivities = [...selectedSensitivities, ...customSensitivities];
+    try {
+      await updateProfileSettings({
+        knownIngredientSensitivities: mergedSensitivities,
+      });
+      trackEvent('profile_saved', {
+        sensitivities_count: mergedSensitivities.length,
+      });
+      setStatusMessage('Sensitivities saved.');
+      setExpandedSection(null);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Sensitivities could not be saved.',
+      );
+    } finally {
+      setBusySection(null);
+    }
+  }
+
+  async function handleSaveSymptoms() {
+    setBusySection('symptoms');
+    setStatusMessage(null);
+    const mergedSymptoms = [...selectedSymptoms, ...customSymptoms];
+    try {
+      await updateProfileSettings({
+        commonSymptoms: mergedSymptoms,
+      });
+      trackEvent('profile_saved', {
+        symptoms_count: mergedSymptoms.length,
+      });
+      setStatusMessage('Symptoms saved.');
+      setExpandedSection(null);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Symptoms could not be saved.',
+      );
+    } finally {
+      setBusySection(null);
+    }
+  }
+
+  async function handleSaveDiet() {
+    setBusySection('diet');
+    setStatusMessage(null);
+    try {
+      await updateProfileSettings({
+        dietPreferences: selectedDietKeys.map((key) => ({
+          key,
+          label: dietPreferenceLabelFromKey(key),
+          strictness: 'standard',
+          source: 'settings',
+        })),
+      });
+      trackEvent('diet_preferences_saved', {
+        diet_count: selectedDietKeys.length,
+      });
+      setStatusMessage('Diet goal saved.');
+      setExpandedSection(null);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Diet goal could not be saved.',
       );
     } finally {
       setBusySection(null);
@@ -255,12 +342,49 @@ export function SettingsScreen() {
     }
   }
 
+  function resetToCreateAccount() {
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'OnboardingStack',
+          params: { screen: 'OnboardingAuth' },
+        },
+      ],
+    });
+  }
+
+  function resetToSignIn() {
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'OnboardingStack',
+          params: { screen: 'OnboardingSignIn' },
+        },
+      ],
+    });
+  }
+
+  async function handleSignOut() {
+    setStatusMessage(null);
+    try {
+      await signOutSupabase();
+      resetToSignIn();
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Sign out could not be completed.',
+      );
+    }
+  }
+
   async function handleDeleteAccount() {
     setBusySection('delete');
     setStatusMessage(null);
     try {
       await apiClient.deleteAccount();
       await signOutSupabase();
+      resetToCreateAccount();
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : 'Account deletion could not be completed.',
@@ -371,14 +495,13 @@ export function SettingsScreen() {
       <SectionGroup label="Health profile">
         <SettingsRow
           icon="medkit-outline"
-          label="Conditions & sensitivities"
-          value={summarizeProfile(profile)}
-          expanded={expandedSection === 'profile'}
-          onPress={() => toggleSection('profile')}
+          label="Conditions"
+          value={summarizeHealthList(profile?.knownConditions)}
+          expanded={expandedSection === 'conditions'}
+          onPress={() => toggleSection('conditions')}
         />
-        {expandedSection === 'profile' ? (
+        {expandedSection === 'conditions' ? (
           <ExpandedBlock>
-            <FieldLabel>Conditions</FieldLabel>
             <View style={styles.pickerStack}>
               {conditionOptions.map((option) => (
                 <OnboardingPickerOption
@@ -397,8 +520,25 @@ export function SettingsScreen() {
                 onPress={() => openCustomModal('conditions')}
               />
             </View>
+            <PrimaryButton
+              label={busySection === 'conditions' ? 'Saving…' : 'Save conditions'}
+              onPress={() => void handleSaveConditions()}
+              disabled={busySection !== null}
+            />
+          </ExpandedBlock>
+        ) : null}
 
-            <FieldLabel>Sensitivities</FieldLabel>
+        <RowDivider />
+
+        <SettingsRow
+          icon="alert-circle-outline"
+          label="Sensitivities"
+          value={summarizeHealthList(profile?.knownIngredientSensitivities)}
+          expanded={expandedSection === 'sensitivities'}
+          onPress={() => toggleSection('sensitivities')}
+        />
+        {expandedSection === 'sensitivities' ? (
+          <ExpandedBlock>
             <View style={styles.pickerStack}>
               {ingredientSensitivityOptions.map((option) => (
                 <OnboardingPickerOption
@@ -421,8 +561,25 @@ export function SettingsScreen() {
                 onPress={() => openCustomModal('sensitivities')}
               />
             </View>
+            <PrimaryButton
+              label={busySection === 'sensitivities' ? 'Saving…' : 'Save sensitivities'}
+              onPress={() => void handleSaveSensitivities()}
+              disabled={busySection !== null}
+            />
+          </ExpandedBlock>
+        ) : null}
 
-            <FieldLabel>Common symptoms</FieldLabel>
+        <RowDivider />
+
+        <SettingsRow
+          icon="pulse-outline"
+          label="Symptoms"
+          value={summarizeHealthList(profile?.commonSymptoms)}
+          expanded={expandedSection === 'symptoms'}
+          onPress={() => toggleSection('symptoms')}
+        />
+        {expandedSection === 'symptoms' ? (
+          <ExpandedBlock>
             <View style={styles.pickerStack}>
               {symptomOptions.map((option) => (
                 <OnboardingPickerOption
@@ -441,10 +598,54 @@ export function SettingsScreen() {
                 onPress={() => openCustomModal('symptoms')}
               />
             </View>
-
             <PrimaryButton
-              label={busySection === 'profile' ? 'Saving…' : 'Save'}
-              onPress={() => void handleSaveProfile()}
+              label={busySection === 'symptoms' ? 'Saving…' : 'Save symptoms'}
+              onPress={() => void handleSaveSymptoms()}
+              disabled={busySection !== null}
+            />
+          </ExpandedBlock>
+        ) : null}
+
+        <RowDivider />
+
+        <SettingsRow
+          icon="nutrition-outline"
+          label="Diet goal"
+          value={summarizeDietPreferences(profile?.dietPreferences)}
+          expanded={expandedSection === 'diet'}
+          onPress={() => toggleSection('diet')}
+        />
+        {expandedSection === 'diet' ? (
+          <ExpandedBlock>
+            <Text style={styles.helperText}>
+              We keep your gut-risk score separate, then check scans against this diet goal.
+            </Text>
+            <View style={styles.pickerStack}>
+              <OnboardingPickerOption
+                label="No specific diet"
+                variant="plain"
+                selected={selectedDietKeys.length === 0}
+                onPress={() => setSelectedDietKeys([])}
+              />
+              {dietPreferenceOptions.map((option) => (
+                <OnboardingPickerOption
+                  key={option.key}
+                  label={option.label}
+                  variant="plain"
+                  selected={selectedDietKeys.includes(option.key)}
+                  onPress={() =>
+                    setSelectedDietKeys((current) =>
+                      current.includes(option.key)
+                        ? current.filter((entry) => entry !== option.key)
+                        : [...current, option.key],
+                    )
+                  }
+                />
+              ))}
+            </View>
+            <PrimaryButton
+              label={busySection === 'diet' ? 'Saving…' : 'Save diet goal'}
+              onPress={() => void handleSaveDiet()}
               disabled={busySection !== null}
             />
           </ExpandedBlock>
@@ -477,16 +678,6 @@ export function SettingsScreen() {
             )
           }
         />
-        {__DEV__ ? (
-          <>
-            <RowDivider />
-            <SettingsRow
-              icon="color-palette-outline"
-              label="Design system showcase"
-              onPress={() => navigation.navigate('DesignSystemShowcase')}
-            />
-          </>
-        ) : null}
       </SectionGroup>
 
       <SectionGroup label="Danger zone">
@@ -500,7 +691,7 @@ export function SettingsScreen() {
 
       {statusMessage ? <InfoPill label={statusMessage} tone="soft" /> : null}
 
-      <SecondaryButton label="Sign out" onPress={() => void signOutSupabase()} />
+      <SecondaryButton label="Sign out" onPress={() => void handleSignOut()} />
 
       <Text style={styles.versionLabel}>App version 1.2.0</Text>
 
@@ -602,10 +793,6 @@ function SectionGroup({ label, children }: { label: string; children: React.Reac
 
 function ExpandedBlock({ children }: { children: React.ReactNode }) {
   return <View style={styles.expandedBlock}>{children}</View>;
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.fieldLabel}>{children}</Text>;
 }
 
 function SettingsRow({
@@ -716,14 +903,23 @@ function prettyStatus(status: string) {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function summarizeProfile(profile: { knownConditions?: string[]; knownIngredientSensitivities?: string[]; commonSymptoms?: string[] } | null | undefined) {
-  if (!profile) return 'Tap to configure';
-  const total =
-    (profile.knownConditions?.length ?? 0) +
-    (profile.knownIngredientSensitivities?.length ?? 0) +
-    (profile.commonSymptoms?.length ?? 0);
-  if (total === 0) return 'Tap to configure';
-  return `${total} item${total === 1 ? '' : 's'} configured`;
+function summarizeHealthList(values: string[] | null | undefined) {
+  if (!values?.length) return 'Tap to configure';
+  if (values.length === 1) return values[0] ?? 'Configured';
+  if (values.length === 2) return values.join(', ');
+  return `${values.slice(0, 2).join(', ')} +${values.length - 2}`;
+}
+
+function summarizeDietPreferences(profileDietPreferences: { label: string }[] | null | undefined) {
+  if (!profileDietPreferences?.length) {
+    return 'No specific diet';
+  }
+
+  if (profileDietPreferences.length === 1) {
+    return profileDietPreferences[0]?.label ?? 'Configured';
+  }
+
+  return `${profileDietPreferences.length} diet goals`;
 }
 
 async function openIfPresent(url: string) {
@@ -876,13 +1072,6 @@ const styles = StyleSheet.create({
     fontFamily: type.body.medium,
     fontSize: 13,
     lineHeight: 18,
-  },
-  fieldLabel: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 14,
-    lineHeight: 18,
-    marginTop: spacing.xs,
   },
   pickerStack: {
     gap: spacing.xs,

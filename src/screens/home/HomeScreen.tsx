@@ -7,7 +7,6 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen, SectionCard, SkeletonBlock } from "../../components/common/UI";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
-import { AddScanSheet } from "../../components/scan/AddScanSheet";
 import { isLiveBackendConfigured } from "../../config/env";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { useInsightsData } from "../../features/insights/hooks";
@@ -41,7 +40,6 @@ export function HomeScreen() {
 	const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
 	const learningSyncInFlight = useAppStore((state) => state.learningSyncInFlight);
 	const [gutScoreInfoVisible, setGutScoreInfoVisible] = useState(false);
-	const [scanSheetVisible, setScanSheetVisible] = useState(false);
 	const [clockNow, setClockNow] = useState(() => new Date());
 	const [dismissedDailyReportPromptDate, setDismissedDailyReportPromptDate] = useState<
 		string | null
@@ -50,6 +48,7 @@ export function HomeScreen() {
 	const greeting = localDaypartGreeting(clockNow);
 	const historyQuery = useHistoryFeed(12);
 	const insightsQuery = useInsightsData("");
+	const isLiveSession = Boolean(isLiveBackendConfigured && authUser);
 	const hasRemoteQueryData = Boolean(historyQuery.data && insightsQuery.data);
 	const isWaitingForInitialRemoteData = Boolean(
 		isLiveBackendConfigured &&
@@ -74,6 +73,7 @@ export function HomeScreen() {
 	const profile = canUseFallbackData
 		? insightsQuery.data?.profile ?? fallbackProfile
 		: insightsQuery.data?.profile;
+	const gutScoreProfile = isLiveSession ? insightsQuery.data?.profile : profile;
 	const yesterdayDate = yesterdayLocalDate(clockNow);
 	const yesterdayReport = dailyReports.find((report) => report.localDate === yesterdayDate);
 	const needsDailyReport = !yesterdayReport;
@@ -82,7 +82,7 @@ export function HomeScreen() {
 		needsDailyReport &&
 		dismissedDailyReportPromptDate !== yesterdayDate;
 	const displayName = profile?.displayName?.trim();
-	const profileMeta = profile?.stomachProfile.metadata;
+	const profileMeta = gutScoreProfile?.stomachProfile.metadata;
 	const gutScore = profileMeta?.gutScore;
 
 	const streakCount = useMemo(() => computeFoodLogStreak(scans), [scans]);
@@ -241,8 +241,13 @@ export function HomeScreen() {
 
 			<Pressable
 				onPress={() => {
-					trackEvent("add_scan_sheet_opened", { entry_point: "home_scan_cta" });
-					setScanSheetVisible(true);
+					trackEvent("scan_camera_opened", { entry_point: "home_scan_cta" });
+					navigation.navigate("ScanCapture", {
+						sourceType: "camera",
+						manualMode: false,
+						scanCategory: "food",
+						initialMode: "food",
+					});
 				}}
 				style={({ pressed }) => [styles.scanCtaShell, pressed && { opacity: 0.92 }]}
 			>
@@ -259,7 +264,7 @@ export function HomeScreen() {
 							color={components.scanCta.arrowForeground}
 						/>
 					</View>
-					<Text style={styles.scanTitle}>Scan a meal</Text>
+					<Text style={styles.scanTitle}>Scan food</Text>
 					<View style={styles.scanArrow}>
 						<Ionicons
 							name="arrow-forward"
@@ -288,12 +293,6 @@ export function HomeScreen() {
 					}}
 				/>
 			)}
-
-			<AddScanSheet
-				visible={scanSheetVisible}
-				onClose={() => setScanSheetVisible(false)}
-				entryPoint="home_scan_cta"
-			/>
 
 			<GutScoreInfoModal
 				visible={gutScoreInfoVisible}

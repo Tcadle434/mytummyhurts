@@ -3,10 +3,11 @@ import {
   ConditionIngredientInsight,
   DailyGutReport,
   IngredientInsight,
-  ScanCategory,
   ScanHistorySummary,
   ScanInputPayload,
   ScanRecord,
+  DietPreference,
+  DietPreferenceKey,
   UserProfile,
 } from '../../types/domain';
 
@@ -14,10 +15,11 @@ export interface AnalyzeImageRequest {
   requestId: string;
   imagePath?: string;
   imagePaths?: string[];
+  thumbnailImagePaths?: (string | null)[];
   imageDataUrl?: string;
   imageDataUrls?: string[];
   sourceType: ScanInputPayload['sourceType'];
-  scanCategory?: ScanCategory;
+  scanCategory?: ScanInputPayload['scanCategory'];
   localDate?: string;
   timezone?: string;
 }
@@ -26,7 +28,16 @@ export interface AnalyzeTextRequest {
   requestId: string;
   text: string;
   sourceType: ScanInputPayload['sourceType'];
-  scanCategory?: ScanCategory;
+  scanCategory?: ScanInputPayload['scanCategory'];
+  localDate?: string;
+  timezone?: string;
+}
+
+export interface AnalyzeBarcodeRequest {
+  requestId: string;
+  barcode: string;
+  sourceType: ScanInputPayload['sourceType'];
+  scanCategory?: ScanInputPayload['scanCategory'];
   localDate?: string;
   timezone?: string;
 }
@@ -35,7 +46,7 @@ export interface AnalyzeResponse {
   scanId: string;
   requestId?: string;
   deduped?: boolean;
-  learningSyncStatus?: 'updated' | 'locked' | 'failed' | 'skipped' | 'not_applicable';
+  learningSyncStatus?: 'updated' | 'locked' | 'failed' | 'queued' | 'skipped' | 'not_applicable';
   tokensRemaining: number;
   scan: ScanRecord;
   billing: BillingState;
@@ -51,9 +62,10 @@ export interface ScanDeleteRequest {
 export interface ScanDeleteResponse {
   ok: true;
   scanId: string;
-  profile: UserProfile | null;
-  insights: IngredientInsight[];
-  conditionInsights: ConditionIngredientInsight[];
+  profile?: UserProfile | null;
+  insights?: IngredientInsight[];
+  conditionInsights?: ConditionIngredientInsight[];
+  learningSyncStatus?: 'queued' | 'failed';
 }
 
 export interface ScanGetRequest {
@@ -75,7 +87,7 @@ export interface DailyReportUpsertRequest {
 export interface DailyReportUpsertResponse {
   ok: true;
   report: DailyGutReport;
-  learningSyncStatus: 'queued' | 'skipped';
+  learningSyncStatus: 'queued' | 'failed' | 'skipped';
 }
 
 export interface LearningRecomputeRequest {
@@ -96,6 +108,7 @@ export interface LearningRecomputeResponse {
 export interface HistoryRequest {
   page?: number;
   pageSize?: number;
+  includeDailyReports?: boolean;
 }
 
 export interface HistoryResponse {
@@ -103,7 +116,7 @@ export interface HistoryResponse {
   pageSize: number;
   hasMore: boolean;
   scans: ScanHistorySummary[];
-  dailyReports: DailyGutReport[];
+  dailyReports?: DailyGutReport[];
 }
 
 export interface InsightsRequest {
@@ -134,6 +147,7 @@ export interface ProfileUpdateRequest {
     currentEatingPatterns?: string[];
     lifestyleFactors?: string[];
     favoriteFoodsToReintroduce?: string;
+    dietPreferenceKeys?: DietPreferenceKey[];
   };
   displayName?: string | null;
   knownConditions?: string[];
@@ -146,14 +160,17 @@ export interface ProfileUpdateRequest {
   currentEatingPatterns?: string[];
   lifestyleFactors?: string[];
   foodsToReintroduce?: string[];
+  dietPreferences?: DietPreference[];
 }
 
 export interface ProfileUpdateResponse {
   ok: true;
-  profile: UserProfile | null;
-  insights: IngredientInsight[];
-  conditionInsights: ConditionIngredientInsight[];
-  billing: BillingState;
+  profile?: UserProfile | null;
+  insights?: IngredientInsight[];
+  conditionInsights?: ConditionIngredientInsight[];
+  billing?: BillingState;
+  displayName?: string | null;
+  learningSyncStatus?: 'queued' | 'failed' | 'skipped';
 }
 
 export interface BillingSyncRequest {

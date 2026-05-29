@@ -16,7 +16,7 @@ export function LearningSyncToastBridge() {
       showToast({
         id: LEARNING_SYNC_TOAST_ID,
         message: 'Report saved',
-        detail: 'Updating your scores...',
+        detail: 'Queueing your learning update...',
         tone: 'success',
         durationMs: null,
       });
@@ -30,10 +30,10 @@ export function LearningSyncToastBridge() {
     wasInFlight.current = false;
     showToast({
       id: LEARNING_SYNC_TOAST_ID,
-      message: learningSyncError ? 'Report saved' : 'Scores updated',
-      detail: learningSyncError ? 'We will keep syncing in the background.' : undefined,
+      message: 'Report saved',
+      detail: learningSyncError ? 'We will keep syncing in the background.' : 'Your scores will update shortly.',
       tone: learningSyncError ? 'info' : 'success',
-      durationMs: learningSyncError ? 3200 : 1800,
+      durationMs: learningSyncError ? 3200 : 2400,
     });
   }, [learningSyncError, learningSyncInFlight]);
 

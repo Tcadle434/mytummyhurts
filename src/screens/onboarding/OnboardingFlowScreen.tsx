@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
+import * as StoreReview from "expo-store-review";
 import { ComponentProps, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Image,
@@ -32,7 +33,12 @@ import {
 	ScreenHeader,
 	SectionCard,
 } from "../../components/common/UI";
-import { getMascotStateForStep, onboardingSteps } from "../../data/onboarding";
+import {
+	dietPreferenceKeyFromLabel,
+	dietPreferenceLabelFromKey,
+	noSpecificDietOption,
+} from "../../data/catalog";
+import { getMascotStateForStep, normalizeOnboardingAnswers, onboardingSteps } from "../../data/onboarding";
 import { trackEvent } from "../../services/analytics";
 import { computeGutScoreState } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
@@ -53,6 +59,7 @@ import { KnowBeforeEatDemo, type KnowBeforeEatStage } from "./components/KnowBef
 import { PersonalHealingApproach } from "./components/PersonalHealingApproach";
 import { StepTransition, StepTransitionDirection } from "./components/StepTransition";
 import { TrialFreePreview } from "./components/TrialFreePreview";
+import { AppStoreRatingPreview } from "./components/AppStoreRatingPreview";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "OnboardingFlow">;
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -67,7 +74,8 @@ const INGREDIENT_SENSITIVITY_UNKNOWN_OPTION = "I'm not sure";
 
 export function OnboardingFlowScreen({ navigation }: Props) {
 	const stepIndex = useAppStore((state) => state.onboardingStepIndex);
-	const answers = useAppStore((state) => state.onboardingAnswers);
+	const persistedAnswers = useAppStore((state) => state.onboardingAnswers);
+	const answers = useMemo(() => normalizeOnboardingAnswers(persistedAnswers), [persistedAnswers]);
 	const setStepIndex = useAppStore((state) => state.setOnboardingStepIndex);
 	const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
 	const updateField = useAppStore((state) => state.updateOnboardingField);
@@ -79,6 +87,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const [phaseDiscoveryState, setPhaseDiscoveryState] = useState<PhaseDiscoveryState>("scan");
 	const [startingScoreState, setStartingScoreState] = useState<StartingScoreState>("ready");
 	const [knowBeforeEatStage, setKnowBeforeEatStage] = useState<KnowBeforeEatStage>("menu-scan");
+	const [reviewPromptBusy, setReviewPromptBusy] = useState(false);
 	const [direction, setDirection] = useState<StepTransitionDirection>("forward");
 	const phaseDiscoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const startingScoreTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -140,6 +149,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const isPhaseDiscoveryStep = step.id === "phase-discovery";
 	const isStartingScoreStep = step.id === "gut-score-analyzing";
 	const isKnowBeforeEatStep = step.id === "know-before-eat";
+	const isAppStoreRatingStep = step.previewVariant === "appStoreReview";
 	const isKnowBeforeEatLoading =
 		isKnowBeforeEatStep &&
 		(knowBeforeEatStage === "menu-loading" ||
@@ -171,11 +181,16 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			: "Show my score"
 		: isKnowBeforeEatStep
 		? knowBeforeEatCtaLabel(knowBeforeEatStage)
+		: isAppStoreRatingStep
+		? reviewPromptBusy
+			? "Opening..."
+			: step.cta
 		: step.cta;
 	const ctaDisabled =
 		(isPhaseDiscoveryStep && phaseDiscoveryState === "loading") ||
 		(isStartingScoreStep && startingScoreState === "loading") ||
 		isKnowBeforeEatLoading ||
+		reviewPromptBusy ||
 		!hasRequiredAnswer;
 
 	function clearPhaseDiscoveryTimeout() {
@@ -272,6 +287,62 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 
+		if (isAppStoreRatingStep) {
+			void requestNativeAppStoreReview();
+			return;
+		}
+
+		advanceStep();
+	}
+
+	async function requestNativeAppStoreReview() {
+		if (reviewPromptBusy) {
+			return;
+		}
+
+		setReviewPromptBusy(true);
+		trackEvent("onboarding_app_store_review_submit_tapped", {
+			platform: Platform.OS,
+		});
+
+		try {
+			const [available, hasAction] = await Promise.all([
+				StoreReview.isAvailableAsync(),
+				StoreReview.hasAction(),
+			]);
+
+			if (available && hasAction) {
+				await StoreReview.requestReview();
+				trackEvent("onboarding_app_store_review_requested", {
+					platform: Platform.OS,
+				});
+			} else {
+				trackEvent("onboarding_app_store_review_unavailable", {
+					platform: Platform.OS,
+					available,
+					has_action: hasAction,
+				});
+			}
+		} catch (error) {
+			trackEvent("onboarding_app_store_review_failed", {
+				platform: Platform.OS,
+				message: error instanceof Error ? error.message : "unknown_error",
+			});
+		} finally {
+			setReviewPromptBusy(false);
+			advanceStep();
+		}
+	}
+
+	function skipNativeAppStoreReview() {
+		if (reviewPromptBusy) {
+			return;
+		}
+
+		void Haptics.selectionAsync();
+		trackEvent("onboarding_app_store_review_skipped", {
+			platform: Platform.OS,
+		});
 		advanceStep();
 	}
 
@@ -313,6 +384,10 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		}
 
 		if (step.type === "multi_select" && step.field) {
+			if (step.field === "dietPreferenceKeys") {
+				return Boolean(answers.dietPreferenceNone) || (answers.dietPreferenceKeys ?? []).length > 0;
+			}
+
 			if (
 				step.field === "ingredientSensitivities" &&
 				answers.ingredientSensitivitiesUnknown
@@ -398,6 +473,13 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				return <PersonalHealingApproach />;
 			case "commitmentHold":
 				return <CommitmentHoldCard onCommitted={advanceStep} />;
+			case "appStoreReview":
+				return (
+					<AppStoreRatingPreview
+						busy={reviewPromptBusy}
+						onSkip={skipNativeAppStoreReview}
+					/>
+				);
 			case "trialFreePreview":
 				return <TrialFreePreview />;
 			case "summaryIntro":
@@ -495,6 +577,15 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				/>
 				<Divider />
 				<DetailRow
+					label="Diet goal"
+					value={
+						answers.dietPreferenceKeys.length
+							? answers.dietPreferenceKeys.map(dietPreferenceLabelFromKey).join(", ")
+							: "No specific diet, just help me feel better."
+					}
+				/>
+				<Divider />
+				<DetailRow
 					label="Foods to earn back"
 					value={
 						favoriteFoodsToReintroduce.trim() || "No reintroduction foods added yet."
@@ -573,8 +664,26 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			const customField = customFieldForCurrentStep();
 			const customCount = customField ? (answers[customField] ?? []).length : 0;
 			const isIngredientSensitivityStep = step.field === "ingredientSensitivities";
+			const isDietPreferenceStep = step.field === "dietPreferenceKeys";
 
 			function handleMultiSelectOptionPress(option: string) {
+				if (isDietPreferenceStep) {
+					if (option === noSpecificDietOption) {
+						updateField("dietPreferenceNone", true);
+						updateField("dietPreferenceKeys", []);
+						return;
+					}
+
+					const dietKey = dietPreferenceKeyFromLabel(option);
+					if (!dietKey) {
+						return;
+					}
+
+					updateField("dietPreferenceNone", false);
+					toggleValue("dietPreferenceKeys", dietKey);
+					return;
+				}
+
 				if (isIngredientSensitivityStep) {
 					updateField("ingredientSensitivitiesUnknown", false);
 				}
@@ -585,8 +694,10 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 						| "ingredientSensitivities"
 						| "symptoms"
 						| "mealContexts"
+						| "motivations"
 						| "currentEatingPatterns"
-						| "lifestyleFactors",
+						| "lifestyleFactors"
+						| "dietPreferenceKeys",
 					option
 				);
 			}
@@ -614,8 +725,17 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 								iconName={step.optionIcons?.[option] as IoniconName | undefined}
 								variant={pickerVariant}
 								selected={
-									Array.isArray(values)
-										? values.includes(option)
+									isDietPreferenceStep
+										? option === noSpecificDietOption
+											? Boolean(answers.dietPreferenceNone)
+											: Boolean(
+													dietPreferenceKeyFromLabel(option) &&
+														answers.dietPreferenceKeys.includes(
+															dietPreferenceKeyFromLabel(option)!
+														)
+											  )
+											: Array.isArray(values)
+											? (values as string[]).includes(option)
 										: values === option
 								}
 								onPress={() => handleMultiSelectOptionPress(option)}

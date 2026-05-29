@@ -166,15 +166,13 @@ const FOOD_RESULT = {
 		{
 			name: "Carne asada (grilled beef)",
 			level: "medium" as RiskLevel,
-			note: "Fatty cuts can trigger reflux",
 		},
-		{ name: "White onion", level: "high" as RiskLevel, note: "FODMAP — common IBS trigger" },
+		{ name: "White onion", level: "high" as RiskLevel },
 		{ name: "Cilantro", level: "low" as RiskLevel },
-		{ name: "Lime", level: "medium" as RiskLevel, note: "Acidic — possible reflux trigger" },
+		{ name: "Lime", level: "medium" as RiskLevel },
 		{
 			name: "Salsa roja",
 			level: "high" as RiskLevel,
-			note: "Tomato + chili — reflux + IBS double-hit",
 		},
 	] satisfies ScanIngredient[],
 	pip: "Tacos are a mixed bag for your gut. Onion and salsa roja are the biggest red flags. Asking for no onion and a milder salsa verde could drop the risk by about 20 points.",
@@ -192,18 +190,15 @@ const BARCODE_RESULT = {
 		{
 			name: "Semolina (wheat)",
 			level: "medium" as RiskLevel,
-			note: "Wheat = potential FODMAP/gluten trigger for IBS",
 		},
 		{
 			name: "Durum wheat flour",
 			level: "medium" as RiskLevel,
-			note: "Same wheat family — but bland and slow-digesting",
 		},
-		{ name: "Niacin (vitamin B3)", level: "low" as RiskLevel, note: "Added for fortification" },
+		{ name: "Niacin (vitamin B3)", level: "low" as RiskLevel },
 		{
 			name: "Iron (ferrous sulfate)",
 			level: "low" as RiskLevel,
-			note: "Added for fortification — large doses can occasionally irritate",
 		},
 		{ name: "Thiamine mononitrate (B1)", level: "low" as RiskLevel },
 		{ name: "Riboflavin (B2)", level: "low" as RiskLevel },
@@ -928,11 +923,5 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.semibold,
 		fontSize: 15,
 		lineHeight: 20,
-	},
-	ingredientCardNote: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 });

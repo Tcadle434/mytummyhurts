@@ -24,6 +24,8 @@ const baseAnswers: OnboardingAnswers = {
   currentEatingPatterns: [],
   lifestyleFactors: [],
   favoriteFoodsToReintroduce: '',
+  dietPreferenceKeys: [],
+  motivations: [],
 };
 
 function answers(overrides: Partial<OnboardingAnswers>): OnboardingAnswers {
@@ -92,6 +94,7 @@ function scan(localDate: string, ingredients: string[], overallRiskScore: number
     interpretation: '',
     conditionRisks: [],
     ingredientRisks: [],
+    dietEvaluations: [],
     structuredAnalysis: analysis(ingredients),
   };
 }

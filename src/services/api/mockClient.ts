@@ -1,6 +1,7 @@
 import { useAppStore } from '../../store/useAppStore';
 import {
   AnalyzeImageRequest,
+  AnalyzeBarcodeRequest,
   AnalyzeResponse,
   AnalyzeTextRequest,
   BillingSyncRequest,
@@ -87,6 +88,28 @@ export const mockApiClient = {
     };
   },
 
+  async analyzeBarcode(request: AnalyzeBarcodeRequest): Promise<AnalyzeResponse> {
+    const result = await useAppStore.getState().analyzeScanInput({
+      requestId: request.requestId,
+      sourceType: request.sourceType,
+      barcode: request.barcode,
+      scanCategory: request.scanCategory ?? 'grocery',
+      localDate: request.localDate,
+      timezone: request.timezone,
+    });
+    const state = useAppStore.getState();
+    const scan = state.scans.find((entry) => entry.id === result.scanId)!;
+    return {
+      scanId: result.scanId,
+      tokensRemaining: state.billing.tokensRemaining,
+      scan,
+      billing: state.billing,
+      profile: state.profile,
+      insights: state.insights,
+      conditionInsights: state.conditionInsights,
+    };
+  },
+
   async deleteScan(request: ScanDeleteRequest) {
     await useAppStore.getState().deleteScanRecord(request.scanId);
     const state = useAppStore.getState();
@@ -110,7 +133,7 @@ export const mockApiClient = {
       pageSize,
       hasMore: start + pageSize < state.scans.length,
       scans: scans.map(scanHistorySummary),
-      dailyReports: state.dailyReports,
+      dailyReports: request.includeDailyReports === false ? undefined : state.dailyReports,
     };
   },
 

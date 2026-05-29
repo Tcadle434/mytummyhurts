@@ -4,10 +4,18 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { isLiveBackendConfigured } from '../config/env';
 import { topUpOptions } from '../data/catalog';
-import { defaultOnboardingAnswers } from '../data/onboarding';
+import {
+  defaultOnboardingAnswers,
+  getOnboardingMotivationSummary,
+  normalizeOnboardingAnswers,
+} from '../data/onboarding';
 import { trackEvent } from '../services/analytics';
 import { apiClient } from '../services/api/client';
-import { LearningRecomputeRequest, ProfileUpdateRequest } from '../services/api/contracts';
+import {
+  LearningRecomputeRequest,
+  LearningRecomputeResponse,
+  ProfileUpdateRequest,
+} from '../services/api/contracts';
 import {
   analyzeMealInput,
   buildGutScoreEvent,
@@ -22,6 +30,7 @@ import { buildSubscriptionWindow } from '../services/billing/plans';
 import { queryClient } from '../services/query/client';
 import { queryKeys } from '../services/query/keys';
 import { uploadMealImage } from '../services/storage';
+import { showToast } from '../services/toast';
 import {
   AppUser,
   BillingState,
@@ -60,7 +69,15 @@ type AppStoreState = {
   cacheScanRecord: (scan: ScanRecord) => void;
   updateOnboardingField: <K extends keyof OnboardingAnswers>(field: K, value: OnboardingAnswers[K]) => void;
   toggleOnboardingValue: (
-    field: 'conditions' | 'ingredientSensitivities' | 'symptoms' | 'mealContexts' | 'currentEatingPatterns' | 'lifestyleFactors',
+    field:
+      | 'conditions'
+      | 'ingredientSensitivities'
+      | 'symptoms'
+      | 'mealContexts'
+      | 'motivations'
+      | 'currentEatingPatterns'
+      | 'lifestyleFactors'
+      | 'dietPreferenceKeys',
     value: string,
   ) => void;
   addCustomOnboardingValue: (field: 'customConditions' | 'customIngredientSensitivities' | 'customSymptoms', value: string) => void;
@@ -112,7 +129,51 @@ function currentTimezone() {
 }
 
 function scanCategoryForPayload(payload: ScanInputPayload): ScanCategory {
-  return payload.scanCategory ?? 'food';
+  if (payload.scanCategory === 'menu' || payload.scanCategory === 'grocery') {
+    return payload.scanCategory;
+  }
+  return 'food';
+}
+
+type HistoryQueryCache = {
+  pages?: { scans?: { id?: string }[]; [key: string]: unknown }[];
+  scans?: { id?: string }[];
+  [key: string]: unknown;
+};
+
+function removeScanFromHistoryCache(scanId: string) {
+  queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const historyCache = cached as HistoryQueryCache;
+    if (Array.isArray(historyCache.pages)) {
+      let changed = false;
+      const pages = historyCache.pages.map((page) => {
+        if (!Array.isArray(page.scans)) {
+          return page;
+        }
+
+        const scans = page.scans.filter((scan) => scan.id !== scanId);
+        if (scans.length === page.scans.length) {
+          return page;
+        }
+
+        changed = true;
+        return { ...page, scans };
+      });
+
+      return changed ? { ...historyCache, pages } : cached;
+    }
+
+    if (Array.isArray(historyCache.scans)) {
+      const scans = historyCache.scans.filter((scan) => scan.id !== scanId);
+      return scans.length === historyCache.scans.length ? cached : { ...historyCache, scans };
+    }
+
+    return cached;
+  });
 }
 
 function scanRequestId(payload: ScanInputPayload) {
@@ -125,6 +186,123 @@ function apiErrorCode(error: unknown) {
     : error instanceof Error
       ? error.name
       : 'unknown_error';
+}
+
+function isDisplayNameOnlyProfileRequest(request: ProfileUpdateRequest) {
+  const keys = Object.keys(request);
+  return keys.length === 1 && keys[0] === 'displayName';
+}
+
+function patchDisplayNameInInsightsCache(displayName: string | null | undefined) {
+  const normalizedDisplayName = displayName?.trim() || undefined;
+  queryClient.setQueriesData({ queryKey: queryKeys.insights }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object' || !('profile' in cached)) {
+      return cached;
+    }
+
+    const response = cached as { profile?: UserProfile | null };
+    if (!response.profile) {
+      return cached;
+    }
+
+    return {
+      ...response,
+      profile: {
+        ...response.profile,
+        displayName: normalizedDisplayName,
+      },
+    };
+  });
+}
+
+function patchInsightsCacheFromLearning(response: LearningRecomputeResponse) {
+  if (
+    typeof response.profile === 'undefined' &&
+    typeof response.insights === 'undefined' &&
+    typeof response.conditionInsights === 'undefined'
+  ) {
+    return;
+  }
+
+  queryClient.setQueriesData({ queryKey: queryKeys.insights }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const current = cached as {
+      profile?: UserProfile | null;
+      insights?: IngredientInsight[];
+      conditionInsights?: ConditionIngredientInsight[];
+      [key: string]: unknown;
+    };
+
+    return {
+      ...current,
+      profile: typeof response.profile === 'undefined' ? current.profile : response.profile,
+      insights: response.insights ?? current.insights,
+      conditionInsights: response.conditionInsights ?? current.conditionInsights,
+    };
+  });
+}
+
+function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] | undefined) {
+  if (!dailyReports) {
+    return;
+  }
+
+  const orderedReports = [...dailyReports].sort(
+    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+  );
+
+  queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const historyCache = cached as {
+      pages?: { dailyReports?: DailyGutReport[]; [key: string]: unknown }[];
+      dailyReports?: DailyGutReport[];
+      [key: string]: unknown;
+    };
+
+    if (Array.isArray(historyCache.pages)) {
+      return {
+        ...historyCache,
+        pages: historyCache.pages.map((page) =>
+          Array.isArray(page.dailyReports)
+            ? { ...page, dailyReports: orderedReports }
+            : page,
+        ),
+      };
+    }
+
+    if (Array.isArray(historyCache.dailyReports)) {
+      return {
+        ...historyCache,
+        dailyReports: orderedReports,
+      };
+    }
+
+    return cached;
+  });
+}
+
+async function runLearningRecomputeWithRetry(
+  request: LearningRecomputeRequest,
+  maxAttempts = 3,
+): Promise<LearningRecomputeResponse> {
+  let response: LearningRecomputeResponse | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    response = await apiClient.learningRecompute(request);
+    if (response.learningSyncStatus !== 'locked' || attempt === maxAttempts - 1) {
+      return response;
+    }
+
+    await sleep(1000 * (attempt + 1));
+  }
+
+  return response ?? { ok: true, learningSyncStatus: 'failed' };
 }
 
 function mergeById<T extends { id: string }>(items: T[], incoming: T) {
@@ -267,6 +445,9 @@ export const useAppStore = create<AppStoreState>()(
             }
 
             if (response.learningSyncStatus === 'updated') {
+              patchInsightsCacheFromLearning(response);
+              patchDailyReportsInHistoryCache(response.dailyReports);
+
               set((state) => {
                 if (state.learningSyncRequestId !== syncRequestId) {
                   return state;
@@ -345,6 +526,7 @@ export const useAppStore = create<AppStoreState>()(
             onboardingAnswers: {
               ...state.onboardingAnswers,
               [field]: nextValues,
+              ...(field === 'motivations' ? { motivation: nextValues.join(', ') } : {}),
             },
           };
         });
@@ -426,9 +608,10 @@ export const useAppStore = create<AppStoreState>()(
         }
 
         const [history, insightsResponse] = await Promise.all([
-          apiClient.getHistory({ page: 1, pageSize: 20 }),
+          apiClient.getHistory({ page: 1, pageSize: 20, includeDailyReports: true }),
           apiClient.getInsights(),
         ]);
+        queryClient.setQueryData([...queryKeys.insights, ''], insightsResponse);
 
         set((currentState) => ({
           scans: currentState.scans,
@@ -472,10 +655,11 @@ export const useAppStore = create<AppStoreState>()(
               symptomFrequency: state.onboardingAnswers.symptomFrequency,
               symptomSeverityBaseline: state.onboardingAnswers.symptomSeverityBaseline,
               mealContexts: state.onboardingAnswers.mealContexts,
-              motivation: state.onboardingAnswers.motivation,
+              motivation: getOnboardingMotivationSummary(state.onboardingAnswers),
               currentEatingPatterns: state.onboardingAnswers.currentEatingPatterns ?? [],
               lifestyleFactors: state.onboardingAnswers.lifestyleFactors ?? [],
               favoriteFoodsToReintroduce: state.onboardingAnswers.favoriteFoodsToReintroduce ?? '',
+              dietPreferenceKeys: state.onboardingAnswers.dietPreferenceKeys ?? [],
             },
           });
 
@@ -538,26 +722,50 @@ export const useAppStore = create<AppStoreState>()(
                   currentEatingPatterns: request.currentEatingPatterns ?? currentState.profile.currentEatingPatterns,
                   lifestyleFactors: request.lifestyleFactors ?? currentState.profile.lifestyleFactors,
                   foodsToReintroduce: request.foodsToReintroduce ?? currentState.profile.foodsToReintroduce,
+                  dietPreferences: request.dietPreferences ?? currentState.profile.dietPreferences,
                 }
               : currentState.profile,
           }));
           return;
         }
 
+        const displayNameOnly = isDisplayNameOnlyProfileRequest(request);
         const response = await apiClient.updateProfile(request);
+        const nextDisplayName =
+          typeof response.displayName !== 'undefined'
+            ? response.displayName?.trim() || undefined
+            : typeof request.displayName !== 'undefined'
+              ? request.displayName?.trim() || undefined
+              : undefined;
         set((currentState) => ({
           onboardingAnswers:
             typeof request.displayName === 'undefined'
               ? currentState.onboardingAnswers
               : {
                   ...currentState.onboardingAnswers,
-                  displayName: request.displayName?.trim() ?? '',
+                  displayName: nextDisplayName ?? '',
                 },
-          profile: response.profile ?? currentState.profile,
-          insights: response.insights,
-          conditionInsights: response.conditionInsights,
-          billing: response.billing,
+          profile:
+            response.profile ??
+            (currentState.profile
+              ? {
+                  ...currentState.profile,
+                  displayName:
+                    typeof nextDisplayName !== 'undefined' || typeof request.displayName !== 'undefined'
+                      ? nextDisplayName
+                      : currentState.profile.displayName,
+                }
+              : currentState.profile),
+          insights: response.insights ?? currentState.insights,
+          conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+          billing: response.billing ?? currentState.billing,
         }));
+
+        if (displayNameOnly) {
+          patchDisplayNameInInsightsCache(nextDisplayName);
+          return;
+        }
+
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
           queryClient.invalidateQueries({ queryKey: queryKeys.home }),
@@ -576,10 +784,11 @@ export const useAppStore = create<AppStoreState>()(
         const scanStartedAt = now();
         const requestId = scanRequestId(payload);
         const scanCategory = scanCategoryForPayload(payload);
+        const requestedScanCategory = payload.scanCategory ?? scanCategory;
         const localDate = payload.localDate ?? localDateString();
         const timezone = payload.timezone ?? currentTimezone();
-        trackEvent('scan_started', { request_id: requestId, source_type: payload.sourceType, scan_category: scanCategory, entry_point: payload.sourceType });
-        trackEvent('scan_analysis_started', { request_id: requestId, source_type: payload.sourceType, scan_category: scanCategory });
+        trackEvent('scan_started', { request_id: requestId, source_type: payload.sourceType, scan_category: requestedScanCategory, entry_point: payload.sourceType });
+        trackEvent('scan_analysis_started', { request_id: requestId, source_type: payload.sourceType, scan_category: requestedScanCategory });
 
         if (isLiveBackendConfigured && state.authUser) {
           const authUser = state.authUser;
@@ -599,25 +808,39 @@ export const useAppStore = create<AppStoreState>()(
                   await Promise.all(
                     imageUris.map((imageUri, index) =>
                       uploadMealImage(imageUri, authUser.id, imageDataUrls[index]).catch((error) => {
-                        console.warn('[scan] image thumbnail upload failed; continuing with inline image data.', error);
+                        console.warn('[scan] image upload failed; continuing with inline image data.', error);
                         return null;
                       }),
                     ),
                   )
                 )
               : [];
-            const imagePaths = imageUploadResults.filter((path): path is string => Boolean(path));
+            const imagePaths = imageUploadResults
+              .map((result) => result?.storagePath)
+              .filter((path): path is string => Boolean(path));
+            const thumbnailImagePaths = imageUploadResults.map((result) => result?.thumbnailStoragePath ?? null);
+            const hasThumbnailImagePaths = thumbnailImagePaths.some((path) => Boolean(path));
             const inlineImageDataUrls = imageDataUrls;
             const inlineImageDataUrl = inlineImageDataUrls[0];
-            const response = imageUris.length || imageDataUrls.length
+            const response = payload.barcode?.trim()
+              ? await apiClient.analyzeBarcode({
+                  requestId,
+                  barcode: payload.barcode.trim(),
+                  sourceType: payload.sourceType,
+                  scanCategory: 'grocery',
+                  localDate,
+                  timezone,
+                })
+              : imageUris.length || imageDataUrls.length
               ? await apiClient.analyzeImage({
                   requestId,
                   imagePath: imagePaths[0],
                   imagePaths: imagePaths.length > 1 ? imagePaths : undefined,
+                  thumbnailImagePaths: hasThumbnailImagePaths ? thumbnailImagePaths : undefined,
                   imageDataUrl: inlineImageDataUrl,
                   imageDataUrls: inlineImageDataUrls.length > 1 ? inlineImageDataUrls : undefined,
                   sourceType: payload.sourceType,
-                  scanCategory,
+                  scanCategory: requestedScanCategory,
                   localDate,
                   timezone,
                 })
@@ -625,7 +848,7 @@ export const useAppStore = create<AppStoreState>()(
                   requestId,
                   text: payload.text?.trim() || 'demo meal with rice and chicken',
                   sourceType: payload.sourceType,
-                  scanCategory,
+                  scanCategory: requestedScanCategory,
                   localDate,
                   timezone,
                 });
@@ -658,7 +881,7 @@ export const useAppStore = create<AppStoreState>()(
             trackEvent('scan_analysis_failed', {
               request_id: requestId,
               source_type: payload.sourceType,
-              scan_category: scanCategory,
+              scan_category: requestedScanCategory,
               error_code: apiErrorCode(error),
             });
             throw error;
@@ -706,26 +929,100 @@ export const useAppStore = create<AppStoreState>()(
         const existingScan = get().scans.find((scan) => scan.id === scanId);
 
         if (isLiveBackendConfigured && get().authUser) {
-          const response = await apiClient.deleteScan({ scanId });
+          await Promise.all([
+            queryClient.cancelQueries({ queryKey: queryKeys.history }),
+            queryClient.cancelQueries({ queryKey: queryKeys.scan(scanId) }),
+          ]);
+
           set((state) => ({
             scans: state.scans.filter((scan) => scan.id !== scanId),
-            profile: response.profile ?? state.profile,
-            insights: response.insights,
-            conditionInsights: response.conditionInsights,
           }));
-        } else {
-          if (!existingScan) {
-            return;
-          }
+          removeScanFromHistoryCache(scanId);
+          queryClient.removeQueries({ queryKey: queryKeys.scan(scanId) });
 
-          set((state) => {
-            const scans = state.scans.filter((scan) => scan.id !== scanId);
-            return {
-              scans,
-              ...rebuildLocalLearningState(state, scans, state.dailyReports, 'scan_deleted'),
-            };
+          trackEvent('history_item_deleted', {
+            scan_id: scanId,
+            scan_category: existingScan?.scanCategory ?? 'unknown',
+            source_type: existingScan?.sourceType ?? 'unknown',
           });
+
+          void (async () => {
+            try {
+              const response = await apiClient.deleteScan({ scanId });
+              set((state) => ({
+                profile: response.profile ?? state.profile,
+                insights: response.insights ?? state.insights,
+                conditionInsights: response.conditionInsights ?? state.conditionInsights,
+              }));
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              ]);
+              trackEvent('history_item_delete_synced', {
+                scan_id: scanId,
+                learning_sync_status: response.learningSyncStatus ?? 'unknown',
+              });
+            } catch (error) {
+              const errorCode = apiErrorCode(error);
+              if (errorCode === 'scan_not_found') {
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                  queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                  queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+                ]);
+                trackEvent('history_item_delete_synced', {
+                  scan_id: scanId,
+                  learning_sync_status: 'not_found',
+                });
+                return;
+              }
+
+              if (existingScan) {
+                set((state) => {
+                  if (state.scans.some((scan) => scan.id === scanId)) {
+                    return state;
+                  }
+
+                  return {
+                    scans: [existingScan, ...state.scans].sort(
+                      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+                    ),
+                  };
+                });
+              }
+
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              ]);
+              showToast({
+                message: 'Delete failed',
+                detail: existingScan ? 'The scan was restored.' : 'Refresh your history and try again.',
+                tone: 'error',
+              });
+              trackEvent('history_item_delete_failed', {
+                scan_id: scanId,
+                error_code: errorCode,
+              });
+            }
+          })();
+
+          return;
         }
+
+        if (!existingScan) {
+          return;
+        }
+
+        set((state) => {
+          const scans = state.scans.filter((scan) => scan.id !== scanId);
+          return {
+            scans,
+            ...rebuildLocalLearningState(state, scans, state.dailyReports, 'scan_deleted'),
+          };
+        });
 
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.history }),
@@ -736,8 +1033,8 @@ export const useAppStore = create<AppStoreState>()(
 
         trackEvent('history_item_deleted', {
           scan_id: scanId,
-          scan_category: existingScan?.scanCategory ?? 'unknown',
-          source_type: existingScan?.sourceType ?? 'unknown',
+          scan_category: existingScan.scanCategory,
+          source_type: existingScan.sourceType,
         });
       },
       upsertDailyReport: async ({ localDate, gutSeverity, symptomTags = [], notes }) => {
@@ -781,18 +1078,75 @@ export const useAppStore = create<AppStoreState>()(
                 symptomTags: normalizedSymptomTags,
                 notes,
               });
+              const learningResponse =
+                response.learningSyncStatus === 'queued'
+                  ? await runLearningRecomputeWithRetry({
+                      sourceType: 'daily_gut_report',
+                      sourceId: response.report.id,
+                      eventType: 'daily_report_saved',
+                    })
+                  : null;
+
+              if (learningResponse?.learningSyncStatus === 'updated') {
+                patchInsightsCacheFromLearning(learningResponse);
+                patchDailyReportsInHistoryCache(learningResponse.dailyReports);
+              }
+
+              const nextDailyReports = learningResponse?.dailyReports
+                ? [...learningResponse.dailyReports].sort(
+                    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+                  )
+                : null;
+              const learningSyncError =
+                response.learningSyncStatus === 'failed'
+                  ? 'Daily report saved, but learning refresh could not be queued.'
+                  : learningResponse &&
+                    learningResponse.learningSyncStatus !== 'updated'
+                    ? 'Daily report saved, but Gut Score refresh is still catching up.'
+                    : null;
 
               set((currentState) => ({
-                dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
-                  (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-                ),
+                profile: learningResponse?.profile ?? currentState.profile,
+                insights: learningResponse?.insights ?? currentState.insights,
+                conditionInsights:
+                  learningResponse?.conditionInsights ?? currentState.conditionInsights,
+                dailyReports:
+                  nextDailyReports ??
+                  mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
+                    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+                  ),
+                learningSyncInFlight: false,
+                learningSyncRequestId: null,
+                learningSyncError,
               }));
-              void queryClient.invalidateQueries({ queryKey: queryKeys.history });
-              get().triggerLearningRecompute({
-                sourceType: 'daily_gut_report',
-                sourceId: response.report.id,
-                eventType: gutSeverity <= 3 ? 'calm_daily_report' : gutSeverity >= 7 ? 'reactive_daily_report' : 'neutral_daily_report',
-              });
+              void Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+              ]);
+
+              trackEvent(
+                learningResponse ? 'learning_recompute_completed' : 'learning_recompute_queued',
+                {
+                  source_type: 'daily_gut_report',
+                  source_id: response.report.id,
+                  status:
+                    learningResponse?.learningSyncStatus ?? response.learningSyncStatus,
+                },
+              );
+
+              if (response.learningSyncStatus === 'queued' && learningResponse?.learningSyncStatus !== 'updated') {
+                setTimeout(() => {
+                  void get().refreshRemoteState().catch((error) => {
+                    console.warn('[learning] delayed refresh failed', error);
+                  });
+                  void Promise.all([
+                    queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                    queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+                    queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                  ]);
+                }, 60_000);
+              }
             } catch (error) {
               set((currentState) =>
                 currentState.learningSyncRequestId === optimisticReport.id
@@ -875,6 +1229,15 @@ export const useAppStore = create<AppStoreState>()(
     {
       name: 'mytummyhurts-store',
       storage: createJSONStorage(() => AsyncStorage),
+      merge: (persisted, current) => {
+        const persistedState = persisted as Partial<AppStoreState> | undefined;
+        return {
+          ...current,
+          ...persistedState,
+          onboardingAnswers: normalizeOnboardingAnswers(persistedState?.onboardingAnswers),
+          remoteDataLoaded: false,
+        };
+      },
       partialize: (state) => ({
         onboardingStage: state.onboardingStage,
         onboardingStepIndex: state.onboardingStepIndex,
@@ -888,7 +1251,6 @@ export const useAppStore = create<AppStoreState>()(
         conditionInsights: state.conditionInsights,
         initialServerSyncNeeded: state.initialServerSyncNeeded,
         serverSyncError: state.serverSyncError,
-        remoteDataLoaded: state.remoteDataLoaded,
       }),
     },
   ),

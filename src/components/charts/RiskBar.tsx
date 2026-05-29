@@ -20,35 +20,39 @@ export function RiskBar({ label, score, level }: RiskBarProps) {
 
   return (
     <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
+      <View style={styles.header}>
+        <Text style={styles.label} numberOfLines={1}>{label}</Text>
+        <Text style={[styles.level, { color: tone }]}>{levelLabel}</Text>
+      </View>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${score}%`, backgroundColor: tone }]} />
       </View>
-      <Text style={[styles.level, { color: tone }]}>{levelLabel}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
+    gap: 6,
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
+    gap: 12,
   },
   label: {
-    width: 62,
+    flex: 1,
     color: tokens.color.text.primary,
     fontFamily: type.body.medium,
     fontSize: 14,
+    textTransform: 'capitalize',
   },
   level: {
-    width: 54,
-    textAlign: 'right',
-    fontFamily: type.body.medium,
+    fontFamily: type.body.semibold,
     fontSize: 13,
   },
   track: {
-    flex: 1,
     height: 6,
     borderRadius: radii.pill,
     backgroundColor: components.chart.track,

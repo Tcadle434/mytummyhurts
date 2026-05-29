@@ -1,4 +1,4 @@
-import { dishLibrary } from '../../data/catalog';
+import { dietPreferenceLabelFromKey, dishLibrary } from '../../data/catalog';
 import {
   ConditionIngredientInsight,
   ConditionRisk,
@@ -220,29 +220,6 @@ function buildConditionRiskRows(
   }));
 }
 
-function ingredientRiskReason(
-  ingredientName: string,
-  level: RiskLevel,
-  matchedSensitivity: boolean,
-  evidence: string,
-) {
-  if (matchedSensitivity) {
-    return `${ingredientName} appears in this scan and matches a risk pattern in your gut profile.`;
-  }
-
-  if (level === 'high') {
-    return `${ingredientName} is a higher-risk ingredient pattern for your profile.`;
-  }
-
-  if (level === 'medium') {
-    return evidence === 'inferred'
-      ? `${ingredientName} is inferred from the scan, so treat it as a watch-out.`
-      : `${ingredientName} has some watch-outs for your profile.`;
-  }
-
-  return `${ingredientName} looks lower risk for your current profile.`;
-}
-
 function buildIngredientRiskRows(
   structuredAnalysis: StructuredAnalysisV2,
   triggerScores: { name: string; score: number }[],
@@ -284,7 +261,7 @@ function buildIngredientRiskRows(
       evidence: ingredient.evidence,
       confidence: ingredient.confidence,
       componentName: ingredient.component,
-      reason: ingredientRiskReason(canonicalName, riskLevel, matchedSensitivity, ingredient.evidence),
+      reason: '',
       displayOrder: rows.length,
     });
   }
@@ -1425,6 +1402,12 @@ export function buildUserProfile(userId: string, answers: OnboardingAnswers, pri
     currentEatingPatterns: answers.currentEatingPatterns ?? [],
     lifestyleFactors: answers.lifestyleFactors ?? [],
     foodsToReintroduce: foodsToReintroduceFromAnswers(answers),
+    dietPreferences: (answers.dietPreferenceKeys ?? []).map((key) => ({
+      key,
+      label: dietPreferenceLabelFromKey(key),
+      strictness: 'standard' as const,
+      source: 'onboarding' as const,
+    })),
     stomachProfile: {
       version: 3,
       conditions: knownConditions.map((name) => ({ name, source: 'user' as const, active: true })),
@@ -1532,6 +1515,7 @@ export function analyzeMealInput(
     summary: interpretation,
     conditionRisks: buildConditionRiskRows(conditionRiskScores, possibleTriggers),
     ingredientRisks: buildIngredientRiskRows(structuredAnalysis, triggerScores, profile),
+    dietEvaluations: [],
     imageUri: payload.imageUri,
     structuredAnalysis,
     gutScoreImpact: computeGutScoreImpact(overallRiskScore, possibleTriggers, profile),

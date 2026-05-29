@@ -25,7 +25,7 @@ type AuthAccountContentProps = {
 	subtitle?: string;
 	backAccessibilityLabel?: string;
 	showModeToggle?: boolean;
-	onBack: () => void;
+	onBack?: () => void;
 	onEmailChange: (value: string) => void;
 	onPasswordChange: (value: string) => void;
 	onSignIn: () => void;
@@ -59,15 +59,19 @@ export function AuthAccountContent({
 		<AppScreen contentContainerStyle={styles.screenContent}>
 			<View style={styles.root}>
 				<View style={styles.headerRow}>
-					<Pressable
-						accessibilityRole="button"
-						accessibilityLabel={backAccessibilityLabel}
-						onPress={onBack}
-						hitSlop={8}
-						style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.72 }]}
-					>
-						<Ionicons name="chevron-back" size={24} color={palette.primary} />
-					</Pressable>
+					{onBack ? (
+						<Pressable
+							accessibilityRole="button"
+							accessibilityLabel={backAccessibilityLabel}
+							onPress={onBack}
+							hitSlop={8}
+							style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.72 }]}
+						>
+							<Ionicons name="chevron-back" size={24} color={palette.primary} />
+						</Pressable>
+					) : (
+						<View style={styles.headerSpacer} />
+					)}
 					<View style={styles.headerSpacer} />
 				</View>
 
@@ -129,7 +133,7 @@ export function AuthAccountContent({
 							>
 								<Text style={styles.modeToggleText}>
 									{isSignInMode
-										? "Need an account? Create one"
+										? "Don't have an account? Sign up."
 										: "Already have an account? Sign in"}
 								</Text>
 							</Pressable>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ScanRecord } from "../../../types/domain";
-import { selectPreferredScan } from "../resultSelection";
+import { normalizeScanRecord, selectPreferredScan } from "../resultSelection";
 
 function scan(overrides: Partial<ScanRecord>): ScanRecord {
 	return {
@@ -19,6 +19,7 @@ function scan(overrides: Partial<ScanRecord>): ScanRecord {
 		interpretation: "Result",
 		conditionRisks: [],
 		ingredientRisks: [],
+		dietEvaluations: [],
 		structuredAnalysis: {
 			dishName: "Scan",
 			dishConfidence: "medium",
@@ -64,5 +65,69 @@ describe("selectPreferredScan", () => {
 		});
 
 		expect(selectPreferredScan(staleStoreScan, historyScan)).toBe(historyScan);
+	});
+});
+
+describe("normalizeScanRecord", () => {
+	it("fills missing V2 arrays on legacy saved meal scans", () => {
+		const legacyScan = {
+			id: "scan-legacy",
+			sourceType: "camera",
+			scanCategory: "food",
+			analysisStatus: "completed",
+			tokenCost: 1,
+			createdAt: "2026-05-20T00:00:00.000Z",
+			dishName: "Old meal",
+			overallRiskScore: 42,
+			overallRiskLevel: "medium",
+			conditionRiskScores: {},
+			interpretation: "Old result",
+		} as unknown as ScanRecord;
+
+		const normalized = normalizeScanRecord(legacyScan);
+
+		expect(normalized.possibleTriggers).toEqual([]);
+		expect(normalized.conditionRisks).toEqual([]);
+		expect(normalized.ingredientRisks).toEqual([]);
+		expect(normalized.dietEvaluations).toEqual([]);
+		expect(normalized.structuredAnalysis.visibleIngredients).toEqual([]);
+		expect(normalized.structuredAnalysis.inferredIngredients).toEqual([]);
+	});
+
+	it("fills missing menu item arrays on legacy menu results", () => {
+		const legacyMenuScan = scan({
+			scanCategory: "menu",
+			menuResult: {
+				menuTitle: "Old menu",
+				inputPageCount: 1,
+				summary: "Old menu summary",
+				items: [
+					{
+						id: "item-1",
+						sourceItemId: "item-1",
+						tier: "eat_with_caution",
+						tierRank: 1,
+						displayOrder: 0,
+						name: "Old burger",
+						riskScore: 55,
+						riskLevel: "medium",
+						confidence: "medium",
+						scoringConfidence: "medium",
+						whyThisScore: "Medium risk.",
+					} as unknown as NonNullable<ScanRecord["menuResult"]>["items"][number],
+				],
+				bestForYou: [],
+				eatWithCaution: [],
+				tryToAvoid: [],
+			},
+		});
+
+		const normalized = normalizeScanRecord(legacyMenuScan);
+		const item = normalized.menuResult?.items[0];
+
+		expect(item).toBeDefined();
+		expect(item?.ingredientRisks).toEqual([]);
+		expect(item?.dietEvaluations).toEqual([]);
+		expect(item?.scoreContributors).toEqual([]);
 	});
 });

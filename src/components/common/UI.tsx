@@ -61,7 +61,7 @@ type SectionCardProps = {
 
 type SkeletonBlockProps = {
   width?: number | `${number}%`;
-  height: number;
+  height: number | `${number}%`;
   radius?: number;
   style?: StyleProp<ViewStyle>;
 };

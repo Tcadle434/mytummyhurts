@@ -25,6 +25,7 @@ export type RootStackParamList = {
     sourceType?: ScanInputPayload['sourceType'];
     manualMode?: boolean;
     scanCategory?: ScanInputPayload['scanCategory'];
+    initialMode?: 'food' | 'menu' | 'barcode';
   };
   ScanAnalyzing: {
     payload: ScanInputPayload;

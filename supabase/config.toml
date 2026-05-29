@@ -148,6 +148,12 @@ verify_jwt = false
 [functions.insights-get]
 verify_jwt = false
 
+[functions.learning-recompute]
+verify_jwt = false
+
+[functions.learning-jobs-process]
+verify_jwt = false
+
 [functions.notifications-register-token]
 verify_jwt = false
 
@@ -158,6 +164,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.scan-analyze-text]
+verify_jwt = false
+
+[functions.scan-analyze-barcode]
 verify_jwt = false
 
 [functions.scan-delete]

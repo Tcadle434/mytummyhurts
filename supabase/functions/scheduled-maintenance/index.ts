@@ -12,6 +12,7 @@ import {
   markDeviceTokenDelivery,
 } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody, requireInternalSecret } from '../_shared/http.ts';
+import { processDueLearningJobs } from '../_shared/learningJobs.ts';
 import { errorMetadata, recordSystemEvent } from '../_shared/observability.ts';
 import { OperationLockBusyError, rebuildInsightsAndProfile } from '../_shared/profile.ts';
 import { createAdminClient } from '../_shared/supabase.ts';
@@ -304,6 +305,14 @@ async function processGutScoreRefresh(limit: number) {
   return { refreshed, skippedLocked, failed };
 }
 
+async function processLearningJobs(limit: number) {
+  const admin = createAdminClient();
+  return processDueLearningJobs(admin, {
+    limit,
+    workerId: `scheduled-maintenance:${crypto.randomUUID()}`,
+  });
+}
+
 serve(async (request) => {
   if (isOptionsRequest(request)) {
     return jsonResponse({ ok: true });
@@ -317,10 +326,11 @@ serve(async (request) => {
     requireMaintenanceSecret(request);
     const body = await readJsonBody<{ limit?: number }>(request);
     const limit = Math.min(100, Math.max(1, Number(body.limit ?? 40)));
-    const [renewedSubscriptions, dailyReportReminders, gutScoresRefreshed] = await Promise.all([
+    const [renewedSubscriptions, dailyReportReminders, gutScoresRefreshed, learningJobs] = await Promise.all([
       processRenewals(limit),
       processDailyReportReminders(limit),
       processGutScoreRefresh(limit),
+      processLearningJobs(limit),
     ]);
 
     return jsonResponse({
@@ -328,6 +338,7 @@ serve(async (request) => {
       renewedSubscriptions,
       dailyReportReminders,
       gutScoresRefreshed,
+      learningJobs,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'forbidden') {

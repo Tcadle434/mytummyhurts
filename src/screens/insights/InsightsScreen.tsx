@@ -2,13 +2,14 @@ import { useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 
+import { Pip } from '../../components/common/Pip';
 import { AppScreen, SectionCard, SkeletonBlock, TabScreenHeader } from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { selectInsightBuckets, useAppStore } from '../../store/useAppStore';
-import { radii, spacing, tokens, type } from '../../theme';
+import { radii, spacing, tokens, type, type PipState } from '../../theme';
 import { ConditionsChipRow } from './ConditionsChipRow';
 import { IngredientInsightRow } from './IngredientInsightRow';
 import { TriggerSymptomMatrix } from './TriggerSymptomMatrix';
@@ -102,7 +103,11 @@ export function InsightsScreen() {
             ))}
           </View>
         ) : (
-          <EmptyHint copy="Keep scanning food and logging gut reports — your top triggers will surface here as the app learns your patterns." />
+          <EmptyHint
+            pipState="thinking"
+            title="Still learning your triggers"
+            subtitle="A few more scans and they'll show up here."
+          />
         )}
       </SectionGroup>
 
@@ -124,7 +129,11 @@ export function InsightsScreen() {
             ))}
           </View>
         ) : (
-          <EmptyHint copy="Calm days will start filling this list once the app sees a few meals followed by symptom-free reports." />
+          <EmptyHint
+            pipState="subtle"
+            title="Building your safe list"
+            subtitle="Log a few calm days and Pip will fill this in."
+          />
         )}
       </SectionGroup>
     </AppScreen>
@@ -151,10 +160,24 @@ function SectionGroup({
   );
 }
 
-function EmptyHint({ copy }: { copy: string }) {
+export function EmptyHint({
+  pipState,
+  title,
+  subtitle,
+}: {
+  pipState: PipState;
+  title: string;
+  subtitle: string;
+}) {
   return (
-    <SectionCard>
-      <Text style={styles.emptyCopy}>{copy}</Text>
+    <SectionCard style={styles.emptyHintCard}>
+      <View style={styles.emptyHintBadge}>
+        <Pip state={pipState} size={48} />
+      </View>
+      <View style={styles.emptyHintCopy}>
+        <Text style={styles.emptyHintTitle}>{title}</Text>
+        <Text style={styles.emptyHintSubtitle}>{subtitle}</Text>
+      </View>
     </SectionCard>
   );
 }
@@ -200,11 +223,34 @@ const styles = StyleSheet.create({
   listStack: {
     gap: spacing.xs,
   },
-  emptyCopy: {
-    color: tokens.color.text.secondary,
+  emptyHintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  emptyHintBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: tokens.color.surface.card.warm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyHintCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  emptyHintTitle: {
+    color: tokens.color.text.primary,
+    fontFamily: type.body.bold,
+    fontSize: 16,
+    letterSpacing: -0.2,
+  },
+  emptyHintSubtitle: {
+    color: tokens.color.text.tertiary,
     fontFamily: type.body.medium,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
   },
   skeletonRow: {
     minHeight: 64,

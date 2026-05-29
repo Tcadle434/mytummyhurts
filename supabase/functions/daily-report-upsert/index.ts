@@ -2,6 +2,8 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
 import { ensureUserRow, mapDailyReportRow } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
+import { enqueueLearningJob } from '../_shared/learningJobs.ts';
+import { errorMetadata, recordSystemEvent } from '../_shared/observability.ts';
 import { computeDailyScoreForReport } from '../_shared/scoring.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
 import type { ScanForInsightRecompute } from '../_shared/domain.ts';
@@ -124,10 +126,36 @@ serve(async (request) => {
       throw scoreUpdateError;
     }
 
+    let learningSyncStatus: 'queued' | 'failed' = 'queued';
+    try {
+      await enqueueLearningJob(admin, {
+        userId: user.id,
+        eventType: 'daily_report_saved',
+        sourceType: 'daily_gut_report',
+        sourceId: String(scoredReportRow.id),
+        metadata: {
+          localDate: body.localDate,
+          gutSeverity: severity,
+          symptomTags,
+        },
+      });
+    } catch (error) {
+      learningSyncStatus = 'failed';
+      await recordSystemEvent(admin, {
+        eventType: 'daily_report_learning_job_enqueue_failed',
+        severity: 'error',
+        userId: user.id,
+        operation: 'daily_report_upsert',
+        entityType: 'daily_gut_report',
+        entityId: String(scoredReportRow.id),
+        metadata: errorMetadata(error),
+      });
+    }
+
     return jsonResponse({
       ok: true,
       report: mapDailyReportRow(scoredReportRow as Record<string, unknown>),
-      learningSyncStatus: 'queued',
+      learningSyncStatus,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'unauthorized') {

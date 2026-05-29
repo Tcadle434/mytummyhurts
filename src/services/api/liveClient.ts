@@ -5,6 +5,7 @@ import { UserProfile } from '../../types/domain';
 import { ApiError, normalizeRetryableTransportError } from './errors';
 import {
   AnalyzeImageRequest,
+  AnalyzeBarcodeRequest,
   AnalyzeResponse,
   AnalyzeTextRequest,
   BillingSyncRequest,
@@ -155,15 +156,12 @@ export const liveApiClient = {
     return invokeFunction<AnalyzeResponse>('scan-analyze-text', request);
   },
 
+  analyzeBarcode(request: AnalyzeBarcodeRequest) {
+    return invokeFunction<AnalyzeResponse>('scan-analyze-barcode', request);
+  },
+
   async deleteScan(request: ScanDeleteRequest) {
-    const [response, displayName] = await Promise.all([
-      invokeFunction<ScanDeleteResponse>('scan-delete', request),
-      fetchDisplayName(),
-    ]);
-    return {
-      ...response,
-      profile: mergeDisplayName(response.profile, displayName),
-    };
+    return invokeFunction<ScanDeleteResponse>('scan-delete', request);
   },
 
   getHistory(request: HistoryRequest = {}) {
@@ -201,13 +199,7 @@ export const liveApiClient = {
   },
 
   async updateProfile(request: ProfileUpdateRequest) {
-    const response = await invokeFunction<ProfileUpdateResponse>('profile-update', request);
-    const displayName = await fetchDisplayName();
-
-    return {
-      ...response,
-      profile: mergeDisplayName(response.profile, displayName),
-    };
+    return invokeFunction<ProfileUpdateResponse>('profile-update', request);
   },
 
   syncBilling(request: BillingSyncRequest) {

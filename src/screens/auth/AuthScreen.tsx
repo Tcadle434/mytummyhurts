@@ -24,11 +24,6 @@ export function AuthScreen({ navigation }: Props) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const busyMessage = busyProvider === 'signIn' ? 'signing in' : busyProvider === 'signUp' ? 'creating your account' : `${busyProvider} sign-in`;
 
-  function returnToPaywall() {
-    setOnboardingStage('paywall');
-    navigation.replace('OnboardingPaywall');
-  }
-
   function finishAuth() {
     setOnboardingStage('complete');
   }
@@ -81,12 +76,11 @@ export function AuthScreen({ navigation }: Props) {
       busyMessage={busyMessage}
       errorMessage={errorMessage}
       emailMode="signUp"
-      onBack={returnToPaywall}
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onSignIn={() => void handleEmailAuth('signIn')}
       onCreateAccount={() => void handleEmailAuth('signUp')}
-      onToggleEmailMode={() => navigation.navigate('OnboardingSignIn')}
+      onToggleEmailMode={() => navigation.replace('OnboardingSignIn')}
       providerSlot={
         <>
           {Platform.OS === 'ios' ? (

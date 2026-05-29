@@ -21,14 +21,6 @@ export function ExistingAccountSignInScreen({ navigation }: Props) {
     navigation.replace('GetStarted');
   }
 
-  function handleBack() {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-      return;
-    }
-    returnToGetStarted();
-  }
-
   async function finishExistingSignIn(cleanupFreshUnentitledUser: boolean) {
     return verifyExistingAccountSignIn({
       cleanupFreshUnentitledUser,
@@ -71,20 +63,17 @@ export function ExistingAccountSignInScreen({ navigation }: Props) {
       eyebrow="Existing account"
       title="Sign in"
       subtitle="Welcome back. Sign in to continue."
-      backAccessibilityLabel="Back"
       email={email}
       password={password}
       busy={busyProvider !== null}
       busyMessage={busyMessage}
       errorMessage={errorMessage}
       emailMode="signIn"
-      showModeToggle={false}
-      onBack={handleBack}
+      onToggleEmailMode={() => navigation.replace('OnboardingAuth')}
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onSignIn={() => void handleEmailSignIn()}
       onCreateAccount={() => undefined}
-      onToggleEmailMode={() => undefined}
       providerSlot={
         <AuthProviderButton
           label={busyProvider === 'google' ? 'Connecting Google...' : 'Continue with Google'}

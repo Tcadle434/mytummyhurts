@@ -1,8 +1,17 @@
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+
 import { requireSupabaseClient } from '../supabase/client';
 import { createId } from '../../utils/id';
 import { extensionForImageContentType, normalizeImageDataUrl } from '../images/imageData';
 
 const mealImagesBucket = 'meal-images';
+const thumbnailMaxWidth = 512;
+const thumbnailQuality = 0.7;
+
+export type UploadMealImageResult = {
+  storagePath: string;
+  thumbnailStoragePath?: string;
+};
 
 function inferExtension(uri: string) {
   const match = uri.toLowerCase().match(/\.(heic|heif|jpg|jpeg|png|webp|gif)(\?.*)?$/);
@@ -91,7 +100,48 @@ async function blobFromLocalUri(uri: string) {
   return fallbackBlob;
 }
 
-export async function uploadMealImage(localUri: string, userId: string, imageDataUrl?: string) {
+async function uploadImageBytes(storagePath: string, uploadBody: Blob | ArrayBuffer, contentType: string, cacheControl = '3600') {
+  const { error } = await requireSupabaseClient().storage.from(mealImagesBucket).upload(storagePath, uploadBody, {
+    cacheControl,
+    contentType,
+    upsert: false,
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function createThumbnailUpload(localUri: string, userId: string, originalFileName: string) {
+  const baseName = originalFileName.replace(/\.[^.]+$/, '');
+  const thumbnailPath = `${userId}/thumbnails/${baseName}-thumb.jpg`;
+  const thumbnail = await manipulateAsync(
+    localUri,
+    [{ resize: { width: thumbnailMaxWidth } }],
+    {
+      compress: thumbnailQuality,
+      format: SaveFormat.JPEG,
+      base64: true,
+    },
+  );
+  const normalizedThumbnail = normalizeImageDataUrl(
+    thumbnail.base64 ? `data:image/jpeg;base64,${thumbnail.base64}` : null,
+  );
+  if (!normalizedThumbnail) {
+    throw new Error('The selected image thumbnail could not be created.');
+  }
+
+  await uploadImageBytes(
+    thumbnailPath,
+    bytesFromBase64(normalizedThumbnail.base64).buffer,
+    'image/jpeg',
+    '604800',
+  );
+
+  return thumbnailPath;
+}
+
+export async function uploadMealImage(localUri: string, userId: string, imageDataUrl?: string): Promise<UploadMealImageResult> {
   const parsedDataUrl = imageDataUrl ? parseDataUrl(imageDataUrl) : null;
   const extension = parsedDataUrl ? extensionForImageContentType(parsedDataUrl.contentType) : inferExtension(localUri);
   const fileName = `${Date.now()}-${createId('meal')}.${extension}`;
@@ -102,15 +152,15 @@ export async function uploadMealImage(localUri: string, userId: string, imageDat
     (uploadBody instanceof Blob ? uploadBody.type : null) ??
     inferContentType(extension);
 
-  const { error } = await requireSupabaseClient().storage.from(mealImagesBucket).upload(storagePath, uploadBody, {
-    cacheControl: '3600',
-    contentType,
-    upsert: false,
-  });
+  await uploadImageBytes(storagePath, uploadBody, contentType);
 
-  if (error) {
-    throw error;
+  try {
+    return {
+      storagePath,
+      thumbnailStoragePath: await createThumbnailUpload(localUri, userId, fileName),
+    };
+  } catch (error) {
+    console.warn('[storage] thumbnail upload failed; using original scan image only.', error);
+    return { storagePath };
   }
-
-  return storagePath;
 }
