@@ -24,6 +24,7 @@ import {
   MenuScanAnalysis,
   MenuScanResult,
   MealComponent,
+  ScanCategory,
   ScanConditionRisk,
   ScanHistorySummary,
   ScanIngredientRisk,
@@ -37,6 +38,7 @@ import {
 import { BillingPlanCode, normalizePlanCode } from './billing.ts';
 import { buildUserProfileFromSeed } from './scoring.ts';
 import {
+  isMenuRubricClassificationKey,
   menuBaseFoodCategoryKeys,
   menuRiskModifierKeys,
   menuRubricEvidenceValues,
@@ -93,6 +95,14 @@ function normalizeIngredientName(value: string) {
   return value.trim().toLowerCase();
 }
 
+function normalizeCanonicalIngredientName(rawName: string, canonicalName: string) {
+  const normalizedCanonical = normalizeIngredientName(canonicalName);
+  if (normalizedCanonical && !isMenuRubricClassificationKey(normalizedCanonical)) {
+    return normalizedCanonical;
+  }
+  return normalizeIngredientName(rawName);
+}
+
 function mapComponentList(value: unknown, fallbackDishName: string, fallbackPrepStyle: string[]): MealComponent[] {
   if (Array.isArray(value)) {
     const components = value
@@ -136,7 +146,7 @@ function mapIngredientList(value: unknown, evidence: 'visible' | 'inferred', fal
   for (const entry of value) {
     const record = asRecord(entry);
     const rawName = String(record.rawName ?? record.name ?? '').trim();
-    const canonicalName = normalizeIngredientName(String(record.canonicalName ?? rawName));
+    const canonicalName = normalizeCanonicalIngredientName(rawName, String(record.canonicalName ?? rawName));
     if (!rawName || !canonicalName) {
       continue;
     }
@@ -607,13 +617,14 @@ function mapConditionRiskRow(row: Record<string, unknown>): ScanConditionRisk {
 }
 
 function mapIngredientRiskRow(row: Record<string, unknown>): ScanIngredientRisk {
-  const canonicalName = normalizeIngredientName(String(row.canonical_name ?? row.raw_name ?? ''));
+  const rawName = String(row.raw_name ?? '').trim();
+  const canonicalName = normalizeCanonicalIngredientName(rawName, String(row.canonical_name ?? rawName));
   const riskScore = Number(row.risk_score ?? 0);
   return {
     id: row.id ? String(row.id) : undefined,
     menuItemId: row.menu_item_id ? String(row.menu_item_id) : undefined,
     menuItemSourceId: typeof row.menu_item_source_id === 'string' ? row.menu_item_source_id : undefined,
-    rawName: String(row.raw_name ?? canonicalName),
+    rawName: rawName || canonicalName,
     canonicalName,
     riskScore,
     riskLevel: asRiskLevel(row.risk_level),
@@ -800,7 +811,7 @@ async function fetchScanSummaryInputRows(admin: SupabaseClient, scanRows: Record
 
   const { data, error } = await admin
     .from('scan_inputs')
-    .select('scan_id, thumbnail_storage_path, page_index')
+    .select('scan_id, storage_path, thumbnail_storage_path, page_index')
     .in('scan_id', scanIds)
     .eq('input_kind', 'image')
     .order('page_index', { ascending: true });
@@ -892,6 +903,9 @@ export function mapScanHistorySummary(
   const thumbnailStoragePath = summaryInputs.inputs.find(
     (input) => String(input.scan_id) === scanId && typeof input.thumbnail_storage_path === 'string',
   )?.thumbnail_storage_path;
+  const originalStoragePath = summaryInputs.inputs.find(
+    (input) => String(input.scan_id) === scanId && typeof input.storage_path === 'string',
+  )?.storage_path;
 
   return {
     id: scanId,
@@ -913,7 +927,12 @@ export function mapScanHistorySummary(
     dishName: title,
     overallRiskScore: Number(row.overall_risk_score ?? 0),
     overallRiskLevel: asRiskLevel(row.overall_risk_level),
-    imageUri: typeof thumbnailStoragePath === 'string' ? signedUrlMap.get(thumbnailStoragePath) : undefined,
+    imageUri:
+      typeof thumbnailStoragePath === 'string'
+        ? signedUrlMap.get(thumbnailStoragePath)
+        : typeof originalStoragePath === 'string'
+          ? signedUrlMap.get(originalStoragePath)
+          : undefined,
   };
 }
 
@@ -1341,7 +1360,11 @@ export async function getGutScoreEvents(admin: SupabaseClient, userId: string, l
   return (data ?? []).map((row) => mapGutScoreEventRow(row as Record<string, unknown>));
 }
 
-export async function getProfile(admin: SupabaseClient, userId: string): Promise<UserProfile | null> {
+export async function getProfile(
+  admin: SupabaseClient,
+  userId: string,
+  options: { insights?: IngredientInsight[]; includeGutScoreHistory?: boolean } = {},
+): Promise<UserProfile | null> {
   const { data, error } = await admin.from('user_profiles').select('*').eq('user_id', userId).maybeSingle();
   if (error) {
     throw error;
@@ -1351,10 +1374,11 @@ export async function getProfile(admin: SupabaseClient, userId: string): Promise
     return null;
   }
 
+  const includeGutScoreHistory = options.includeGutScoreHistory !== false;
   const [insights, gutScoreSnapshots, gutScoreEvents, dietPreferences] = await Promise.all([
-    getInsights(admin, userId),
-    getGutScoreSnapshots(admin, userId),
-    getGutScoreEvents(admin, userId, 1),
+    options.insights ? Promise.resolve(options.insights) : getInsights(admin, userId),
+    includeGutScoreHistory ? getGutScoreSnapshots(admin, userId) : Promise.resolve([]),
+    includeGutScoreHistory ? getGutScoreEvents(admin, userId, 1) : Promise.resolve([]),
     getUserDietPreferences(admin, userId),
   ]);
   const stomachProfileBlob = (data.stomach_profile_blob as StomachProfile | null) ?? null;
@@ -1470,25 +1494,35 @@ export async function getBillingState(admin: SupabaseClient, userId: string) {
 export async function getPaginatedScanHistory(
   admin: SupabaseClient,
   userId: string,
-  options: { page?: number; pageSize?: number; includeDailyReports?: boolean } = {},
+  options: {
+    page?: number;
+    pageSize?: number;
+    includeDailyReports?: boolean;
+    scanCategory?: ScanCategory;
+    includeSignedUrls?: boolean;
+  } = {},
 ) {
   const page = Math.max(1, Number(options.page ?? 1));
-  const pageSize = Math.min(40, Math.max(5, Number(options.pageSize ?? 20)));
+  const pageSize = Math.min(120, Math.max(5, Number(options.pageSize ?? 20)));
   const includeDailyReports = options.includeDailyReports !== false;
+  const includeSignedUrls = options.includeSignedUrls !== false;
   const offset = (page - 1) * pageSize;
-  const rangeEnd = offset + pageSize - 1;
+  const rangeEnd = offset + pageSize;
 
-  const [{ data: scanRows, error: scansError, count }, { data: reportRows, error: reportsError }] = await Promise.all([
-    admin
-      .from('scans')
-      .select(
-        'id, request_id, source_type, scan_category, analysis_status, title, overall_risk_score, overall_risk_level, created_at, completed_at, local_date, timezone',
-        { count: 'exact' },
-      )
-      .eq('user_id', userId)
-      .eq('analysis_status', 'completed')
-      .order('created_at', { ascending: false })
-      .range(offset, rangeEnd),
+  let scansQuery = admin
+    .from('scans')
+    .select(
+      'id, request_id, source_type, scan_category, analysis_status, title, overall_risk_score, overall_risk_level, created_at, completed_at, local_date, timezone',
+    )
+    .eq('user_id', userId)
+    .eq('analysis_status', 'completed');
+
+  if (options.scanCategory) {
+    scansQuery = scansQuery.eq('scan_category', options.scanCategory);
+  }
+
+  const [{ data: scanRows, error: scansError }, { data: reportRows, error: reportsError }] = await Promise.all([
+    scansQuery.order('created_at', { ascending: false }).range(offset, rangeEnd),
     includeDailyReports
       ? admin
           .from('daily_gut_reports')
@@ -1506,17 +1540,17 @@ export async function getPaginatedScanHistory(
     throw reportsError;
   }
 
-  const scanRecords = (scanRows ?? []) as Record<string, unknown>[];
-  const summaryInputs = await fetchScanSummaryInputRows(admin, scanRecords);
-  const storagePaths = summaryInputs.inputs
-    .map((row) => row.thumbnail_storage_path)
-    .filter((value): value is string => typeof value === 'string' && value.length > 0);
-  const signedUrlMap = await createSignedUrlMap(admin, storagePaths);
+  const fetchedScanRecords = (scanRows ?? []) as Record<string, unknown>[];
+  const hasMore = fetchedScanRecords.length > pageSize;
+  const scanRecords = fetchedScanRecords.slice(0, pageSize);
+  const summaryInputs = includeSignedUrls ? await fetchScanSummaryInputRows(admin, scanRecords) : { inputs: [] };
+  const storagePaths = displayStoragePaths(summaryInputs.inputs);
+  const signedUrlMap = includeSignedUrls ? await createSignedUrlMap(admin, storagePaths) : new Map<string, string>();
 
   return {
     page,
     pageSize,
-    hasMore: Number(count ?? 0) > page * pageSize,
+    hasMore,
     scans: scanRecords.map((row) => mapScanHistorySummary(row, summaryInputs, signedUrlMap)),
     dailyReports: includeDailyReports
       ? (reportRows ?? []).map((row) => mapDailyReportRow(row as Record<string, unknown>))

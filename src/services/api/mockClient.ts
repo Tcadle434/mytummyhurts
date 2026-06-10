@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store/useAppStore';
+import { isEntitledSubscriptionStatus } from '../../features/access/appAccess';
 import {
   AnalyzeImageRequest,
   AnalyzeBarcodeRequest,
@@ -8,6 +9,7 @@ import {
   DeleteAccountResponse,
   ExistingAccountCheckRequest,
   ExistingAccountCheckResponse,
+  HomeResponse,
   HistoryRequest,
   HistoryResponse,
   InsightsRequest,
@@ -124,16 +126,47 @@ export const mockApiClient = {
 
   async getHistory(request: HistoryRequest = {}): Promise<HistoryResponse> {
     const state = useAppStore.getState();
+    const visibleScans = request.scanCategory
+      ? state.scans.filter((scan) => scan.scanCategory === request.scanCategory)
+      : state.scans;
     const page = request.page ?? 1;
-    const pageSize = request.pageSize ?? state.scans.length;
+    const pageSize = request.pageSize ?? visibleScans.length;
     const start = (page - 1) * pageSize;
-    const scans = state.scans.slice(start, start + pageSize);
+    const scans = visibleScans.slice(start, start + pageSize);
     return {
       page,
       pageSize,
-      hasMore: start + pageSize < state.scans.length,
+      hasMore: start + pageSize < visibleScans.length,
       scans: scans.map(scanHistorySummary),
       dailyReports: request.includeDailyReports === false ? undefined : state.dailyReports,
+    };
+  },
+
+  async getHome(): Promise<HomeResponse> {
+    const state = useAppStore.getState();
+    const timestamp = new Date().toISOString();
+    const triggers = state.insights
+      .filter((insight) => insight.triggerScore >= insight.safeScore || insight.combinedRiskScore >= 52)
+      .slice(0, 8);
+    const safeFoods = state.insights
+      .filter((insight) => insight.safeScore > insight.triggerScore || insight.combinedRiskScore <= 44)
+      .slice(0, 8);
+
+    return {
+      ok: true,
+      snapshotVersion: 1,
+      profile: state.profile,
+      billing: state.billing,
+      recentScans: state.scans.slice(0, 100).map(scanHistorySummary),
+      dailyReports: state.dailyReports,
+      insightSummary: {
+        triggers,
+        safeFoods,
+        conditionInsights: state.conditionInsights.slice(0, 12),
+      },
+      learningStatus: state.learningSyncInFlight ? 'running' : 'idle',
+      generatedAt: timestamp,
+      serverTime: timestamp,
     };
   },
 
@@ -196,7 +229,7 @@ export const mockApiClient = {
 
   async syncBilling(request: BillingSyncRequest) {
     const state = useAppStore.getState();
-    const subscriptionStatus = request.status === 'in_grace' ? 'active' : request.status;
+    const subscriptionStatus = request.status;
     const billing = {
       ...state.billing,
       selectedPlan: request.planCode ?? state.billing.selectedPlan,
@@ -243,7 +276,7 @@ export const mockApiClient = {
       Boolean(profile?.commonSymptoms.length) ||
       Boolean(profile?.symptomFrequency) ||
       Boolean(profile?.symptomSeverityBaseline);
-    const hasEntitlement = state.billing.subscriptionStatus === 'trialing' || state.billing.subscriptionStatus === 'active';
+    const hasEntitlement = isEntitledSubscriptionStatus(state.billing.subscriptionStatus);
 
     return {
       ok: true,

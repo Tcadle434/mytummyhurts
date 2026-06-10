@@ -427,7 +427,7 @@ function toMenuTierItem(item: NonNullable<ScanRecord['menuResult']>['items'][num
 
 function toScanIngredient(ingredient: ScanIngredientRisk): ScanIngredient {
   return {
-    name: ingredient.canonicalName,
+    name: ingredient.rawName || ingredient.canonicalName,
     level: ingredient.riskLevel,
   };
 }

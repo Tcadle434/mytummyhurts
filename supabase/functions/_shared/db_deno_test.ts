@@ -83,7 +83,7 @@ Deno.test('mapScanHistorySummary uses thumbnail URLs for scan cards', () => {
   }
 });
 
-Deno.test('mapScanHistorySummary omits image URLs when only originals exist', () => {
+Deno.test('mapScanHistorySummary falls back to original URLs when no thumbnail exists', () => {
   const summary = mapScanHistorySummary(
     baseScanRow(),
     {
@@ -97,7 +97,7 @@ Deno.test('mapScanHistorySummary omits image URLs when only originals exist', ()
     new Map([['users/scan-test/photo.jpg', 'https://example.com/signed-photo']]),
   );
 
-  if (summary.imageUri !== undefined) {
-    throw new Error(`Expected no history image URL, received ${summary.imageUri}`);
+  if (summary.imageUri !== 'https://example.com/signed-photo') {
+    throw new Error(`Expected original history image URL, received ${summary.imageUri ?? 'undefined'}`);
   }
 });

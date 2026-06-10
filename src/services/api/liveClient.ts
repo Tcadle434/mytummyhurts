@@ -15,6 +15,7 @@ import {
   DeleteAccountResponse,
   ExistingAccountCheckRequest,
   ExistingAccountCheckResponse,
+  HomeResponse,
   HistoryRequest,
   HistoryResponse,
   InsightsRequest,
@@ -166,6 +167,10 @@ export const liveApiClient = {
 
   getHistory(request: HistoryRequest = {}) {
     return invokeFunction<HistoryResponse>('history-get', request);
+  },
+
+  getHome() {
+    return invokeFunction<HomeResponse>('home-get', {});
   },
 
   getScan(request: ScanGetRequest) {

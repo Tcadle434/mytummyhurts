@@ -1,4 +1,4 @@
-import { inlineImageDataUrlByteLength, normalizeInlineImageDataUrl } from './imageData.ts';
+import { inlineImageDataUrlByteLength, inlineImageDataUrlPayload, normalizeInlineImageDataUrl } from './imageData.ts';
 
 const onePixelJpeg =
   '/9j/4AAQSkZJRgABAQAAAQABAAD/2w==';
@@ -51,5 +51,25 @@ Deno.test('inlineImageDataUrlByteLength estimates decoded bytes', () => {
   const byteLength = inlineImageDataUrlByteLength(normalized);
   if (byteLength <= 0) {
     throw new Error(`Expected positive byte length, got ${byteLength}`);
+  }
+});
+
+Deno.test('inlineImageDataUrlPayload returns bytes and detected content type for storage upload', () => {
+  const normalized = normalizeInlineImageDataUrl(`data:image/png;base64,${onePixelPng}`);
+  if (!normalized) {
+    throw new Error('Expected PNG fixture to normalize.');
+  }
+
+  const payload = inlineImageDataUrlPayload(normalized);
+  if (!payload) {
+    throw new Error('Expected payload to parse.');
+  }
+
+  if (payload.contentType !== 'image/png') {
+    throw new Error(`Expected image/png content type, got ${payload.contentType}`);
+  }
+
+  if (payload.bytes.byteLength !== inlineImageDataUrlByteLength(normalized)) {
+    throw new Error('Expected decoded byte length to match estimated data URL byte length.');
   }
 });

@@ -14,6 +14,7 @@ import {
 } from './domain.ts';
 import {
   buildMenuRubricPromptText,
+  isMenuRubricClassificationKey,
   menuBaseFoodCategoryKeys,
   menuBaseFoodCategoryRubric,
   menuRiskModifierKeys,
@@ -528,6 +529,14 @@ function normalizeIngredientName(value: string) {
   return value.trim().toLowerCase();
 }
 
+function normalizeCanonicalIngredientName(rawName: string, canonicalName: string) {
+  const normalizedCanonical = normalizeIngredientName(canonicalName);
+  if (normalizedCanonical && !isMenuRubricClassificationKey(normalizedCanonical)) {
+    return normalizedCanonical;
+  }
+  return normalizeIngredientName(rawName);
+}
+
 function normalizeMenuText(value: string) {
   return normalizeIngredientName(value)
     .replace(/&/g, ' and ')
@@ -692,7 +701,7 @@ function coerceComponent(value: RawComponentPayload): MealComponent | null {
 
 function coerceIngredient(value: RawIngredientPayload, evidence: 'visible' | 'inferred'): ExtractedIngredient | null {
   const rawName = String(value.rawName ?? '').trim();
-  const canonicalName = normalizeIngredientName(String(value.canonicalName ?? rawName));
+  const canonicalName = normalizeCanonicalIngredientName(rawName, String(value.canonicalName ?? rawName));
 
   if (!rawName || !canonicalName) {
     return null;
@@ -1316,7 +1325,7 @@ function conditionPromptText(knownConditions: string[] | undefined) {
 }
 
 function buildImageSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Separate visible ingredients from inferred ingredients. Be conservative: do not invent hidden ingredients unless strongly implied by the image. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. Be conservative: do not invent hidden ingredients unless strongly implied by the image. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
@@ -1396,7 +1405,7 @@ function buildMenuUserPrompt(context: ExtractionContext & { pageCount: number })
 }
 
 function buildTextSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Separate explicit ingredients from inferred ingredients conservatively. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }

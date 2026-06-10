@@ -20,6 +20,7 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   OnboardingStack: NavigatorScreenParams<OnboardingStackParamList>;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
+  FinishingSetup: undefined;
   Settings: undefined;
   ScanCapture: {
     sourceType?: ScanInputPayload['sourceType'];

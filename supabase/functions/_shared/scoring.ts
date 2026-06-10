@@ -37,6 +37,7 @@ import {
 } from './domain.ts';
 import {
   FOOD_RISK_RUBRIC_SCHEMA_VERSION,
+  isMenuRubricClassificationKey,
   menuBaseFoodCategoryRubric,
   menuRiskModifierRubric,
   type MenuBaseFoodCategoryKey,
@@ -241,6 +242,10 @@ function clampNumber(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+const RISK_LEVEL_MEDIUM_MIN = 37;
+const RISK_LEVEL_HIGH_MIN = 64;
+const RISK_LEVEL_MILD_MAX = RISK_LEVEL_MEDIUM_MIN - 1;
+
 function roundWeight(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -268,9 +273,17 @@ function ingredientWeight(ingredient: ScoringIngredient) {
   return evidenceWeight * confidenceWeight;
 }
 
+function normalizedIngredientCanonicalName(entry: ExtractedIngredient) {
+  const canonicalName = normalizeKey(entry.canonicalName || '');
+  if (canonicalName && !isMenuRubricClassificationKey(canonicalName)) {
+    return canonicalName;
+  }
+  return normalizeKey(entry.rawName || '');
+}
+
 function extractedIngredientToScoring(entry: ExtractedIngredient): ScoringIngredient {
   return {
-    name: normalizeKey(entry.canonicalName || entry.rawName),
+    name: normalizedIngredientCanonicalName(entry),
     confidence: entry.confidence,
     evidence: entry.evidence === 'inferred' ? 'inferred' : 'visible',
   };
@@ -488,7 +501,7 @@ export function flattenStructuredIngredients(structuredAnalysis: StructuredAnaly
   const ordered = [...structuredAnalysis.visibleIngredients, ...structuredAnalysis.inferredIngredients];
 
   for (const ingredient of ordered) {
-    const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
+    const canonicalName = normalizedIngredientCanonicalName(ingredient);
     if (!canonicalName) {
       continue;
     }
@@ -507,11 +520,11 @@ function scoringIngredientsFromStructured(structuredAnalysis: StructuredAnalysis
   const aggregated = new Map<string, ScoringIngredient>();
 
   for (const ingredient of [...structuredAnalysis.visibleIngredients, ...structuredAnalysis.inferredIngredients]) {
-    const current = aggregated.get(normalizeKey(ingredient.canonicalName || ingredient.rawName));
     const next = extractedIngredientToScoring(ingredient);
     if (!next.name) {
       continue;
     }
+    const current = aggregated.get(next.name);
 
     if (!current) {
       aggregated.set(next.name, next);
@@ -529,11 +542,11 @@ function scoringIngredientsFromStructured(structuredAnalysis: StructuredAnalysis
 }
 
 export function toRiskLevel(score: number): RiskLevel {
-  if (score >= 67) {
+  if (score >= RISK_LEVEL_HIGH_MIN) {
     return 'high';
   }
 
-  if (score >= 34) {
+  if (score >= RISK_LEVEL_MEDIUM_MIN) {
     return 'medium';
   }
 
@@ -582,7 +595,9 @@ function buildIngredientRiskRows(
   );
 
   for (const ingredient of [...structuredAnalysis.visibleIngredients, ...structuredAnalysis.inferredIngredients]) {
-    const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
+    const canonicalName = normalizedIngredientCanonicalName(ingredient);
+    const rawName = ingredient.rawName.trim();
+    const ingredientMatchNames = Array.from(new Set([canonicalName, normalizeKey(rawName)].filter(Boolean)));
     if (!canonicalName || seen.has(canonicalName)) {
       continue;
     }
@@ -590,7 +605,7 @@ function buildIngredientRiskRows(
     seen.add(canonicalName);
     const matchedSensitivity = Boolean(
       profile?.knownIngredientSensitivities.some((sensitivity) =>
-        ingredientMatchesSensitivityLabel(canonicalName, sensitivity),
+        ingredientMatchNames.some((name) => ingredientMatchesSensitivityLabel(name, sensitivity)),
       ),
     );
     // Unified with the headline: an ingredient's risk comes from the same risk
@@ -598,7 +613,7 @@ function buildIngredientRiskRows(
     // so a fried side can never read "easier on your gut" while the headline
     // cites fried/crispy prep.
     const matchedPoints = riskContributors
-      .filter((contributor) => contributorMatchesIngredient(contributor, canonicalName))
+      .filter((contributor) => ingredientMatchNames.some((name) => contributorMatchesIngredient(contributor, name)))
       .reduce((maxPoints, contributor) => Math.max(maxPoints, contributor.points), 0);
     const riskScore = clamp(
       matchedSensitivity
@@ -612,7 +627,7 @@ function buildIngredientRiskRows(
     const riskLevel = toRiskLevel(riskScore);
 
     rows.push({
-      rawName: ingredient.rawName,
+      rawName,
       canonicalName,
       riskScore,
       riskLevel,
@@ -628,11 +643,11 @@ function buildIngredientRiskRows(
 }
 
 function toPatternStrength(score: number): PatternStrength {
-  if (score >= 67) {
+  if (score >= RISK_LEVEL_HIGH_MIN) {
     return 'strong';
   }
 
-  if (score >= 34) {
+  if (score >= RISK_LEVEL_MEDIUM_MIN) {
     return 'moderate';
   }
 
@@ -852,7 +867,7 @@ export function computeDailyScoreForReport(
           : report.gutSeverity >= 7
             ? 'Your daily report pointed to a more reactive gut day.'
             : 'Your daily report landed in the middle range.',
-      impact: symptomScore >= 67 ? 'raises' : symptomScore <= 33 ? 'lowers' : 'neutral',
+      impact: symptomScore >= RISK_LEVEL_HIGH_MIN ? 'raises' : symptomScore <= RISK_LEVEL_MILD_MAX ? 'lowers' : 'neutral',
       weight: Math.abs(symptomScore - 50),
     },
   ];
@@ -860,7 +875,11 @@ export function computeDailyScoreForReport(
   if (typeof food.weightedRisk === 'number') {
     drivers.push({
       id: 'food-exposure',
-      label: food.weightedRisk >= 67 ? 'Higher-risk food exposure' : food.weightedRisk <= 33 ? 'Gentler food exposure' : 'Mixed food exposure',
+      label: food.weightedRisk >= RISK_LEVEL_HIGH_MIN
+        ? 'Higher-risk food exposure'
+        : food.weightedRisk <= RISK_LEVEL_MILD_MAX
+          ? 'Gentler food exposure'
+          : 'Mixed food exposure',
       detail: 'Food logged across the same-day, previous-day, and two-day windows adjusted this Daily Score.',
       impact: food.foodAdjustment > 0 ? 'raises' : food.foodAdjustment < 0 ? 'lowers' : 'neutral',
       weight: Math.abs(food.foodAdjustment),
@@ -1161,7 +1180,7 @@ function buildGutScoreDrivers(
       detail: score <= 40
         ? 'Your score is mostly based on your baseline symptoms and declared sensitivities.'
         : 'Your recent outcomes are helping your Gut Score hold steadier.',
-      impact: score >= 67 ? 'raises' : score <= 33 ? 'lowers' : 'neutral',
+      impact: score >= RISK_LEVEL_HIGH_MIN ? 'raises' : score <= RISK_LEVEL_MILD_MAX ? 'lowers' : 'neutral',
       weight: score,
     });
   }
@@ -1425,40 +1444,38 @@ export function buildUserProfileFromSeed(
   };
 }
 
-// ---- LLM-primary per-condition band scoring (rebuild Phase 4) ----
-// The LLM severity band sets the anchor; the deterministic mechanism score may
-// nudge it within ±BAND_MECH_DELTA so the LLM stays the primary judge. When no
-// band is present the engine falls back to the pure mechanism score.
-// Anchors are intentionally aligned with the downstream thresholds so the new
-// distribution stays coherent without re-tuning them: toRiskLevel cuts (34/67),
-// computeGutScoreImpact deltas (25/45/70), and the daily-attribution pivot (~50)
-// in src/services/ai/scoring.ts. Keep those in sync if you move these anchors.
-const BAND_ANCHORS: Record<ConditionSeverityBand, number> = {
-  none: 8,
-  mild: 28,
-  moderate: 52,
-  high: 74,
-  severe: 92,
+// ---- LLM-authoritative per-condition band scoring ----
+// The model chooses the severity band; deterministic scoring only places the
+// number inside that band. This keeps score granularity without letting
+// condiment/side/speculative rubric signals promote a scan into a hotter band.
+const BAND_RANGES: Record<ConditionSeverityBand, { min: number; mid: number; max: number }> = {
+  none: { min: 0, mid: 5, max: 10 },
+  mild: { min: 11, mid: 23.5, max: 36 },
+  moderate: { min: 37, mid: 50, max: 63 },
+  high: { min: 64, mid: 76.5, max: 89 },
+  severe: { min: 90, mid: 95, max: 100 },
 };
-const BAND_MECH_DELTA = 10;
 const BAND_ORDER: readonly ConditionSeverityBand[] = ['none', 'mild', 'moderate', 'high', 'severe'];
 
-// Inverse of BAND_ANCHORS: the band a pure mechanism score would land in, using
-// the midpoints between anchors as cut points.
-function bandFromScore(score: number): ConditionSeverityBand {
-  if (score < 18) {
-    return 'none';
-  }
-  if (score < 40) {
-    return 'mild';
-  }
-  if (score < 63) {
-    return 'moderate';
-  }
-  if (score < 83) {
-    return 'high';
-  }
-  return 'severe';
+function bandIndex(band: ConditionSeverityBand) {
+  return Math.max(0, BAND_ORDER.indexOf(band));
+}
+
+function strongestBand(bands: Array<ConditionSeverity | undefined>): ConditionSeverityBand | undefined {
+  return bands.reduce<ConditionSeverityBand | undefined>((strongest, entry) => {
+    if (!entry) {
+      return strongest;
+    }
+    if (!strongest || bandIndex(entry.band) > bandIndex(strongest)) {
+      return entry.band;
+    }
+    return strongest;
+  }, undefined);
+}
+
+function clampToBand(score: number, band: ConditionSeverityBand) {
+  const range = BAND_RANGES[band];
+  return clampNumber(score, range.min, range.max);
 }
 
 function matchConditionBand(
@@ -1486,48 +1503,177 @@ function matchConditionBand(
   });
 }
 
-function scoreConditionFromBand(band: ConditionSeverity, mechanismScore: number): number {
-  // ±1-band consistency guardrail (LLM-primary, code corrects at most one band):
-  // if the deterministic mechanism reads two or more bands hotter than the LLM
-  // (e.g. the model said "mild" but fried + creamy + spicy all fired), nudge the
-  // band up exactly one. When the LLM reads hotter than the mechanism we keep its
-  // band — it may know condition-specific risk the rubric cannot see.
-  const llmIndex = BAND_ORDER.indexOf(band.band);
-  const mechIndex = BAND_ORDER.indexOf(bandFromScore(mechanismScore));
-  const effectiveBand = mechIndex - llmIndex >= 2
-    ? BAND_ORDER[Math.min(BAND_ORDER.length - 1, llmIndex + 1)]
-    : band.band;
-  const anchor = BAND_ANCHORS[effectiveBand];
-  return clamp(anchor + clampNumber(mechanismScore - anchor, -BAND_MECH_DELTA, BAND_MECH_DELTA));
+function contributorSignal(
+  contributor: ScoreContributor,
+  item: MenuItemAnalysis,
+): MenuBaseFoodCategory | MenuRiskModifier | undefined {
+  if (item.baseFoodCategory?.key === contributor.key) {
+    return item.baseFoodCategory;
+  }
+  return item.riskModifiers?.find((modifier) => modifier.key === contributor.key);
 }
 
-// The mechanism "opinion" for a single condition: only contributors that
-// actually affect that condition (plus the base and protective ones). Without
-// this, a fried/spicy meal would read hot for EVERY condition — including
-// lactose with no dairy — and wrongly drag the guardrail away from the LLM's
-// correct per-condition judgment.
-function conditionRelevantMechScore(contributors: ScoreContributor[], conditionProfile: UserProfile | null): number {
-  const relevant = contributors.filter((contributor) => {
-    if (contributor.key === 'base_menu_risk' || contributor.points < 0) {
-      return true;
+function signalEvidenceWeight(signal: MenuBaseFoodCategory | MenuRiskModifier | undefined, contributor: ScoreContributor) {
+  if (signal) {
+    const confidenceWeight = signal.confidence === 'high' ? 1 : signal.confidence === 'medium' ? 0.65 : 0.25;
+    const evidenceWeight =
+      signal.evidence === 'ingredient' || signal.evidence === 'prep' || signal.evidence === 'nutrition_label' || signal.evidence === 'label_claim'
+        ? 1
+        : signal.evidence === 'name' || signal.evidence === 'description'
+          ? 0.6
+          : signal.evidence === 'section'
+            ? 0.45
+            : signal.evidence === 'common_dish_knowledge'
+              ? 0.2
+              : 0.1;
+    return confidenceWeight * evidenceWeight;
+  }
+
+  switch (contributor.evidence) {
+    case 'ingredient':
+    case 'prep':
+    case 'learning':
+    case 'protective':
+      return 0.85;
+    case 'description':
+      return 0.45;
+    case 'profile':
+      return 0.35;
+    case 'rubric':
+      return 0.25;
+    case 'uncertainty':
+      return 0.15;
+  }
+}
+
+function isLimitedPlacementSignal(
+  contributor: ScoreContributor,
+  signal: MenuBaseFoodCategory | MenuRiskModifier | undefined,
+  item: MenuItemAnalysis,
+) {
+  if (contributor.evidence === 'uncertainty' || contributor.key === 'unknown_sauce_or_marinade') {
+    return true;
+  }
+  if (signal?.confidence === 'low' || signal?.evidence === 'common_dish_knowledge' || signal?.evidence === 'unclear') {
+    return true;
+  }
+  return roleWeightForSignal(signal?.source ?? contributor.source, item) < 1;
+}
+
+function conditionRelevantForPlacement(contributor: ScoreContributor, conditionProfile: UserProfile | null) {
+  if (contributor.points < 0) {
+    return true;
+  }
+  if (contributor.key === 'base_menu_risk' || contributor.key === 'profile_context' || contributor.key === 'stacked_load') {
+    return false;
+  }
+
+  const rule = menuTraitRulesByKey.get(contributor.key as MenuBaseFoodCategoryKey | MenuRiskModifierKey);
+  if (!rule) {
+    return false;
+  }
+
+  const hasSpecificCondition = conditionProfile?.knownConditions.some((condition) => !isGeneralDiscomfortCondition(condition)) ?? false;
+  return hasSpecificCondition ? conditionMultiplierForRule(rule, conditionProfile) > 1 : rule.points > 0;
+}
+
+function insideBandPlacementRatio(
+  contributors: ScoreContributor[],
+  conditionProfile: UserProfile | null,
+  item: MenuItemAnalysis,
+) {
+  let riskLoad = 0;
+  let protectiveLoad = 0;
+  let dominantRiskSignals = 0;
+  let dominantProtectiveSignals = 0;
+
+  for (const contributor of contributors) {
+    if (contributor.points === 0 || contributor.key === 'stacked_load') {
+      continue;
     }
-    const rule = menuTraitRulesByKey.get(contributor.key as MenuBaseFoodCategoryKey | MenuRiskModifierKey);
-    return rule ? conditionMultiplierForRule(rule, conditionProfile) > 1 : false;
-  });
-  return combineSaturating(relevant);
+    if (!conditionRelevantForPlacement(contributor, conditionProfile)) {
+      continue;
+    }
+
+    const signal = contributorSignal(contributor, item);
+    const adjustedPoints = Math.abs(contributor.points) * signalEvidenceWeight(signal, contributor);
+    if (adjustedPoints < 1) {
+      continue;
+    }
+
+    const limited = isLimitedPlacementSignal(contributor, signal, item);
+    if (contributor.points > 0) {
+      riskLoad += adjustedPoints;
+      if (!limited && adjustedPoints >= 8) {
+        dominantRiskSignals += 1;
+      }
+    } else {
+      protectiveLoad += adjustedPoints;
+      if (!limited && adjustedPoints >= 3) {
+        dominantProtectiveSignals += 1;
+      }
+    }
+  }
+
+  const balance = riskLoad - protectiveLoad;
+  if (Math.abs(balance) < 1) {
+    return 0;
+  }
+
+  if (balance > 0) {
+    const reach = dominantRiskSignals >= 3
+      ? 0.95
+      : dominantRiskSignals >= 2
+        ? 0.78
+        : dominantRiskSignals === 1
+          ? 0.52
+          : riskLoad >= 12
+            ? 0.35
+            : 0.22;
+    return Math.min(Math.tanh(balance / 24), reach);
+  }
+
+  const reach = dominantProtectiveSignals >= 3
+    ? 0.85
+    : dominantProtectiveSignals >= 2
+      ? 0.68
+      : dominantProtectiveSignals === 1
+        ? 0.45
+        : protectiveLoad >= 6
+          ? 0.3
+          : 0.18;
+  return -Math.min(Math.tanh(Math.abs(balance) / 18), reach);
+}
+
+function scoreConditionFromBand(
+  band: ConditionSeverity,
+  contributors: ScoreContributor[],
+  conditionProfile: UserProfile | null,
+  item: MenuItemAnalysis,
+): number {
+  const range = BAND_RANGES[band.band];
+  const placement = insideBandPlacementRatio(contributors, conditionProfile, item);
+  const halfWidth = (range.max - range.min) / 2;
+  return Math.round(clampToBand(range.mid + placement * halfWidth, band.band));
 }
 
 // Overall is derived from the per-condition scores: anchored to the worst
-// condition, with additional conditions stacking with diminishing returns, so
-// the headline can never disagree with the condition bars.
-function deriveOverallFromConditions(perConditionScores: number[]): number {
+// condition, with additional conditions adding small within-band pressure. The
+// headline is clamped to the strongest LLM band, so mild+mild cannot become
+// medium and moderate+mild cannot become high.
+function deriveOverallFromConditions(perConditionScores: number[], ceilingBand?: ConditionSeverityBand): number {
   if (!perConditionScores.length) {
     return 0;
   }
   const sorted = [...perConditionScores].sort((left, right) => right - left);
   let overall = sorted[0];
   for (let index = 1; index < sorted.length; index += 1) {
-    overall += (sorted[index] * 0.5 * (100 - overall)) / 100;
+    const ceiling = ceilingBand ? BAND_RANGES[ceilingBand].max : 100;
+    const remaining = Math.max(0, ceiling - overall);
+    overall += remaining * clampNumber(sorted[index] / 100, 0, 1) * 0.22;
+  }
+  if (ceilingBand) {
+    return Math.round(clampToBand(overall, ceilingBand));
   }
   return clamp(overall);
 }
@@ -1554,13 +1700,18 @@ export function computeScanResultFromStructured(
   // bars are always coherent. With no bands, fall back to the mechanism score.
   const conditionScoreValues = Object.values(conditionRiskScores).map((entry) => entry.score);
   const hasBands = (structuredAnalysis.conditionSeverities?.length ?? 0) > 0;
+  const ceilingBand = strongestBand(
+    profile?.knownConditions.length
+      ? profile.knownConditions.map((condition) => matchConditionBand(structuredAnalysis.conditionSeverities, condition))
+      : [matchConditionBand(structuredAnalysis.conditionSeverities, 'general')],
+  ) ?? strongestBand(structuredAnalysis.conditionSeverities ?? []);
   let overallRiskScore = rubric.score;
   if (hasBands && conditionScoreValues.length) {
-    overallRiskScore = deriveOverallFromConditions(conditionScoreValues);
+    overallRiskScore = deriveOverallFromConditions(conditionScoreValues, ceilingBand);
   } else if (hasBands) {
     const generalBand = matchConditionBand(structuredAnalysis.conditionSeverities, 'general');
     if (generalBand) {
-      overallRiskScore = scoreConditionFromBand(generalBand, rubric.score);
+      overallRiskScore = scoreConditionFromBand(generalBand, rubric.contributors, profile, foodEntity);
     }
   }
   const overallRiskLevel = toRiskLevel(overallRiskScore);
@@ -2179,8 +2330,7 @@ function conditionRiskScoresFromFoodEntity(
     const conditionProfile = profileForConditionScore(profile, condition);
     const rubric = scoreFoodRiskEntity(foodEntity, conditionProfile, insights);
     const band = matchConditionBand(structuredAnalysis.conditionSeverities, condition);
-    const relevantMech = conditionRelevantMechScore(rubric.contributors, conditionProfile);
-    const score = band ? scoreConditionFromBand(band, relevantMech) : rubric.score;
+    const score = band ? scoreConditionFromBand(band, rubric.contributors, conditionProfile, foodEntity) : rubric.score;
     accumulator[displayName] = {
       score,
       level: toRiskLevel(score),
@@ -2698,11 +2848,11 @@ function dishSpecificRecommendationReason(
     if (riskDriverList) {
       return `${dishName} is still a lower-risk pick here, with ${riskDriverList} as the main watch-out.`;
     }
-    if (item.personalizedRiskScore >= 67 && triggerList) {
+    if (item.personalizedRiskScore >= RISK_LEVEL_HIGH_MIN && triggerList) {
       const watchOut = menuWatchOutParts(triggerList);
       return `${dishName} is only a relative best here; ${watchOut.subjectVerb} still ${watchOut.noun}.`;
     }
-    if (item.personalizedRiskScore >= 34 && triggerList) {
+    if (item.personalizedRiskScore >= RISK_LEVEL_MEDIUM_MIN && triggerList) {
       return `${dishName} is one of the lighter picks here, but ${menuWatchOutParts(triggerList).subjectVerb} still worth watching.`;
     }
     if (ingredientList) {
@@ -2885,10 +3035,10 @@ function menuResultItem(
       const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
       const triggerMatch = triggerSet.has(canonicalName);
       const score = triggerMatch
-        ? Math.max(67, option.personalizedRiskScore)
-        : option.personalizedRiskScore >= 67
+        ? Math.max(RISK_LEVEL_HIGH_MIN, option.personalizedRiskScore)
+        : option.personalizedRiskScore >= RISK_LEVEL_HIGH_MIN
           ? 55
-          : option.personalizedRiskScore >= 34
+          : option.personalizedRiskScore >= RISK_LEVEL_MEDIUM_MIN
             ? 40
             : 18;
       const level = toRiskLevel(score);
@@ -2913,10 +3063,10 @@ function menuResultItem(
   const fallbackIngredientRisks: ScanIngredientRisk[] = fallbackNames.map((trigger, index) => {
     const triggerMatch = option.triggerIngredients.some((candidate) => normalizeKey(candidate) === normalizeKey(trigger));
     const score = triggerMatch
-      ? Math.max(67, option.personalizedRiskScore)
-      : option.personalizedRiskScore >= 67
+      ? Math.max(RISK_LEVEL_HIGH_MIN, option.personalizedRiskScore)
+      : option.personalizedRiskScore >= RISK_LEVEL_HIGH_MIN
         ? 55
-        : option.personalizedRiskScore >= 34
+        : option.personalizedRiskScore >= RISK_LEVEL_MEDIUM_MIN
           ? 40
           : 18;
     const level = toRiskLevel(score);

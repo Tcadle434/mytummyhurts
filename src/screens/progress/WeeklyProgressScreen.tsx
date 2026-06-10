@@ -12,6 +12,7 @@ import Animated, {
 
 import { AppScreen, DetailScreenHeader } from "../../components/common/UI";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
+import { useHomeData } from "../../features/home/hooks";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
@@ -34,10 +35,16 @@ export function WeeklyProgressScreen() {
 	const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 	const fallbackScans = useAppStore((state) => state.scans);
 	const fallbackReports = useAppStore((state) => state.dailyReports);
+	const homeQuery = useHomeData();
 	const historyQuery = useHistoryFeed(100);
-	const scans = historyQuery.data?.pages.flatMap((page) => page.scans ?? []) ?? fallbackScans;
+	const scans =
+		historyQuery.data?.pages.flatMap((page) => page.scans ?? []) ??
+		homeQuery.data?.recentScans ??
+		fallbackScans;
 	const reports =
-		historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ?? fallbackReports;
+		historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ??
+		homeQuery.data?.dailyReports ??
+		fallbackReports;
 
 	const currentWeekStart = useMemo(() => getCurrentWeekStart(), []);
 	const todayLocalDate = useMemo(() => toLocalDate(new Date()), []);

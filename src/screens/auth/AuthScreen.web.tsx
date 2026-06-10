@@ -9,16 +9,12 @@ import { AuthAccountContent, AuthProviderButton } from './AuthAccountContent';
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingAuth'>;
 
 export function AuthScreen({ navigation }: Props) {
-  const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
+  const completeAuthSetup = useAppStore((state) => state.completeAuthSetup);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busyProvider, setBusyProvider] = useState<'google' | 'signIn' | 'signUp' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const busyMessage = busyProvider === 'signIn' ? 'signing in' : busyProvider === 'signUp' ? 'creating your account' : `${busyProvider} sign-in`;
-
-  function finishAuth() {
-    setOnboardingStage('complete');
-  }
 
   async function handleProvider() {
     setBusyProvider('google');
@@ -26,7 +22,7 @@ export function AuthScreen({ navigation }: Props) {
 
     try {
       await signInWithGoogle();
-      finishAuth();
+      await completeAuthSetup();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Authentication failed.';
       setErrorMessage(message);
@@ -45,7 +41,7 @@ export function AuthScreen({ navigation }: Props) {
       } else {
         await signUpWithEmailPassword(email, password);
       }
-      finishAuth();
+      await completeAuthSetup();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Authentication failed.';
       setErrorMessage(message);

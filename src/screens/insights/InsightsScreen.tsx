@@ -24,17 +24,22 @@ export function InsightsScreen() {
   const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
   const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
   const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
-  const learningSyncInFlight = useAppStore((state) => state.learningSyncInFlight);
   const insightsQuery = useInsightsData('');
+  const hasFallbackInsights = Boolean(fallbackProfile || fallbackInsights.length);
 
   const isWaitingForInitialRemoteData = Boolean(
     isLiveBackendConfigured &&
       authUser &&
       !insightsQuery.data &&
-      (!remoteDataLoaded || initialServerSyncNeeded || serverSyncInFlight) &&
+      !hasFallbackInsights &&
+      (!remoteDataLoaded ||
+        initialServerSyncNeeded ||
+        serverSyncInFlight ||
+        insightsQuery.isLoading ||
+        (!insightsQuery.data && insightsQuery.isFetching)) &&
       !insightsQuery.isError,
   );
-  const isWaitingForComputedData = isWaitingForInitialRemoteData || learningSyncInFlight;
+  const isWaitingForComputedData = isWaitingForInitialRemoteData;
   const profile = isWaitingForComputedData
     ? insightsQuery.data?.profile
     : insightsQuery.data?.profile ?? fallbackProfile;

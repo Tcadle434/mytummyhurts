@@ -6,6 +6,7 @@ import { CustomTabBar } from './CustomTabBar';
 import { MainTabParamList, OnboardingStackParamList, RootStackParamList } from './types';
 import { AuthScreen } from '../screens/auth/AuthScreen';
 import { ExistingAccountSignInScreen } from '../screens/auth/ExistingAccountSignInScreen';
+import { FinishingSetupScreen } from '../screens/auth/FinishingSetupScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { ManualMealScreen } from '../screens/history/ManualMealScreen';
 import { DailyGutReportScreen } from '../screens/home/DailyGutReportScreen';
@@ -26,6 +27,7 @@ import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { SymptomLogScreen } from '../screens/symptoms/SymptomLogScreen';
 import { navigationRef } from './navigationRef';
 import { useAppStore } from '../store/useAppStore';
+import { resolveAppAccessRoute } from '../features/access/appAccess';
 import { palette } from '../theme';
 import { OnboardingStage } from '../types/domain';
 
@@ -40,12 +42,14 @@ function getInitialOnboardingRoute(onboardingStage: OnboardingStage): keyof Onbo
   return 'OnboardingFlow';
 }
 
-function OnboardingNavigator() {
+function OnboardingNavigator({ initialRouteOverride }: { initialRouteOverride?: keyof OnboardingStackParamList }) {
   const onboardingStage = useAppStore((state) => state.onboardingStage);
+  const initialRouteName = initialRouteOverride ?? getInitialOnboardingRoute(onboardingStage);
 
   return (
     <OnboardingStack.Navigator
-      initialRouteName={getInitialOnboardingRoute(onboardingStage)}
+      key={initialRouteName}
+      initialRouteName={initialRouteName}
       screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
     >
       <OnboardingStack.Screen name="GetStarted" component={GetStartedScreen} />
@@ -81,6 +85,27 @@ function MainTabsNavigator() {
 
 export function RootNavigator() {
   const onboardingStage = useAppStore((state) => state.onboardingStage);
+  const authUser = useAppStore((state) => state.authUser);
+  const profile = useAppStore((state) => state.profile);
+  const billing = useAppStore((state) => state.billing);
+  const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
+  const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
+  const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
+  const accessRoute = resolveAppAccessRoute({
+    authUser,
+    onboardingStage,
+    profile,
+    billing,
+    remoteDataLoaded,
+    initialServerSyncNeeded,
+    serverSyncInFlight,
+  });
+  const onboardingInitialRoute =
+    accessRoute === 'paywall'
+      ? 'OnboardingPaywall'
+      : accessRoute === 'profile_setup'
+        ? 'OnboardingFlow'
+        : undefined;
 
   return (
     <NavigationContainer
@@ -98,10 +123,14 @@ export function RootNavigator() {
       }}
     >
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        {onboardingStage === 'complete' ? (
+        {accessRoute === 'main' ? (
           <RootStack.Screen name="MainTabs" component={MainTabsNavigator} />
+        ) : accessRoute === 'finishing_setup' ? (
+          <RootStack.Screen name="FinishingSetup" component={FinishingSetupScreen} />
         ) : (
-          <RootStack.Screen name="OnboardingStack" component={OnboardingNavigator} />
+          <RootStack.Screen name="OnboardingStack">
+            {() => <OnboardingNavigator initialRouteOverride={onboardingInitialRoute} />}
+          </RootStack.Screen>
         )}
         <RootStack.Screen name="Settings" component={SettingsScreen} />
         <RootStack.Screen name="LegalDocument" component={LegalDocumentScreen} options={{ presentation: 'modal' }} />

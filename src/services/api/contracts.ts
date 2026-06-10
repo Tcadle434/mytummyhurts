@@ -109,6 +109,7 @@ export interface HistoryRequest {
   page?: number;
   pageSize?: number;
   includeDailyReports?: boolean;
+  scanCategory?: 'food' | 'menu' | 'grocery';
 }
 
 export interface HistoryResponse {
@@ -129,6 +130,25 @@ export interface InsightsResponse {
   insights: IngredientInsight[];
   conditionInsights: ConditionIngredientInsight[];
   billing: BillingState;
+}
+
+export type HomeLearningStatus = 'idle' | 'pending' | 'running' | 'failed';
+
+export interface HomeResponse {
+  ok: true;
+  snapshotVersion: number;
+  profile: UserProfile | null;
+  billing: BillingState;
+  recentScans: ScanHistorySummary[];
+  dailyReports: DailyGutReport[];
+  insightSummary: {
+    triggers: IngredientInsight[];
+    safeFoods: IngredientInsight[];
+    conditionInsights: ConditionIngredientInsight[];
+  };
+  learningStatus: HomeLearningStatus;
+  generatedAt: string;
+  serverTime: string;
 }
 
 export interface ProfileUpdateRequest {

@@ -14,6 +14,37 @@ export function scanImageDataUrl(base64: string | null | undefined, mimeType?: s
   return imageDataUrlFromBase64(base64, mimeType)?.dataUrl;
 }
 
+export async function prepareCameraScanImage({
+  uri,
+  quality,
+}: {
+  uri: string;
+  quality: number;
+}): Promise<PreparedScanImage> {
+  const converted = await manipulateAsync(
+    uri,
+    [],
+    {
+      compress: quality,
+      format: SaveFormat.JPEG,
+      base64: true,
+    },
+  );
+  const normalizedConvertedData = normalizeImageDataUrl(
+    converted.base64 ? `data:image/jpeg;base64,${converted.base64}` : null,
+  );
+  if (!normalizedConvertedData) {
+    throw new Error('The captured image could not be converted to a supported format.');
+  }
+
+  return {
+    uri: converted.uri,
+    dataUrl: normalizedConvertedData.dataUrl,
+    width: converted.width,
+    height: converted.height,
+  };
+}
+
 export async function prepareScanImageAsset(asset: ImagePickerAsset, quality: number): Promise<PreparedScanImage> {
   const normalizedPickerData = imageDataUrlFromBase64(asset.base64, asset.mimeType);
   if (normalizedPickerData) {

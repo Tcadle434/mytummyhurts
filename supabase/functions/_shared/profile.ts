@@ -20,6 +20,7 @@ import {
   GUT_SCORE_ALGORITHM_VERSION,
   recomputeDailyScores,
 } from './scoring.ts';
+import { markUserAppSnapshotStatus, refreshUserAppSnapshot } from './appSnapshot.ts';
 
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -725,6 +726,15 @@ export async function rebuildInsightsAndProfile(
   await acquireLearningLock(admin, userId, ownerId, { skipIfLocked: options.skipIfLocked });
 
   try {
+    try {
+      await markUserAppSnapshotStatus(admin, userId, 'running', {
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+      });
+    } catch (snapshotError) {
+      console.warn('[profile] failed to mark snapshot running', snapshotError);
+    }
+
     await recordSystemEvent(admin, {
       eventType: 'learning_recompute_started',
       userId,
@@ -734,6 +744,25 @@ export async function rebuildInsightsAndProfile(
       metadata: { eventType: options.eventType },
     });
     const result = await rebuildInsightsAndProfileUnlocked(admin, userId, options);
+    try {
+      await refreshUserAppSnapshot(admin, userId, {
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        learningStatus: 'idle',
+        recomputed: true,
+      });
+    } catch (snapshotError) {
+      await recordSystemEvent(admin, {
+        eventType: 'learning_snapshot_refresh_failed',
+        severity: 'error',
+        userId,
+        operation: 'learning_recompute',
+        entityType: options.sourceType,
+        entityId: options.sourceId,
+        metadata: errorMetadata(snapshotError),
+      });
+    }
+
     await recordSystemEvent(admin, {
       eventType: 'learning_recompute_completed',
       userId,
@@ -748,6 +777,15 @@ export async function rebuildInsightsAndProfile(
     });
     return result;
   } catch (error) {
+    try {
+      await markUserAppSnapshotStatus(admin, userId, 'failed', {
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+      });
+    } catch (snapshotError) {
+      console.warn('[profile] failed to mark snapshot failed', snapshotError);
+    }
+
     await recordSystemEvent(admin, {
       eventType: 'learning_recompute_failed',
       severity: 'error',

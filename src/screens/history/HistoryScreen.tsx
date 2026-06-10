@@ -30,7 +30,7 @@ export function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const fallbackScans = useAppStore((state) => state.scans);
   const [selectedFilter, setSelectedFilter] = useState<HistoryFilter>('food');
-  const historyQuery = useHistoryFeed(12, { includeDailyReports: false });
+  const historyQuery = useHistoryFeed(12, { includeDailyReports: false, scanCategory: selectedFilter });
 
   const remoteScans = useMemo(
     () =>

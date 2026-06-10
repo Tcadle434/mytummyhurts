@@ -58,6 +58,21 @@ function stoneyProfile() {
   });
 }
 
+function ibsGerdProfile() {
+  return buildUserProfileFromSeed({
+    userId: 'ibs-gerd-test',
+    knownConditions: ['GERD / Acid reflux', 'IBS'],
+    knownIngredientSensitivities: [],
+    commonSymptoms: ['Reflux / Heartburn', 'Bloating'],
+    symptomFrequency: 'A few times a week',
+    symptomSeverityBaseline: 'Moderate',
+    mealContexts: ['Restaurants', 'Takeout'],
+    currentEatingPatterns: [],
+    lifestyleFactors: [],
+    foodsToReintroduce: [],
+  });
+}
+
 function genericDiscomfortProfile() {
   return buildUserProfileFromSeed({
     userId: 'generic-discomfort',
@@ -682,7 +697,7 @@ Deno.test('menu ranking does not mark fried cheese-heavy appetizers as low-risk 
     throw new Error(`Expected simple rice to outrank fried cheese-heavy options, got ${menuResult?.bestOptions[0]?.name ?? 'none'}`);
   }
 
-  if (menuResult?.bestOptions.some((option) => option.personalizedRiskScore >= 34)) {
+  if (menuResult?.bestOptions.some((option) => option.personalizedRiskScore >= 37)) {
     throw new Error(`Expected best options to stay low risk, got ${JSON.stringify(menuResult.bestOptions)}`);
   }
 });
@@ -1028,9 +1043,9 @@ Deno.test('menu ranking keeps high-risk items out of the best-for-you band', () 
 
   const result = computeMenuScanResultFromExtraction(menu, highRiskProfile(), []);
   const allItems = result.menuResult?.items ?? [];
-  const highRiskBest = result.menuResult?.bestForYou.find((item) => item.riskScore >= 67);
-  const highRiskCaution = result.menuResult?.eatWithCaution.find((item) => item.riskScore >= 67);
-  const highRiskAvoid = result.menuResult?.tryToAvoid.find((item) => item.riskScore >= 67);
+  const highRiskBest = result.menuResult?.bestForYou.find((item) => item.riskScore >= 64);
+  const highRiskCaution = result.menuResult?.eatWithCaution.find((item) => item.riskScore >= 64);
+  const highRiskAvoid = result.menuResult?.tryToAvoid.find((item) => item.riskScore >= 64);
 
   if (allItems.length !== menu.items.length) {
     throw new Error(`Expected every extracted menu item to be retained, got ${allItems.length} of ${menu.items.length}`);
@@ -1430,6 +1445,101 @@ function turkeySandwichNoModifiers(): StructuredAnalysisV2 {
   return { ...turkeySandwichAnalysis(), riskModifiers: [], baseFoodCategory: undefined };
 }
 
+function scannedSushiAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'vegetable sushi rolls with edamame and pickled ginger',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [
+      { name: 'vegetable sushi rolls', confidence: 'high', prepStyle: ['rolled', 'raw'] },
+      { name: 'edamame', confidence: 'high', prepStyle: ['steamed', 'boiled'] },
+      { name: 'pickled ginger', confidence: 'high', prepStyle: ['pickled'] },
+    ],
+    visibleIngredients: [
+      { ...ingredient('white rice'), canonicalName: 'rice' },
+      { ...ingredient('nori seaweed'), canonicalName: 'seaweed' },
+      ingredient('cucumber'),
+      ingredient('carrot'),
+      { ...ingredient('sesame seeds'), canonicalName: 'sesame seed' },
+      { ...ingredient('edamame beans'), canonicalName: 'edamame' },
+      ingredient('pickled ginger'),
+    ],
+    inferredIngredients: [
+      { ...ingredient('vinegar (in sushi rice)'), evidence: 'inferred', confidence: 'medium' },
+      { ...ingredient('salt (in pickled ginger)'), evidence: 'inferred', confidence: 'medium' },
+    ],
+    prepStyle: ['rolled', 'raw', 'steamed', 'boiled', 'pickled'],
+    notes: ['real scan audit fixture'],
+    baseFoodCategory: { key: 'mixed_dish_or_entree', confidence: 'high', evidence: 'name', source: 'sushi rolls with edamame' },
+    riskModifiers: [
+      { key: 'allium_garlic_onion', confidence: 'low', evidence: 'common_dish_knowledge', source: 'possible small amount in sushi seasoning or pickled ginger' },
+      { key: 'acidic_tomato_citrus_vinegar', confidence: 'medium', evidence: 'ingredient', source: 'vinegar in sushi rice and pickled ginger' },
+      { key: 'high_fiber_or_gassy', confidence: 'medium', evidence: 'ingredient', source: 'fiber in edamame and vegetable components' },
+      { key: 'plain_or_lightly_seasoned', confidence: 'high', evidence: 'description', source: 'simple vegetable sushi rolls without added heavy sauces' },
+    ],
+    conditionSeverities: [
+      { condition: 'GERD / Acid reflux', band: 'mild', drivers: ['vinegar in sushi rice', 'pickled ginger'], rationale: 'Light meal with mild acid.' },
+      { condition: 'IBS', band: 'mild', drivers: ['edamame', 'vegetables'], rationale: 'Some fermentable/fiber load, but moderate portion.' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
+function scannedTurkeySandwichAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'Turkey sandwich with pickles and potato chips',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [
+      { name: 'turkey sandwich', confidence: 'high', prepStyle: ['toasted', 'sliced'] },
+      { name: 'pickles', confidence: 'high', prepStyle: ['pickled'] },
+      { name: 'potato chips', confidence: 'high', prepStyle: ['kettle cooked'] },
+    ],
+    visibleIngredients: [
+      { ...ingredient('toasted bread'), canonicalName: 'wheat_grain_based', component: 'turkey sandwich' },
+      { ...ingredient('turkey slices'), canonicalName: 'lean_meat_poultry', component: 'turkey sandwich' },
+      { ...ingredient('lettuce leaves'), canonicalName: 'low_fermentation_vegetable_based', component: 'turkey sandwich' },
+      { ...ingredient('pickle slices with chili flakes'), canonicalName: 'high_fermentation_vegetable_based', component: 'pickled cucumber slices' },
+      { ...ingredient('potato chips'), canonicalName: 'root_tuber_starch_based', component: 'kettle style potato chips' },
+    ],
+    inferredIngredients: [
+      { ...ingredient('mayonnaise'), canonicalName: 'dairy_based', component: 'turkey sandwich', evidence: 'inferred', confidence: 'medium' },
+      { ...ingredient('cumin seeds'), canonicalName: 'nuts_seeds_or_oils_based', component: 'pickled cucumber slices', evidence: 'inferred', confidence: 'medium' },
+      { ...ingredient('red chili flakes'), canonicalName: 'spicy_heat', component: 'pickled cucumber slices', evidence: 'inferred', confidence: 'high' },
+    ],
+    prepStyle: ['toasted', 'sliced', 'pickled', 'kettle cooked'],
+    notes: ['real scan audit fixture'],
+    baseFoodCategory: { key: 'mixed_dish_or_entree', confidence: 'high', evidence: 'name', source: 'sandwich' },
+    riskModifiers: [
+      { key: 'fried_or_crispy', confidence: 'high', evidence: 'prep', source: 'visual evidence of toasted bread and chips' },
+      { key: 'allium_garlic_onion', confidence: 'medium', evidence: 'ingredient', source: 'mayonnaise and typical pickling spices' },
+      { key: 'acidic_tomato_citrus_vinegar', confidence: 'high', evidence: 'ingredient', source: 'vinegar in pickles' },
+      { key: 'spicy_heat', confidence: 'medium', evidence: 'ingredient', source: 'red pepper flakes in pickles' },
+      { key: 'wheat_fructan_or_gluten', confidence: 'high', evidence: 'ingredient', source: 'wheat bread' },
+      { key: 'high_fat_or_rich', confidence: 'medium', evidence: 'prep', source: 'mayonnaise and fried chips' },
+    ],
+    conditionSeverities: [
+      {
+        condition: 'GERD / Acid reflux',
+        band: 'moderate',
+        drivers: ['acidic vinegar in pickles', 'fried chips', 'mayonnaise', 'wheat bread', 'spicy chili flakes'],
+        rationale: 'Multiple common GERD triggers moderately increase reflux risk.',
+      },
+      {
+        condition: 'IBS',
+        band: 'mild',
+        drivers: ['wheat bread', 'fried potato chips', 'spicy chili flakes', 'allium from mayo'],
+        rationale: 'Some IBS triggers, but the meal is balanced enough for mild risk.',
+      },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
 function grilledChickenRiceAnalysis(): StructuredAnalysisV2 {
   return {
     dishName: 'grilled chicken with steamed rice',
@@ -1453,6 +1563,41 @@ function grilledChickenRiceAnalysis(): StructuredAnalysisV2 {
   };
 }
 
+function bandedGentleChickenRiceAnalysis(): StructuredAnalysisV2 {
+  return {
+    ...grilledChickenRiceAnalysis(),
+    conditionSeverities: [
+      { condition: 'GERD / Acid reflux', band: 'mild', drivers: ['small portion'], rationale: 'Mild band with mostly gentle ingredients.' },
+      { condition: 'IBS', band: 'mild', drivers: ['vegetables'], rationale: 'Mild band with mostly gentle ingredients.' },
+    ],
+  };
+}
+
+function lowConfidenceAlliumAnalysis(): StructuredAnalysisV2 {
+  return {
+    dishName: 'plain rice bowl with cucumber',
+    dishConfidence: 'high',
+    clarity: 'clear',
+    components: [{ name: 'plain rice bowl with cucumber', confidence: 'high', prepStyle: ['plain'] }],
+    visibleIngredients: [ingredient('rice'), ingredient('cucumber')],
+    inferredIngredients: [],
+    prepStyle: ['plain'],
+    notes: [],
+    baseFoodCategory: { key: 'non_wheat_grain_based', confidence: 'high', evidence: 'ingredient', source: 'rice' },
+    riskModifiers: [
+      { key: 'rice_or_simple_starch', confidence: 'high', evidence: 'ingredient', source: 'rice' },
+      { key: 'low_fermentation_plant', confidence: 'high', evidence: 'ingredient', source: 'cucumber' },
+      { key: 'allium_garlic_onion', confidence: 'low', evidence: 'common_dish_knowledge', source: 'possible hidden seasoning' },
+    ],
+    conditionSeverities: [
+      { condition: 'IBS', band: 'mild', drivers: ['possible seasoning'], rationale: 'Deliberately mild despite weak speculative allium.' },
+    ],
+    model: 'test',
+    promptVersion: 'test',
+    imageDetail: 'high',
+  };
+}
+
 function findConditionRow(result: ReturnType<typeof computeScanResultFromStructured>, substr: string) {
   const needle = substr.toLowerCase();
   return result.conditionRisks.find((row) => row.conditionName.toLowerCase().includes(needle));
@@ -1469,16 +1614,100 @@ Deno.test('GOLDEN [locked]: gentle grilled chicken + rice stays low risk for a m
   }
 });
 
+Deno.test('GOLDEN [llm-bands]: real sushi scan stays inside the LLM mild band', () => {
+  const result = computeScanResultFromStructured(scannedSushiAnalysis(), ibsGerdProfile(), []);
+
+  if (result.overallRiskScore < 11 || result.overallRiskScore > 36) {
+    throw new Error(`Expected sushi to stay mild (11-36), got ${result.overallRiskScore}`);
+  }
+  if (result.overallRiskLevel !== 'low') {
+    throw new Error(`Expected mild-band sushi to display low risk, got ${result.overallRiskLevel}`);
+  }
+  for (const row of result.conditionRisks) {
+    if (row.riskScore > 36) {
+      throw new Error(`Expected all sushi condition rows to stay mild, got ${JSON.stringify(result.conditionRisks)}`);
+    }
+  }
+});
+
+Deno.test('GOLDEN [llm-bands]: real sandwich scan stays moderate, not high', () => {
+  const result = computeScanResultFromStructured(scannedTurkeySandwichAnalysis(), ibsGerdProfile(), []);
+
+  if (result.overallRiskScore < 50 || result.overallRiskScore > 63) {
+    throw new Error(`Expected sandwich to land upper-moderate (50-63), got ${result.overallRiskScore}`);
+  }
+  if (result.overallRiskLevel !== 'medium') {
+    throw new Error(`Expected sandwich to display medium risk, got ${result.overallRiskLevel}`);
+  }
+});
+
+Deno.test('GOLDEN [ingredients]: rubric keys are sanitized out of sandwich ingredient rows', () => {
+  const result = computeScanResultFromStructured(scannedTurkeySandwichAnalysis(), ibsGerdProfile(), []);
+  const names = result.ingredientRisks.map((row) => row.canonicalName);
+  const forbidden = names.filter((name) => name.includes('_'));
+
+  if (forbidden.length) {
+    throw new Error(`Expected no rubric-key ingredient labels, got ${JSON.stringify(forbidden)}`);
+  }
+  for (const expected of ['toasted bread', 'turkey slices', 'lettuce leaves', 'pickle slices with chili flakes', 'potato chips', 'mayonnaise', 'cumin seeds', 'red chili flakes']) {
+    if (!names.includes(expected)) {
+      throw new Error(`Expected sanitized ingredient ${expected}, got ${JSON.stringify(names)}`);
+    }
+  }
+
+  const mayo = result.ingredientRisks.find((row) => row.canonicalName === 'mayonnaise');
+  if (!mayo) {
+    throw new Error(`Expected mayonnaise row, got ${JSON.stringify(result.ingredientRisks)}`);
+  }
+  if (mayo.riskLevel === 'high') {
+    throw new Error(`Expected mayonnaise not to inherit dairy/lactose high risk, got ${mayo.riskLevel} (${mayo.riskScore})`);
+  }
+});
+
+Deno.test('GOLDEN [ingredients]: normal sushi ingredient canonical names pass through', () => {
+  const result = computeScanResultFromStructured(scannedSushiAnalysis(), ibsGerdProfile(), []);
+  const names = result.ingredientRisks.map((row) => row.canonicalName);
+
+  for (const expected of ['rice', 'seaweed', 'cucumber', 'carrot', 'sesame seed', 'edamame', 'pickled ginger']) {
+    if (!names.includes(expected)) {
+      throw new Error(`Expected sushi ingredient ${expected}, got ${JSON.stringify(names)}`);
+    }
+  }
+});
+
+Deno.test('GOLDEN [llm-bands]: protective dominant ingredients lower inside-band placement', () => {
+  const result = computeScanResultFromStructured(bandedGentleChickenRiceAnalysis(), ibsGerdProfile(), []);
+
+  if (result.overallRiskScore > 24) {
+    throw new Error(`Expected gentle mild-band meal at or below midpoint, got ${result.overallRiskScore}`);
+  }
+  for (const row of result.conditionRisks) {
+    if (row.riskScore > 24) {
+      throw new Error(`Expected protective condition placement <= 24, got ${JSON.stringify(result.conditionRisks)}`);
+    }
+  }
+});
+
+Deno.test('GOLDEN [llm-bands]: low-confidence common-knowledge risk barely moves the number', () => {
+  const result = computeScanResultFromStructured(lowConfidenceAlliumAnalysis(), ibsGerdProfile(), []);
+  const ibs = findConditionRow(result, 'ibs');
+
+  if (!ibs) {
+    throw new Error(`Expected IBS condition row, got ${JSON.stringify(result.conditionRisks)}`);
+  }
+  if (ibs.riskScore > 26) {
+    throw new Error(`Expected weak speculative allium to stay near the mild midpoint, got ${ibs.riskScore}`);
+  }
+});
+
 Deno.test({
   name: 'GOLDEN [phase4]: turkey sandwich lands medium, not maxed out',
   ignore: false,
   fn: () => {
     const result = computeScanResultFromStructured(turkeySandwichAnalysis(), lactoseGerdProfile(), []);
 
-    // The LLM band (Phase 4) is what pulls a normal sandwich out of the high
-    // band; saturation alone (Phase 1) only caps it at the 80 soft ceiling.
-    if (result.overallRiskScore < 35 || result.overallRiskScore > 66) {
-      throw new Error(`Expected turkey sandwich 35-66, got ${result.overallRiskScore}`);
+    if (result.overallRiskScore < 37 || result.overallRiskScore > 63) {
+      throw new Error(`Expected turkey sandwich 37-63, got ${result.overallRiskScore}`);
     }
     if (result.overallRiskLevel === 'high') {
       throw new Error(`Expected turkey sandwich not high, got ${result.overallRiskLevel} (${result.overallRiskScore})`);
@@ -1500,7 +1729,7 @@ Deno.test({
       throw new Error(`Mayo should not produce a creamy_or_lactose contributor: ${JSON.stringify(result.scoreContributors)}`);
     }
     const lactose = findConditionRow(result, 'lactose');
-    if (lactose && lactose.riskScore >= 67) {
+    if (lactose && lactose.riskScore >= 64) {
       throw new Error(`Expected lactose row not high for a mayo sandwich, got ${lactose.riskScore}`);
     }
   },
@@ -1574,7 +1803,8 @@ Deno.test('GOLDEN [phase5]: a fried ingredient is not shown as easier on your gu
 });
 
 // The model under-rates an aggressive fried/spicy/acidic platter as "mild" for
-// GERD; the ±1-band guardrail should nudge it up one band to medium.
+// GERD; deterministic scoring can push it toward the top of mild, but cannot
+// promote it into the medium band.
 function underRatedSpicyFriedAnalysis(): StructuredAnalysisV2 {
   return {
     dishName: 'fried hot wings platter',
@@ -1601,15 +1831,43 @@ function underRatedSpicyFriedAnalysis(): StructuredAnalysisV2 {
   };
 }
 
-Deno.test('GOLDEN [phase7]: the guardrail nudges an under-rated aggressive meal up one band', () => {
+Deno.test('GOLDEN [llm-bands]: aggressive evidence cannot promote a mild LLM band', () => {
   const result = computeScanResultFromStructured(underRatedSpicyFriedAnalysis(), stoneyProfile(), []);
   const gerd = findConditionRow(result, 'gerd');
   if (!gerd) {
     throw new Error(`Expected a GERD condition row, got ${JSON.stringify(result.conditionRisks.map((row) => row.conditionName))}`);
   }
-  // Mild anchor alone would land ~38 (low/mild); the one-band nudge to moderate
-  // should lift it into medium, but not all the way to high.
-  if (gerd.riskLevel !== 'medium') {
-    throw new Error(`Expected GERD nudged to medium, got ${gerd.riskLevel} (${gerd.riskScore})`);
+  if (gerd.riskScore < 11 || gerd.riskScore > 36) {
+    throw new Error(`Expected GERD to stay inside mild band, got ${gerd.riskLevel} (${gerd.riskScore})`);
+  }
+});
+
+Deno.test('GOLDEN [llm-bands]: high and severe LLM bands still produce high scores', () => {
+  const high = computeScanResultFromStructured(
+    {
+      ...underRatedSpicyFriedAnalysis(),
+      conditionSeverities: [
+        { condition: 'GERD / Acid reflux', band: 'high', drivers: ['fried', 'spicy', 'acidic'], rationale: 'High risk by LLM.' },
+      ],
+    },
+    stoneyProfile(),
+    [],
+  );
+  const severe = computeScanResultFromStructured(
+    {
+      ...underRatedSpicyFriedAnalysis(),
+      conditionSeverities: [
+        { condition: 'GERD / Acid reflux', band: 'severe', drivers: ['fried', 'spicy', 'acidic'], rationale: 'Severe risk by LLM.' },
+      ],
+    },
+    stoneyProfile(),
+    [],
+  );
+
+  if (high.overallRiskScore < 64 || high.overallRiskScore > 89 || high.overallRiskLevel !== 'high') {
+    throw new Error(`Expected high band to stay high (64-89), got ${high.overallRiskLevel} ${high.overallRiskScore}`);
+  }
+  if (severe.overallRiskScore < 90 || severe.overallRiskScore > 100 || severe.overallRiskLevel !== 'high') {
+    throw new Error(`Expected severe band to stay 90-100/high, got ${severe.overallRiskLevel} ${severe.overallRiskScore}`);
   }
 });

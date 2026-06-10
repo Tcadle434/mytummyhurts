@@ -8,8 +8,8 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { AppScreen, SectionCard, SkeletonBlock } from "../../components/common/UI";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
 import { isLiveBackendConfigured } from "../../config/env";
-import { useHistoryFeed } from "../../features/history/hooks";
-import { useInsightsData } from "../../features/insights/hooks";
+import { useHomeData } from "../../features/home/hooks";
+import { shouldBlockHomeForInitialRemoteData } from "../../features/home/viewState";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
@@ -46,39 +46,45 @@ export function HomeScreen() {
 	>(null);
 
 	const greeting = localDaypartGreeting(clockNow);
-	const historyQuery = useHistoryFeed(12);
-	const insightsQuery = useInsightsData("");
-	const isLiveSession = Boolean(isLiveBackendConfigured && authUser);
-	const hasRemoteQueryData = Boolean(historyQuery.data && insightsQuery.data);
-	const isWaitingForInitialRemoteData = Boolean(
-		isLiveBackendConfigured &&
-			authUser &&
-			!hasRemoteQueryData &&
-			(!remoteDataLoaded || initialServerSyncNeeded || serverSyncInFlight) &&
-			!historyQuery.isError &&
-			!insightsQuery.isError
-	);
-	const isWaitingForComputedData = isWaitingForInitialRemoteData || learningSyncInFlight;
+	const homeQuery = useHomeData();
+	const hasRemoteQueryData = Boolean(homeQuery.data);
+	const hasFallbackHomeData = Boolean(fallbackProfile || fallbackReports.length || fallbackScans.length);
+	const isWaitingForInitialRemoteData = shouldBlockHomeForInitialRemoteData({
+		isLiveBackendConfigured,
+		hasAuthUser: Boolean(authUser),
+		hasRemoteQueryData,
+		hasFallbackHomeData,
+		remoteDataLoaded,
+		initialServerSyncNeeded,
+		serverSyncInFlight,
+		queryLoading: homeQuery.isLoading,
+		queryFetching: homeQuery.isFetching,
+		queryError: homeQuery.isError,
+	});
+	const snapshotLearningInFlight =
+		homeQuery.data?.learningStatus === "pending" || homeQuery.data?.learningStatus === "running";
+	const isWaitingForComputedData = isWaitingForInitialRemoteData;
 	const canUseFallbackData = !isWaitingForInitialRemoteData;
-	const firstPage = historyQuery.data?.pages[0];
 	const scans = useMemo(
-		() => (canUseFallbackData ? firstPage?.scans ?? fallbackScans : EMPTY_SCANS),
-		[canUseFallbackData, fallbackScans, firstPage?.scans]
+		() => (canUseFallbackData ? homeQuery.data?.recentScans ?? fallbackScans : EMPTY_SCANS),
+		[canUseFallbackData, fallbackScans, homeQuery.data?.recentScans]
 	);
 	const dailyReports = useMemo(
 		() =>
-			canUseFallbackData ? firstPage?.dailyReports ?? fallbackReports : EMPTY_DAILY_REPORTS,
-		[canUseFallbackData, fallbackReports, firstPage?.dailyReports]
+			canUseFallbackData ? homeQuery.data?.dailyReports ?? fallbackReports : EMPTY_DAILY_REPORTS,
+		[canUseFallbackData, fallbackReports, homeQuery.data?.dailyReports]
 	);
 	const profile = canUseFallbackData
-		? insightsQuery.data?.profile ?? fallbackProfile
-		: insightsQuery.data?.profile;
-	const gutScoreProfile = isLiveSession ? insightsQuery.data?.profile : profile;
+		? homeQuery.data?.profile ?? fallbackProfile
+		: homeQuery.data?.profile;
+	const gutScoreProfile = profile;
 	const yesterdayDate = yesterdayLocalDate(clockNow);
 	const yesterdayReport = dailyReports.find((report) => report.localDate === yesterdayDate);
 	const needsDailyReport = !yesterdayReport;
 	const shouldShowDailyReportBanner =
 		!isWaitingForComputedData &&
+		!snapshotLearningInFlight &&
+		!learningSyncInFlight &&
 		needsDailyReport &&
 		dismissedDailyReportPromptDate !== yesterdayDate;
 	const displayName = profile?.displayName?.trim();

@@ -1,5 +1,6 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.99.1';
 
+import { markUserAppSnapshotStatus } from './appSnapshot.ts';
 import { errorMetadata, recordSystemEvent } from './observability.ts';
 import { OperationLockBusyError, rebuildInsightsAndProfile } from './profile.ts';
 
@@ -195,6 +196,10 @@ export async function processDueLearningJobs(
 
   for (const job of jobs) {
     try {
+      await markUserAppSnapshotStatus(admin, job.user_id, 'running', {
+        sourceType: job.source_type,
+        sourceId: job.source_id ?? undefined,
+      });
       await rebuildInsightsAndProfile(admin, job.user_id, {
         eventType: job.event_type,
         sourceType: job.source_type,
@@ -205,17 +210,29 @@ export async function processDueLearningJobs(
       result.completed += 1;
     } catch (error) {
       if (error instanceof OperationLockBusyError) {
+        await markUserAppSnapshotStatus(admin, job.user_id, 'pending', {
+          sourceType: job.source_type,
+          sourceId: job.source_id ?? undefined,
+        });
         await rescheduleJob(admin, job, error, { locked: true });
         result.skippedLocked += 1;
         continue;
       }
 
       if (job.attempt_count >= maxAttempts) {
+        await markUserAppSnapshotStatus(admin, job.user_id, 'failed', {
+          sourceType: job.source_type,
+          sourceId: job.source_id ?? undefined,
+        });
         await markJobFailed(admin, job, error);
         result.failed += 1;
         continue;
       }
 
+      await markUserAppSnapshotStatus(admin, job.user_id, 'pending', {
+        sourceType: job.source_type,
+        sourceId: job.source_id ?? undefined,
+      });
       await rescheduleJob(admin, job, error);
       result.retried += 1;
     }

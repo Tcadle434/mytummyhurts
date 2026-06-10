@@ -75,6 +75,46 @@ export function normalizeInlineImageDataUrl(value: string | undefined | null) {
   return `data:${detectedMimeType};base64,${base64}`;
 }
 
+export function inlineImageDataUrlPayload(dataUrl: string) {
+  const normalized = normalizeInlineImageDataUrl(dataUrl);
+  if (!normalized) {
+    return null;
+  }
+
+  const match = normalized.match(/^data:([^;,]+);base64,([\s\S]+)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const contentType = match[1] ?? 'image/jpeg';
+  const base64 = match[2] ?? '';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return {
+    contentType,
+    base64,
+    bytes,
+  };
+}
+
+export function extensionForInlineImageContentType(contentType: string) {
+  switch (contentType) {
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/gif':
+      return 'gif';
+    case 'image/jpeg':
+    default:
+      return 'jpg';
+  }
+}
+
 export function inlineImageDataUrlByteLength(dataUrl: string) {
   const commaIndex = dataUrl.indexOf(',');
   if (commaIndex < 0) {

@@ -27,7 +27,7 @@ If you want local StoreKit purchase testing in Xcode, attach [MyTummyHurts.store
 - Long onboarding flow, paywall orchestration, auth shell, scan flow, results, history, manual meal flows, follow-up, insights, and settings
 - Live Supabase schema, edge functions, analytics, notification registration, and scheduled maintenance worker under `supabase/`
 - Real Apple, Google, and email auth wiring
-- Superwall placement integration, billing sync, restore handling, and StoreKit local config
+- RevenueCat subscription integration, billing sync, restore handling, and StoreKit local config
 - Patch-package guards for Expo SDK pods that require newer Xcode SDKs than the local Xcode 16.2 toolchain
 
 ## Product direction

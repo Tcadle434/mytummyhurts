@@ -6,7 +6,6 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans';
 import { InstrumentSerif_400Regular } from '@expo-google-fonts/instrument-serif';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { SuperwallLoaded, SuperwallProvider } from 'expo-superwall';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { ReactNode } from 'react';
@@ -15,9 +14,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LearningSyncToastBridge } from '../components/system/LearningSyncToastBridge';
-import { RuntimeServices, SuperwallBillingBridge, SuperwallIdentityBridge } from '../components/system/RuntimeServices';
+import { RuntimeServices } from '../components/system/RuntimeServices';
 import { ToastProvider } from '../components/system/ToastProvider';
-import { env, isSuperwallConfigured } from '../config/env';
 import { queryClient } from '../services/query/client';
 import { palette } from '../theme';
 
@@ -50,7 +48,7 @@ export function AppProviders({ children }: AppProvidersProps) {
     );
   }
 
-  const content = (
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
@@ -64,27 +62,5 @@ export function AppProviders({ children }: AppProvidersProps) {
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
-  );
-
-  if (!isSuperwallConfigured) {
-    return content;
-  }
-
-  return (
-    <SuperwallProvider
-      apiKeys={{ ios: env.superwallApiKey }}
-      options={{
-        shouldObservePurchases: true,
-      }}
-      onConfigurationError={(error) => {
-        console.warn('[superwall] configuration error', error);
-      }}
-    >
-      <SuperwallLoaded>
-        <SuperwallIdentityBridge />
-        <SuperwallBillingBridge />
-      </SuperwallLoaded>
-      {content}
-    </SuperwallProvider>
   );
 }

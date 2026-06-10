@@ -20,6 +20,7 @@ import {
 	PrimaryButton,
 	SectionCard,
 } from "../../components/common/UI";
+import { useHomeData } from "../../features/home/hooks";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
@@ -40,10 +41,16 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 	const weekStart = route.params.weekStart ?? getWeekStartForLocalDate(localDate);
 	const fallbackScans = useAppStore((state) => state.scans);
 	const fallbackReports = useAppStore((state) => state.dailyReports);
+	const homeQuery = useHomeData();
 	const historyQuery = useHistoryFeed(100);
-	const scans = historyQuery.data?.pages.flatMap((page) => page.scans ?? []) ?? fallbackScans;
+	const scans =
+		historyQuery.data?.pages.flatMap((page) => page.scans ?? []) ??
+		homeQuery.data?.recentScans ??
+		fallbackScans;
 	const reports =
-		historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ?? fallbackReports;
+		historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ??
+		homeQuery.data?.dailyReports ??
+		fallbackReports;
 	const day = useMemo(
 		() =>
 			buildWeeklyProgressDays({ scans, reports, weekStart }).find(

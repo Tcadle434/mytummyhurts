@@ -1,5 +1,4 @@
 import * as Notifications from 'expo-notifications';
-import { useSuperwall, useSuperwallEvents } from 'expo-superwall';
 import { ReactNode, useEffect, useRef } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
@@ -7,11 +6,11 @@ import { restoreSupabaseSession, syncSessionToStore } from '../../services/auth'
 import { apiClient } from '../../services/api/client';
 import { trackEvent } from '../../services/analytics';
 import { supabase } from '../../services/supabase/client';
-import { buildSubscriptionWindow, derivePlanFromProductId } from '../../services/billing/plans';
 import { posthogClient } from '../../services/analytics/posthog';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { navigationRef } from '../../navigation/navigationRef';
+import { getRevenueCatBillingSyncRequest, resetRevenueCatIdentity } from '../../services/billing/revenueCat';
 
 export function SupabaseSessionBridge() {
   useEffect(() => {
@@ -87,179 +86,51 @@ export function RemoteBootstrapBridge() {
   return null;
 }
 
-export function SuperwallIdentityBridge() {
-  const authUser = useAppStore((state) => state.authUser);
-  const { identify, reset, setUserAttributes } = useSuperwall((state) => ({
-    identify: state.identify,
-    reset: state.reset,
-    setUserAttributes: state.setUserAttributes,
-  }));
-  const lastIdentitySignatureRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const nextIdentitySignature = authUser
-      ? `${authUser.id}:${authUser.email ?? ''}:${authUser.provider ?? 'unknown'}`
-      : '__signed_out__';
-
-    if (lastIdentitySignatureRef.current === nextIdentitySignature) {
-      return;
-    }
-
-    lastIdentitySignatureRef.current = nextIdentitySignature;
-
-    if (!authUser) {
-      reset().catch((error) => {
-        lastIdentitySignatureRef.current = null;
-        console.warn('[superwall] failed to sign out user', error);
-      });
-      return;
-    }
-
-    identify(authUser.id)
-      .then(() =>
-        setUserAttributes({
-          email: authUser.email,
-          auth_provider: authUser.provider,
-        }),
-      )
-      .catch((error) => {
-        lastIdentitySignatureRef.current = null;
-        console.warn('[superwall] failed to identify user', error);
-      });
-  }, [authUser?.email, authUser?.id, authUser?.provider, identify, reset, setUserAttributes]);
-
-  return null;
-}
-
-type SuperwallEventPayload = {
-  event?: string;
-  product?: {
-    id?: string;
-    productIdentifier?: string;
-    fullIdentifier?: string;
-  };
-  transaction?: {
-    transactionDate?: string;
-    expirationDate?: string;
-    storeTransactionId?: string;
-    originalTransactionIdentifier?: string;
-  };
-};
-
-export function SuperwallBillingBridge() {
+export function RevenueCatBillingBridge() {
   const authUser = useAppStore((state) => state.authUser);
   const billing = useAppStore((state) => state.billing);
   const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
   const applyBillingState = useAppStore((state) => state.applyBillingState);
-  const lastSyncedTransactionRef = useRef<string | null>(null);
+  const lastSyncedUserRef = useRef<string | null>(null);
+  const hadIdentifiedUserRef = useRef(false);
 
-  async function syncBillingEvent(params: {
-    status: 'trialing' | 'active' | 'expired';
-    productId?: string | null;
-    transactionDate?: string | null;
-    expirationDate?: string | null;
-    transactionId?: string | null;
-    originalTransactionId?: string | null;
-  }) {
-    if (!authUser || initialServerSyncNeeded) {
+  useEffect(() => {
+    if (!authUser) {
+      lastSyncedUserRef.current = null;
+      if (hadIdentifiedUserRef.current) {
+        hadIdentifiedUserRef.current = false;
+        void resetRevenueCatIdentity().catch((error) => {
+          console.warn('[revenuecat] failed to reset identity', error);
+        });
+      }
       return;
     }
 
-    const planCode = derivePlanFromProductId(params.productId) ?? billing.selectedPlan;
-    const startedAt = params.transactionDate ? new Date(params.transactionDate) : new Date();
-    const windows = buildSubscriptionWindow(planCode, startedAt);
-    const trialEndsAt = params.status === 'trialing' ? params.expirationDate ?? windows.trialEndsAt : windows.trialEndsAt;
-    const renewalAt = params.expirationDate ?? windows.renewalAt;
-    const transactionId =
-      params.transactionId ??
-      params.originalTransactionId ??
-      `${params.status}:${params.productId ?? planCode}:${startedAt.toISOString()}`;
-
-    if (lastSyncedTransactionRef.current === transactionId) {
+    hadIdentifiedUserRef.current = true;
+    if (initialServerSyncNeeded || lastSyncedUserRef.current === authUser.id) {
       return;
     }
 
-    lastSyncedTransactionRef.current = transactionId;
+    lastSyncedUserRef.current = authUser.id;
+    getRevenueCatBillingSyncRequest(authUser.id, billing.monthlyAllowance, authUser.email)
+      .then(async (request) => {
+        if (!request) {
+          return;
+        }
 
-    const response = await apiClient.syncBilling({
-      planCode,
-      status: params.status,
-      productId: params.productId ?? undefined,
-      transactionId,
-      originalTransactionId: params.originalTransactionId ?? undefined,
-      currentPeriodStart: params.transactionDate ?? windows.currentPeriodStart,
-      trialEndsAt,
-      renewalAt,
-      monthlyAllowance: billing.monthlyAllowance,
-    });
-
-    applyBillingState(response.billing);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-    ]);
-  }
-
-  useSuperwallEvents({
-    onSubscriptionStatusChange: (status) => {
-      if (!authUser || initialServerSyncNeeded) {
-        return;
-      }
-
-      if (status.status === 'INACTIVE' && billing.subscriptionStatus !== 'none') {
-        void syncBillingEvent({
-          status: 'expired',
-          productId: null,
-          transactionDate: null,
-          expirationDate: null,
-          transactionId: `inactive:${authUser.id}:${Date.now()}`,
-          originalTransactionId: null,
-        }).catch((error) => {
-          console.warn('[superwall] failed to sync inactive subscription state', error);
-        });
-      }
-    },
-    onSuperwallEvent: (payload: unknown) => {
-      const event = payload as SuperwallEventPayload;
-      const eventName = event.event;
-      if (!eventName || !authUser || initialServerSyncNeeded) {
-        return;
-      }
-
-      const productId = event.product?.productIdentifier ?? event.product?.id ?? event.product?.fullIdentifier ?? null;
-      const transactionDate = event.transaction?.transactionDate ?? null;
-      const expirationDate = event.transaction?.expirationDate ?? null;
-      const transactionId = event.transaction?.storeTransactionId ?? null;
-      const originalTransactionId = event.transaction?.originalTransactionIdentifier ?? null;
-
-      if (eventName === 'freeTrialStart') {
-        void syncBillingEvent({
-          status: 'trialing',
-          productId,
-          transactionDate,
-          expirationDate,
-          transactionId,
-          originalTransactionId,
-        }).catch((error) => {
-          console.warn('[superwall] failed to sync trial start', error);
-        });
-      }
-
-      if (eventName === 'subscriptionStart' || eventName === 'transactionComplete' || eventName === 'transactionRestore') {
-        void syncBillingEvent({
-          status: 'active',
-          productId,
-          transactionDate,
-          expirationDate,
-          transactionId,
-          originalTransactionId,
-        }).catch((error) => {
-          console.warn('[superwall] failed to sync purchase state', error);
-        });
-      }
-    },
-  });
+        const response = await apiClient.syncBilling(request);
+        applyBillingState(response.billing);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+        ]);
+      })
+      .catch((error) => {
+        lastSyncedUserRef.current = null;
+        console.warn('[revenuecat] failed to sync billing state', error);
+      });
+  }, [applyBillingState, authUser, billing.monthlyAllowance, initialServerSyncNeeded]);
 
   return null;
 }
@@ -305,6 +176,7 @@ export function RuntimeServices({ children }: RuntimeServicesProps) {
       <SupabaseSessionBridge />
       <PostHogIdentityBridge />
       <RemoteBootstrapBridge />
+      <RevenueCatBillingBridge />
       <NotificationResponseBridge />
       {children}
     </>

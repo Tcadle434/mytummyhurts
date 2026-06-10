@@ -12,10 +12,13 @@ import {
 import { trackEvent } from '../services/analytics';
 import { apiClient } from '../services/api/client';
 import {
+  HomeResponse,
   LearningRecomputeRequest,
   LearningRecomputeResponse,
   ProfileUpdateRequest,
 } from '../services/api/contracts';
+import { ApiError } from '../services/api/errors';
+import { isEntitledSubscriptionStatus } from '../features/access/appAccess';
 import {
   analyzeMealInput,
   buildGutScoreEvent,
@@ -27,6 +30,7 @@ import {
   recomputeInsights,
 } from '../services/ai/scoring';
 import { buildSubscriptionWindow } from '../services/billing/plans';
+import { getRevenueCatBillingSyncRequest } from '../services/billing/revenueCat';
 import { queryClient } from '../services/query/client';
 import { queryKeys } from '../services/query/keys';
 import { uploadMealImage } from '../services/storage';
@@ -85,14 +89,15 @@ type AppStoreState = {
   setOnboardingStepIndex: (index: number) => void;
   setOnboardingStage: (stage: OnboardingStage) => void;
   selectPlan: (plan: SubscriptionPlan) => void;
-  completePurchase: () => void;
   stageEntitlementAccess: (status: BillingState['subscriptionStatus']) => void;
+  completeAuthSetup: () => Promise<void>;
   syncAuthUser: (user: AppUser) => void;
   refreshRemoteState: () => Promise<void>;
   syncInitialAccountState: () => Promise<void>;
   triggerLearningRecompute: (request: LearningRecomputeRequest) => void;
   updateProfileSettings: (request: ProfileUpdateRequest) => Promise<void>;
   applyBillingState: (billing: BillingState) => void;
+  applyHomeResponse: (response: HomeResponse) => void;
   analyzeScanInput: (payload: ScanInputPayload) => Promise<{ scanId: string }>;
   deleteScanRecord: (scanId: string) => Promise<void>;
   upsertDailyReport: (params: {
@@ -186,6 +191,10 @@ function apiErrorCode(error: unknown) {
     : error instanceof Error
       ? error.name
       : 'unknown_error';
+}
+
+function isSubscriptionRequiredError(error: unknown) {
+  return error instanceof ApiError && error.code === 'subscription_required';
 }
 
 function isDisplayNameOnlyProfileRequest(request: ProfileUpdateRequest) {
@@ -287,22 +296,47 @@ function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] | undefi
   });
 }
 
-async function runLearningRecomputeWithRetry(
-  request: LearningRecomputeRequest,
-  maxAttempts = 3,
-): Promise<LearningRecomputeResponse> {
-  let response: LearningRecomputeResponse | null = null;
+function homeSummaryInsights(response: HomeResponse) {
+  const byId = new Map<string, IngredientInsight>();
 
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    response = await apiClient.learningRecompute(request);
-    if (response.learningSyncStatus !== 'locked' || attempt === maxAttempts - 1) {
-      return response;
-    }
-
-    await sleep(1000 * (attempt + 1));
+  for (const insight of [...response.insightSummary.triggers, ...response.insightSummary.safeFoods]) {
+    byId.set(insight.id || insight.ingredientName, insight);
   }
 
-  return response ?? { ok: true, learningSyncStatus: 'failed' };
+  return [...byId.values()];
+}
+
+function sortDailyReportsByDate(dailyReports: DailyGutReport[]) {
+  return [...dailyReports].sort(
+    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+  );
+}
+
+function homeResponseStatePatch(
+  currentState: AppStoreState,
+  response: HomeResponse,
+): Partial<AppStoreState> {
+  const summaryInsights = homeSummaryInsights(response);
+  const learningIsInFlight = response.learningStatus === 'pending' || response.learningStatus === 'running';
+  const learningFailed = response.learningStatus === 'failed';
+
+  return {
+    profile: response.profile,
+    billing: response.billing,
+    dailyReports: sortDailyReportsByDate(response.dailyReports),
+    insights: currentState.insights.length ? currentState.insights : summaryInsights,
+    conditionInsights: currentState.conditionInsights.length
+      ? currentState.conditionInsights
+      : response.insightSummary.conditionInsights,
+    initialServerSyncNeeded: response.profile ? false : currentState.initialServerSyncNeeded,
+    remoteDataLoaded: true,
+    serverSyncError: null,
+    learningSyncInFlight: learningIsInFlight,
+    learningSyncRequestId: learningIsInFlight ? currentState.learningSyncRequestId : null,
+    learningSyncError: learningFailed
+      ? 'Learning refresh is still catching up. Your latest reports are saved.'
+      : null,
+  };
 }
 
 function mergeById<T extends { id: string }>(items: T[], incoming: T) {
@@ -315,6 +349,32 @@ function mergeDailyReportByLocalDate(items: DailyGutReport[], incoming: DailyGut
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isHomeLearningActive(response: HomeResponse) {
+  return response.learningStatus === 'pending' || response.learningStatus === 'running';
+}
+
+async function pollHomeSnapshotUntilIdle(
+  applyHomeResponse: (response: HomeResponse) => void,
+  options: { maxAttempts?: number; intervalMs?: number } = {},
+) {
+  const maxAttempts = options.maxAttempts ?? 12;
+  const intervalMs = options.intervalMs ?? 2500;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(intervalMs);
+    }
+
+    const response = await apiClient.getHome();
+    applyHomeResponse(response);
+    if (!isHomeLearningActive(response)) {
+      return response;
+    }
+  }
+
+  return null;
 }
 
 function createLocalProfile(userId: string, answers: OnboardingAnswers, insights: IngredientInsight[]) {
@@ -568,11 +628,6 @@ export const useAppStore = create<AppStoreState>()(
             selectedPlan: plan,
           },
         })),
-      completePurchase: () => {
-        get().stageEntitlementAccess('trialing');
-        trackEvent('trial_started', { plan_code: get().billing.selectedPlan });
-        trackEvent('subscription_started', { plan_code: get().billing.selectedPlan, trial_started: true });
-      },
       stageEntitlementAccess: (status) => {
         const window = buildSubscriptionWindow(get().billing.selectedPlan);
         set((state) => ({
@@ -595,11 +650,35 @@ export const useAppStore = create<AppStoreState>()(
         set({
           authUser: user,
           profile,
-          onboardingStage: state.onboardingStage === 'auth' ? 'complete' : state.onboardingStage,
+          onboardingStage: state.onboardingStage,
         });
+      },
+      completeAuthSetup: async () => {
+        const state = get();
+        if (state.initialServerSyncNeeded) {
+          await get().syncInitialAccountState();
+        }
+
+        const nextState = get();
+        if (!isEntitledSubscriptionStatus(nextState.billing.subscriptionStatus)) {
+          set({ onboardingStage: 'paywall' });
+          throw new Error('An active subscription or trial is required to continue.');
+        }
+
+        if (!nextState.profile) {
+          set({ onboardingStage: 'flow' });
+          throw new Error('Finish your profile setup to continue.');
+        }
+
+        set({ onboardingStage: 'complete' });
       },
       applyBillingState: (billing) => {
         set({ billing });
+      },
+      applyHomeResponse: (response) => {
+        queryClient.setQueryData(queryKeys.home, response);
+        patchDailyReportsInHistoryCache(response.dailyReports);
+        set((currentState) => homeResponseStatePatch(currentState, response));
       },
       refreshRemoteState: async () => {
         const state = get();
@@ -607,22 +686,26 @@ export const useAppStore = create<AppStoreState>()(
           return;
         }
 
-        const [history, insightsResponse] = await Promise.all([
-          apiClient.getHistory({ page: 1, pageSize: 20, includeDailyReports: true }),
-          apiClient.getInsights(),
-        ]);
-        queryClient.setQueryData([...queryKeys.insights, ''], insightsResponse);
+        let homeResponse: HomeResponse;
+        try {
+          homeResponse = await apiClient.getHome();
+        } catch (error) {
+          if (isSubscriptionRequiredError(error)) {
+            set((currentState) => ({
+              billing: {
+                ...currentState.billing,
+                subscriptionStatus: 'expired',
+              },
+              onboardingStage: currentState.authUser ? 'paywall' : currentState.onboardingStage,
+              serverSyncError: null,
+            }));
+          }
+          throw error;
+        }
 
-        set((currentState) => ({
-          scans: currentState.scans,
-          dailyReports: history.dailyReports ?? [],
-          profile: insightsResponse.profile ?? currentState.profile,
-          insights: insightsResponse.insights,
-          conditionInsights: insightsResponse.conditionInsights,
-          billing: insightsResponse.billing,
-          remoteDataLoaded: true,
-          serverSyncError: null,
-        }));
+        queryClient.setQueryData(queryKeys.home, homeResponse);
+        patchDailyReportsInHistoryCache(homeResponse.dailyReports);
+        set((currentState) => homeResponseStatePatch(currentState, homeResponse));
       },
       syncInitialAccountState: async () => {
         const state = get();
@@ -633,15 +716,33 @@ export const useAppStore = create<AppStoreState>()(
         set({ serverSyncInFlight: true, serverSyncError: null });
 
         try {
-          const effectiveStatus = state.billing.subscriptionStatus === 'none' ? 'trialing' : state.billing.subscriptionStatus;
+          const revenueCatBillingRequest = await getRevenueCatBillingSyncRequest(
+            state.authUser.id,
+            state.billing.monthlyAllowance,
+            state.authUser.email,
+          );
 
-          await apiClient.syncBilling({
-            planCode: state.billing.selectedPlan,
-            status: effectiveStatus,
-            trialEndsAt: state.billing.trialEndsAt,
-            renewalAt: state.billing.renewalAt,
-            monthlyAllowance: state.billing.monthlyAllowance,
-          });
+          if (!revenueCatBillingRequest) {
+            set({
+              initialServerSyncNeeded: false,
+              serverSyncInFlight: false,
+              serverSyncError: null,
+              onboardingStage: 'paywall',
+            });
+            throw new Error('Your subscription could not be verified. Restore purchases or choose a plan to continue.');
+          }
+
+          const billingResponse = await apiClient.syncBilling(revenueCatBillingRequest);
+          if (!isEntitledSubscriptionStatus(billingResponse.billing.subscriptionStatus)) {
+            set({
+              billing: billingResponse.billing,
+              initialServerSyncNeeded: false,
+              serverSyncInFlight: false,
+              serverSyncError: null,
+              onboardingStage: 'paywall',
+            });
+            return;
+          }
 
           const profileResponse = await apiClient.updateProfile({
             onboardingAnswers: {
@@ -663,16 +764,22 @@ export const useAppStore = create<AppStoreState>()(
             },
           });
 
-          set((currentState) => ({
-            profile: profileResponse.profile ?? currentState.profile,
-            insights: profileResponse.insights,
-            conditionInsights: profileResponse.conditionInsights,
-            billing: profileResponse.billing,
-            initialServerSyncNeeded: false,
-            serverSyncInFlight: false,
-            serverSyncError: null,
-            remoteDataLoaded: false,
-          }));
+          set((currentState) => {
+            const nextBilling = profileResponse.billing ?? currentState.billing;
+            return {
+              profile: profileResponse.profile ?? currentState.profile,
+              insights: profileResponse.insights,
+              conditionInsights: profileResponse.conditionInsights,
+              billing: nextBilling,
+              initialServerSyncNeeded: false,
+              serverSyncInFlight: false,
+              serverSyncError: null,
+              remoteDataLoaded: false,
+              onboardingStage: isEntitledSubscriptionStatus(nextBilling.subscriptionStatus)
+                ? 'complete'
+                : 'paywall',
+            };
+          });
 
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
@@ -773,7 +880,7 @@ export const useAppStore = create<AppStoreState>()(
       },
       analyzeScanInput: async (payload) => {
         const state = get();
-        if (state.billing.subscriptionStatus === 'none') {
+        if (!isEntitledSubscriptionStatus(state.billing.subscriptionStatus)) {
           throw new Error('Subscription required before running scans.');
         }
 
@@ -1069,7 +1176,10 @@ export const useAppStore = create<AppStoreState>()(
             learningSyncRequestId: optimisticReport.id,
             learningSyncError: null,
           }));
-          void queryClient.invalidateQueries({ queryKey: queryKeys.history });
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          ]);
           void (async () => {
             try {
               const response = await apiClient.upsertDailyReport({
@@ -1078,74 +1188,62 @@ export const useAppStore = create<AppStoreState>()(
                 symptomTags: normalizedSymptomTags,
                 notes,
               });
-              const learningResponse =
-                response.learningSyncStatus === 'queued'
-                  ? await runLearningRecomputeWithRetry({
-                      sourceType: 'daily_gut_report',
-                      sourceId: response.report.id,
-                      eventType: 'daily_report_saved',
-                    })
-                  : null;
-
-              if (learningResponse?.learningSyncStatus === 'updated') {
-                patchInsightsCacheFromLearning(learningResponse);
-                patchDailyReportsInHistoryCache(learningResponse.dailyReports);
-              }
-
-              const nextDailyReports = learningResponse?.dailyReports
-                ? [...learningResponse.dailyReports].sort(
-                    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-                  )
-                : null;
               const learningSyncError =
                 response.learningSyncStatus === 'failed'
                   ? 'Daily report saved, but learning refresh could not be queued.'
-                  : learningResponse &&
-                    learningResponse.learningSyncStatus !== 'updated'
-                    ? 'Daily report saved, but Gut Score refresh is still catching up.'
-                    : null;
+                  : null;
+              const learningIsQueued = response.learningSyncStatus === 'queued';
 
               set((currentState) => ({
-                profile: learningResponse?.profile ?? currentState.profile,
-                insights: learningResponse?.insights ?? currentState.insights,
-                conditionInsights:
-                  learningResponse?.conditionInsights ?? currentState.conditionInsights,
-                dailyReports:
-                  nextDailyReports ??
-                  mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
-                    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-                  ),
-                learningSyncInFlight: false,
-                learningSyncRequestId: null,
+                dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
+                  (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+                ),
+                learningSyncInFlight: learningIsQueued,
+                learningSyncRequestId: learningIsQueued ? response.report.id : null,
                 learningSyncError,
               }));
               void Promise.all([
                 queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
                 queryClient.invalidateQueries({ queryKey: queryKeys.home }),
               ]);
 
-              trackEvent(
-                learningResponse ? 'learning_recompute_completed' : 'learning_recompute_queued',
-                {
-                  source_type: 'daily_gut_report',
-                  source_id: response.report.id,
-                  status:
-                    learningResponse?.learningSyncStatus ?? response.learningSyncStatus,
-                },
-              );
+              trackEvent('learning_recompute_queued', {
+                source_type: 'daily_gut_report',
+                source_id: response.report.id,
+                status: response.learningSyncStatus,
+              });
 
-              if (response.learningSyncStatus === 'queued' && learningResponse?.learningSyncStatus !== 'updated') {
-                setTimeout(() => {
-                  void get().refreshRemoteState().catch((error) => {
-                    console.warn('[learning] delayed refresh failed', error);
-                  });
-                  void Promise.all([
+              if (learningIsQueued) {
+                try {
+                  const finalHome = await pollHomeSnapshotUntilIdle(get().applyHomeResponse);
+                  await Promise.all([
                     queryClient.invalidateQueries({ queryKey: queryKeys.history }),
                     queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
                     queryClient.invalidateQueries({ queryKey: queryKeys.home }),
                   ]);
-                }, 60_000);
+
+                  if (!finalHome) {
+                    set({
+                      learningSyncInFlight: false,
+                      learningSyncRequestId: null,
+                      learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+                    });
+                    return;
+                  }
+
+                  trackEvent('learning_recompute_completed', {
+                    source_type: 'daily_gut_report',
+                    source_id: response.report.id,
+                    status: finalHome.learningStatus,
+                  });
+                } catch (pollError) {
+                  console.warn('[learning] home snapshot polling failed', pollError);
+                  set({
+                    learningSyncInFlight: false,
+                    learningSyncRequestId: null,
+                    learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+                  });
+                }
               }
             } catch (error) {
               set((currentState) =>

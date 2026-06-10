@@ -4,6 +4,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Pip } from "../../components/common/Pip";
 import { PrimaryButton } from "../../components/common/UI";
 import { SubscriptionPlan } from "../../types/domain";
+import { RevenueCatPlanDisplay } from "../../services/billing/revenueCatMapping";
 import { palette, radii, spacing, tokens, type } from "../../theme";
 
 const MTH_TEXT_LOGO = require("../../../assets/mth_text_logo.png");
@@ -35,6 +36,7 @@ type PaywallOfferContentProps = {
 	onPrivacy: () => void;
 	onBack?: () => void;
 	statusMessage?: string | null;
+	planDisplay?: RevenueCatPlanDisplay;
 };
 
 export function PaywallOfferContent({
@@ -47,6 +49,7 @@ export function PaywallOfferContent({
 	onPrivacy,
 	onBack,
 	statusMessage,
+	planDisplay,
 }: PaywallOfferContentProps) {
 	return (
 		<View style={styles.root}>
@@ -108,6 +111,7 @@ export function PaywallOfferContent({
 					<PlanRow
 						key={plan}
 						plan={plan}
+						display={planDisplay?.[plan]}
 						selected={selectedPlan === plan}
 						onPress={() => onSelectPlan(plan)}
 					/>
@@ -159,14 +163,16 @@ function TrustMetric({
 
 function PlanRow({
 	plan,
+	display,
 	selected,
 	onPress,
 }: {
 	plan: SubscriptionPlan;
+	display?: RevenueCatPlanDisplay[SubscriptionPlan];
 	selected: boolean;
 	onPress: () => void;
 }) {
-	const copy = PLAN_COPY[plan];
+	const copy = { ...PLAN_COPY[plan], ...display };
 	return (
 		<Pressable
 			accessibilityRole="button"

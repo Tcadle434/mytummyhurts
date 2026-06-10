@@ -77,6 +77,22 @@ export const menuRiskModifierKeys = [
 
 export type MenuRiskModifierKey = typeof menuRiskModifierKeys[number];
 
+function normalizeMenuRubricKeyCandidate(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+export function isMenuRubricClassificationKey(value: string) {
+  const normalized = normalizeMenuRubricKeyCandidate(value);
+  return (
+    menuBaseFoodCategoryKeys.includes(normalized as MenuBaseFoodCategoryKey) ||
+    menuRiskModifierKeys.includes(normalized as MenuRiskModifierKey)
+  );
+}
+
 export interface MenuBaseFoodCategory {
   key: MenuBaseFoodCategoryKey;
   confidence: 'low' | 'medium' | 'high';

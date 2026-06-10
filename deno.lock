@@ -1,5 +1,8 @@
 {
   "version": "5",
+  "redirects": {
+    "https://esm.sh/iceberg-js@^0.8.1?target=denonext": "https://esm.sh/iceberg-js@0.8.1?target=denonext"
+  },
   "remote": {
     "https://deno.land/std@0.224.0/assert/_constants.ts": "a271e8ef5a573f1df8e822a6eb9d09df064ad66a4390f21b3e31f820a38e0975",
     "https://deno.land/std@0.224.0/assert/assert.ts": "09d30564c09de846855b7b071e62b5974b001bb72a4b797958fe0660e7849834",
@@ -36,7 +39,16 @@
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
-    "https://esm.sh/@supabase/supabase-js@2.99.1": "b9af3c549dd42b12e1be07c340d8efa1552a6748ab70e5b9c483bbe8ad3dc3b3"
+    "https://esm.sh/@supabase/auth-js@2.99.1/denonext/auth-js.mjs": "343444fc58a7d4010105e48f1e99a4526f0a52d92430e096fa2e056640765b61",
+    "https://esm.sh/@supabase/functions-js@2.99.1/denonext/functions-js.mjs": "9ca4712ab3b5a7e544f5d44d5548b0d8cc2f7824b87c3bf90086c0b560b8cfbc",
+    "https://esm.sh/@supabase/postgrest-js@2.99.1/denonext/postgrest-js.mjs": "9a0a8e81dc2c7cba5535c2f25ce48a47502ef7f353aec4ba786ce9adfcb0c42e",
+    "https://esm.sh/@supabase/realtime-js@2.99.1/denonext/realtime-js.mjs": "ede2085a822c9b32d484ef019ea1ae139e7d5adaf426931b1aba6a48df597905",
+    "https://esm.sh/@supabase/storage-js@2.99.1/denonext/storage-js.mjs": "db1d7acb3bf6f75cd30670e01e17f930df6a4a1b4ae1f805a8e06d7ebe591843",
+    "https://esm.sh/@supabase/supabase-js@2.99.1": "b9af3c549dd42b12e1be07c340d8efa1552a6748ab70e5b9c483bbe8ad3dc3b3",
+    "https://esm.sh/@supabase/supabase-js@2.99.1/denonext/supabase-js.mjs": "bfa94aa7bcb1609a88c40dfff7d729a4369c85dcba8d8f662f45367819238ee4",
+    "https://esm.sh/iceberg-js@0.8.1/denonext/iceberg-js.mjs": "d839d81a2e3966500ca2cdd0c1cb458e9608bacfc91f7bb67a69b2e878dcdb4f",
+    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633",
+    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"
   },
   "workspace": {
     "packageJson": {
@@ -74,7 +86,6 @@
         "npm:expo-secure-store@~55.0.8",
         "npm:expo-status-bar@~55.0.4",
         "npm:expo-store-review@~55.0.14",
-        "npm:expo-superwall@^1.0.7",
         "npm:expo-video@~55.0.15",
         "npm:expo-web-browser@^55.0.9",
         "npm:expo@~55.0.6",
@@ -83,6 +94,7 @@
         "npm:prop-types@^15.8.1",
         "npm:react-dom@19.2.0",
         "npm:react-native-gesture-handler@2.30",
+        "npm:react-native-purchases@10.2.2",
         "npm:react-native-reanimated@4.2.1",
         "npm:react-native-safe-area-context@~5.6.2",
         "npm:react-native-screens@4.23",

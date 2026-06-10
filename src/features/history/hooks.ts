@@ -3,7 +3,8 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { isLiveBackendConfigured } from '../../config/env';
 import { apiClient } from '../../services/api/client';
 import { queryKeys } from '../../services/query/keys';
-import { ScanHistorySummary } from '../../types/domain';
+import { useAppStore } from '../../store/useAppStore';
+import { ScanCategory, ScanHistorySummary } from '../../types/domain';
 
 type HistoryGroup = {
   label: string;
@@ -49,22 +50,25 @@ export function groupHistoryScans(scans: ScanHistorySummary[]) {
 
 type HistoryFeedOptions = {
   includeDailyReports?: boolean;
+  scanCategory?: ScanCategory;
 };
 
 export function useHistoryFeed(pageSize = 20, options: HistoryFeedOptions = {}) {
   const includeDailyReports = options.includeDailyReports ?? true;
+  const authUser = useAppStore((state) => state.authUser);
 
   return useInfiniteQuery({
-    queryKey: [...queryKeys.history, pageSize, includeDailyReports],
+    queryKey: [...queryKeys.history, pageSize, includeDailyReports, options.scanCategory ?? 'all'],
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       apiClient.getHistory({
         page: pageParam,
         pageSize,
         includeDailyReports,
+        scanCategory: options.scanCategory,
       }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
-    enabled: isLiveBackendConfigured,
+    enabled: isLiveBackendConfigured && Boolean(authUser),
     staleTime: 60_000,
     gcTime: 10 * 60_000,
   });

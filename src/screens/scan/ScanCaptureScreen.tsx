@@ -8,7 +8,7 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { AppScreen, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
-import { prepareScanImageAsset, scanImageDataUrl } from '../../services/images/scanImage';
+import { prepareCameraScanImage, prepareScanImageAsset } from '../../services/images/scanImage';
 import { components, palette, radii, shadows, spacing, tokens, type } from '../../theme';
 import { createScanRequestId } from '../../utils/id';
 import { buildBarcodeScanPayload, buildImageScanPayload } from './scanPayload';
@@ -131,19 +131,22 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
 
     setCapturing(true);
     try {
-      const picture = await cameraRef.current?.takePictureAsync({ quality: SCAN_IMAGE_QUALITY, base64: true });
+      const picture = await cameraRef.current?.takePictureAsync({ quality: SCAN_IMAGE_QUALITY });
       if (!picture?.uri) {
         return;
       }
 
-      const dataUrl = scanImageDataUrl(picture.base64, picture.format === 'png' ? 'image/png' : 'image/jpeg');
+      const image = await prepareCameraScanImage({
+        uri: picture.uri,
+        quality: SCAN_IMAGE_QUALITY,
+      });
       trackEvent('scan_capture_completed', { source_type: 'camera', scan_category: mode });
       navigation.replace('ScanAnalyzing', {
         payload: buildImageScanPayload({
           requestId: createScanRequestId(),
           sourceType: 'camera',
           scanCategory: mode,
-          images: [{ uri: picture.uri, dataUrl }],
+          images: [image],
         }),
         manualMode: false,
       });

@@ -1,5 +1,6 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.99.1';
 
+import { refreshUserAppSnapshot } from './appSnapshot.ts';
 import {
   beginScanAnalysis,
   completeReservedScanAnalysis,
@@ -13,7 +14,12 @@ import {
   recordScanAiAuditLogs,
 } from './db.ts';
 import { ApiError } from './http.ts';
-import { inlineImageDataUrlByteLength, normalizeInlineImageDataUrl } from './imageData.ts';
+import {
+  extensionForInlineImageContentType,
+  inlineImageDataUrlByteLength,
+  inlineImageDataUrlPayload,
+  normalizeInlineImageDataUrl,
+} from './imageData.ts';
 import { enqueueLearningJob } from './learningJobs.ts';
 import { errorMetadata, recordSystemEvent } from './observability.ts';
 import {
@@ -24,6 +30,8 @@ import {
 } from './openai.ts';
 import { fetchOpenFoodFactsProduct, normalizeBarcode } from './openFoodFacts.ts';
 import { computeMenuScanResultFromExtraction, computeScanResultFromStructured } from './scoring.ts';
+
+const mealImagesBucket = 'meal-images';
 
 type ScanAnalyzeBody = {
   requestId?: string;
@@ -97,11 +105,11 @@ function errorFromExistingFailure(code: string | undefined, message: string | un
 }
 
 async function fetchLearningState(admin: SupabaseClient, userId: string) {
-  const [profile, insights, conditionInsights] = await Promise.all([
-    getProfile(admin, userId),
+  const [insights, conditionInsights] = await Promise.all([
     getInsights(admin, userId),
     getConditionIngredientInsights(admin, userId),
   ]);
+  const profile = await getProfile(admin, userId, { insights });
 
   return { profile, insights, conditionInsights };
 }
@@ -159,6 +167,66 @@ function normalizeThumbnailImagePaths(options: Extract<AnalyzeReservedScanOption
     const normalizedPath = typeof path === 'string' ? path.trim() : '';
     return normalizedPath || null;
   });
+}
+
+function safeStorageToken(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80) || crypto.randomUUID();
+}
+
+async function persistMissingInlineScanImages(
+  admin: SupabaseClient,
+  params: {
+    userId: string;
+    scanId: string;
+    requestId: string;
+    imagePaths: string[];
+    imageDataUrls: string[];
+  },
+) {
+  if (!params.imageDataUrls.length) {
+    return params.imagePaths;
+  }
+
+  const imagePaths = [...params.imagePaths];
+  for (let index = 0; index < params.imageDataUrls.length; index += 1) {
+    if (imagePaths[index]) {
+      continue;
+    }
+
+    const payload = inlineImageDataUrlPayload(params.imageDataUrls[index]);
+    if (!payload) {
+      throw new ApiError('The captured image could not be saved. Try taking the photo again.', 422, 'invalid_inline_image');
+    }
+
+    const extension = extensionForInlineImageContentType(payload.contentType);
+    const storagePath = [
+      params.userId,
+      `${Date.now()}-${safeStorageToken(params.requestId)}-${index}-${crypto.randomUUID()}.${extension}`,
+    ].join('/');
+    const { error } = await admin.storage.from(mealImagesBucket).upload(storagePath, payload.bytes.buffer, {
+      cacheControl: '604800',
+      contentType: payload.contentType,
+      upsert: false,
+    });
+
+    if (error) {
+      await recordSystemEvent(admin, {
+        eventType: 'scan_inline_image_persist_failed',
+        severity: 'error',
+        userId: params.userId,
+        operation: 'scan_analysis',
+        entityType: 'scan',
+        entityId: params.scanId,
+        requestId: params.requestId,
+        metadata: errorMetadata(error),
+      });
+      throw new ApiError('The captured image could not be saved. Try taking the photo again.', 500, 'image_persist_failed');
+    }
+
+    imagePaths[index] = storagePath;
+  }
+
+  return imagePaths;
 }
 
 function buildInputRefs(params: {
@@ -372,7 +440,7 @@ export async function analyzeReservedScan(
   const sourceType = options.body.sourceType ?? (options.kind === 'image' ? 'camera' : options.kind === 'barcode' ? 'barcode' : 'manual_text');
   const inputText = options.kind === 'text' ? options.text?.trim() : null;
   const barcode = options.kind === 'barcode' ? normalizeBarcode(options.barcode ?? options.body.barcode) : null;
-  const imagePaths = options.kind === 'image' ? normalizeImagePaths(options) : [];
+  let imagePaths = options.kind === 'image' ? normalizeImagePaths(options) : [];
   const thumbnailImagePaths = options.kind === 'image' ? normalizeThumbnailImagePaths(options) : [];
   const imageDataUrls = options.kind === 'image' ? normalizeImageDataUrls(options) : [];
   let autoClassification: Awaited<ReturnType<typeof classifyScanImagesWithAudit>> | null = null;
@@ -394,16 +462,6 @@ export async function analyzeReservedScan(
     autoClassification = await classifyScanImagesWithAudit(classificationImageUrls);
     scanCategory = autoClassification.result.category;
   }
-
-  const inputRefs = buildInputRefs({
-    kind: options.kind,
-    scanCategory,
-    inputText,
-    barcode,
-    imagePaths,
-    thumbnailImagePaths,
-    imageDataUrls,
-  });
 
   let scanCompleted = false;
 
@@ -469,6 +527,26 @@ export async function analyzeReservedScan(
       logs: autoClassification.audits,
     });
   }
+
+  if (options.kind === 'image') {
+    imagePaths = await persistMissingInlineScanImages(admin, {
+      userId: user.id,
+      scanId: reservation.scanId,
+      requestId,
+      imagePaths,
+      imageDataUrls,
+    });
+  }
+
+  const inputRefs = buildInputRefs({
+    kind: options.kind,
+    scanCategory,
+    inputText,
+    barcode,
+    imagePaths,
+    thumbnailImagePaths,
+    imageDataUrls,
+  });
 
   try {
     const [profile, insights] = await Promise.all([getProfile(admin, user.id), getInsights(admin, user.id)]);
@@ -762,6 +840,26 @@ export async function analyzeReservedScan(
           metadata: errorMetadata(error),
         });
       }
+    }
+
+    try {
+      await refreshUserAppSnapshot(admin, user.id, {
+        sourceType: 'scan',
+        sourceId: finalized.scanId,
+        learningStatus: learningSyncStatus === 'queued' ? 'pending' : 'idle',
+        recomputed: learningSyncStatus !== 'queued',
+      });
+    } catch (error) {
+      await recordSystemEvent(admin, {
+        eventType: 'scan_snapshot_refresh_failed',
+        severity: 'error',
+        userId: user.id,
+        operation: 'scan_analysis',
+        entityType: 'scan',
+        entityId: finalized.scanId,
+        requestId,
+        metadata: errorMetadata(error),
+      });
     }
 
     await recordSystemEvent(admin, {

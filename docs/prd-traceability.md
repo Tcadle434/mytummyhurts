@@ -10,7 +10,7 @@ This matrix is the implementation checklist that keeps the app aligned to the PR
 | --- | --- | --- | --- |
 | Product positioning: scan-first, not a diary | Implemented in app shell | `src/screens/home/HomeScreen.tsx`, `src/screens/history/HistoryScreen.tsx`, `src/navigation/CustomTabBar.tsx` | Home leads with scan CTA; manual meal lives in History |
 | Long onboarding flow (24 content steps) | Implemented | `src/data/onboarding.ts`, `src/screens/onboarding/OnboardingFlowScreen.tsx` | Step configs match PRD sequence and progression |
-| Paywall after onboarding | Implemented | `src/screens/paywall/PaywallScreen.tsx`, `src/components/system/RuntimeServices.tsx` | Real Superwall placement trigger, purchase/restore handling, terms/privacy surfaces |
+| Paywall after onboarding | Implemented | `src/screens/paywall/PaywallScreen.tsx`, `src/components/system/RuntimeServices.tsx` | Native RevenueCat purchase/restore handling, terms/privacy surfaces |
 | Account creation after purchase intent | Implemented with local auth shell | `src/screens/auth/AuthScreen.tsx`, `src/store/useAppStore.ts` | Apple/Google/Email UI is in place; live provider keys still needed |
 | First scan landing | Implemented | `src/screens/onboarding/FirstScanLandingScreen.tsx` | CTA routes directly into capture flow |
 | Home screen and pending follow-up banner | Implemented | `src/screens/home/HomeScreen.tsx` | Banner appears only for due follow-ups |

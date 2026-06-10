@@ -1,5 +1,4 @@
 import { NavigationProp, useNavigation } from '@react-navigation/native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
 import { Linking, StyleSheet } from 'react-native';
 
@@ -8,17 +7,14 @@ import { env } from '../../config/env';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { spacing } from '../../theme';
-import { RootStackParamList, OnboardingStackParamList } from '../../navigation/types';
+import { RootStackParamList } from '../../navigation/types';
 import { PaywallOfferContent } from './PaywallOfferContent';
 
-type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingPaywall'>;
-
-export function PaywallScreen({ navigation }: Props) {
+export function PaywallScreen() {
   const rootNavigation = useNavigation<NavigationProp<RootStackParamList>>();
   const billing = useAppStore((state) => state.billing);
   const selectPlan = useAppStore((state) => state.selectPlan);
-  const completePurchase = useAppStore((state) => state.completePurchase);
-  const stageEntitlementAccess = useAppStore((state) => state.stageEntitlementAccess);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [busyIntent, setBusyIntent] = useState<'subscribe' | 'restore' | null>(null);
 
   useEffect(() => {
@@ -27,14 +23,11 @@ export function PaywallScreen({ navigation }: Props) {
 
   async function openPaywall(intent: 'subscribe' | 'restore') {
     setBusyIntent(intent);
-
-    if (intent === 'restore') {
-      stageEntitlementAccess('active');
-    } else {
-      completePurchase();
-    }
-
-    navigation.replace('OnboardingAuth');
+    trackEvent(intent === 'restore' ? 'restore_purchases_tapped' : 'paywall_continue_tapped', {
+      selected_plan: billing.selectedPlan,
+      surface: 'web_preview',
+    });
+    setStatusMessage('Purchases are available in the iPhone app. Open MyTummyHurts on iPhone to subscribe or restore.');
     setBusyIntent(null);
   }
 
@@ -43,6 +36,7 @@ export function PaywallScreen({ navigation }: Props) {
       <PaywallOfferContent
         selectedPlan={billing.selectedPlan}
         busy={busyIntent !== null}
+        statusMessage={statusMessage}
         onSelectPlan={selectPlan}
         onContinue={() => void openPaywall('subscribe')}
         onRestore={() => void openPaywall('restore')}
