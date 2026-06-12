@@ -31,6 +31,8 @@ import {
   ScanDeleteResponse,
   TokensTopUpRequest,
   TokensTopUpResponse,
+  ScanConsumptionUpdateRequest,
+  ScanConsumptionUpdateResponse,
 } from './contracts';
 
 export { ApiError } from './errors';
@@ -51,8 +53,11 @@ function mergeDisplayName(profile: UserProfile | null, displayName: string | nul
   };
 }
 
+let homeGetInFlight: Promise<HomeResponse> | null = null;
+
 async function invokeFunction<TResponse>(name: string, body: object): Promise<TResponse> {
   const client = requireSupabaseClient();
+  const startedAt = Date.now();
   let response: Awaited<ReturnType<typeof client.functions.invoke>>;
 
   try {
@@ -61,6 +66,10 @@ async function invokeFunction<TResponse>(name: string, body: object): Promise<TR
     });
   } catch (error) {
     throw normalizeRetryableTransportError(error, name) ?? error;
+  } finally {
+    if (__DEV__) {
+      console.log(`[api] ${name} ${Date.now() - startedAt}ms`);
+    }
   }
 
   const { data, error } = response;
@@ -165,12 +174,24 @@ export const liveApiClient = {
     return invokeFunction<ScanDeleteResponse>('scan-delete', request);
   },
 
+  async updateScanConsumption(request: ScanConsumptionUpdateRequest) {
+    return invokeFunction<ScanConsumptionUpdateResponse>('scan-consumption-update', request);
+  },
+
   getHistory(request: HistoryRequest = {}) {
     return invokeFunction<HistoryResponse>('history-get', request);
   },
 
   getHome() {
-    return invokeFunction<HomeResponse>('home-get', {});
+    // App launch fires home-get from several places at once (query hook,
+    // bootstrap refresh, snapshot poll). Collapse concurrent callers into one
+    // request — on a cold function this turns 4 stacked calls into 1.
+    if (!homeGetInFlight) {
+      homeGetInFlight = invokeFunction<HomeResponse>('home-get', {}).finally(() => {
+        homeGetInFlight = null;
+      });
+    }
+    return homeGetInFlight;
   },
 
   getScan(request: ScanGetRequest) {

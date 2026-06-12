@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { isLiveBackendConfigured } from '../../config/env';
 import { apiClient } from '../../services/api/client';
@@ -71,6 +71,9 @@ export function useHistoryFeed(pageSize = 20, options: HistoryFeedOptions = {}) 
     enabled: isLiveBackendConfigured && Boolean(authUser),
     staleTime: 60_000,
     gcTime: 10 * 60_000,
+    // Filter switches and remounts show the previous list instantly while the
+    // fresh page loads, instead of dropping back to a skeleton.
+    placeholderData: keepPreviousData,
   });
 }
 

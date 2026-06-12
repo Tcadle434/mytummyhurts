@@ -436,6 +436,7 @@ export interface ScoreContributor {
 export interface ScanMenuItemResult {
   id: string;
   sourceItemId: string;
+  consumedAt?: string;
   tier: MenuRecommendationTier;
   tierRank: number;
   displayOrder: number;
@@ -474,6 +475,7 @@ export interface GroceryProductSummary {
   ingredientText?: string;
   nutrition?: Record<string, unknown>;
   allergens?: string[];
+  imageUrl?: string;
   dataSource?: string;
   sourceConfidence?: IngredientConfidence;
 }
@@ -505,6 +507,7 @@ export interface ScanResult {
 
 export interface ScanRecord extends ScanResult {
   id: string;
+  consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
   requestId?: string;
   sourceType: ScanSourceType;
   scanCategory: ScanCategory;
@@ -539,6 +542,7 @@ export interface DailyGutReport {
   userId: string;
   localDate: string;
   gutSeverity: number;
+  evidenceQuality?: 'typical' | 'unscanned';
   dailyScore?: number;
   dailyScoreComponents?: DailyScoreComponents;
   dailyScoreDrivers?: DailyScoreDriver[];
@@ -585,6 +589,8 @@ export interface ConditionIngredientInsight {
   lastRecomputedAt: string;
 }
 
+export type FoodCalibrationRating = 'fine' | 'unsure' | 'bad';
+
 export interface ProfileSeed {
   userId: string;
   displayName?: string;
@@ -599,6 +605,8 @@ export interface ProfileSeed {
   lifestyleFactors?: string[];
   foodsToReintroduce?: string[];
   dietPreferences?: DietPreference[];
+  calibrationRatings?: Record<string, FoodCalibrationRating>;
+  suspectMealIngredients?: string[];
 }
 
 export interface ScanForInsightRecompute {

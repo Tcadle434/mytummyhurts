@@ -16,9 +16,19 @@ export const env = {
   supportEmail: process.env.EXPO_PUBLIC_SUPPORT_EMAIL ?? 'support@mytummyhurts.app',
   privacyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL ?? '',
   termsUrl: process.env.EXPO_PUBLIC_TERMS_URL ?? '',
+  sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN ?? '',
   monthlyProductId: process.env.EXPO_PUBLIC_APPLE_IAP_MONTHLY ?? 'monthly',
   annualProductId: process.env.EXPO_PUBLIC_APPLE_IAP_ANNUAL ?? 'annual',
 };
+
+// A release build with missing backend config would silently fall back to the
+// local mock engine AND bypass the entitlement gate — fail loudly instead.
+declare const __DEV__: boolean;
+if (typeof __DEV__ !== 'undefined' && !__DEV__ && (!env.supabaseUrl || !env.supabaseAnonKey)) {
+  throw new Error(
+    'Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in a release build.',
+  );
+}
 
 export const isLiveBackendConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
 export const shouldUseLiveBackend = isLiveBackendConfigured;

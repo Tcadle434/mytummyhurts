@@ -19,6 +19,7 @@ import {
   InfoPill,
   InputField,
   OnboardingPickerOption,
+  OptionChip,
   PrimaryButton,
   SecondaryButton,
 } from '../../components/common/UI';
@@ -36,8 +37,11 @@ import { apiClient } from '../../services/api/client';
 import { signOutSupabase } from '../../services/auth';
 import { trackEvent } from '../../services/analytics';
 import {
+  ensureDailyCheckinScheduled,
+  getDailyCheckinTimePreference,
   getDailyReportNotificationStatus,
   registerDailyReportNotifications,
+  setDailyCheckinTimePreference,
 } from '../../services/notifications';
 import { useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
@@ -62,6 +66,13 @@ type BusySection =
   | 'delete'
   | null;
 type CustomCategory = 'conditions' | 'sensitivities' | 'symptoms';
+
+const CHECKIN_TIME_PRESETS: { label: string; hour: number }[] = [
+  { label: 'Morning · 9am', hour: 9 },
+  { label: 'Midday · 1pm', hour: 13 },
+  { label: 'Evening · 6pm', hour: 18 },
+  { label: 'Night · 9pm', hour: 21 },
+];
 
 const CUSTOM_CATEGORY_COPY: Record<
   CustomCategory,
@@ -122,6 +133,7 @@ export function SettingsScreen() {
   const [busySection, setBusySection] = useState<BusySection>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [checkinHour, setCheckinHour] = useState<number | null>(null);
   const [customModalCategory, setCustomModalCategory] = useState<CustomCategory | null>(null);
   const [customEntry, setCustomEntry] = useState('');
 
@@ -153,6 +165,11 @@ export function SettingsScreen() {
       .then(setNotificationsEnabled)
       .catch(() => {
         setNotificationsEnabled(false);
+      });
+    void getDailyCheckinTimePreference()
+      .then((preference) => setCheckinHour(preference.hour))
+      .catch(() => {
+        setCheckinHour(null);
       });
   }, []);
 
@@ -325,6 +342,20 @@ export function SettingsScreen() {
     }
   }
 
+  async function handleCheckinTimeChange(hour: number) {
+    setCheckinHour(hour);
+    try {
+      await setDailyCheckinTimePreference(hour, 0);
+      const state = useAppStore.getState();
+      await ensureDailyCheckinScheduled({ reports: state.dailyReports, scans: state.scans });
+      trackEvent('daily_checkin_time_changed', { hour });
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Reminder time could not be saved.',
+      );
+    }
+  }
+
   async function handleEnableNotifications() {
     setBusySection('notifications');
     setStatusMessage(null);
@@ -453,7 +484,7 @@ export function SettingsScreen() {
           <ExpandedBlock>
             <MetricRow label="Status" value={prettyStatus(billing.subscriptionStatus)} />
             <MetricRow label="Plan" value={billing.selectedPlan} />
-            <MetricRow label="Tokens remaining" value={`${billing.tokensRemaining}`} />
+            <MetricRow label="Scans left this month" value={`${billing.tokensRemaining}`} />
             <MetricRow
               label="Trial ends"
               value={
@@ -475,8 +506,19 @@ export function SettingsScreen() {
         {expandedSection === 'notifications' ? (
           <ExpandedBlock>
             <Text style={styles.helperText}>
-              We only use notifications to remind you to log a daily gut report.
+              One evening check-in reminder a day, plus a weekly gut report. Answer the reminder
+              with a single tap.
             </Text>
+            <View style={styles.pickerStack}>
+              {CHECKIN_TIME_PRESETS.map((preset) => (
+                <OptionChip
+                  key={preset.hour}
+                  label={preset.label}
+                  selected={checkinHour === preset.hour}
+                  onPress={() => void handleCheckinTimeChange(preset.hour)}
+                />
+              ))}
+            </View>
             <PrimaryButton
               label={
                 busySection === 'notifications'

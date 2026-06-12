@@ -122,6 +122,9 @@ export type MenuRubricRule = {
   contributorEvidence: ScoreContributor['evidence'];
   conditionMultipliers?: readonly ConditionMultiplier[];
   sensitivityLabels?: readonly string[];
+  // Whole-source carve-outs: a matched source containing one of these terms
+  // suppresses the rule (e.g. peanuts are low-FODMAP despite being legumes).
+  exceptionTerms?: readonly string[];
 };
 
 // The backbone mirrors broad food group systems (USDA/FAO/Codex style), while
@@ -210,6 +213,7 @@ export const menuBaseFoodCategoryRubric: readonly MenuRubricRule[] = [
       { conditions: ['GERD / reflux', 'GERD / Acid reflux'], multiplier: 1.18 },
       { conditions: ['IBS'], multiplier: 1.1 },
     ],
+    exceptionTerms: ['lactose-free', 'lactose free', 'dairy-free', 'dairy free'],
     sensitivityLabels: ['dairy', 'lactose', 'milk', 'cheese'],
   },
   {
@@ -221,8 +225,8 @@ export const menuBaseFoodCategoryRubric: readonly MenuRubricRule[] = [
     terms: ['bread', 'bun', 'pasta', 'ramen', 'udon', 'couscous', 'tortilla', 'pizza', 'flatbread', 'pastry', 'dumpling', 'wonton', 'noodle', 'flour', 'batter'],
     contributorEvidence: 'ingredient',
     conditionMultipliers: [
-      { conditions: ['Celiac', 'Celiac disease'], multiplier: 2.4 },
-      { conditions: ['Gluten sensitivity'], multiplier: 2 },
+      { conditions: ['Celiac', 'Celiac disease'], multiplier: 3.4 },
+      { conditions: ['Gluten sensitivity'], multiplier: 3 },
       { conditions: ['IBS', 'High FODMAP sensitivity'], multiplier: 1.12 },
     ],
     sensitivityLabels: ['gluten', 'wheat'],
@@ -256,6 +260,7 @@ export const menuBaseFoodCategoryRubric: readonly MenuRubricRule[] = [
     conditionMultipliers: [
       { conditions: ['IBS', 'High FODMAP sensitivity', 'SIBO'], multiplier: 1.3 },
     ],
+    exceptionTerms: ['peanut', 'peanuts', 'peanut butter', 'peanut flour', 'peanut oil', 'soy protein isolate', 'soy sauce', 'soy lecithin', 'tofu', 'tempeh'],
     sensitivityLabels: ['beans', 'soy', 'legumes'],
   },
   {
@@ -460,7 +465,9 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
   {
     key: 'wheat_fructan_or_gluten',
     label: 'Wheat/gluten/fructan',
-    points: 11,
+    // Fructan-pathway base (IBS at typical servings is dose-moderate, per
+    // Monash); celiac/gluten-sensitivity carry the load via multipliers.
+    points: 7,
     prompt: 'Wheat, bread, bun, pasta, ramen, udon, flour tortilla, pizza crust, pastry, dumpling wrapper, batter, breadcrumbs, or gluten-containing grain.',
     reason: 'Wheat and gluten-containing bases matter for celiac, gluten sensitivity, and some IBS/FODMAP profiles.',
     terms: ['wheat', 'bread', 'bun', 'pasta', 'ramen', 'udon', 'flour tortilla', 'pizza crust', 'pastry', 'dumpling', 'batter', 'breadcrumbs', 'gluten', 'noodle'],
@@ -483,6 +490,7 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
     conditionMultipliers: [
       { conditions: ['IBS', 'High FODMAP sensitivity', 'SIBO'], multiplier: 1.35 },
     ],
+    exceptionTerms: ['peanut', 'peanuts', 'peanut butter', 'peanut flour', 'peanut oil', 'soy protein isolate', 'soy sauce', 'soy lecithin', 'tofu', 'tempeh'],
     sensitivityLabels: ['beans', 'soy', 'legumes'],
   },
   {

@@ -82,6 +82,20 @@ export interface DailyReportUpsertRequest {
   gutSeverity: number;
   symptomTags?: string[];
   notes?: string;
+  evidenceQuality?: 'typical' | 'unscanned';
+}
+
+export interface ScanConsumptionUpdateRequest {
+  scanId: string;
+  consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
+  consumedMenuItemSourceIds?: string[];
+}
+
+export interface ScanConsumptionUpdateResponse {
+  ok: true;
+  consumptionStatus: 'unknown' | 'consumed' | 'skipped';
+  consumedMenuItemSourceIds: string[];
+  learningSyncStatus: 'queued' | 'failed';
 }
 
 export interface DailyReportUpsertResponse {
@@ -158,6 +172,8 @@ export interface ProfileUpdateRequest {
     customConditions?: string[];
     ingredientSensitivities?: string[];
     customIngredientSensitivities?: string[];
+    foodCalibrations?: Record<string, 'fine' | 'unsure' | 'bad'>;
+    lastBadMealText?: string;
     symptoms?: string[];
     customSymptoms?: string[];
     symptomFrequency?: string;

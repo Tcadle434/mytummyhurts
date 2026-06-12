@@ -1,5 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { ReactNode, useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 
 import { useAppStore } from '../../store/useAppStore';
 import { restoreSupabaseSession, syncSessionToStore } from '../../services/auth';
@@ -11,6 +13,18 @@ import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { navigationRef } from '../../navigation/navigationRef';
 import { getRevenueCatBillingSyncRequest, resetRevenueCatIdentity } from '../../services/billing/revenueCat';
+import { remoteConfig } from '../../config/remoteConfig';
+import {
+  ensureDailyCheckinScheduled,
+  ensureNotificationPermission,
+  ensureWeeklyReportScheduled,
+  registerDailyReportNotifications,
+} from '../../services/notifications';
+import {
+  DAILY_CHECKIN_TYPE,
+  WEEKLY_REPORT_TYPE,
+  severityForCheckinAction,
+} from '../../services/notifications/dailyCheckin';
 
 export function SupabaseSessionBridge() {
   useEffect(() => {
@@ -136,6 +150,8 @@ export function RevenueCatBillingBridge() {
 }
 
 export function NotificationResponseBridge() {
+  const handledResponseRef = useRef<string | null>(null);
+
   useEffect(() => {
     function openDailyReport(localDate?: string) {
       trackEvent('daily_report_push_opened', { local_date: localDate });
@@ -144,24 +160,144 @@ export function NotificationResponseBridge() {
       }
     }
 
-    void Notifications.getLastNotificationResponseAsync().then((response) => {
-      const data = response?.notification.request.content.data;
+    // One-tap check-in: the notification action carries the severity; save the
+    // report immediately and land on the payoff screen. A body tap (default
+    // action) opens the full report form instead.
+    function handleCheckinResponse(localDate: string, actionIdentifier: string) {
+      const severity = severityForCheckinAction(actionIdentifier);
+      if (severity === null) {
+        openDailyReport(localDate);
+        return;
+      }
+
+      trackEvent('daily_checkin_action_tapped', {
+        local_date: localDate,
+        severity,
+      });
+      void useAppStore
+        .getState()
+        .upsertDailyReport({ localDate, gutSeverity: severity })
+        .catch((error) => {
+          console.warn('[notifications] one-tap report failed', error);
+        });
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('DailyReportPayoff', { localDate });
+      }
+    }
+
+    function handleResponse(response: Notifications.NotificationResponse) {
+      const responseKey = `${response.notification.request.identifier}:${response.actionIdentifier}`;
+      if (handledResponseRef.current === responseKey) {
+        return;
+      }
+      handledResponseRef.current = responseKey;
+
+      const data = response.notification.request.content.data;
+      const localDate = typeof data?.localDate === 'string' ? data.localDate : undefined;
+
+      if (data?.type === DAILY_CHECKIN_TYPE && localDate) {
+        handleCheckinResponse(localDate, response.actionIdentifier);
+        return;
+      }
+
+      if (data?.type === WEEKLY_REPORT_TYPE) {
+        trackEvent('weekly_report_notification_opened');
+        if (navigationRef.isReady()) {
+          navigationRef.navigate('WeeklyProgress');
+        }
+        return;
+      }
+
       if (data?.type === 'daily_gut_report') {
-        openDailyReport(typeof data.localDate === 'string' ? data.localDate : undefined);
+        openDailyReport(localDate);
+      }
+    }
+
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        handleResponse(response);
       }
     });
 
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data;
-      if (data?.type === 'daily_gut_report') {
-        openDailyReport(typeof data.localDate === 'string' ? data.localDate : undefined);
-      }
-    });
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
 
     return () => {
       subscription.remove();
     };
   }, []);
+
+  return null;
+}
+
+const PERMISSION_PROMPTED_KEY = 'notifications.permissionPrompted';
+
+export function NotificationSchedulerBridge() {
+  const onboardingStage = useAppStore((state) => state.onboardingStage);
+  const authUser = useAppStore((state) => state.authUser);
+  const dailyReports = useAppStore((state) => state.dailyReports);
+  const scans = useAppStore((state) => state.scans);
+  const registeredPushRef = useRef(false);
+
+  const active = onboardingStage === 'complete' && Boolean(authUser);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncSchedule() {
+      try {
+        // First entry after onboarding: surface the iOS permission dialog once
+        // (the priming step in onboarding sets this up). Later runs are silent.
+        const alreadyPrompted = await AsyncStorage.getItem(PERMISSION_PROMPTED_KEY);
+        if (!alreadyPrompted) {
+          await AsyncStorage.setItem(PERMISSION_PROMPTED_KEY, 'yes');
+          const granted = await ensureNotificationPermission();
+          trackEvent('notification_permission_resolved', { granted });
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        await ensureDailyCheckinScheduled({
+          reports: dailyReports,
+          scans,
+        });
+        await ensureWeeklyReportScheduled({
+          accountCreatedAt: useAppStore.getState().authUser?.createdAt ?? null,
+        });
+
+        if (remoteConfig.featureFlags.livePush && !registeredPushRef.current) {
+          registeredPushRef.current = true;
+          // Token registration is not launch-critical; defer it off the
+          // first-paint window so it doesn't contend with home/history fetches.
+          setTimeout(() => {
+            void registerDailyReportNotifications().catch((error) => {
+              console.warn('[notifications] push token registration failed', error);
+            });
+          }, 8000);
+        }
+      } catch (error) {
+        console.warn('[notifications] daily check-in scheduling failed', error);
+      }
+    }
+
+    void syncSchedule();
+
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void syncSchedule();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      appStateSubscription.remove();
+    };
+  }, [active, dailyReports, scans]);
 
   return null;
 }
@@ -178,6 +314,7 @@ export function RuntimeServices({ children }: RuntimeServicesProps) {
       <RemoteBootstrapBridge />
       <RevenueCatBillingBridge />
       <NotificationResponseBridge />
+      <NotificationSchedulerBridge />
       {children}
     </>
   );

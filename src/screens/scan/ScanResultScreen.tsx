@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useState } from 'react';
+import { ComponentProps, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RiskBar } from '../../components/charts/RiskBar';
@@ -8,7 +8,9 @@ import {
   IngredientsBreakdownCard,
   DietFitCard,
   MenuRankingCard,
-  RiskHeroCard,
+  ScanHeroCard,
+  WhyThisScoreCard,
+  type HeroConditionChip,
   type MenuTierItem,
   type ScanIngredient,
   toggleExpandedId,
@@ -18,6 +20,8 @@ import { SkeletonImage } from '../../components/common/SkeletonImage';
 import { AppScreen, PipAnalysisCard, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useScanDetail } from '../../features/history/hooks';
+import { presentRisk, verdictForRisk } from '../../features/scan/riskPresentation';
+import { formatConditionName } from '../../utils/conditionFormat';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { selectLatestScan, useAppStore } from '../../store/useAppStore';
@@ -26,13 +30,6 @@ import { ScanIngredientRisk, ScanRecord } from '../../types/domain';
 import { normalizeScanRecord, selectPreferredScan } from './resultSelection';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanResult'>;
-
-const swapSuggestions: { match: string[]; label: string; detail: string }[] = [
-  { match: ['dairy', 'cream', 'milk', 'cheese'], label: 'Lactose-free alternative', detail: 'Lower dairy load' },
-  { match: ['garlic', 'onion'], label: 'Garlic-infused oil', detail: 'Flavor with lower fructan load' },
-  { match: ['wheat', 'bread', 'pasta', 'noodle'], label: 'Gluten-free swap', detail: 'Lower wheat exposure' },
-  { match: ['bean', 'lentil', 'chickpea'], label: 'Smaller portion or gentler base', detail: 'Lower fermentable load' },
-];
 
 export function ScanResultScreen({ navigation, route }: Props) {
   const scans = useAppStore((state) => state.scans);
@@ -46,7 +43,20 @@ export function ScanResultScreen({ navigation, route }: Props) {
   const rawScan = useMemo(() => selectPreferredScan(storeScan, detailScan), [detailScan, storeScan]);
   const scan = useMemo(() => (rawScan ? normalizeScanRecord(rawScan) : undefined), [rawScan]);
   const ingredientRisks = useMemo(() => (scan ? scan.ingredientRisks : []), [scan]);
-  const swapSuggestion = useMemo(() => (scan ? findSwapSuggestion(scan, ingredientRisks) : null), [scan, ingredientRisks]);
+  const updateScanConsumption = useAppStore((state) => state.updateScanConsumption);
+  const [consumptionStatus, setConsumptionStatus] = useState<'unknown' | 'consumed' | 'skipped'>(
+    rawScan?.consumptionStatus ?? 'unknown',
+  );
+  const riskPresentation = useMemo(() => (scan ? presentRisk(scan) : {}), [scan]);
+  const heroConditionChips = useMemo<HeroConditionChip[]>(
+    () =>
+      (scan?.conditionRisks ?? [])
+        .slice()
+        .sort((left, right) => right.riskScore - left.riskScore)
+        .slice(0, 2)
+        .map((risk) => ({ name: formatConditionName(risk.conditionName), level: risk.riskLevel })),
+    [scan?.conditionRisks],
+  );
 
   useEffect(() => {
     trackEvent('scan_result_viewed', { scan_id: route.params.scanId });
@@ -126,32 +136,35 @@ export function ScanResultScreen({ navigation, route }: Props) {
     <AppScreen>
       <ScreenHeader eyebrow="Result" title="Scan result" />
 
-      <View style={styles.heroRow}>
-        <View style={styles.heroCopy}>
-          <Text style={styles.heroTitle}>{scan.dishName}</Text>
-          <Text style={styles.heroMeta}>{formatTimestamp(scan.createdAt)}</Text>
-        </View>
-
-        <SkeletonImage
-          uri={scan.imageUri}
-          style={styles.heroImage}
-          resizeMode="cover"
-          skeletonRadius={28}
-          accessibilityLabel={`${scan.dishName} photo`}
-          fallback={
-            <ResultImageFallback
-              title={scan.dishName}
-              compact
-              subtitle={scan.imageUri ? 'Photo unavailable' : undefined}
-            />
-          }
-        />
-      </View>
-
-      <RiskHeroCard
-        eyebrow="Personalized risk"
+      <ScanHeroCard
+        title={scan.dishName}
+        meta={formatTimestamp(scan.createdAt)}
         score={scan.overallRiskScore}
         level={scan.overallRiskLevel}
+        verdict={verdictForRisk(scan.overallRiskScore, riskPresentation.cautionNote)}
+        conditionChips={heroConditionChips}
+        image={
+          <SkeletonImage
+            uri={scan.groceryProduct?.imageUrl ?? scan.imageUri}
+            style={styles.heroSlotImage}
+            resizeMode="cover"
+            skeletonRadius={18}
+            accessibilityLabel={`${scan.dishName} photo`}
+            fallback={
+              <ResultImageFallback
+                title={scan.dishName}
+                compact
+                subtitle={undefined}
+              />
+            }
+          />
+        }
+      />
+
+      <WhyThisScoreCard
+        contributors={scan.scoreContributors}
+        level={scan.overallRiskLevel}
+        impactSummary={scan.gutScoreImpact?.summary}
       />
 
       <SectionCard>
@@ -167,7 +180,10 @@ export function ScanResultScreen({ navigation, route }: Props) {
                 displayOrder: index,
               }))
           ).map((risk) => (
-            <RiskBar key={risk.conditionName} label={risk.conditionName} score={risk.riskScore} level={risk.riskLevel} />
+            <View key={risk.conditionName} style={styles.conditionRow}>
+              <RiskBar label={formatConditionName(risk.conditionName)} score={risk.riskScore} level={risk.riskLevel} />
+              {risk.reason ? <Text style={styles.conditionReason}>{risk.reason}</Text> : null}
+            </View>
           ))}
         </View>
       </SectionCard>
@@ -180,21 +196,37 @@ export function ScanResultScreen({ navigation, route }: Props) {
         ingredients={ingredientRisks.map(toScanIngredient)}
       />
 
-      {swapSuggestion ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Safer swap</Text>
-          <View style={styles.swapCard}>
-            <View style={styles.swapIcon}>
-              <Ionicons name="leaf-outline" size={18} color={palette.primary} />
-            </View>
-            <View style={styles.swapCopy}>
-              <Text style={styles.swapTitle}>{swapSuggestion.label}</Text>
-              <Text style={styles.swapDetail}>{swapSuggestion.detail}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
-          </View>
-        </SectionCard>
-      ) : null}
+
+      <SectionCard>
+        <Text style={styles.sectionTitle}>Did you eat this?</Text>
+        <Text style={styles.sectionBody}>
+          Confirmed meals count toward your triggers and Daily Score; skipped ones stay out of your data.
+        </Text>
+        <View style={styles.consumeRow}>
+          <ConsumeChoice
+            label="Ate it"
+            icon="restaurant-outline"
+            active={consumptionStatus === 'consumed'}
+            onPress={() => {
+              setConsumptionStatus('consumed');
+              void updateScanConsumption({ scanId: scan.id, consumptionStatus: 'consumed' });
+            }}
+          />
+          <ConsumeChoice
+            label="Skipped it"
+            icon="close-circle-outline"
+            active={consumptionStatus === 'skipped'}
+            onPress={() => {
+              setConsumptionStatus('skipped');
+              void updateScanConsumption({ scanId: scan.id, consumptionStatus: 'skipped' });
+            }}
+          />
+        </View>
+      </SectionCard>
+
+      <Text style={styles.disclaimerText}>
+        Informational guidance, not medical advice. For diagnosis or treatment, talk to a clinician.
+      </Text>
 
       <View style={styles.actionStack}>
         {route.params.manualMode ? null : (
@@ -203,6 +235,30 @@ export function ScanResultScreen({ navigation, route }: Props) {
         <DeleteAction onPress={confirmDelete} isDeleting={isDeleting} />
       </View>
     </AppScreen>
+  );
+}
+
+function ConsumeChoice({
+  label,
+  icon,
+  active,
+  onPress,
+}: {
+  label: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.consumeChoice, active && styles.consumeChoiceActive, pressed && { opacity: 0.88 }]}
+    >
+      <Ionicons name={icon} size={16} color={active ? palette.primaryDark : palette.textMuted} />
+      <Text style={[styles.consumeChoiceText, active && { color: palette.primaryDark }]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -227,6 +283,8 @@ function MenuScanResult({
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
+  const updateScanConsumption = useAppStore((state) => state.updateScanConsumption);
+  const [consumedItemIds, setConsumedItemIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const menu = scan.menuResult!;
   const rankedItems = rankedMenuItems(menu);
@@ -271,29 +329,21 @@ function MenuScanResult({
     <AppScreen>
       <ScreenHeader eyebrow="Menu result" title="Menu risk ranking" />
 
-      <View style={styles.heroRow}>
-        <View style={styles.heroCopy}>
-          <Text style={styles.heroTitle}>{menu.menuTitle}</Text>
-          <Text style={styles.heroMeta}>
-            {menu.inputPageCount} page{menu.inputPageCount === 1 ? '' : 's'} analyzed • {formatTimestamp(scan.createdAt)}
-          </Text>
-        </View>
-
-        <SkeletonImage
-          uri={scan.imageUri}
-          style={styles.heroImage}
-          resizeMode="cover"
-          skeletonRadius={28}
-          accessibilityLabel={`${menu.menuTitle} photo`}
-          fallback={
-            <ResultImageFallback
-              title="Menu"
-              compact
-              subtitle={scan.imageUri ? 'Photo unavailable' : undefined}
-            />
-          }
-        />
-      </View>
+      <ScanHeroCard
+        title={menu.menuTitle}
+        meta={`${menu.inputPageCount} page${menu.inputPageCount === 1 ? '' : 's'} analyzed • ${formatTimestamp(scan.createdAt)}`}
+        verdict={`We ranked ${menu.items.length} item${menu.items.length === 1 ? '' : 's'} for your gut — safest picks first.`}
+        image={
+          <SkeletonImage
+            uri={scan.imageUri}
+            style={styles.heroSlotImage}
+            resizeMode="cover"
+            skeletonRadius={18}
+            accessibilityLabel={`${menu.menuTitle} photo`}
+            fallback={<ResultImageFallback title="Menu" compact subtitle={undefined} />}
+          />
+        }
+      />
 
       {menu.summary ? (
         <SectionCard style={styles.menuSummaryCard}>
@@ -307,9 +357,22 @@ function MenuScanResult({
       ) : null}
 
       <MenuRankingCard
-        items={rankedItems.map(toMenuTierItem)}
+        items={rankedItems.map((item) => ({
+          ...toMenuTierItem(item),
+          consumed: Boolean(item.consumedAt) || consumedItemIds.has(item.sourceItemId),
+        }))}
         expandedId={expanded}
         onToggle={(id) => toggleExpandedId(expanded, id, setExpanded)}
+        onConsume={(item) => {
+          if (!item.sourceItemId) {
+            return;
+          }
+          setConsumedItemIds((current) => new Set(current).add(item.sourceItemId!));
+          void updateScanConsumption({
+            scanId: scan.id,
+            consumedMenuItemSourceIds: [item.sourceItemId],
+          });
+        }}
       />
 
       {rankedItems.length < 3 ? (
@@ -318,6 +381,10 @@ function MenuScanResult({
           <Text style={styles.sectionBody}>We only found enough detail to rank a few menu items.</Text>
         </SectionCard>
       ) : null}
+
+      <Text style={styles.disclaimerText}>
+        Informational guidance, not medical advice. For diagnosis or treatment, talk to a clinician.
+      </Text>
 
       <View style={styles.actionStack}>
         <PrimaryButton label="Scan another" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'menu', initialMode: 'menu' })} />
@@ -409,6 +476,8 @@ function rankedMenuItems(menu: NonNullable<ScanRecord['menuResult']>) {
 function toMenuTierItem(item: NonNullable<ScanRecord['menuResult']>['items'][number]): MenuTierItem {
   return {
     id: item.id,
+    sourceItemId: item.sourceItemId,
+    consumed: Boolean(item.consumedAt),
     rank: item.displayOrder + 1,
     name: item.name,
     section: item.section,
@@ -432,25 +501,7 @@ function toScanIngredient(ingredient: ScanIngredientRisk): ScanIngredient {
   };
 }
 
-function normalizeToken(value?: string | null) {
-  return value?.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '') ?? '';
-}
 
-function findSwapSuggestion(scan: ScanRecord, ingredientRisks: ScanIngredientRisk[]) {
-  if (scan.gutRecommendation) {
-    return {
-      label: 'Lower-risk adjustment',
-      detail: scan.gutRecommendation,
-    };
-  }
-
-  const search = [
-    ...scan.possibleTriggers,
-    ...ingredientRisks.map((ingredient) => ingredient.canonicalName),
-  ].map(normalizeToken);
-
-  return swapSuggestions.find((suggestion) => suggestion.match.some((match) => search.some((entry) => entry.includes(match))));
-}
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString([], {
@@ -658,8 +709,21 @@ const styles = StyleSheet.create({
     fontSize: 22,
     letterSpacing: -0.4,
   },
+  heroSlotImage: {
+    width: 64,
+    height: 64,
+  },
   barList: {
     gap: spacing.md,
+  },
+  conditionRow: {
+    gap: spacing.xs,
+  },
+  conditionReason: {
+    color: palette.textMuted,
+    fontFamily: type.body.regular,
+    fontSize: 12,
+    lineHeight: 17,
   },
   swapCard: {
     flexDirection: 'row',
@@ -753,6 +817,40 @@ const styles = StyleSheet.create({
     fontFamily: type.body.regular,
     fontSize: 15,
     lineHeight: 22,
+  },
+  consumeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  consumeChoice: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    minHeight: 44,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.card.default,
+  },
+  consumeChoiceActive: {
+    borderColor: palette.primary,
+    backgroundColor: tokens.color.surface.card.success,
+  },
+  consumeChoiceText: {
+    color: palette.textMuted,
+    fontFamily: type.body.semibold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  disclaimerText: {
+    color: tokens.color.text.tertiary,
+    fontFamily: type.body.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
   },
   actionStack: {
     gap: spacing.sm,

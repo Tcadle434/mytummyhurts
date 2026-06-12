@@ -39,6 +39,9 @@ export type RootStackParamList = {
   DailyGutReport: {
     localDate?: string;
   };
+  DailyReportPayoff: {
+    localDate: string;
+  };
   WeeklyProgress: undefined;
   DailyScoreDay: {
     localDate: string;
@@ -48,10 +51,11 @@ export type RootStackParamList = {
     scanId?: string;
   };
   LegalDocument: {
-    document: 'privacy' | 'terms';
+    document: 'privacy' | 'terms' | 'science';
   };
   DesignSystemShowcase: undefined;
   InsightDetail: {
-    ingredientName: string;
+    ingredientName?: string;
+    groupKey?: string;
   };
 };

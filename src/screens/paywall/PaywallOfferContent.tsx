@@ -26,6 +26,12 @@ const PLAN_COPY: Record<
 	},
 };
 
+export type PaywallCaseFile = {
+	startingScore: number;
+	suspects: string[];
+	conditionCount: number;
+};
+
 type PaywallOfferContentProps = {
 	selectedPlan: SubscriptionPlan;
 	busy: boolean;
@@ -37,6 +43,8 @@ type PaywallOfferContentProps = {
 	onBack?: () => void;
 	statusMessage?: string | null;
 	planDisplay?: RevenueCatPlanDisplay;
+	caseFile?: PaywallCaseFile | null;
+	onScience?: () => void;
 };
 
 export function PaywallOfferContent({
@@ -50,6 +58,8 @@ export function PaywallOfferContent({
 	onBack,
 	statusMessage,
 	planDisplay,
+	caseFile,
+	onScience,
 }: PaywallOfferContentProps) {
 	return (
 		<View style={styles.root}>
@@ -80,23 +90,37 @@ export function PaywallOfferContent({
 				<View style={styles.headerSide} />
 			</View>
 
-			<View style={styles.trustBlock}>
-				<View style={styles.trustRow}>
-					<TrustMetric
-						value="4.9"
-						label="stars"
-						iconName="star"
-						iconColor={tokens.color.status.risk.medium.tint}
-					/>
-					<TrustMetric
-						value="10k+"
-						label="users"
-						iconName="people"
-						iconColor={palette.primary}
-					/>
+			{caseFile ? (
+				<View style={styles.caseFileCard}>
+					<View style={styles.caseFileHeader}>
+						<Text style={styles.caseFileKicker}>Your case file</Text>
+						<View style={styles.caseScorePill}>
+							<Text style={styles.caseScoreValue}>{caseFile.startingScore}</Text>
+							<Text style={styles.caseScoreLabel}>starting Gut Score</Text>
+						</View>
+					</View>
+					{caseFile.suspects.length > 0 ? (
+						<View style={styles.caseFileRow}>
+							<Ionicons name="search" size={14} color={palette.primaryDark} />
+							<Text style={styles.caseFileLine}>
+								Starting suspects: <Text style={styles.caseFileStrong}>{caseFile.suspects.join(", ")}</Text>
+							</Text>
+						</View>
+					) : null}
+					<View style={styles.caseFileRow}>
+						<Ionicons name="git-branch-outline" size={14} color={palette.primaryDark} />
+						<Text style={styles.caseFileLine}>
+							Your scans and daily check-ins confirm or clear each one over time.
+						</Text>
+					</View>
 				</View>
-				<Text style={styles.trustedText}>Trusted by thousands fixing gut health.</Text>
-			</View>
+			) : (
+				<View style={styles.trustBlock}>
+					<Text style={styles.trustedText}>
+						Built on published gut-trigger research, tuned to your answers.
+					</Text>
+				</View>
+			)}
 
 			<View style={styles.promiseBlock}>
 				<Text style={styles.promiseTitle}>Get your life back, start free today</Text>
@@ -126,36 +150,18 @@ export function PaywallOfferContent({
 				/>
 				{statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
 				<View style={styles.legalRow}>
+					{onScience ? (
+						<>
+							<LegalAction label="How it works" onPress={onScience} />
+							<Text style={styles.legalDot}>•</Text>
+						</>
+					) : null}
 					<LegalAction label="Terms" onPress={onTerms} />
 					<Text style={styles.legalDot}>•</Text>
 					<LegalAction label="Privacy Policy" onPress={onPrivacy} />
 					<Text style={styles.legalDot}>•</Text>
 					<LegalAction label="Restore" onPress={onRestore} />
 				</View>
-			</View>
-		</View>
-	);
-}
-
-function TrustMetric({
-	value,
-	label,
-	iconName,
-	iconColor,
-}: {
-	value: string;
-	label: string;
-	iconName: keyof typeof Ionicons.glyphMap;
-	iconColor: string;
-}) {
-	return (
-		<View style={styles.trustMetric}>
-			<View style={styles.metricCenter}>
-				<View style={styles.metricIconRow}>
-					<Ionicons name={iconName} size={15} color={iconColor} />
-					<Text style={styles.metricValue}>{value}</Text>
-				</View>
-				<Text style={styles.metricLabel}>{label}</Text>
 			</View>
 		</View>
 	);
@@ -260,43 +266,66 @@ const styles = StyleSheet.create({
 		gap: 3,
 		marginTop: -2,
 	},
-	trustRow: {
-		flexDirection: "row",
-		justifyContent: "center",
-		gap: spacing.xs,
-	},
-	trustMetric: {
-		minWidth: 104,
-		minHeight: 56,
+	caseFileCard: {
 		borderRadius: 20,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
-		alignItems: "center",
-		justifyContent: "center",
-		position: "relative",
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		gap: spacing.xs,
 		...tokens.shadow.card,
 	},
-	metricCenter: {
-		alignItems: "center",
-	},
-	metricIconRow: {
+	caseFileHeader: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: 3,
+		justifyContent: "space-between",
+		gap: spacing.sm,
 	},
-	metricValue: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 20,
-		lineHeight: 24,
-	},
-	metricLabel: {
+	caseFileKicker: {
 		color: palette.textMuted,
-		fontFamily: type.body.semibold,
+		fontFamily: type.body.bold,
 		fontSize: 11,
 		lineHeight: 14,
 		textTransform: "uppercase",
+		letterSpacing: 0.6,
+	},
+	caseScorePill: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		borderRadius: 999,
+		backgroundColor: tokens.color.status.success.background,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 3,
+	},
+	caseScoreValue: {
+		color: palette.primaryDark,
+		fontFamily: type.body.bold,
+		fontSize: 16,
+		lineHeight: 20,
+	},
+	caseScoreLabel: {
+		color: palette.primaryDark,
+		fontFamily: type.body.medium,
+		fontSize: 11,
+		lineHeight: 14,
+	},
+	caseFileRow: {
+		flexDirection: "row",
+		alignItems: "flex-start",
+		gap: spacing.xs,
+	},
+	caseFileLine: {
+		flex: 1,
+		color: palette.text,
+		fontFamily: type.body.medium,
+		fontSize: 13,
+		lineHeight: 18,
+	},
+	caseFileStrong: {
+		fontFamily: type.body.bold,
+		color: palette.primaryDark,
 	},
 	trustedText: {
 		color: palette.textMuted,

@@ -893,13 +893,18 @@ function foodExposureForDailyScore(report: DailyGutReport, scans: ScanRecord[]) 
     };
   }
 
+  const qualityMultiplier = report.evidenceQuality === 'unscanned' ? 0.5 : 1;
   const weightedRisk = weightedRiskTotal / evidenceWeight;
-  const foodAdjustment = Math.max(-15, Math.min(15, (50 - weightedRisk) * 0.375 * Math.min(evidenceWeight, 1)));
+  const effectiveEvidenceWeight = evidenceWeight * qualityMultiplier;
+  const foodAdjustment = Math.max(
+    -15,
+    Math.min(15, (50 - weightedRisk) * 0.375 * Math.min(effectiveEvidenceWeight, 1)),
+  );
 
   return {
     foodExposure: clamp(100 - weightedRisk),
     foodAdjustment: Math.round(foodAdjustment),
-    evidenceWeight: Number(evidenceWeight.toFixed(2)),
+    evidenceWeight: Number(effectiveEvidenceWeight.toFixed(2)),
     weightedRisk,
   };
 }

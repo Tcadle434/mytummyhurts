@@ -94,6 +94,19 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
           >
             <Text style={styles.primaryActionLabel}>Try again</Text>
           </Pressable>
+          {isGroceryScan ? (
+            <Pressable
+              onPress={() => navigation.replace('ScanCapture', {
+                sourceType: 'camera',
+                manualMode: route.params.manualMode,
+                scanCategory: 'food',
+                initialMode: 'food',
+              })}
+              style={({ pressed }) => [styles.secondaryAction, pressed && { opacity: 0.82 }]}
+            >
+              <Text style={styles.secondaryActionLabel}>Snap the ingredient label instead</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.secondaryAction, pressed && { opacity: 0.82 }]}>
             <Text style={styles.secondaryActionLabel}>Go back</Text>
           </Pressable>

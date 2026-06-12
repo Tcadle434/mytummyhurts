@@ -3,6 +3,7 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.99.1';
 import {
   ConditionIngredientInsight,
   DailyGutReport,
+  FoodCalibrationRating,
   IngredientInsight,
   InsightConfidenceLevel,
   PatternStrength,
@@ -12,12 +13,16 @@ import {
 } from './domain.ts';
 import { getGutScoreSnapshots, getUserDietPreferences } from './db.ts';
 import { errorMetadata, recordSystemEvent } from './observability.ts';
+import { extractMealFromTextWithAudit } from './openai.ts';
 import { sleep } from './retry.ts';
 import {
+  buildDeclaredSeedInsights,
   buildGutScoreEvent,
   buildUserProfileFromSeed,
   computeGutScoreState,
+  flattenStructuredIngredients,
   GUT_SCORE_ALGORITHM_VERSION,
+  mergeSeedAndLearnedInsights,
   recomputeDailyScores,
 } from './scoring.ts';
 import { markUserAppSnapshotStatus, refreshUserAppSnapshot } from './appSnapshot.ts';
@@ -28,6 +33,98 @@ function asStringArray(value: unknown): string[] {
   }
 
   return value.map((entry) => String(entry)).filter(Boolean);
+}
+
+function asCalibrationRecord(value: unknown): Record<string, FoodCalibrationRating> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const record: Record<string, FoodCalibrationRating> = {};
+  for (const [food, rating] of Object.entries(value as Record<string, unknown>)) {
+    if (rating === 'fine' || rating === 'unsure' || rating === 'bad') {
+      record[food] = rating;
+    }
+  }
+  return record;
+}
+
+// One-shot extraction of the onboarding "last bad meal" description. Guarded by
+// last_bad_meal_extracted_at so it runs at most once per submitted text; any
+// failure degrades to "no meal seeds" instead of blocking the rebuild.
+async function extractSuspectMealIngredients(
+  admin: SupabaseClient,
+  userId: string,
+  profileRow: Record<string, unknown>,
+  context: { knownConditions: string[]; knownIngredientSensitivities: string[] },
+): Promise<string[]> {
+  const existing = asStringArray(profileRow.suspect_meal_ingredients);
+  const lastBadMealText = typeof profileRow.last_bad_meal_text === 'string'
+    ? profileRow.last_bad_meal_text.trim()
+    : '';
+
+  if (!lastBadMealText || profileRow.last_bad_meal_extracted_at) {
+    return existing;
+  }
+
+  if (!Deno.env.get('OPENAI_API_KEY')) {
+    // Without a model the extractor falls back to a heuristic dish library;
+    // never seed insights from that. Leave extracted_at unset so a configured
+    // deployment can pick the text up later.
+    return existing;
+  }
+
+  const attemptedAt = new Date().toISOString();
+  try {
+    const extraction = await extractMealFromTextWithAudit(lastBadMealText, {
+      knownConditions: context.knownConditions,
+      knownIngredients: context.knownIngredientSensitivities,
+    });
+    const ingredients = flattenStructuredIngredients(extraction.result)
+      .map((ingredient) => ingredient.name)
+      .filter(Boolean)
+      .slice(0, 10);
+
+    const { error: updateError } = await admin
+      .from('user_profiles')
+      .update({
+        suspect_meal_ingredients: ingredients,
+        last_bad_meal_extracted_at: attemptedAt,
+      })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    await recordSystemEvent(admin, {
+      eventType: 'onboarding_meal_extraction_completed',
+      severity: 'info',
+      userId,
+      operation: 'learning_recompute',
+      entityType: 'profile',
+      metadata: {
+        ingredientCount: ingredients.length,
+        totalTokens: extraction.audits.reduce((total, audit) => total + (audit.totalTokens ?? 0), 0),
+      },
+    });
+
+    return ingredients;
+  } catch (error) {
+    await admin
+      .from('user_profiles')
+      .update({ last_bad_meal_extracted_at: attemptedAt })
+      .eq('user_id', userId);
+    await recordSystemEvent(admin, {
+      eventType: 'onboarding_meal_extraction_failed',
+      severity: 'warn',
+      userId,
+      operation: 'learning_recompute',
+      entityType: 'profile',
+      metadata: errorMetadata(error),
+    });
+    return existing;
+  }
 }
 
 function structuredAnalysisFromIngredientRows(
@@ -203,7 +300,8 @@ function buildDailyReportInsights(params: {
       }
 
       const noiseFactor = ingredients.size > 16 ? 16 / ingredients.size : 1;
-      const weightedSignal = window.weight * noiseFactor;
+      const qualityFactor = report.evidenceQuality === 'unscanned' ? 0.5 : 1;
+      const weightedSignal = window.weight * noiseFactor * qualityFactor;
       const severityFactor = report.gutSeverity >= 9 ? 1.2 : report.gutSeverity >= 7 ? 1 : 0.75;
 
       for (const ingredient of ingredients.values()) {
@@ -395,13 +493,26 @@ async function rebuildInsightsAndProfileUnlocked(
     admin.from('user_profiles').select('*').eq('user_id', userId).single(),
     admin
       .from('scans')
-      .select('id, scan_category, local_date, title, overall_risk_score, created_at')
+      .select('id, scan_category, local_date, title, overall_risk_score, created_at, consumption_status')
       .eq('user_id', userId)
       .eq('analysis_status', 'completed'),
     admin.from('daily_gut_reports').select('*').eq('user_id', userId),
-    admin.from('scan_ingredient_risks').select('scan_id, canonical_name, confidence').eq('user_id', userId),
+    admin
+      .from('scan_ingredient_risks')
+      .select('scan_id, canonical_name, confidence, menu_item_source_id')
+      .eq('user_id', userId),
     getUserDietPreferences(admin, userId),
   ]);
+
+  const { data: consumedMenuItemRows, error: consumedMenuItemsError } = await admin
+    .from('menu_items')
+    .select('scan_id, source_item_id, name, risk_score')
+    .eq('user_id', userId)
+    .not('consumed_at', 'is', null);
+
+  if (consumedMenuItemsError) {
+    throw consumedMenuItemsError;
+  }
 
   if (profileError) {
     throw profileError;
@@ -420,6 +531,7 @@ async function rebuildInsightsAndProfileUnlocked(
   }
 
   const scanIngredientMap = new Map<string, StructuredIngredient[]>();
+  const menuItemIngredientMap = new Map<string, StructuredIngredient[]>();
   for (const row of scanIngredientRows ?? []) {
     const scanId = String(row.scan_id ?? '');
     const name = String(row.canonical_name ?? '').trim().toLowerCase();
@@ -427,19 +539,37 @@ async function rebuildInsightsAndProfileUnlocked(
       continue;
     }
 
-    const list = scanIngredientMap.get(scanId) ?? [];
-    list.push({
+    const ingredient: StructuredIngredient = {
       name,
       confidence: row.confidence === 'high' || row.confidence === 'low' ? row.confidence : 'medium',
-    });
+    };
+
+    const menuItemSourceId = row.menu_item_source_id ? String(row.menu_item_source_id) : null;
+    if (menuItemSourceId) {
+      const key = `${scanId}:${menuItemSourceId}`;
+      const itemList = menuItemIngredientMap.get(key) ?? [];
+      itemList.push(ingredient);
+      menuItemIngredientMap.set(key, itemList);
+      continue;
+    }
+
+    const list = scanIngredientMap.get(scanId) ?? [];
+    list.push(ingredient);
     scanIngredientMap.set(scanId, list);
   }
+
+  const knownConditions = asStringArray(profileRow.known_conditions);
+  const knownIngredientSensitivities = asStringArray(profileRow.known_ingredient_sensitivities);
+  const suspectMealIngredients = await extractSuspectMealIngredients(admin, userId, profileRow, {
+    knownConditions,
+    knownIngredientSensitivities,
+  });
 
   const profileSeed = {
     userId,
     displayName: profileRow.display_name ?? undefined,
-    knownConditions: asStringArray(profileRow.known_conditions),
-    knownIngredientSensitivities: asStringArray(profileRow.known_ingredient_sensitivities),
+    knownConditions,
+    knownIngredientSensitivities,
     commonSymptoms: asStringArray(profileRow.common_symptoms),
     symptomFrequency: profileRow.symptom_frequency ?? undefined,
     symptomSeverityBaseline: profileRow.symptom_severity_baseline ?? undefined,
@@ -449,9 +579,37 @@ async function rebuildInsightsAndProfileUnlocked(
     lifestyleFactors: asStringArray(profileRow.lifestyle_factors),
     foodsToReintroduce: asStringArray(profileRow.foods_to_reintroduce),
     dietPreferences,
+    calibrationRatings: asCalibrationRecord(profileRow.calibration_ratings),
+    suspectMealIngredients,
   };
 
-  const recomputeScans = (scanRows ?? []).map((scan) => {
+  const scanRowById = new Map((scanRows ?? []).map((scan) => [String(scan.id), scan]));
+  // Confirmed menu dishes become first-class food exposures: the dish risk
+  // score plus its own ingredient rows, dated to the parent scan. Skipped
+  // scans drop out of exposure and learning entirely.
+  const consumedMenuExposures = (consumedMenuItemRows ?? []).flatMap((item) => {
+    const parent = scanRowById.get(String(item.scan_id));
+    if (!parent) {
+      return [];
+    }
+
+    const ingredients = menuItemIngredientMap.get(`${item.scan_id}:${item.source_item_id}`) ?? [];
+    const localDate = parent.local_date
+      ? String(parent.local_date)
+      : String(parent.created_at ?? new Date().toISOString()).slice(0, 10);
+
+    return [{
+      id: `${item.scan_id}:${item.source_item_id}`,
+      title: String(item.name ?? 'Menu dish'),
+      localDate,
+      createdAt: parent.created_at ? String(parent.created_at) : new Date().toISOString(),
+      overallRiskScore: Number(item.risk_score ?? 50),
+      ingredients,
+    }];
+  });
+
+  const exposureScanRows = (scanRows ?? []).filter((scan) => scan.consumption_status !== 'skipped');
+  const recomputeScans = exposureScanRows.map((scan) => {
     const scanIngredients = scanIngredientMap.get(String(scan.id)) ?? [];
     const structuredAnalysis = structuredAnalysisFromIngredientRows(String(scan.title ?? 'Unknown meal'), scanIngredients);
 
@@ -464,8 +622,18 @@ async function rebuildInsightsAndProfileUnlocked(
       localDate: scan.local_date ? String(scan.local_date) : undefined,
       scanCategory: scan.scan_category === 'menu' || scan.scan_category === 'grocery' ? scan.scan_category : 'food',
     };
-  });
-  const foodScans = (scanRows ?? [])
+  }).concat(
+    consumedMenuExposures.map((exposure) => ({
+      id: exposure.id,
+      structuredAnalysis: structuredAnalysisFromIngredientRows(exposure.title, exposure.ingredients),
+      ingredients: exposure.ingredients,
+      overallRiskScore: exposure.overallRiskScore,
+      createdAt: exposure.createdAt,
+      localDate: exposure.localDate,
+      scanCategory: 'food' as const,
+    })),
+  );
+  const foodScans = exposureScanRows
     .filter((scan) => scan.scan_category === 'food' || !scan.scan_category)
     .map((scan) => {
       const scanIngredients = scanIngredientMap.get(String(scan.id)) ?? [];
@@ -475,13 +643,24 @@ async function rebuildInsightsAndProfileUnlocked(
         createdAt: scan.created_at ? String(scan.created_at) : new Date().toISOString(),
         ingredients: scanIngredients,
       };
-    });
+    })
+    .concat(
+      consumedMenuExposures.map((exposure) => ({
+        id: exposure.id,
+        localDate: exposure.localDate,
+        createdAt: exposure.createdAt,
+        ingredients: exposure.ingredients,
+      })),
+    );
   const dailyReports: DailyGutReport[] = (reportRows ?? []).map((report) => ({
     id: String(report.id),
     userId: String(report.user_id),
     localDate: String(report.local_date),
     gutSeverity: Number(report.gut_severity),
     symptomTags: asStringArray(report.symptom_tags),
+    evidenceQuality: report.evidence_quality === 'typical' || report.evidence_quality === 'unscanned'
+      ? report.evidence_quality
+      : undefined,
     dailyScore: typeof report.daily_score === 'number' ? Number(report.daily_score) : undefined,
     dailyScoreComponents: typeof report.daily_score_components === 'object' && report.daily_score_components
       ? (report.daily_score_components as DailyGutReport['dailyScoreComponents'])
@@ -515,12 +694,13 @@ async function rebuildInsightsAndProfileUnlocked(
     throw dailyScoreUpdateError;
   }
 
-  const insights = buildDailyReportInsights({
+  const learnedInsights = buildDailyReportInsights({
     scans: foodScans,
     reports: scoredDailyReports,
     declaredSensitivities: profileSeed.knownIngredientSensitivities,
     activeConditions: profileSeed.knownConditions,
   });
+  const insights = mergeSeedAndLearnedInsights(learnedInsights, buildDeclaredSeedInsights(profileSeed));
   const conditionInsights = buildDailyConditionInsights(insights, profileSeed.knownConditions);
 
   await admin.from('ingredient_insights').delete().eq('user_id', userId);

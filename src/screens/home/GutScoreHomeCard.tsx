@@ -4,7 +4,7 @@ import Svg, { Path } from "react-native-svg";
 
 import { Pip } from "../../components/common/Pip";
 import { SectionCard } from "../../components/common/UI";
-import { palette, radii, spacing, tokens, type, type PipState } from "../../theme";
+import { palette, spacing, tokens, type, type PipState } from "../../theme";
 
 type GutScoreHomeCardProps = {
 	score: number;

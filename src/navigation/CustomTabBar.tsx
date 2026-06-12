@@ -15,7 +15,7 @@ type TabRoute = BottomTabBarProps['state']['routes'][number];
 const tabConfig: Record<string, { label: string; icon: IconName; iconFocused: IconName }> = {
   Home: { label: 'Home', icon: 'home-outline', iconFocused: 'home' },
   History: { label: 'Scans', icon: 'scan-outline', iconFocused: 'scan' },
-  Insights: { label: 'Insights', icon: 'stats-chart-outline', iconFocused: 'stats-chart' },
+  Insights: { label: 'Triggers', icon: 'search-outline', iconFocused: 'search' },
   Symptoms: { label: 'Symptoms', icon: 'pulse-outline', iconFocused: 'pulse' },
 };
 

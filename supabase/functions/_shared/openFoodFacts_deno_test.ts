@@ -49,3 +49,42 @@ Deno.test('productFromOpenFoodFactsPayload rejects products without ingredients'
     'That product is missing ingredient details.',
   );
 });
+
+Deno.test('productFromUsdaPayload maps a branded match by GTIN', async () => {
+  const { productFromUsdaPayload } = await import('./openFoodFacts.ts');
+  const product = productFromUsdaPayload('012345678905', {
+    foods: [
+      {
+        gtinUpc: '00012345678905',
+        description: 'TOMATO BASIL PASTA SAUCE',
+        brandOwner: 'Test Foods Inc',
+        ingredients: 'Tomatoes, basil, garlic, onion powder.',
+        labelNutrients: { calories: { value: 60 } },
+      },
+    ],
+  });
+
+  assertEquals(product.name, 'TOMATO BASIL PASTA SAUCE');
+  assertEquals(product.dataSource, 'usda_fdc');
+  assertEquals(product.ingredientText, 'Tomatoes, basil, garlic, onion powder.');
+});
+
+Deno.test('productFromUsdaPayload rejects when no GTIN matches', async () => {
+  const { productFromUsdaPayload } = await import('./openFoodFacts.ts');
+  assertThrows(
+    () => productFromUsdaPayload('012345678905', { foods: [{ gtinUpc: '99999', description: 'X', ingredients: 'y' }] }),
+    ApiError,
+  );
+});
+
+Deno.test('stripAllergenStatements removes contains/may-contain declarations', async () => {
+  const { stripAllergenStatements } = await import('./openFoodFacts.ts');
+  assertEquals(
+    stripAllergenStatements('Oats, peanuts, cane sugar. CONTAINS: PEANUTS, SOYBEANS. May contain wheat.'),
+    'Oats, peanuts, cane sugar.',
+  );
+  assertEquals(
+    stripAllergenStatements('Milk, cocoa. Allergens: milk, soy'),
+    'Milk, cocoa.',
+  );
+});

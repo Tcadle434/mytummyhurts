@@ -52,6 +52,8 @@ const MENU_IMAGE_DETAIL = (Deno.env.get('OPENAI_MENU_IMAGE_DETAIL') ?? 'high') =
 const OPENAI_TIMEOUT_MS = positiveNumberEnv('OPENAI_TIMEOUT_MS', 65_000);
 const OPENAI_MENU_TIMEOUT_MS = positiveNumberEnv('OPENAI_MENU_TIMEOUT_MS', 115_000);
 const OPENAI_MENU_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_MENU_MAX_OUTPUT_TOKENS', 12_000);
+const OPENAI_TEXT_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_TEXT_MAX_OUTPUT_TOKENS', 4_000);
+const OPENAI_IMAGE_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_IMAGE_MAX_OUTPUT_TOKENS', 4_000);
 const MENU_ITEM_LIMIT = 100;
 // When off, menu extraction skips per-condition LLM bands and the engine falls
 // back to mechanism-only scoring for menus (revert lever for cost/latency).
@@ -1534,6 +1536,7 @@ export async function extractMealFromTextWithAudit(
         content: [{ type: 'input_text', text: userPrompt }],
       },
     ],
+    max_output_tokens: OPENAI_TEXT_MAX_OUTPUT_TOKENS,
     text: {
       format: {
         type: 'json_schema',
@@ -1581,6 +1584,7 @@ export async function classifyScanImagesWithAudit(
   const userPrompt = buildScanClassificationUserPrompt(imageUrls.length);
   const request = {
     model: IMAGE_EXTRACTION_MODEL,
+    max_output_tokens: OPENAI_IMAGE_MAX_OUTPUT_TOKENS,
     input: [
       {
         role: 'system',
@@ -1655,6 +1659,7 @@ export async function extractMealFromImageWithAudit(
   const userPrompt = buildImageUserPrompt(context);
   const request = {
     model: IMAGE_EXTRACTION_MODEL,
+    max_output_tokens: OPENAI_IMAGE_MAX_OUTPUT_TOKENS,
     input: [
       {
         role: 'system',
@@ -1717,6 +1722,7 @@ export async function extractMealFromImagesWithAudit(
   const userPrompt = buildMultiImageUserPrompt({ ...context, imageCount: imageUrls.length });
   const request = {
     model: IMAGE_EXTRACTION_MODEL,
+    max_output_tokens: OPENAI_IMAGE_MAX_OUTPUT_TOKENS,
     input: [
       {
         role: 'system',

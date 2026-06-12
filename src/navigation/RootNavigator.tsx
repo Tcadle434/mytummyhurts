@@ -10,6 +10,7 @@ import { FinishingSetupScreen } from '../screens/auth/FinishingSetupScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { ManualMealScreen } from '../screens/history/ManualMealScreen';
 import { DailyGutReportScreen } from '../screens/home/DailyGutReportScreen';
+import { DailyReportPayoffScreen } from '../screens/home/DailyReportPayoffScreen';
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { DesignSystemShowcaseScreen } from '../screens/internal/DesignSystemShowcaseScreen';
 import { InsightDetailScreen } from '../screens/insights/InsightDetailScreen';
@@ -139,6 +140,7 @@ export function RootNavigator() {
         <RootStack.Screen name="ScanAnalyzing" component={ScanAnalyzingScreen} options={{ presentation: 'fullScreenModal' }} />
         <RootStack.Screen name="ScanResult" component={ScanResultScreen} />
         <RootStack.Screen name="DailyGutReport" component={DailyGutReportScreen} />
+        <RootStack.Screen name="DailyReportPayoff" component={DailyReportPayoffScreen} />
         <RootStack.Screen name="WeeklyProgress" component={WeeklyProgressScreen} />
         <RootStack.Screen name="DailyScoreDay" component={DailyScoreDayScreen} />
         <RootStack.Screen name="ManualMeal" component={ManualMealScreen} options={{ presentation: 'modal' }} />

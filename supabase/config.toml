@@ -175,6 +175,9 @@ verify_jwt = false
 [functions.scan-delete]
 verify_jwt = false
 
+[functions.scan-consumption-update]
+verify_jwt = false
+
 [functions.scan-get]
 verify_jwt = false
 

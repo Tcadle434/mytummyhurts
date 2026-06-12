@@ -28,7 +28,7 @@ import {
   extractMealFromTextWithAudit,
   extractMenuFromImagesWithAudit,
 } from './openai.ts';
-import { fetchOpenFoodFactsProduct, normalizeBarcode } from './openFoodFacts.ts';
+import { fetchGroceryProduct, normalizeBarcode } from './openFoodFacts.ts';
 import { computeMenuScanResultFromExtraction, computeScanResultFromStructured } from './scoring.ts';
 
 const mealImagesBucket = 'meal-images';
@@ -125,7 +125,7 @@ async function assertScanAllowed(admin: SupabaseClient, userId: string) {
   }
 }
 
-function groceryProductCompletionPayload(product: Awaited<ReturnType<typeof fetchOpenFoodFactsProduct>>) {
+function groceryProductCompletionPayload(product: Awaited<ReturnType<typeof fetchGroceryProduct>>) {
   return {
     barcode: product.barcode,
     brand: product.brand ?? null,
@@ -135,6 +135,7 @@ function groceryProductCompletionPayload(product: Awaited<ReturnType<typeof fetc
     allergens: product.allergens,
     data_source: product.dataSource,
     source_confidence: product.sourceConfidence,
+    image_url: product.imageUrl ?? null,
   };
 }
 
@@ -557,7 +558,7 @@ export async function analyzeReservedScan(
     };
 
     if (options.kind === 'barcode') {
-      const product = await fetchOpenFoodFactsProduct(barcode!);
+      const product = await fetchGroceryProduct(barcode!);
       const productDescription = [
         `Packaged grocery product: ${product.brand ? `${product.brand} ` : ''}${product.name}.`,
         `Barcode: ${product.barcode}.`,

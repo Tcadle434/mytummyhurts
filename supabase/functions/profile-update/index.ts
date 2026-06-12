@@ -34,6 +34,8 @@ type ProfileUpdateBody = {
     customConditions?: string[];
     ingredientSensitivities?: string[];
     customIngredientSensitivities?: string[];
+    foodCalibrations?: Record<string, string>;
+    lastBadMealText?: string;
     symptoms?: string[];
     customSymptoms?: string[];
     symptomFrequency?: string;
@@ -90,6 +92,17 @@ function unique(values: string[]) {
 function normalizeOptionalText(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function sanitizeCalibrations(value: Record<string, string> | undefined) {
+  const record: Record<string, "fine" | "unsure" | "bad"> = {};
+  for (const [food, rating] of Object.entries(value ?? {})) {
+    const name = food.trim();
+    if (name && (rating === "fine" || rating === "unsure" || rating === "bad")) {
+      record[name] = rating;
+    }
+  }
+  return record;
 }
 
 function hasOwnKey<T extends object>(value: T, key: PropertyKey) {
@@ -236,6 +249,12 @@ serve(async (request) => {
         body.displayName ?? existingRow.display_name ?? null,
       );
 
+    const lastBadMealText = onboardingAnswers
+      ? normalizeOptionalText(onboardingAnswers.lastBadMealText)
+      : null;
+    const lastBadMealChanged = Boolean(onboardingAnswers) &&
+      lastBadMealText !== (existingRow.last_bad_meal_text ?? null);
+
     const { error: upsertError } = await admin.from("user_profiles").upsert(
       {
         user_id: user.id,
@@ -255,6 +274,22 @@ serve(async (request) => {
         current_eating_patterns: currentEatingPatterns,
         lifestyle_factors: lifestyleFactors,
         foods_to_reintroduce: foodsToReintroduce,
+        ...(onboardingAnswers
+          ? {
+            calibration_ratings: sanitizeCalibrations(
+              onboardingAnswers.foodCalibrations,
+            ),
+            last_bad_meal_text: lastBadMealText,
+            // New text means the previous extraction no longer applies; the
+            // next learning rebuild re-extracts suspects from the new text.
+            ...(lastBadMealChanged
+              ? {
+                suspect_meal_ingredients: [],
+                last_bad_meal_extracted_at: null,
+              }
+              : {}),
+          }
+          : {}),
       },
       { onConflict: "user_id" },
     );

@@ -9,7 +9,7 @@ import {
 	triedGutHealthAppsOptions,
 } from "./catalog";
 import { PipState } from "../theme";
-import { OnboardingAnswers, OnboardingStepDefinition } from "../types/domain";
+import { FoodCalibrationRating, OnboardingAnswers, OnboardingStepDefinition } from "../types/domain";
 
 export const defaultOnboardingAnswers: OnboardingAnswers = {
 	displayName: "",
@@ -18,6 +18,8 @@ export const defaultOnboardingAnswers: OnboardingAnswers = {
 	ingredientSensitivities: [],
 	customIngredientSensitivities: [],
 	ingredientSensitivitiesUnknown: false,
+	foodCalibrations: {},
+	lastBadMealText: "",
 	symptoms: [],
 	customSymptoms: [],
 	mealContexts: [],
@@ -39,6 +41,22 @@ function optionalString(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+function calibrationRecord(value: unknown): Record<string, FoodCalibrationRating> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return {};
+	}
+
+	return Object.entries(value as Record<string, unknown>).reduce<Record<string, FoodCalibrationRating>>(
+		(accumulator, [food, rating]) => {
+			if (rating === "fine" || rating === "unsure" || rating === "bad") {
+				accumulator[food] = rating;
+			}
+			return accumulator;
+		},
+		{}
+	);
+}
+
 export function normalizeOnboardingAnswers(
 	answers: Partial<OnboardingAnswers> | null | undefined
 ): OnboardingAnswers {
@@ -54,6 +72,8 @@ export function normalizeOnboardingAnswers(
 		ingredientSensitivities: stringArray(current.ingredientSensitivities),
 		customIngredientSensitivities: stringArray(current.customIngredientSensitivities),
 		ingredientSensitivitiesUnknown: Boolean(current.ingredientSensitivitiesUnknown),
+		foodCalibrations: calibrationRecord(current.foodCalibrations),
+		lastBadMealText: optionalString(current.lastBadMealText) ?? defaultOnboardingAnswers.lastBadMealText,
 		symptoms: stringArray(current.symptoms),
 		customSymptoms: stringArray(current.customSymptoms),
 		symptomFrequency: optionalString(current.symptomFrequency),
@@ -139,6 +159,27 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 		field: "ingredientSensitivities",
 		options: ingredientSensitivityOptions,
 		allowCustom: true,
+	},
+	{
+		id: "food-calibration",
+		step: 5,
+		type: "calibration",
+		backgroundVariant: "getStartedImage",
+		headline: "How do these usually treat you?",
+		body: "Quick gut check on common trigger foods. Your answers become the starting suspects we investigate.",
+		cta: "Continue",
+		field: "foodCalibrations",
+	},
+	{
+		id: "last-bad-meal",
+		step: 6,
+		type: "text_input",
+		backgroundVariant: "getStartedImage",
+		headline: "What was the last meal that wrecked you?",
+		body: "Describe it however you remember it — \"chicken alfredo and garlic bread\" works. We'll pull out the likely suspects.",
+		helper: "Optional, but it gives your profile a head start.",
+		cta: "Continue",
+		field: "lastBadMealText",
 	},
 	{
 		id: "symptoms-select",
@@ -267,16 +308,7 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 	// 	centerGraphic: "scannerModesOverview",
 	// 	cta: "Continue",
 	// },
-	{
-		id: "issues-rising",
-		step: 17,
-		type: "message",
-		headline: "Gut issues are everywhere now",
-		body: "More people are dealing with bloating, reflux, pain, and food reactions in everyday life.",
-		footerBody: "That is the problem. Next we focus on the part you can actually control.",
-		centerImage: "gutIssuesDiagram",
-		cta: "What can we control?",
-	},
+	// "issues-rising" cut: pure narrative, no data collection (see plan).
 	// {
 	// 	id: "food-control-intro",
 	// 	step: 18,
@@ -287,15 +319,7 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 	// 	centerGraphic: "foodControlIntro",
 	// 	cta: "Got it",
 	// },
-	{
-		id: "food-lever",
-		step: 19,
-		type: "message",
-		headline: "Food is your #1 lever",
-		body: "Food has the biggest impact, and it's the one you can control most directly.",
-		centerGraphic: "foodLeverComparison",
-		cta: "Makes sense",
-	},
+	// "food-lever" cut: pure narrative, no data collection (see plan).
 	{
 		id: "tried-other-apps",
 		step: 20,
@@ -347,15 +371,15 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 	// 	body: "A quick daily report helps us learn what actually affected you, without asking you to judge every meal.",
 	// 	cta: "Continue",
 	// },
-	// {
-	// 	id: "notification-priming",
-	// 	step: 24,
-	// 	type: "message",
-	// 	backgroundVariant: "getStartedImage",
-	// 	headline: "Reports work best when they become routine",
-	// 	body: "We'll only use notifications to remind you to log how your gut felt for the day.",
-	// 	cta: "Continue",
-	// },
+	{
+		id: "notification-priming",
+		step: 24,
+		type: "message",
+		backgroundVariant: "getStartedImage",
+		headline: "One tap a day keeps your triggers accurate",
+		body: "We'll send one evening reminder. Answer it with a single tap — Calm, Meh, or Rough — and your Gut Score and triggers stay honest.",
+		cta: "Continue",
+	},
 	// {
 	// 	id: "adaptation",
 	// 	step: 25,
@@ -454,6 +478,8 @@ const stepMascotStates: Partial<Record<string, PipState>> = {
 	"healing-promise": "joy",
 	"conditions-select": "thinking",
 	"ingredient-select": "thinking",
+	"food-calibration": "thinking",
+	"last-bad-meal": "anxious",
 	"symptoms-select": "thinking",
 	"frequency-select": "thinking",
 	"severity-select": "thinking",
@@ -473,6 +499,7 @@ const stepMascotStates: Partial<Record<string, PipState>> = {
 	motivation: "thinking",
 	"gut-score-analyzing": "thinking",
 	"lower-score-plan": "love",
+	"notification-priming": "thumbsUp",
 	"trust-and-clarity": "thinking",
 	"commit-to-healing": "love",
 	"app-store-rating": "love",

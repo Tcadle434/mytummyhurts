@@ -31,6 +31,9 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
   const [customEntry, setCustomEntry] = useState('');
   const [customModalVisible, setCustomModalVisible] = useState(false);
   const [notes, setNotes] = useState(existingReport?.notes ?? '');
+  const [evidenceQuality, setEvidenceQuality] = useState<'typical' | 'unscanned'>(
+    existingReport?.evidenceQuality ?? 'typical',
+  );
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const hydratedReportKey = useRef<string | null>(null);
@@ -57,6 +60,7 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
     );
     setCustomSymptomTags(existingCustomSymptoms);
     setNotes(existingReport.notes ?? '');
+    setEvidenceQuality(existingReport.evidenceQuality ?? 'typical');
     setSaveError(null);
   }, [existingCustomSymptoms, existingReport]);
 
@@ -131,8 +135,9 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
         gutSeverity,
         symptomTags: gutSeverity === 0 ? [NO_SYMPTOMS_TAG] : symptomTags.filter((tag) => tag !== NO_SYMPTOMS_TAG),
         notes: notes.trim() || undefined,
+        evidenceQuality,
       });
-      navigation.goBack();
+      navigation.replace('DailyReportPayoff', { localDate: targetDate });
     } catch (error) {
       const normalizedError = getDailyReportSaveError(error);
       setSaveError(normalizedError.message);
@@ -182,6 +187,25 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
               />
             </>
           )}
+        </View>
+      </SectionCard>
+
+      <SectionCard style={styles.compactCard}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.fieldLabel}>Scan coverage</Text>
+          <Text style={styles.optionalLabel}>Keeps learning honest</Text>
+        </View>
+        <View style={styles.optionWrap}>
+          <OptionChip
+            label="Typical day — scanned what I ate"
+            selected={evidenceQuality === 'typical'}
+            onPress={() => setEvidenceQuality('typical')}
+          />
+          <OptionChip
+            label="Ate things I didn't scan"
+            selected={evidenceQuality === 'unscanned'}
+            onPress={() => setEvidenceQuality('unscanned')}
+          />
         </View>
       </SectionCard>
 

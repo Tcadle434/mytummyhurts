@@ -6,10 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen, SectionCard, SkeletonBlock } from "../../components/common/UI";
+import { TriggersSummaryRow } from "../../components/home/TriggersSummaryRow";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
 import { isLiveBackendConfigured } from "../../config/env";
 import { useHomeData } from "../../features/home/hooks";
+import { computeEngagementStreak } from "../../features/home/streak";
 import { shouldBlockHomeForInitialRemoteData } from "../../features/home/viewState";
+import { buildTriggerProfileViewState } from "../../features/insights/triggerProfile";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
@@ -34,6 +37,7 @@ export function HomeScreen() {
 	const fallbackScans = useAppStore((state) => state.scans);
 	const fallbackReports = useAppStore((state) => state.dailyReports);
 	const fallbackProfile = useAppStore((state) => state.profile);
+	const insights = useAppStore((state) => state.insights);
 	const authUser = useAppStore((state) => state.authUser);
 	const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
 	const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
@@ -91,7 +95,11 @@ export function HomeScreen() {
 	const profileMeta = gutScoreProfile?.stomachProfile.metadata;
 	const gutScore = profileMeta?.gutScore;
 
-	const streakCount = useMemo(() => computeFoodLogStreak(scans), [scans]);
+	const streakCount = useMemo(
+		() => computeEngagementStreak({ scans, reports: dailyReports }),
+		[scans, dailyReports],
+	);
+	const triggerCounts = useMemo(() => buildTriggerProfileViewState(insights).counts, [insights]);
 	const weeklyProgressDays = useMemo(
 		() =>
 			buildWeeklyProgressDays({
@@ -245,6 +253,16 @@ export function HomeScreen() {
 				/>
 			)}
 
+			{!isWaitingForComputedData ? (
+				<TriggersSummaryRow
+					counts={triggerCounts}
+					onPress={() => {
+						trackEvent("trigger_summary_opened", { entry_point: "home_row" });
+						navigation.navigate("MainTabs", { screen: "Insights" });
+					}}
+				/>
+			) : null}
+
 			<Pressable
 				onPress={() => {
 					trackEvent("scan_camera_opened", { entry_point: "home_scan_cta" });
@@ -371,47 +389,6 @@ function WeeklyProgressCardSkeleton() {
 	);
 }
 
-function computeFoodLogStreak(scans: ScanHistorySummary[]) {
-	const days = Array.from(
-		new Set(
-			scans
-				.filter((scan) => (scan.scanCategory ?? "food") === "food")
-				.map((scan) =>
-					new Date(scan.createdAt).toLocaleDateString("en-US", {
-						year: "numeric",
-						month: "2-digit",
-						day: "2-digit",
-					})
-				)
-		)
-	)
-		.map((value) => new Date(value))
-		.sort((left, right) => right.getTime() - left.getTime());
-
-	let streak = 0;
-	let cursor = new Date();
-	cursor.setHours(0, 0, 0, 0);
-
-	for (const day of days) {
-		day.setHours(0, 0, 0, 0);
-		if (day.getTime() === cursor.getTime()) {
-			streak += 1;
-			cursor.setDate(cursor.getDate() - 1);
-			continue;
-		}
-
-		if (streak === 0) {
-			const yesterday = new Date(cursor);
-			yesterday.setDate(yesterday.getDate() - 1);
-			if (day.getTime() === yesterday.getTime()) {
-				streak += 1;
-				cursor = yesterday;
-			}
-		}
-	}
-
-	return streak;
-}
 
 const styles = StyleSheet.create({
 	headerStack: {

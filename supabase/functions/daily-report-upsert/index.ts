@@ -97,6 +97,7 @@ serve(async (request) => {
       gutSeverity?: number;
       symptomTags?: string[];
       notes?: string;
+      evidenceQuality?: string;
     }>(request);
 
     if (!body.localDate || typeof body.gutSeverity !== "number") {
@@ -134,6 +135,9 @@ serve(async (request) => {
           gut_severity: severity,
           symptom_tags: symptomTags,
           notes: body.notes?.trim() || null,
+          evidence_quality: body.evidenceQuality === "typical" || body.evidenceQuality === "unscanned"
+            ? body.evidenceQuality
+            : null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id,local_date" },
@@ -155,6 +159,7 @@ serve(async (request) => {
       .select("id, scan_category, local_date, overall_risk_score, created_at")
       .eq("user_id", user.id)
       .eq("analysis_status", "completed")
+      .neq("consumption_status", "skipped")
       .in("local_date", dailyScoreWindowDates);
 
     if (scansError) {

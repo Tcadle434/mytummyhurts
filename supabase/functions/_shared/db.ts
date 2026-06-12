@@ -740,6 +740,7 @@ function groceryProductSummary(row: Record<string, unknown> | undefined): ScanRe
     ingredientText: typeof row.ingredient_text === 'string' ? row.ingredient_text : undefined,
     nutrition: asRecord(row.nutrition),
     allergens: asStringArray(row.allergens),
+    imageUrl: typeof row.image_url === 'string' ? row.image_url : undefined,
     dataSource: typeof row.data_source === 'string' ? row.data_source : undefined,
     sourceConfidence: asConfidence(row.source_confidence),
   };
@@ -763,6 +764,7 @@ function buildMenuResult(
       return {
         id: dbId,
         sourceItemId,
+        consumedAt: row.consumed_at ? String(row.consumed_at) : undefined,
         tier:
           row.tier === 'best_for_you' || row.tier === 'try_to_avoid'
             ? row.tier
@@ -893,6 +895,17 @@ async function fetchScanDetailRows(admin: SupabaseClient, scanRows: Record<strin
   };
 }
 
+// Barcode scans store no input photo; their thumbnail is the product image
+// embedded from grocery_products via the scans FK.
+function groceryImageUrlFromRow(row: Record<string, unknown>): string | undefined {
+  const product = row.grocery_product;
+  if (product && typeof product === 'object' && !Array.isArray(product)) {
+    const url = (product as Record<string, unknown>).image_url;
+    return typeof url === 'string' && url ? url : undefined;
+  }
+  return undefined;
+}
+
 export function mapScanHistorySummary(
   row: Record<string, unknown>,
   summaryInputs: ScanSummaryInputRows,
@@ -932,7 +945,7 @@ export function mapScanHistorySummary(
         ? signedUrlMap.get(thumbnailStoragePath)
         : typeof originalStoragePath === 'string'
           ? signedUrlMap.get(originalStoragePath)
-          : undefined,
+          : groceryImageUrlFromRow(row),
   };
 }
 
@@ -1512,7 +1525,7 @@ export async function getPaginatedScanHistory(
   let scansQuery = admin
     .from('scans')
     .select(
-      'id, request_id, source_type, scan_category, analysis_status, title, overall_risk_score, overall_risk_level, created_at, completed_at, local_date, timezone',
+      'id, request_id, source_type, scan_category, analysis_status, title, overall_risk_score, overall_risk_level, created_at, completed_at, local_date, timezone, grocery_product:grocery_products(image_url)',
     )
     .eq('user_id', userId)
     .eq('analysis_status', 'completed');
@@ -1709,6 +1722,9 @@ export function mapDailyReportRow(row: Record<string, unknown>): DailyGutReport 
     dailyScoreDrivers: mapGutScoreDrivers(row.daily_score_drivers),
     dailyScoreUpdatedAt: row.daily_score_updated_at ? String(row.daily_score_updated_at) : undefined,
     symptomTags: asStringArray(row.symptom_tags),
+    evidenceQuality: row.evidence_quality === 'typical' || row.evidence_quality === 'unscanned'
+      ? row.evidence_quality
+      : undefined,
     notes: typeof row.notes === 'string' && row.notes.length > 0 ? row.notes : undefined,
     createdAt: String(row.created_at ?? new Date().toISOString()),
     updatedAt: String(row.updated_at ?? row.created_at ?? new Date().toISOString()),

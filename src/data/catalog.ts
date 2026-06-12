@@ -10,6 +10,23 @@ export const conditionOptions = [
 
 export const ingredientSensitivityOptions = ["Dairy", "Gluten", "Garlic", "Tomato"];
 
+// Labels intentionally match declaredSensitivityProfiles keys/aliases in the
+// scoring engines so calibration answers seed insights that match scans.
+export const calibrationFoodOptions: { label: string; emoji: string }[] = [
+	{ label: "Dairy", emoji: "🥛" },
+	{ label: "Garlic", emoji: "🧄" },
+	{ label: "Onion", emoji: "🧅" },
+	{ label: "Gluten", emoji: "🍞" },
+	{ label: "Spicy foods", emoji: "🌶️" },
+	{ label: "Fried foods", emoji: "🍟" },
+	{ label: "Coffee", emoji: "☕" },
+	{ label: "Alcohol", emoji: "🍺" },
+	{ label: "Tomato", emoji: "🍅" },
+	{ label: "Beans", emoji: "🫘" },
+	{ label: "Red meat", emoji: "🥩" },
+	{ label: "Artificial sweeteners", emoji: "🧃" },
+];
+
 export const symptomOptions = [
 	"Reflux / Heartburn",
 	"Bloating",

@@ -24,7 +24,15 @@ export type IngredientConfidence = 'low' | 'medium' | 'high';
 export type IngredientEvidence = 'visible' | 'inferred' | 'label' | 'database';
 export type ExtractionClarity = 'clear' | 'unclear';
 export type ExtractionImageDetail = 'high' | 'low' | 'not_applicable';
-export type OnboardingStepType = 'message' | 'preview' | 'multi_select' | 'single_select' | 'text_input' | 'summary';
+export type OnboardingStepType =
+  | 'message'
+  | 'preview'
+  | 'multi_select'
+  | 'single_select'
+  | 'text_input'
+  | 'calibration'
+  | 'summary';
+export type FoodCalibrationRating = 'fine' | 'unsure' | 'bad';
 export type OnboardingCenterImage = 'gutIssuesDiagram';
 export type OnboardingCenterGraphic =
   | 'empathyProblem'
@@ -152,6 +160,8 @@ export interface OnboardingAnswers {
   ingredientSensitivities: string[];
   customIngredientSensitivities: string[];
   ingredientSensitivitiesUnknown?: boolean;
+  foodCalibrations: Record<string, FoodCalibrationRating>;
+  lastBadMealText: string;
   symptoms: string[];
   customSymptoms: string[];
   symptomFrequency?: string;
@@ -481,6 +491,7 @@ export interface ScoreContributor {
 export interface ScanMenuItemResult {
   id: string;
   sourceItemId: string;
+  consumedAt?: string;
   tier: MenuRecommendationTier;
   tierRank: number;
   displayOrder: number;
@@ -519,6 +530,7 @@ export interface GroceryProductSummary {
   ingredientText?: string;
   nutrition?: Record<string, unknown>;
   allergens?: string[];
+  imageUrl?: string;
   dataSource?: string;
   sourceConfidence?: IngredientConfidence;
 }
@@ -548,8 +560,11 @@ export interface ScanResult {
   imageUri?: string;
 }
 
+export type ScanConsumptionStatus = 'unknown' | 'consumed' | 'skipped';
+
 export interface ScanRecord extends ScanResult {
   id: string;
+  consumptionStatus?: ScanConsumptionStatus;
   requestId?: string;
   sourceType: ScanSourceType;
   scanCategory: ScanCategory;
@@ -584,6 +599,7 @@ export interface DailyGutReport {
   userId: string;
   localDate: string;
   gutSeverity: number;
+  evidenceQuality?: 'typical' | 'unscanned';
   dailyScore?: number;
   dailyScoreComponents?: DailyScoreComponents;
   dailyScoreDrivers?: DailyScoreDriver[];

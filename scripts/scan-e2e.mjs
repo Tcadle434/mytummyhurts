@@ -15,6 +15,9 @@ const fixtures = {
 };
 const expectedConditions = ['IBS', 'GERD / Acid reflux'];
 const expectedMenuItemCount = 61;
+const evalFixtures = JSON.parse(
+  fs.readFileSync(path.join(rootDir, 'scripts/eval/fixtures.json'), 'utf8'),
+);
 const genericMenuPhrases = [
   'Lower personalized risk for your current profile',
   'Middle-ground option based on the menu description',
@@ -450,6 +453,33 @@ function assertMenuScan(scan, auditRows, inputRows) {
     );
   }
 
+  // EVAL (labeled expectations, scripts/eval/fixtures.json). False-lows are
+  // hard failures: known-risky dishes must never render as low risk for the
+  // harness's IBS + GERD profile.
+  const menuEval = evalFixtures.menu;
+  const falseLowPatterns = menuEval.falseLowNamePatterns.map((pattern) => new RegExp(pattern, 'i'));
+  const riskyMatches = scan.menuResult.items.filter((item) =>
+    falseLowPatterns.some((pattern) => pattern.test(item.name)),
+  );
+  assert.ok(
+    riskyMatches.length > 0,
+    'EVAL: expected at least one known-risky dish (tempura/katsu/fried/spicy) in the fixture menu.',
+  );
+  const falseLows = riskyMatches.filter((item) => item.riskScore < menuEval.falseLowMinScore);
+  assert.equal(
+    falseLows.length,
+    0,
+    `EVAL HARD FAILURE (false reassurance): risky dishes scored as low risk for an IBS+GERD profile: ${falseLows
+      .map((item) => `${item.name}=${item.riskScore}`)
+      .join(', ')}`,
+  );
+  const scores = scan.menuResult.items.map((item) => item.riskScore);
+  const spread = Math.max(...scores) - Math.min(...scores);
+  assert.ok(
+    spread >= menuEval.minScoreSpread,
+    `EVAL: menu scoring should spread across the scale (>= ${menuEval.minScoreSpread} points), got ${spread}.`,
+  );
+
   for (const item of scan.menuResult.items) {
     const expectedTier = item.riskScore >= 67 ? 'try_to_avoid' : item.riskScore >= 34 ? 'eat_with_caution' : 'best_for_you';
     assertMenuItem(item, expectedTier);
@@ -522,6 +552,26 @@ function assertFoodScan(scan, auditRows, inputRows) {
     scan.overallRiskScore >= 55 && scan.overallRiskScore <= 80,
     `Food pizza fixture should calibrate as medium-high risk, got ${scan.overallRiskScore}.`,
   );
+
+  // EVAL: the pizza must flag its known trigger groups for this profile, and
+  // must never read as low risk (false reassurance = hard failure).
+  const foodEval = evalFixtures.food;
+  assert.ok(
+    scan.overallRiskScore >= foodEval.falseLowMinScore,
+    `EVAL HARD FAILURE (false reassurance): pizza scored ${scan.overallRiskScore} (< ${foodEval.falseLowMinScore}) for an IBS+GERD profile.`,
+  );
+  const flaggedNames = [
+    ...(scan.ingredientRisks ?? []).map((ingredient) => `${ingredient.canonicalName} ${ingredient.rawName ?? ''}`),
+    ...(scan.scoreContributors ?? []).map((driver) => `${driver.label} ${driver.reason}`),
+  ]
+    .join(' ')
+    .toLowerCase();
+  for (const group of foodEval.mustFlagAnyOf) {
+    assert.ok(
+      group.some((trigger) => flaggedNames.includes(trigger)),
+      `EVAL: expected the pizza result to flag one of [${group.join(', ')}] in ingredients or score drivers.`,
+    );
+  }
   assertNonEmptyString(scan.pipTake ?? scan.interpretation, "food Pip's take");
   assert.ok(scan.baseFoodCategory?.key, 'Food scan should persist a scan-level baseFoodCategory.');
   assert.ok(Array.isArray(scan.riskModifiers), 'Food scan should persist scan-level riskModifiers.');

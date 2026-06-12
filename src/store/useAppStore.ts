@@ -19,6 +19,7 @@ import {
 } from '../services/api/contracts';
 import { ApiError } from '../services/api/errors';
 import { isEntitledSubscriptionStatus } from '../features/access/appAccess';
+import { buildPayoffBaseline, type ReportPayoffBaseline } from '../features/home/reportPayoff';
 import {
   analyzeMealInput,
   buildGutScoreEvent,
@@ -70,6 +71,8 @@ type AppStoreState = {
   learningSyncRequestId: string | null;
   learningSyncError: string | null;
   remoteDataLoaded: boolean;
+  reportPayoffBaseline: ReportPayoffBaseline | null;
+  clearReportPayoffBaseline: () => void;
   cacheScanRecord: (scan: ScanRecord) => void;
   updateOnboardingField: <K extends keyof OnboardingAnswers>(field: K, value: OnboardingAnswers[K]) => void;
   toggleOnboardingValue: (
@@ -105,6 +108,12 @@ type AppStoreState = {
     gutSeverity: number;
     symptomTags?: string[];
     notes?: string;
+    evidenceQuality?: 'typical' | 'unscanned';
+  }) => Promise<void>;
+  updateScanConsumption: (params: {
+    scanId: string;
+    consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
+    consumedMenuItemSourceIds?: string[];
   }) => Promise<void>;
   purchaseTopUp: (tokens: number) => Promise<void>;
   signOut: () => void;
@@ -478,6 +487,45 @@ export const useAppStore = create<AppStoreState>()(
       learningSyncRequestId: null,
       learningSyncError: null,
       remoteDataLoaded: false,
+      reportPayoffBaseline: null,
+      clearReportPayoffBaseline: () => {
+        set({ reportPayoffBaseline: null });
+      },
+      updateScanConsumption: async ({ scanId, consumptionStatus, consumedMenuItemSourceIds }) => {
+        const nextStatus = consumptionStatus ?? (consumedMenuItemSourceIds?.length ? 'consumed' : undefined);
+        if (nextStatus) {
+          set((state) => ({
+            scans: state.scans.map((scan) =>
+              scan.id === scanId ? { ...scan, consumptionStatus: nextStatus } : scan,
+            ),
+          }));
+        }
+
+        trackEvent('scan_consumption_updated', {
+          scan_id: scanId,
+          status: nextStatus ?? 'consumed',
+          menu_item_count: consumedMenuItemSourceIds?.length ?? 0,
+        });
+
+        if (!isLiveBackendConfigured || !get().authUser) {
+          return;
+        }
+
+        try {
+          await apiClient.updateScanConsumption({
+            scanId,
+            consumptionStatus,
+            consumedMenuItemSourceIds,
+          });
+        } catch (error) {
+          console.warn('[scan] consumption update failed', error);
+          showToast({
+            message: 'Could not save that just now',
+            detail: 'No worries — it will not affect your data.',
+            tone: 'error',
+          });
+        }
+      },
       cacheScanRecord: (scan) => {
         set((state) => ({
           scans: mergeById(state.scans, scan),
@@ -751,6 +799,8 @@ export const useAppStore = create<AppStoreState>()(
               customConditions: state.onboardingAnswers.customConditions,
               ingredientSensitivities: state.onboardingAnswers.ingredientSensitivities,
               customIngredientSensitivities: state.onboardingAnswers.customIngredientSensitivities,
+              foodCalibrations: state.onboardingAnswers.foodCalibrations ?? {},
+              lastBadMealText: state.onboardingAnswers.lastBadMealText?.trim() || undefined,
               symptoms: state.onboardingAnswers.symptoms,
               customSymptoms: state.onboardingAnswers.customSymptoms ?? [],
               symptomFrequency: state.onboardingAnswers.symptomFrequency,
@@ -885,7 +935,7 @@ export const useAppStore = create<AppStoreState>()(
         }
 
         if (state.billing.tokensRemaining <= 0) {
-          throw new Error('You are out of scan tokens.');
+          throw new Error('You are out of scans for this month. Your allowance refreshes at renewal.');
         }
 
         const scanStartedAt = now();
@@ -1144,10 +1194,19 @@ export const useAppStore = create<AppStoreState>()(
           source_type: existingScan.sourceType,
         });
       },
-      upsertDailyReport: async ({ localDate, gutSeverity, symptomTags = [], notes }) => {
+      upsertDailyReport: async ({ localDate, gutSeverity, symptomTags = [], notes, evidenceQuality }) => {
         const normalizedSymptomTags = gutSeverity === 0
           ? ['None']
           : symptomTags.filter((tag) => tag.trim().toLowerCase() !== 'none');
+        // Snapshot the pre-report state so the payoff screen can show what this
+        // report changed once the learning recompute lands.
+        set((currentState) => ({
+          reportPayoffBaseline: buildPayoffBaseline({
+            localDate,
+            gutScore: currentState.profile?.stomachProfile.metadata.gutScore ?? null,
+            insights: currentState.insights,
+          }),
+        }));
         const authUser = get().authUser;
         if (isLiveBackendConfigured && authUser) {
           const state = get();
@@ -1160,6 +1219,7 @@ export const useAppStore = create<AppStoreState>()(
               localDate,
               gutSeverity,
               symptomTags: normalizedSymptomTags,
+              evidenceQuality,
               notes: notes?.trim() || undefined,
               createdAt: existing?.createdAt ?? timestamp,
               updatedAt: timestamp,
@@ -1187,6 +1247,7 @@ export const useAppStore = create<AppStoreState>()(
                 gutSeverity,
                 symptomTags: normalizedSymptomTags,
                 notes,
+                evidenceQuality,
               });
               const learningSyncError =
                 response.learningSyncStatus === 'failed'
@@ -1212,6 +1273,20 @@ export const useAppStore = create<AppStoreState>()(
                 source_id: response.report.id,
                 status: response.learningSyncStatus,
               });
+
+              const components = response.report.dailyScoreComponents;
+              if (components && components.evidenceWeight > 0) {
+                const predictedRisk = 100 - components.foodExposure;
+                trackEvent('prediction_outcome_recorded', {
+                  local_date: localDate,
+                  reported_severity: gutSeverity,
+                  evidence_weight: components.evidenceWeight,
+                  evidence_quality: evidenceQuality ?? 'typical',
+                  predicted_risk: predictedRisk,
+                  predicted_risk_band: predictedRisk >= 64 ? 'high' : predictedRisk >= 37 ? 'medium' : 'low',
+                  false_reassurance: gutSeverity >= 7 && predictedRisk <= 36,
+                });
+              }
 
               if (learningIsQueued) {
                 try {

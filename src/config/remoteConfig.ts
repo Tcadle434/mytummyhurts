@@ -14,6 +14,8 @@ export const remoteConfig = {
     liveSupabase: shouldUseLiveBackend,
     livePostHog: shouldUsePostHog,
     liveRevenueCat: isRevenueCatConfigured,
-    livePush: false,
+    // Daily check-ins are local notifications; remote push is the win-back
+    // leg for lapsed users (scheduled-maintenance only targets stale users).
+    livePush: true,
   },
 };

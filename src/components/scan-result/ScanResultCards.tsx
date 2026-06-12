@@ -1,4 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
+import { ReactNode } from "react";
+import Svg, { Circle } from "react-native-svg";
 import { LayoutAnimation, Platform, Pressable, StyleSheet, Text, UIManager, View } from "react-native";
 
 import { InfoPill } from "../common/UI";
@@ -34,6 +36,8 @@ export type MenuTierItem = {
 	scoringConfidence?: "low" | "medium" | "high";
 	dietEvaluations?: DietEvaluation[];
 	saferSwap?: string;
+	sourceItemId?: string;
+	consumed?: boolean;
 };
 
 export function colorForLevel(level: RiskLevel) {
@@ -42,16 +46,298 @@ export function colorForLevel(level: RiskLevel) {
 	return tokens.color.status.risk.low.tint;
 }
 
+const PERSONAL_EVIDENCE = new Set<ScoreContributor["evidence"]>(["profile", "learning"]);
+
+export function isPersonalContributor(contributor: ScoreContributor) {
+	return PERSONAL_EVIDENCE.has(contributor.evidence);
+}
+
+// Personalization receipts: contributors derived from the user's own profile or
+// learned history are pinned ahead of generic rubric drivers so every result
+// visibly reflects what the user told us.
+export function prioritizeScoreContributors(
+	contributors: ScoreContributor[] | undefined,
+	limit = 4,
+) {
+	return [...(contributors ?? [])]
+		.filter((contributor) => contributor.key !== "base_menu_risk")
+		.sort((left, right) => {
+			const leftPersonal = isPersonalContributor(left) ? 1 : 0;
+			const rightPersonal = isPersonalContributor(right) ? 1 : 0;
+			return rightPersonal - leftPersonal || Math.abs(right.points) - Math.abs(left.points);
+		})
+		.slice(0, limit);
+}
+
+export function ScoreDriversList({
+	contributors,
+	accentColor,
+	title = "Score drivers",
+	compact = false,
+}: {
+	contributors: ScoreContributor[];
+	accentColor: string;
+	title?: string | null;
+	compact?: boolean;
+}) {
+	if (!contributors.length) {
+		return null;
+	}
+
+	if (compact) {
+		// Weight hierarchy via the app's existing meter idiom: a thin tinted
+		// track under each driver, filled by its share of the largest one.
+		// Thin bars make 100% vs 70% legible; background floods don't.
+		const maxMagnitude = Math.max(...contributors.map((driver) => Math.abs(driver.points)), 1);
+		return (
+			<View style={styles.driverList}>
+				{title ? <Text style={styles.insightLabel}>{title}</Text> : null}
+				{contributors.map((driver) => {
+					const magnitude = Math.abs(driver.points);
+					const tone =
+						driver.points < 0
+							? tokens.color.status.risk.low
+							: magnitude >= 15
+								? tokens.color.status.risk.high
+								: magnitude >= 8
+									? tokens.color.status.risk.medium
+									: tokens.color.status.risk.low;
+					const fillPercent = Math.max(6, Math.round((magnitude / maxMagnitude) * 100));
+					const pointsLabel = `${driver.points > 0 ? "+" : ""}${driver.points}`;
+					return (
+						<View key={`${driver.key}-${driver.source}`} style={styles.driverRow}>
+							<View style={styles.scoreDriverLabelRow}>
+								<View style={[styles.driverPointsCircle, { borderColor: tone.tint }]}>
+									<Text style={[styles.driverPoints, { color: tone.tint }]}>{pointsLabel}</Text>
+								</View>
+								<Text style={styles.scoreDriverLabel} numberOfLines={1}>
+									{driver.label}
+								</Text>
+								{isPersonalContributor(driver) ? (
+									<View style={styles.profileChip}>
+										<Ionicons name="person" size={9} color={palette.primary} />
+										<Text style={styles.profileChipText}>
+											{driver.evidence === "learning" ? "Learned" : "Your profile"}
+										</Text>
+									</View>
+								) : null}
+							</View>
+							{driver.source ? (
+								<Text style={styles.driverSource} numberOfLines={1}>
+									{driver.source}
+								</Text>
+							) : null}
+							<View style={styles.driverTrack}>
+								<View
+									style={[
+										styles.driverTrackFill,
+										{ width: `${fillPercent}%`, backgroundColor: tone.tint },
+									]}
+								/>
+							</View>
+						</View>
+					);
+				})}
+			</View>
+		);
+	}
+
+	return (
+		<View style={styles.scoreDrivers}>
+			{title ? <Text style={styles.insightLabel}>{title}</Text> : null}
+			{contributors.map((driver) => {
+				const driverColor = driver.points >= 0 ? accentColor : palette.primary;
+				const pointsLabel = `${driver.points > 0 ? "+" : ""}${driver.points}`;
+				return (
+					<View key={`${driver.key}-${driver.source}`} style={styles.scoreDriverRow}>
+						<Text style={[styles.scoreDriverPoints, { color: driverColor }]}>{pointsLabel}</Text>
+						<View style={styles.scoreDriverBody}>
+							<View style={styles.scoreDriverLabelRow}>
+								<Text style={styles.scoreDriverLabel}>{driver.label}</Text>
+								{isPersonalContributor(driver) ? (
+									<View style={styles.profileChip}>
+										<Ionicons name="person" size={9} color={palette.primary} />
+										<Text style={styles.profileChipText}>
+											{driver.evidence === "learning" ? "Learned" : "Your profile"}
+										</Text>
+									</View>
+								) : null}
+							</View>
+							<Text style={styles.scoreDriverReason}>{driver.reason}</Text>
+						</View>
+					</View>
+				);
+			})}
+		</View>
+	);
+}
+
+export function WhyThisScoreCard({
+	contributors,
+	level,
+	impactSummary,
+}: {
+	contributors?: ScoreContributor[];
+	level: RiskLevel;
+	impactSummary?: string;
+}) {
+	const prioritized = prioritizeScoreContributors(contributors, 4);
+	if (!prioritized.length) {
+		return null;
+	}
+
+	const personalLabels = prioritized
+		.filter(isPersonalContributor)
+		.map((contributor) => contributor.label.toLowerCase());
+	const accentColor = colorForLevel(level);
+
+	return (
+		<View style={styles.resultCard}>
+			<Text style={styles.cardTitle}>Why this score for you</Text>
+			{personalLabels.length > 0 ? (
+				<View style={styles.receiptRow}>
+					<Ionicons name="sparkles" size={14} color={palette.primary} />
+					<Text style={styles.receiptText}>
+						Because you told us: {personalLabels.join(", ")}
+					</Text>
+				</View>
+			) : null}
+			<ScoreDriversList contributors={prioritized} accentColor={accentColor} title={null} compact />
+			{impactSummary ? <Text style={styles.scoreDriverReason}>{impactSummary}</Text> : null}
+		</View>
+	);
+}
+
+function ScoreArc({ score, level }: { score: number; level: RiskLevel }) {
+	const size = 104;
+	const strokeWidth = 9;
+	const radius = (size - strokeWidth) / 2;
+	const center = size / 2;
+	const circumference = 2 * Math.PI * radius;
+	const clamped = Math.max(0, Math.min(100, score));
+	const dashOffset = circumference - (circumference * clamped) / 100;
+	const tone = colorForLevel(level);
+
+	return (
+		<View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+			<Svg width={size} height={size}>
+				<Circle cx={center} cy={center} r={radius} stroke={tokens.color.chart.track} strokeWidth={strokeWidth} fill="transparent" />
+				<Circle
+					cx={center}
+					cy={center}
+					r={radius}
+					stroke={tone}
+					strokeWidth={strokeWidth}
+					strokeDasharray={`${circumference} ${circumference}`}
+					strokeDashoffset={dashOffset}
+					strokeLinecap="round"
+					fill="transparent"
+					rotation={-90}
+					origin={`${center}, ${center}`}
+				/>
+			</Svg>
+			<View style={styles.scoreArcCenter}>
+				<Text style={[styles.scoreArcValue, { color: tone }]}>{score}</Text>
+				<Text style={styles.scoreArcScale}>/100</Text>
+			</View>
+		</View>
+	);
+}
+
+export type HeroConditionChip = { name: string; level: RiskLevel };
+
+// Consolidated result hero shared by food, grocery, and menu results: photo +
+// identity up top, decision block below. Menu results omit the arc and lead
+// with a ranking verdict instead.
+export function ScanHeroCard({
+	title,
+	meta,
+	image,
+	score,
+	level,
+	verdict,
+	conditionChips,
+}: {
+	title: string;
+	meta?: string;
+	image?: ReactNode;
+	score?: number;
+	level?: RiskLevel;
+	verdict?: string;
+	conditionChips?: HeroConditionChip[];
+}) {
+	const showArc = typeof score === "number" && Boolean(level);
+	const levelLabel = level ? `${level.charAt(0).toUpperCase()}${level.slice(1)} risk` : null;
+
+	return (
+		<View style={styles.resultCard}>
+			<View style={styles.heroIdentityRow}>
+				{image ? <View style={styles.heroImageSlot}>{image}</View> : null}
+				<View style={styles.heroIdentityCopy}>
+					<Text style={styles.heroCardTitle} numberOfLines={3}>
+						{title}
+					</Text>
+					{meta ? <Text style={styles.heroCardMeta}>{meta}</Text> : null}
+				</View>
+			</View>
+
+			{showArc || verdict ? <View style={styles.heroDivider} /> : null}
+
+			{showArc ? (
+				<View style={styles.heroScoreBlock}>
+					<ScoreArc score={score!} level={level!} />
+					<View style={styles.heroVerdictCopy}>
+						<View style={styles.heroLevelRow}>
+							<View style={[styles.heroLevelDot, { backgroundColor: colorForLevel(level!) }]} />
+							<Text style={[styles.heroLevelText, { color: colorForLevel(level!) }]}>{levelLabel}</Text>
+						</View>
+						{verdict ? <Text style={styles.heroVerdict}>{verdict}</Text> : null}
+					</View>
+				</View>
+			) : verdict ? (
+				<Text style={styles.heroVerdict}>{verdict}</Text>
+			) : null}
+
+			{conditionChips && conditionChips.length > 0 ? (
+				<View style={styles.heroChipRow}>
+					{conditionChips.map((chip) => {
+						const tone =
+							chip.level === "high"
+								? tokens.color.status.risk.high
+								: chip.level === "medium"
+									? tokens.color.status.risk.medium
+									: tokens.color.status.risk.low;
+						return (
+							<View key={chip.name} style={[styles.heroConditionChip, { backgroundColor: tone.background }]}>
+								<Text style={[styles.heroConditionChipName, { color: tone.foreground }]} numberOfLines={1}>
+									{chip.name}
+								</Text>
+								<Text style={[styles.heroConditionChipLevel, { color: tone.foreground }]}>
+									{chip.level.charAt(0).toUpperCase() + chip.level.slice(1)}
+								</Text>
+							</View>
+						);
+					})}
+				</View>
+			) : null}
+		</View>
+	);
+}
+
 export function RiskHeroCard({
 	eyebrow,
 	title,
 	score,
 	level,
+	levelLabelOverride,
+	cautionNote,
 }: {
 	eyebrow: string;
 	title?: string;
 	score: number;
 	level: RiskLevel;
+	levelLabelOverride?: string;
+	cautionNote?: string;
 }) {
 	const color = colorForLevel(level);
 	const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
@@ -64,7 +350,9 @@ export function RiskHeroCard({
 				<Text style={[styles.heroScore, { color }]}>{score}</Text>
 				<View style={styles.heroScoreTrailing}>
 					<Text style={styles.heroScale}>/ 100</Text>
-					<Text style={[styles.heroLevelWord, { color }]}>{levelLabel} risk</Text>
+					<Text style={[styles.heroLevelWord, { color }]}>
+						{levelLabelOverride ?? `${levelLabel} risk`}
+					</Text>
 				</View>
 			</View>
 			<View style={styles.meterTrack}>
@@ -83,6 +371,7 @@ export function RiskHeroCard({
 				<Text style={styles.meterScaleLabel}>Medium</Text>
 				<Text style={styles.meterScaleLabel}>High</Text>
 			</View>
+			{cautionNote ? <Text style={styles.cautionNote}>{cautionNote}</Text> : null}
 		</View>
 	);
 }
@@ -94,7 +383,14 @@ export function IngredientsBreakdownCard({
 	title?: string;
 	ingredients?: ScanIngredient[];
 }) {
-	const safeIngredients = ingredients ?? [];
+	// Display-only noise filter: zero-signal additives add scroll, not insight.
+	const NOISE_INGREDIENTS = new Set([
+		"salt", "water", "vitamin e", "vitamin c", "vitamin d", "citric acid", "niacinamide",
+		"sea salt", "natural vitamin e", "mixed tocopherols",
+	]);
+	const safeIngredients = (ingredients ?? []).filter(
+		(item) => !NOISE_INGREDIENTS.has(item.name.trim().toLowerCase()),
+	);
 	const groups: { level: RiskLevel; label: string; items: ScanIngredient[] }[] = [
 		{ level: "high", label: "Higher risk", items: safeIngredients.filter((i) => i.level === "high") },
 		{ level: "medium", label: "Watch for", items: safeIngredients.filter((i) => i.level === "medium") },
@@ -171,35 +467,38 @@ function IngredientGroup({
 					{items.length} item{items.length === 1 ? "" : "s"}
 				</Text>
 			</View>
-			<View style={styles.ingredientCards}>
+			<View style={styles.ingredientChipWrap}>
 				{items.map((item) => (
-					<IngredientCard key={item.name} ingredient={item} />
+					<IngredientChip key={item.name} ingredient={item} />
 				))}
 			</View>
 		</View>
 	);
 }
 
-function IngredientCard({ ingredient }: { ingredient: ScanIngredient }) {
+function IngredientChip({ ingredient }: { ingredient: ScanIngredient }) {
 	const color = colorForLevel(ingredient.level);
 	return (
-		<View style={styles.ingredientCard}>
-			<View style={[styles.ingredientCardStripe, { backgroundColor: color }]} />
-			<View style={styles.ingredientCardBody}>
-				<Text style={styles.ingredientCardName}>{ingredient.name}</Text>
-			</View>
+		<View style={styles.ingredientChip}>
+			<View style={[styles.ingredientChipDot, { backgroundColor: color }]} />
+			<Text style={styles.ingredientChipName} numberOfLines={1}>
+				{ingredient.name}
+			</Text>
 		</View>
 	);
 }
+
 
 export function MenuRankingCard({
 	items,
 	expandedId,
 	onToggle,
+	onConsume,
 }: {
 	items: MenuTierItem[];
 	expandedId: string | null;
 	onToggle: (id: string) => void;
+	onConsume?: (item: MenuTierItem) => void;
 }) {
 	if (items.length === 0) {
 		return null;
@@ -220,6 +519,7 @@ export function MenuRankingCard({
 					<MenuRow
 						key={item.id}
 						item={item}
+						onConsume={onConsume}
 						expanded={expandedId === item.id}
 						onToggle={() => onToggle(item.id)}
 					/>
@@ -270,15 +570,15 @@ function MenuRow({
 	item,
 	expanded,
 	onToggle,
+	onConsume,
 }: {
 	item: MenuTierItem;
 	expanded: boolean;
 	onToggle: () => void;
+	onConsume?: (item: MenuTierItem) => void;
 }) {
 	const riskColor = colorForLevel(item.level);
-	const scoreDrivers = (item.scoreContributors ?? [])
-		.filter((driver) => driver.key !== "base_menu_risk" && driver.key !== "profile_context")
-		.slice(0, 4);
+	const scoreDrivers = prioritizeScoreContributors(item.scoreContributors, 4);
 	const hasExpandedContent =
 		Boolean(item.insight) ||
 		scoreDrivers.length > 0 ||
@@ -332,22 +632,7 @@ function MenuRow({
 						</View>
 					) : null}
 					{scoreDrivers.length > 0 ? (
-						<View style={styles.scoreDrivers}>
-							<Text style={styles.insightLabel}>Score drivers</Text>
-							{scoreDrivers.map((driver) => {
-								const driverColor = driver.points >= 0 ? riskColor : palette.primary;
-								const pointsLabel = `${driver.points > 0 ? "+" : ""}${driver.points}`;
-								return (
-									<View key={`${driver.key}-${driver.source}`} style={styles.scoreDriverRow}>
-										<Text style={[styles.scoreDriverPoints, { color: driverColor }]}>{pointsLabel}</Text>
-										<View style={styles.scoreDriverBody}>
-											<Text style={styles.scoreDriverLabel}>{driver.label}</Text>
-											<Text style={styles.scoreDriverReason}>{driver.reason}</Text>
-										</View>
-									</View>
-								);
-							})}
-						</View>
+						<ScoreDriversList contributors={scoreDrivers} accentColor={riskColor} />
 					) : null}
 					{item.dietEvaluations && item.dietEvaluations.length > 0 ? (
 						<View style={styles.scoreDrivers}>
@@ -375,6 +660,29 @@ function MenuRow({
 							<Ionicons name="chatbubble-ellipses-outline" size={16} color={palette.primary} />
 							<Text style={styles.saferSwapText}>{item.saferSwap}</Text>
 						</View>
+					) : null}
+					{onConsume ? (
+						<Pressable
+							accessibilityRole="button"
+							disabled={item.consumed}
+							onPress={() => onConsume(item)}
+							style={({ pressed }) => [
+								styles.consumeButton,
+								item.consumed && styles.consumeButtonDone,
+								pressed && !item.consumed && { opacity: 0.85 },
+							]}
+						>
+							<Ionicons
+								name={item.consumed ? "checkmark-circle" : "restaurant-outline"}
+								size={15}
+								color={item.consumed ? tokens.color.status.risk.low.foreground : palette.primary}
+							/>
+							<Text
+								style={[styles.consumeButtonText, item.consumed && styles.consumeButtonTextDone]}
+							>
+								{item.consumed ? "Logged as eaten" : "I ordered this"}
+							</Text>
+						</Pressable>
 					) : null}
 				</View>
 			) : null}
@@ -450,6 +758,12 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.semibold,
 		fontSize: 14,
 		lineHeight: 18,
+	},
+	cautionNote: {
+		color: tokens.color.status.risk.medium.foreground,
+		fontFamily: type.body.medium,
+		fontSize: 12,
+		lineHeight: 17,
 	},
 	heroLevelWord: {
 		fontFamily: type.body.bold,
@@ -651,11 +965,189 @@ const styles = StyleSheet.create({
 		flex: 1,
 		gap: 1,
 	},
+	heroIdentityRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.md,
+	},
+	heroImageSlot: {
+		width: 64,
+		height: 64,
+		borderRadius: 18,
+		overflow: "hidden",
+	},
+	heroIdentityCopy: {
+		flex: 1,
+		gap: 3,
+	},
+	heroCardTitle: {
+		color: palette.text,
+		fontFamily: type.body.bold,
+		fontSize: 20,
+		lineHeight: 25,
+		letterSpacing: -0.3,
+	},
+	heroCardMeta: {
+		color: palette.textMuted,
+		fontFamily: type.body.medium,
+		fontSize: 12,
+		lineHeight: 16,
+	},
+	heroDivider: {
+		height: 1,
+		backgroundColor: tokens.color.border.subtle,
+	},
+	heroScoreBlock: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.md,
+	},
+	heroVerdictCopy: {
+		flex: 1,
+		gap: 4,
+	},
+	heroLevelRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+	},
+	heroLevelDot: {
+		width: 8,
+		height: 8,
+		borderRadius: 4,
+	},
+	heroLevelText: {
+		fontFamily: type.body.bold,
+		fontSize: 13,
+		lineHeight: 17,
+		textTransform: "uppercase",
+		letterSpacing: 0.4,
+	},
+	heroVerdict: {
+		color: palette.text,
+		fontFamily: type.body.semibold,
+		fontSize: 16,
+		lineHeight: 22,
+	},
+	heroChipRow: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: spacing.xs,
+	},
+	heroConditionChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+		borderRadius: 999,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 5,
+		maxWidth: "100%",
+	},
+	heroConditionChipName: {
+		fontFamily: type.body.semibold,
+		fontSize: 12,
+		lineHeight: 16,
+		flexShrink: 1,
+	},
+	heroConditionChipLevel: {
+		fontFamily: type.body.bold,
+		fontSize: 12,
+		lineHeight: 16,
+	},
+	scoreArcCenter: {
+		position: "absolute",
+		alignItems: "center",
+	},
+	scoreArcValue: {
+		fontFamily: type.body.bold,
+		fontSize: 27,
+		lineHeight: 31,
+	},
+	scoreArcScale: {
+		color: palette.textMuted,
+		fontFamily: type.body.medium,
+		fontSize: 10,
+		lineHeight: 13,
+	},
+	driverList: {
+		gap: spacing.md,
+	},
+	driverRow: {
+		gap: 5,
+	},
+	driverPointsCircle: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		borderWidth: 1.5,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	driverPoints: {
+		fontFamily: type.body.bold,
+		fontSize: 12,
+		lineHeight: 16,
+	},
+	driverSource: {
+		marginLeft: 44,
+		color: palette.textMuted,
+		fontFamily: type.body.regular,
+		fontSize: 12,
+		lineHeight: 16,
+	},
+	driverTrack: {
+		marginLeft: 44,
+		height: 4,
+		borderRadius: 2,
+		backgroundColor: tokens.color.chart.track,
+		overflow: "hidden",
+	},
+	driverTrackFill: {
+		height: "100%",
+		borderRadius: 2,
+	},
+	scoreDriverLabelRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		flexWrap: "wrap",
+	},
 	scoreDriverLabel: {
 		color: palette.text,
 		fontFamily: type.body.semibold,
 		fontSize: 13,
 		lineHeight: 18,
+	},
+	profileChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 3,
+		paddingHorizontal: spacing.xs,
+		paddingVertical: 1,
+		borderRadius: 999,
+		backgroundColor: palette.sageSoft,
+	},
+	profileChipText: {
+		color: palette.primary,
+		fontFamily: type.body.semibold,
+		fontSize: 10,
+		lineHeight: 14,
+	},
+	receiptRow: {
+		flexDirection: "row",
+		alignItems: "flex-start",
+		gap: spacing.xs,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+		borderRadius: 12,
+		backgroundColor: palette.sageSoft,
+	},
+	receiptText: {
+		flex: 1,
+		color: palette.primaryDark,
+		fontFamily: type.body.medium,
+		fontSize: 12,
+		lineHeight: 17,
 	},
 	scoreDriverReason: {
 		color: palette.textMuted,
@@ -671,6 +1163,31 @@ const styles = StyleSheet.create({
 		backgroundColor: tokens.color.surface.card.success,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.xs,
+	},
+	consumeButton: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "center",
+		gap: spacing.xs,
+		borderRadius: 999,
+		borderWidth: 1,
+		borderColor: palette.primary,
+		paddingVertical: spacing.xs,
+		paddingHorizontal: spacing.sm,
+		alignSelf: "flex-start",
+	},
+	consumeButtonDone: {
+		borderColor: tokens.color.status.risk.low.tint,
+		backgroundColor: tokens.color.status.risk.low.background,
+	},
+	consumeButtonText: {
+		color: palette.primary,
+		fontFamily: type.body.semibold,
+		fontSize: 12,
+		lineHeight: 16,
+	},
+	consumeButtonTextDone: {
+		color: tokens.color.status.risk.low.foreground,
 	},
 	saferSwapText: {
 		flex: 1,
@@ -751,6 +1268,36 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.semibold,
 		fontSize: 12,
 		lineHeight: 16,
+	},
+	ingredientChipWrap: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: spacing.xs,
+	},
+	ingredientChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+		borderRadius: 999,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.app.default,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 6,
+		maxWidth: "100%",
+	},
+	ingredientChipDot: {
+		width: 7,
+		height: 7,
+		borderRadius: 4,
+	},
+	ingredientChipName: {
+		color: palette.text,
+		fontFamily: type.body.medium,
+		fontSize: 13,
+		lineHeight: 17,
+		textTransform: "capitalize",
+		flexShrink: 1,
 	},
 	ingredientCards: {
 		gap: spacing.xs,

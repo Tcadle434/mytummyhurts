@@ -1,11 +1,13 @@
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Linking, StyleSheet } from 'react-native';
 
 import { AppScreen } from '../../components/common/UI';
 import { env } from '../../config/env';
+import { normalizeOnboardingAnswers } from '../../data/onboarding';
 import { trackEvent } from '../../services/analytics';
+import { computeGutScoreState } from '../../services/ai/scoring';
 import { apiClient } from '../../services/api/client';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
@@ -13,7 +15,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { spacing } from '../../theme';
 import { RootStackParamList, OnboardingStackParamList } from '../../navigation/types';
 import { isEntitledSubscriptionStatus } from '../../features/access/appAccess';
-import { PaywallOfferContent } from './PaywallOfferContent';
+import { deriveStartingSuspects, hasCaseFileSignal } from '../../features/paywall/startingSuspects';
+import { PaywallOfferContent, type PaywallCaseFile } from './PaywallOfferContent';
 import {
   RevenueCatPurchaseCancelledError,
   canUseRevenueCatPurchases,
@@ -34,12 +37,38 @@ export function PaywallScreen({ navigation }: Props) {
   const applyBillingState = useAppStore((state) => state.applyBillingState);
   const refreshRemoteState = useAppStore((state) => state.refreshRemoteState);
   const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
+  const persistedAnswers = useAppStore((state) => state.onboardingAnswers);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [busyIntent, setBusyIntent] = useState<'subscribe' | 'restore' | null>(null);
   const [planDisplay, setPlanDisplay] = useState<RevenueCatPlanDisplay>({});
 
+  const caseFile = useMemo<PaywallCaseFile | null>(() => {
+    const answers = normalizeOnboardingAnswers(persistedAnswers);
+    if (!hasCaseFileSignal(answers)) {
+      return null;
+    }
+
+    const startingGutScore = computeGutScoreState({
+      answers,
+      insights: [],
+      scans: [],
+      dailyReports: [],
+    });
+
+    return {
+      startingScore: startingGutScore.currentScore,
+      suspects: deriveStartingSuspects(answers, 3),
+      conditionCount: answers.conditions.length + answers.customConditions.length,
+    };
+  }, [persistedAnswers]);
+
   useEffect(() => {
-    trackEvent('paywall_viewed');
+    trackEvent('paywall_viewed', {
+      has_case_file: Boolean(caseFile),
+      suspect_count: caseFile?.suspects.length ?? 0,
+    });
+    // Fire once per mount; the case file is computed from answers persisted before this screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -147,6 +176,7 @@ export function PaywallScreen({ navigation }: Props) {
         busy={busyIntent !== null}
         statusMessage={statusMessage}
         planDisplay={planDisplay}
+        caseFile={caseFile}
         onSelectPlan={selectPlan}
         onContinue={() => void openPaywall('subscribe')}
         onRestore={() => void openPaywall('restore')}
@@ -156,6 +186,7 @@ export function PaywallScreen({ navigation }: Props) {
         onPrivacy={() => {
           void openLegalSurface(env.privacyUrl, () => rootNavigation.navigate('LegalDocument', { document: 'privacy' }));
         }}
+        onScience={() => rootNavigation.navigate('LegalDocument', { document: 'science' })}
       />
     </AppScreen>
   );

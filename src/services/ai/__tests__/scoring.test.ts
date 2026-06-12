@@ -18,6 +18,8 @@ const baseAnswers: OnboardingAnswers = {
   customConditions: [],
   ingredientSensitivities: [],
   customIngredientSensitivities: [],
+  foodCalibrations: {},
+  lastBadMealText: '',
   symptoms: [],
   customSymptoms: [],
   mealContexts: [],

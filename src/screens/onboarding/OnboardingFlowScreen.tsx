@@ -34,6 +34,7 @@ import {
 	SectionCard,
 } from "../../components/common/UI";
 import {
+	calibrationFoodOptions,
 	dietPreferenceKeyFromLabel,
 	dietPreferenceLabelFromKey,
 	noSpecificDietOption,
@@ -54,6 +55,7 @@ import { type PhaseDiscoveryState } from "./components/PhaseDiscoveryGraphic";
 import { OnboardingCenterGraphic } from "./components/OnboardingCenterGraphic";
 import { OnboardingPipCompanion } from "./components/OnboardingPipCompanion";
 import { OnboardingProgressBar } from "./components/OnboardingProgressBar";
+import { CalibrationDeck } from "./components/CalibrationDeck";
 import { CommitmentHoldCard } from "./components/CommitmentHoldCard";
 import { KnowBeforeEatDemo, type KnowBeforeEatStage } from "./components/KnowBeforeEatDemo";
 import { PersonalHealingApproach } from "./components/PersonalHealingApproach";
@@ -801,29 +803,60 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 
 		const blockDelay = STAGGER_BASE_MS + STAGGER_STEP_MS * 2;
 
+		if (step.type === "calibration") {
+			return (
+				<CalibrationDeck
+					foods={calibrationFoodOptions}
+					ratings={answers.foodCalibrations}
+					onRate={(food, rating) => {
+						const next = { ...answers.foodCalibrations };
+						if (rating === null) {
+							delete next[food];
+						} else {
+							next[food] = rating;
+						}
+						updateField("foodCalibrations", next);
+					}}
+				/>
+			);
+		}
+
 		if (
 			step.type === "text_input" &&
-			(step.field === "displayName" || step.field === "favoriteFoodsToReintroduce")
+			(step.field === "displayName" ||
+				step.field === "favoriteFoodsToReintroduce" ||
+				step.field === "lastBadMealText")
 		) {
 			const value =
-				step.field === "displayName" ? answers.displayName : favoriteFoodsToReintroduce;
+				step.field === "displayName"
+					? answers.displayName
+					: step.field === "lastBadMealText"
+					? answers.lastBadMealText
+					: favoriteFoodsToReintroduce;
 			return (
 				<StaggerItem delayMs={blockDelay}>
 					<SectionCard>
 						<InputField
 							value={value}
+							multiline={step.field === "lastBadMealText"}
 							placeholder={
 								step.field === "displayName"
 									? "Enter a display name"
+									: step.field === "lastBadMealText"
+									? "Chicken alfredo with garlic bread, glass of red wine..."
 									: "pizza, coffee, pasta"
 							}
 							onChangeText={(nextValue) =>
 								updateField(
-									step.field as "displayName" | "favoriteFoodsToReintroduce",
+									step.field as
+										| "displayName"
+										| "favoriteFoodsToReintroduce"
+										| "lastBadMealText",
 									nextValue
 								)
 							}
 						/>
+						{step.helper ? <Text style={styles.previewNote}>{step.helper}</Text> : null}
 					</SectionCard>
 				</StaggerItem>
 			);

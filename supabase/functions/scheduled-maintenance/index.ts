@@ -107,10 +107,14 @@ async function processDailyReportReminders(limit: number) {
   const admin = createAdminClient();
   const localDate = yesterdayUtcDate();
   const workerId = `scheduled-maintenance:${crypto.randomUUID()}`;
+  // Active users get local daily check-ins scheduled on-device; remote push is
+  // reserved for win-back so nobody gets double-notified.
+  const lapsedCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
   const { data: userRows, error: usersError } = await admin
     .from('users')
     .select('id')
     .in('subscription_status', ['trialing', 'active', 'in_grace'])
+    .or(`last_seen_at.lt.${lapsedCutoff},last_seen_at.is.null`)
     .order('last_seen_at', { ascending: false })
     .limit(limit);
 
