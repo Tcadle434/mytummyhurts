@@ -7,6 +7,7 @@ import { AppScreen } from '../../components/common/UI';
 import { env } from '../../config/env';
 import { normalizeOnboardingAnswers } from '../../data/onboarding';
 import { trackEvent } from '../../services/analytics';
+import { showToast } from '../../services/toast';
 import { computeGutScoreState } from '../../services/ai/scoring';
 import { apiClient } from '../../services/api/client';
 import { queryClient } from '../../services/query/client';
@@ -140,6 +141,13 @@ export function PaywallScreen({ navigation }: Props) {
           console.warn('[paywall] remote refresh failed after verified purchase', error);
         });
         setOnboardingStage('complete');
+        if (intent === 'restore') {
+          showToast({
+            message: 'Subscription restored',
+            detail: 'Welcome back — your plan is active again.',
+            tone: 'success',
+          });
+        }
         trackEvent(intent === 'restore' ? 'purchase_restored' : 'subscription_started', {
           plan_code: response.billing.selectedPlan,
           product_id: snapshot.productId,
@@ -151,6 +159,13 @@ export function PaywallScreen({ navigation }: Props) {
       }
 
       stageEntitlementAccess(snapshot.status);
+      if (intent === 'restore') {
+        showToast({
+          message: 'Subscription restored',
+          detail: 'Welcome back — your plan is active again.',
+          tone: 'success',
+        });
+      }
       trackEvent(intent === 'restore' ? 'purchase_restored' : 'subscription_started', {
         plan_code: snapshot.planCode ?? billing.selectedPlan,
         product_id: snapshot.productId,

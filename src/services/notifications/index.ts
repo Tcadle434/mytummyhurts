@@ -66,6 +66,20 @@ export async function registerDailyReportNotifications() {
   return pushToken;
 }
 
+export async function getNotificationPermissionState(): Promise<{
+  granted: boolean;
+  canAskAgain: boolean;
+}> {
+  if (Platform.OS !== 'ios') {
+    return { granted: false, canAskAgain: false };
+  }
+
+  const current = await Notifications.getPermissionsAsync();
+  const granted =
+    current.granted || current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+  return { granted, canAskAgain: current.canAskAgain };
+}
+
 // Requests permission at most once per install (the iOS dialog only shows
 // once anyway; afterwards Settings is the only path). Returns granted state.
 export async function ensureNotificationPermission(): Promise<boolean> {

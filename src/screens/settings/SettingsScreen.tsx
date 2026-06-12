@@ -42,6 +42,7 @@ import {
   getDailyReportNotificationStatus,
   registerDailyReportNotifications,
   setDailyCheckinTimePreference,
+  getNotificationPermissionState,
 } from '../../services/notifications';
 import { useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
@@ -133,6 +134,7 @@ export function SettingsScreen() {
   const [busySection, setBusySection] = useState<BusySection>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationsBlocked, setNotificationsBlocked] = useState(false);
   const [checkinHour, setCheckinHour] = useState<number | null>(null);
   const [customModalCategory, setCustomModalCategory] = useState<CustomCategory | null>(null);
   const [customEntry, setCustomEntry] = useState('');
@@ -165,6 +167,11 @@ export function SettingsScreen() {
       .then(setNotificationsEnabled)
       .catch(() => {
         setNotificationsEnabled(false);
+      });
+    void getNotificationPermissionState()
+      .then((permission) => setNotificationsBlocked(!permission.granted && !permission.canAskAgain))
+      .catch(() => {
+        setNotificationsBlocked(false);
       });
     void getDailyCheckinTimePreference()
       .then((preference) => setCheckinHour(preference.hour))
@@ -360,8 +367,19 @@ export function SettingsScreen() {
     setBusySection('notifications');
     setStatusMessage(null);
     try {
+      // Permanently denied: the iOS dialog can never reappear, so the only
+      // working path is the system Settings page for this app.
+      const permission = await getNotificationPermissionState();
+      if (!permission.granted && !permission.canAskAgain) {
+        setNotificationsBlocked(true);
+        setStatusMessage('Notifications are turned off in iOS Settings — flip them on there and come back.');
+        await Linking.openSettings();
+        return;
+      }
+
       await registerDailyReportNotifications();
       setNotificationsEnabled(true);
+      setNotificationsBlocked(false);
       setStatusMessage('Daily report reminders are enabled.');
     } catch (error) {
       setNotificationsEnabled(false);
@@ -523,9 +541,11 @@ export function SettingsScreen() {
               label={
                 busySection === 'notifications'
                   ? 'Enabling…'
-                  : notificationsEnabled
-                    ? 'Refresh access'
-                    : 'Enable reminders'
+                  : notificationsBlocked
+                    ? 'Open iOS Settings'
+                    : notificationsEnabled
+                      ? 'Refresh access'
+                      : 'Enable reminders'
               }
               onPress={() => void handleEnableNotifications()}
               disabled={busySection !== null}

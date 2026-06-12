@@ -21,7 +21,7 @@ const PLAN_COPY: Record<
 	annual: {
 		title: "Yearly",
 		price: "$34.99/yr",
-		detail: "Best value for healing over time",
+		detail: "About $0.67/week, billed once a year",
 		badge: "Best value",
 	},
 };

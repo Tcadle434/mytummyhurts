@@ -2,8 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Image, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen, SectionCard, SkeletonBlock } from "../../components/common/UI";
 import { TriggersSummaryRow } from "../../components/home/TriggersSummaryRow";
@@ -15,6 +15,8 @@ import { shouldBlockHomeForInitialRemoteData } from "../../features/home/viewSta
 import { buildTriggerProfileViewState } from "../../features/insights/triggerProfile";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
+import { queryClient } from "../../services/query/client";
+import { queryKeys } from "../../services/query/keys";
 import { useAppStore } from "../../store/useAppStore";
 import { components, palette, radii, shadows, spacing, tokens, type } from "../../theme";
 import { DailyGutReport, ScanHistorySummary } from "../../types/domain";
@@ -51,6 +53,18 @@ export function HomeScreen() {
 
 	const greeting = localDaypartGreeting(clockNow);
 	const homeQuery = useHomeData();
+	const [refreshing, setRefreshing] = useState(false);
+	const handleRefresh = useCallback(async () => {
+		setRefreshing(true);
+		try {
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+			]);
+		} finally {
+			setRefreshing(false);
+		}
+	}, []);
 	const hasRemoteQueryData = Boolean(homeQuery.data);
 	const hasFallbackHomeData = Boolean(fallbackProfile || fallbackReports.length || fallbackScans.length);
 	const isWaitingForInitialRemoteData = shouldBlockHomeForInitialRemoteData({
@@ -96,8 +110,8 @@ export function HomeScreen() {
 	const gutScore = profileMeta?.gutScore;
 
 	const streakCount = useMemo(
-		() => computeEngagementStreak({ scans, reports: dailyReports }),
-		[scans, dailyReports],
+		() => computeEngagementStreak({ scans, reports: dailyReports, now: clockNow }),
+		[scans, dailyReports, clockNow],
 	);
 	const triggerCounts = useMemo(() => buildTriggerProfileViewState(insights).counts, [insights]);
 	const weeklyProgressDays = useMemo(
@@ -158,7 +172,11 @@ export function HomeScreen() {
 	}
 
 	return (
-		<AppScreen>
+		<AppScreen
+			refreshControl={
+				<RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} tintColor={palette.textMuted} />
+			}
+		>
 			<View style={styles.headerStack}>
 				<View style={styles.topRow}>
 					<Image
@@ -198,7 +216,10 @@ export function HomeScreen() {
 					{!isWaitingForInitialRemoteData && streakCount > 0 ? (
 						<View style={styles.streakRow}>
 							<Text style={styles.streakIcon}>🔥</Text>
-							<Text style={styles.streakText}>{streakCount} day streak</Text>
+							<Text style={styles.streakText}>
+								{streakCount} day streak
+								<Text style={styles.streakHint}> · any scan or check-in counts</Text>
+							</Text>
 						</View>
 					) : null}
 				</View>
@@ -427,6 +448,11 @@ const styles = StyleSheet.create({
 		color: palette.textMuted,
 		fontFamily: type.body.medium,
 		fontSize: 15,
+	},
+	streakHint: {
+		color: palette.textMuted,
+		fontFamily: type.body.regular,
+		fontSize: 12,
 	},
 	iconButton: {
 		width: 42,
