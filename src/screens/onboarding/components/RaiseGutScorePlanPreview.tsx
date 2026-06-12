@@ -1,156 +1,172 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ComponentProps } from "react";
+import { ComponentProps, Fragment } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../../theme";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
-type PlanVisual = "scan" | "symptoms" | "patterns";
+type TimelineTone = "start" | "mid" | "goal";
 
-const PLAN_STEPS: {
-	step: string;
-	iconName: IoniconName;
+const TIMELINE_STEPS: {
+	phase: string;
 	title: string;
-	body: string;
-	visual: PlanVisual;
+	iconName: IoniconName;
+	tone: TimelineTone;
 }[] = [
 	{
-		step: "1",
+		phase: "Day 1",
+		title: "Start scanning",
 		iconName: "camera-outline",
-		title: "Scan the food you eat",
-		body: "Meals become ingredient evidence your Gut Score can learn from.",
-		visual: "scan",
+		tone: "start",
 	},
 	{
-		step: "2",
+		phase: "Week 1",
+		title: "Symptoms reveal patterns",
 		iconName: "pulse-outline",
-		title: "Report daily symptoms",
-		body: "One quick gut check tells us how that day actually felt.",
-		visual: "symptoms",
+		tone: "mid",
 	},
 	{
-		step: "3",
-		iconName: "sparkles-outline",
-		title: "Isolate patterns and learn from risk scores",
-		body: "The app connects foods, symptoms, and risk scores into personal patterns.",
-		visual: "patterns",
+		phase: "Week 2",
+		title: "Gut Score adapts to you",
+		iconName: "sparkles",
+		tone: "goal",
 	},
 ];
 
+const AVG_USER_SCORE_AFTER_MONTH = 80;
+const NODE_SIZE = 42;
+const NODE_COLUMN_WIDTH = 64;
+const CONNECTOR_WIDTH = 2;
+const CONNECTOR_HEIGHT = 28;
+
 /**
- * Compact onboarding preview for the core learning loop. This is intentionally
- * presentational: onboarding copy and score computation remain owned by the
- * flow, while this component owns the reusable card layout.
+ * Onboarding preview that frames personalization as a timeline rather than a
+ * card stack. Three nodes on a connecting line; node color intensifies along
+ * the path so the visual reinforces "calmer over time." A second card shows a
+ * concrete before/after stat against the MyTummyHurts user average.
  */
-export function RaiseGutScorePlanPreview() {
+export function RaiseGutScorePlanPreview({ currentScore = 0 }: { currentScore?: number }) {
 	return (
 		<View style={styles.wrap}>
-			<View style={styles.headerCard}>
-				<View style={styles.headerIcon}>
-					<Ionicons name="finger-print-outline" size={22} color={palette.primary} />
+			<View style={styles.card}>
+				<View style={styles.timeline}>
+					{TIMELINE_STEPS.map((step, index) => (
+						<Fragment key={step.phase}>
+							<TimelineStep
+								phase={step.phase}
+								title={step.title}
+								iconName={step.iconName}
+								tone={step.tone}
+							/>
+							{index < TIMELINE_STEPS.length - 1 ? (
+								<View style={styles.connectorRow}>
+									<View
+										style={[
+											styles.connector,
+											{ backgroundColor: nodeColors(step.tone).line },
+										]}
+									/>
+								</View>
+							) : null}
+						</Fragment>
+					))}
 				</View>
-				<View style={styles.headerCopy}>
-					<Text style={styles.headerTitle}>Personalized learning loop</Text>
-					<Text style={styles.headerText}>
-						Your answers set the baseline. Your real days teach the app what matters.
+
+				<View style={styles.captionRow}>
+					<Ionicons name="infinite-outline" size={16} color={tokens.color.text.accent} />
+					<Text style={styles.caption}>
+						Your Gut Score gets more personalized every week.
 					</Text>
 				</View>
 			</View>
-			<View style={styles.steps}>
-				{PLAN_STEPS.map((step) => (
-					<RaiseGutScorePlanStep key={step.step} {...step} />
-				))}
-			</View>
+
+			<ScoreComparison currentScore={currentScore} />
 		</View>
 	);
 }
 
-function RaiseGutScorePlanStep({
-	step,
-	iconName,
+function TimelineStep({
+	phase,
 	title,
-	body,
-	visual,
+	iconName,
+	tone,
 }: {
-	step: string;
-	iconName: IoniconName;
+	phase: string;
 	title: string;
-	body: string;
-	visual: PlanVisual;
+	iconName: IoniconName;
+	tone: TimelineTone;
 }) {
+	const colors = nodeColors(tone);
+
 	return (
-		<View style={styles.stepCard}>
-			<View style={styles.stepTop}>
-				<View style={styles.numberBadge}>
-					<Text style={styles.numberText}>{step}</Text>
-				</View>
-				<View style={styles.iconBubble}>
-					<Ionicons name={iconName} size={22} color={palette.primary} />
-				</View>
-				<View style={styles.stepCopy}>
-					<Text style={styles.stepTitle}>{title}</Text>
-					<Text style={styles.stepBody}>{body}</Text>
+		<View style={styles.step}>
+			<View style={styles.nodeColumn}>
+				<View style={[styles.nodeRing, { borderColor: colors.ring }]}>
+					<View style={[styles.node, { backgroundColor: colors.fill }]}>
+						<Ionicons name={iconName} size={20} color={colors.icon} />
+					</View>
 				</View>
 			</View>
-			<RaiseGutScorePlanVisual visual={visual} />
+			<View style={styles.copy}>
+				<Text style={[styles.phaseLabel, { color: colors.phase }]}>{phase}</Text>
+				<Text style={styles.stepTitle}>{title}</Text>
+			</View>
 		</View>
 	);
 }
 
-function RaiseGutScorePlanVisual({ visual }: { visual: PlanVisual }) {
-	if (visual === "scan") {
-		return (
-			<View style={styles.visualRow}>
-				<View style={styles.miniFoodCard}>
-					<Ionicons name="restaurant-outline" size={17} color={palette.primary} />
-					<Text style={styles.miniFoodText}>Food logged</Text>
-				</View>
-				<View style={styles.miniChip}>
-					<Text style={styles.miniChipText}>Ingredients</Text>
-				</View>
-			</View>
-		);
-	}
-
-	if (visual === "symptoms") {
-		return (
-			<View style={styles.visualRow}>
-				<View style={styles.symptomScale}>
-					<View
-						style={[
-							styles.symptomScaleFill,
-							{ backgroundColor: tokens.color.status.risk.low.tint },
-						]}
-					/>
-					<View
-						style={[
-							styles.symptomScaleFill,
-							{ backgroundColor: tokens.color.status.risk.medium.tint },
-						]}
-					/>
-					<View
-						style={[
-							styles.symptomScaleFill,
-							{ backgroundColor: tokens.color.status.risk.high.tint },
-						]}
-					/>
-				</View>
-				<Text style={styles.symptomScaleText}>Daily gut check</Text>
-			</View>
-		);
-	}
+function ScoreComparison({ currentScore }: { currentScore: number }) {
+	const clampedCurrent = Math.max(0, Math.min(100, Math.round(currentScore)));
+	const currentColor = scoreToneColor(clampedCurrent);
 
 	return (
-		<View style={styles.patternPanel}>
-			<View style={styles.patternCopy}>
-				<Text style={styles.patternTitle}>Tomato + reflux</Text>
-				<View style={styles.patternBarTrack}>
-					<View style={styles.patternBarFill} />
+		<View style={styles.comparisonCard}>
+			<Text style={styles.comparisonHeader}>After 1 month with MyTummyHurts</Text>
+			<View style={styles.comparisonRow}>
+				<View style={styles.comparisonColumn}>
+					<Text style={styles.comparisonEyebrow}>You today</Text>
+					<Text style={[styles.comparisonScore, { color: currentColor }]}>
+						{clampedCurrent}%
+					</Text>
+				</View>
+				<View style={styles.comparisonArrow}>
+					<Ionicons name="arrow-forward" size={20} color={tokens.color.text.tertiary} />
+				</View>
+				<View style={styles.comparisonColumn}>
+					<Text style={styles.comparisonEyebrow}>Avg user</Text>
+					<Text style={[styles.comparisonScore, { color: palette.primary }]}>
+						{AVG_USER_SCORE_AFTER_MONTH}%
+					</Text>
 				</View>
 			</View>
-			<Ionicons name="trending-up-outline" size={20} color={tokens.color.status.risk.high.foreground} />
 		</View>
 	);
+}
+
+function nodeColors(tone: TimelineTone) {
+	if (tone === "start" || tone === "mid") {
+		return {
+			fill: tokens.color.status.success.background,
+			ring: tokens.color.status.success.background,
+			icon: tokens.color.status.success.foreground,
+			phase: tokens.color.status.success.foreground,
+			line: tokens.color.status.success.background,
+		};
+	}
+
+	return {
+		fill: palette.primary,
+		ring: tokens.color.status.success.background,
+		icon: tokens.color.text.inverse,
+		phase: palette.primary,
+		line: palette.primary,
+	};
+}
+
+function scoreToneColor(score: number) {
+	if (score >= 67) return tokens.color.status.risk.low.tint;
+	if (score >= 34) return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.high.tint;
 }
 
 const styles = StyleSheet.create({
@@ -158,182 +174,135 @@ const styles = StyleSheet.create({
 		width: "100%",
 		gap: spacing.sm,
 	},
-	headerCard: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.sm,
+	card: {
+		width: "100%",
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
-		borderRadius: 18,
-		backgroundColor: tokens.color.surface.card.success,
-		padding: spacing.sm,
-	},
-	headerIcon: {
-		width: 34,
-		height: 34,
-		borderRadius: 17,
+		borderRadius: 24,
 		backgroundColor: tokens.color.surface.card.default,
+		paddingHorizontal: spacing.lg,
+		paddingTop: spacing.lg,
+		paddingBottom: spacing.md,
+		gap: spacing.md,
+		...tokens.shadow.card,
+	},
+	timeline: {
+		width: "100%",
+	},
+	step: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.md,
+	},
+	nodeColumn: {
+		width: NODE_COLUMN_WIDTH - spacing.md,
+		alignItems: "center",
+	},
+	nodeRing: {
+		width: NODE_SIZE + 8,
+		height: NODE_SIZE + 8,
+		borderRadius: (NODE_SIZE + 8) / 2,
+		borderWidth: 4,
 		alignItems: "center",
 		justifyContent: "center",
 	},
-	headerCopy: {
+	node: {
+		width: NODE_SIZE,
+		height: NODE_SIZE,
+		borderRadius: NODE_SIZE / 2,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	copy: {
 		flex: 1,
 		gap: 2,
 	},
-	headerTitle: {
-		color: tokens.color.text.primary,
+	phaseLabel: {
 		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 19,
-	},
-	headerText: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 17,
-	},
-	steps: {
-		gap: spacing.xs,
-	},
-	stepCard: {
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		borderRadius: 18,
-		backgroundColor: tokens.color.surface.card.default,
-		padding: spacing.sm,
-		gap: spacing.xs,
-		...tokens.shadow.card,
-	},
-	stepTop: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		gap: spacing.xs,
-	},
-	numberBadge: {
-		width: 26,
-		height: 26,
-		borderRadius: 13,
-		backgroundColor: palette.primary,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	numberText: {
-		color: tokens.color.text.inverse,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 19,
-	},
-	iconBubble: {
-		width: 32,
-		height: 32,
-		borderRadius: 16,
-		backgroundColor: tokens.color.status.success.background,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	stepCopy: {
-		flex: 1,
-		gap: 3,
+		fontSize: 11,
+		lineHeight: 14,
+		letterSpacing: 0.8,
+		textTransform: "uppercase",
 	},
 	stepTitle: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.bold,
-		fontSize: 14,
-		lineHeight: 18,
+		fontSize: 16,
+		lineHeight: 21,
 	},
-	stepBody: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.medium,
-		fontSize: 11,
-		lineHeight: 15,
-	},
-	visualRow: {
-		flexDirection: "row",
+	connectorRow: {
+		width: NODE_COLUMN_WIDTH - spacing.md,
 		alignItems: "center",
-		gap: spacing.xs,
-		paddingLeft: 58,
 	},
-	miniFoodCard: {
-		minHeight: 28,
+	connector: {
+		width: CONNECTOR_WIDTH,
+		height: CONNECTOR_HEIGHT,
+		borderRadius: CONNECTOR_WIDTH / 2,
+	},
+	captionRow: {
 		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.xs,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		borderRadius: 14,
-		backgroundColor: tokens.color.surface.card.warm,
-		paddingHorizontal: spacing.sm,
-	},
-	miniFoodText: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
-	},
-	miniChip: {
-		minHeight: 26,
-		borderRadius: 13,
-		backgroundColor: tokens.color.status.success.background,
-		paddingHorizontal: spacing.sm,
 		alignItems: "center",
 		justifyContent: "center",
+		gap: spacing.xs,
+		borderTopWidth: 1,
+		borderTopColor: tokens.color.border.subtle,
+		paddingTop: spacing.sm,
 	},
-	miniChipText: {
-		color: tokens.color.status.success.foreground,
-		fontFamily: type.body.bold,
+	caption: {
+		color: tokens.color.text.accent,
+		fontFamily: type.body.semibold,
 		fontSize: 12,
 		lineHeight: 16,
 	},
-	symptomScale: {
-		flex: 1,
-		maxWidth: 150,
-		height: 8,
-		flexDirection: "row",
-		borderRadius: 4,
-		overflow: "hidden",
-		backgroundColor: tokens.color.chart.track,
+	comparisonCard: {
+		width: "100%",
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		borderRadius: 24,
+		backgroundColor: tokens.color.surface.card.default,
+		paddingHorizontal: spacing.lg,
+		paddingVertical: spacing.md,
+		gap: spacing.sm,
+		...tokens.shadow.card,
 	},
-	symptomScaleFill: {
-		flex: 1,
-		height: "100%",
-	},
-	symptomScaleText: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.semibold,
+	comparisonHeader: {
+		color: tokens.color.text.tertiary,
+		fontFamily: type.body.bold,
 		fontSize: 11,
-		lineHeight: 15,
+		lineHeight: 14,
+		letterSpacing: 0.8,
+		textTransform: "uppercase",
+		textAlign: "center",
 	},
-	patternPanel: {
-		marginLeft: 58,
-		minHeight: 36,
+	comparisonRow: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
-		borderRadius: 16,
-		backgroundColor: tokens.color.status.risk.high.background,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: 6,
 	},
-	patternCopy: {
+	comparisonColumn: {
 		flex: 1,
-		gap: spacing.xs,
+		alignItems: "center",
+		gap: 2,
 	},
-	patternTitle: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
+	comparisonEyebrow: {
+		color: tokens.color.text.tertiary,
+		fontFamily: type.body.semibold,
 		fontSize: 12,
 		lineHeight: 16,
 	},
-	patternBarTrack: {
-		height: 7,
-		borderRadius: 4,
-		backgroundColor: tokens.color.chart.track,
-		overflow: "hidden",
+	comparisonScore: {
+		fontFamily: type.body.bold,
+		fontSize: 32,
+		lineHeight: 36,
+		fontVariant: ["tabular-nums"],
+		letterSpacing: -0.6,
 	},
-	patternBarFill: {
-		width: "78%",
-		height: "100%",
-		borderRadius: 4,
-		backgroundColor: tokens.color.status.risk.high.tint,
+	comparisonArrow: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		backgroundColor: tokens.color.surface.card.warm,
+		alignItems: "center",
+		justifyContent: "center",
 	},
 });

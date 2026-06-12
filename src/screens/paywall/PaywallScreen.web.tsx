@@ -1,40 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
 
-import { AppScreen, DetailRow, InfoPill, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
+import { AppScreen } from '../../components/common/UI';
 import { env } from '../../config/env';
-import { onboardingSteps } from '../../data/onboarding';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, radii, spacing, type } from '../../theme';
-import { RootStackParamList, OnboardingStackParamList } from '../../navigation/types';
+import { spacing } from '../../theme';
+import { RootStackParamList } from '../../navigation/types';
+import { PaywallOfferContent } from './PaywallOfferContent';
 
-type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingPaywall'>;
-
-const planCopy = {
-  monthly: {
-    title: 'Monthly',
-    price: '$6.99/mo',
-    badge: 'Flexible',
-  },
-  annual: {
-    title: 'Annual',
-    price: '$34.99/yr',
-    badge: 'Best value',
-  },
-} as const;
-
-export function PaywallScreen({ navigation }: Props) {
+export function PaywallScreen() {
   const rootNavigation = useNavigation<NavigationProp<RootStackParamList>>();
   const billing = useAppStore((state) => state.billing);
   const selectPlan = useAppStore((state) => state.selectPlan);
-  const completePurchase = useAppStore((state) => state.completePurchase);
-  const stageEntitlementAccess = useAppStore((state) => state.stageEntitlementAccess);
-  const setOnboardingStepIndex = useAppStore((state) => state.setOnboardingStepIndex);
-  const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [busyIntent, setBusyIntent] = useState<'subscribe' | 'restore' | null>(null);
 
   useEffect(() => {
@@ -43,153 +23,37 @@ export function PaywallScreen({ navigation }: Props) {
 
   async function openPaywall(intent: 'subscribe' | 'restore') {
     setBusyIntent(intent);
-
-    if (intent === 'restore') {
-      stageEntitlementAccess('active');
-    } else {
-      completePurchase();
-    }
-
-    navigation.replace('OnboardingAuth');
+    trackEvent(intent === 'restore' ? 'restore_purchases_tapped' : 'paywall_continue_tapped', {
+      selected_plan: billing.selectedPlan,
+      surface: 'web_preview',
+    });
+    setStatusMessage('Purchases are available in the iPhone app. Open MyTummyHurts on iPhone to subscribe or restore.');
     setBusyIntent(null);
   }
 
-  function returnToOnboarding() {
-    setOnboardingStepIndex(onboardingSteps.length - 1);
-    setOnboardingStage('flow');
-    navigation.replace('OnboardingFlow');
-  }
-
   return (
-    <AppScreen>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Back to onboarding"
-        onPress={returnToOnboarding}
-        style={({ pressed }) => [styles.tempBackButton, pressed && { opacity: 0.72 }]}
-      >
-        <Ionicons name="arrow-back" size={22} color={palette.primary} />
-      </Pressable>
-
-      <ScreenHeader
-        eyebrow="Subscription"
-        title="Stop guessing what food will do to your stomach."
-        subtitle="Your subscription includes a monthly scan allowance, full history, and adaptive trigger insights."
+    <AppScreen scroll={false} contentContainerStyle={styles.screenContent}>
+      <PaywallOfferContent
+        selectedPlan={billing.selectedPlan}
+        busy={busyIntent !== null}
+        statusMessage={statusMessage}
+        onSelectPlan={selectPlan}
+        onContinue={() => void openPaywall('subscribe')}
+        onRestore={() => void openPaywall('restore')}
+        onTerms={() => {
+          void openLegalSurface(env.termsUrl, () => rootNavigation.navigate('LegalDocument', { document: 'terms' }));
+        }}
+        onPrivacy={() => {
+          void openLegalSurface(env.privacyUrl, () => rootNavigation.navigate('LegalDocument', { document: 'privacy' }));
+        }}
       />
-
-      <SectionCard>
-        <InfoPill label="Web preview uses a simplified paywall flow. Native purchase handling stays in the iOS app." tone="soft" />
-      </SectionCard>
-
-      <SectionCard>
-        <Text style={styles.planHeader}>Choose your plan</Text>
-        <View style={styles.planRow}>
-          {(['monthly', 'annual'] as const).map((plan) => {
-            const selected = billing.selectedPlan === plan;
-            const copy = planCopy[plan];
-            return (
-              <SectionCard key={plan} style={[styles.planCard, selected && styles.planCardSelected]}>
-                <Text style={styles.planTitle}>{copy.title}</Text>
-                <Text style={styles.planPrice}>{copy.price}</Text>
-                <InfoPill label={copy.badge} tone={selected ? 'soft' : 'default'} />
-                <PrimaryButton label={selected ? 'Selected' : 'Choose'} onPress={() => selectPlan(plan)} />
-              </SectionCard>
-            );
-          })}
-        </View>
-      </SectionCard>
-
-      <SectionCard>
-        <InfoPill label="1-week free trial" tone="soft" />
-        <DetailRow label="Included scans each month" value={`${billing.monthlyAllowance}`} />
-        <DetailRow label="History and daily reports" value="Unlimited" />
-        <DetailRow label="Trigger and safe-food insights" value="Included" />
-        <DetailRow label="Restore purchases" value="Available in the iOS app" />
-      </SectionCard>
-
-      <PrimaryButton
-        label={busyIntent === 'subscribe' ? 'Continuing…' : 'Continue'}
-        onPress={() => void openPaywall('subscribe')}
-        disabled={busyIntent !== null}
-      />
-      <PrimaryButton
-        label={busyIntent === 'restore' ? 'Restoring…' : 'Restore preview access'}
-        onPress={() => void openPaywall('restore')}
-        disabled={busyIntent !== null}
-      />
-      <View style={styles.legalRow}>
-        <Text
-          style={styles.legalLink}
-          onPress={() => {
-            void openLegalSurface(env.termsUrl, () => rootNavigation.navigate('LegalDocument', { document: 'terms' }));
-          }}
-        >
-          Terms
-        </Text>
-        <Text style={styles.legalDot}>·</Text>
-        <Text
-          style={styles.legalLink}
-          onPress={() => {
-            void openLegalSurface(env.privacyUrl, () => rootNavigation.navigate('LegalDocument', { document: 'privacy' }));
-          }}
-        >
-          Privacy
-        </Text>
-      </View>
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  tempBackButton: {
-    alignItems: 'center',
-    backgroundColor: palette.sageSoft,
-    borderRadius: radii.pill,
-    height: 40,
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-    width: 40,
-  },
-  planHeader: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 18,
-  },
-  planRow: {
-    gap: spacing.md,
-  },
-  planCard: {
-    gap: spacing.sm,
-  },
-  planCardSelected: {
-    borderColor: palette.primary,
-  },
-  planTitle: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 18,
-    textTransform: 'capitalize',
-  },
-  planPrice: {
-    color: palette.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 16,
-  },
-  legalRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  legalLink: {
-    color: palette.primaryDark,
-    fontFamily: type.body.medium,
-    fontSize: 13,
-  },
-  legalDot: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 13,
+  screenContent: {
+    paddingBottom: spacing.lg,
   },
 });
 

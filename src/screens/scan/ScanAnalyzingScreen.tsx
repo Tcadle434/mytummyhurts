@@ -1,6 +1,13 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
 import { AppScreen, ScreenHeader, SectionCard } from '../../components/common/UI';
@@ -11,37 +18,36 @@ import { components, palette, radii, shadows, spacing, tokens, type } from '../.
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanAnalyzing'>;
 
-const steps = [
-  'Detecting ingredients',
-  'Cross-checking with your profile',
-  'Estimating what to expect',
-  'Saving to your food log',
-];
+const ELAPSED_REVEAL_DELAY_SEC = 3;
 
 export function ScanAnalyzingScreen({ navigation, route }: Props) {
   const analyzeScanInput = useAppStore((state) => state.analyzeScanInput);
-  const [progress, setProgress] = useState(12);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const isMenuScan = route.params.payload.scanCategory === 'menu';
+  const isGroceryScan = route.params.payload.scanCategory === 'grocery';
+  const retryInitialMode = isGroceryScan || route.params.payload.sourceType === 'barcode'
+    ? 'barcode'
+    : isMenuScan
+      ? 'menu'
+      : 'food';
 
-  const completedSteps = useMemo(() => {
-    if (progress >= 88) return 4;
-    if (progress >= 68) return 3;
-    if (progress >= 42) return 2;
-    if (progress >= 18) return 1;
-    return 0;
-  }, [progress]);
+  const title = isMenuScan
+    ? 'Analyzing your menu…'
+    : isGroceryScan
+      ? 'Analyzing barcode…'
+      : 'Analyzing your meal…';
+
+  const subtitle = isMenuScan
+    ? 'Menus take a little longer — up to 2 minutes while Pip ranks every option.'
+    : isGroceryScan
+      ? 'Usually under 15 seconds.'
+      : 'This can take up to 2 minutes. Pip is reading every ingredient.';
 
   useEffect(() => {
     const ticker = setInterval(() => {
-      setProgress((current) => {
-        if (current >= 87) {
-          return current;
-        }
-
-        const next = current + (current < 45 ? 4 : current < 70 ? 3 : 2);
-        return Math.min(next, 87);
-      });
-    }, 280);
+      setElapsed((current) => current + 1);
+    }, 1000);
 
     let active = true;
 
@@ -50,21 +56,15 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
         if (!active) {
           return;
         }
-
-        setProgress(100);
-        setTimeout(() => {
-          navigation.replace('ScanResult', {
-            scanId: result.scanId,
-            manualMode: route.params.manualMode,
-            fromOnboarding: route.params.fromOnboarding,
-          });
-        }, 220);
+        navigation.replace('ScanResult', {
+          scanId: result.scanId,
+          manualMode: route.params.manualMode,
+        });
       })
       .catch((caughtError) => {
         if (!active) {
           return;
         }
-
         setError(caughtError instanceof Error ? caughtError.message : 'The scan could not be completed.');
       });
 
@@ -77,14 +77,36 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
   if (error) {
     return (
       <AppScreen>
-        <ScreenHeader eyebrow="Analysis failed" title="The meal could not be analyzed." subtitle={error} />
+        <ScreenHeader
+          eyebrow="Analysis failed"
+          title={isMenuScan ? 'The menu could not be analyzed.' : isGroceryScan ? 'The grocery item could not be analyzed.' : 'The meal could not be analyzed.'}
+          subtitle={error}
+        />
         <SectionCard>
           <Pressable
-            onPress={() => navigation.replace('ScanCapture', { sourceType: route.params.payload.sourceType, manualMode: route.params.manualMode, fromOnboarding: route.params.fromOnboarding })}
+            onPress={() => navigation.replace('ScanCapture', {
+              sourceType: route.params.payload.sourceType,
+              manualMode: route.params.manualMode,
+              scanCategory: route.params.payload.scanCategory,
+              initialMode: retryInitialMode,
+            })}
             style={({ pressed }) => [styles.primaryAction, pressed && { opacity: 0.82 }]}
           >
             <Text style={styles.primaryActionLabel}>Try again</Text>
           </Pressable>
+          {isGroceryScan ? (
+            <Pressable
+              onPress={() => navigation.replace('ScanCapture', {
+                sourceType: 'camera',
+                manualMode: route.params.manualMode,
+                scanCategory: 'food',
+                initialMode: 'food',
+              })}
+              style={({ pressed }) => [styles.secondaryAction, pressed && { opacity: 0.82 }]}
+            >
+              <Text style={styles.secondaryActionLabel}>Snap the ingredient label instead</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.secondaryAction, pressed && { opacity: 0.82 }]}>
             <Text style={styles.secondaryActionLabel}>Go back</Text>
           </Pressable>
@@ -95,65 +117,91 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
 
   return (
     <AppScreen scroll={false} contentContainerStyle={styles.content}>
-      <View style={styles.hero}>
-        <Pip state="thinking" size={72} />
-        <Text style={styles.heroTitle}>Analyzing your meal...</Text>
-        <Text style={styles.heroSubtitle}>This usually takes a few seconds.</Text>
-      </View>
+      <IndeterminateRing />
 
-      <ProgressRing progress={progress} />
-
-      <SectionCard style={styles.checklistCard}>
-        <Text style={styles.checklistTitle}>Checking for triggers</Text>
-        {steps.map((step, index) => {
-          const state = index < completedSteps ? 'done' : index === completedSteps ? 'active' : 'idle';
-          return (
-            <View key={step} style={styles.checkRow}>
-              <View style={[styles.checkIcon, state === 'done' && styles.checkIconDone, state === 'active' && styles.checkIconActive]}>
-                {state === 'done' ? <Text style={styles.checkDone}>✓</Text> : state === 'active' ? <View style={styles.checkPulse} /> : null}
-              </View>
-              <Text style={[styles.checkLabel, state === 'idle' && styles.checkLabelIdle]}>{step}</Text>
-            </View>
-          );
-        })}
-      </SectionCard>
-
-      <View style={styles.privacyPill}>
-        <Text style={styles.privacyIcon}>🔒</Text>
-        <Text style={styles.privacyLabel}>Your data stays private</Text>
+      <View style={styles.copy}>
+        <Text style={styles.heroTitle}>{title}</Text>
+        <Text style={styles.heroSubtitle}>{subtitle}</Text>
+        {elapsed >= ELAPSED_REVEAL_DELAY_SEC ? (
+          <Text style={styles.elapsed}>{formatElapsed(elapsed)} elapsed</Text>
+        ) : null}
       </View>
     </AppScreen>
   );
 }
 
-function ProgressRing({ progress }: { progress: number }) {
+function formatElapsed(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function IndeterminateRing() {
+  const rotation = useSharedValue(0);
+  const breath = useSharedValue(1);
+
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 1600, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    breath.value = withRepeat(
+      withTiming(1.035, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+  }, [rotation, breath]);
+
+  const arcStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
+  const pipStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: breath.value }],
+  }));
+
+  const size = 160;
   const radius = 66;
   const strokeWidth = 12;
   const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference - (circumference * Math.min(progress, 100)) / 100;
+  const arcLength = circumference * 0.28;
+  const gapLength = circumference - arcLength;
+  const center = size / 2;
 
   return (
     <View style={styles.ringWrap}>
-        <Svg width={160} height={160}>
-          <Circle cx="80" cy="80" r={radius} stroke={tokens.color.chart.track} strokeWidth={strokeWidth} fill="transparent" />
+      <Animated.View style={[styles.ringLayer, arcStyle]}>
+        <Svg width={size} height={size}>
           <Circle
-          cx="80"
-          cy="80"
-          r={radius}
-          stroke={palette.high}
-          strokeWidth={strokeWidth}
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          fill="transparent"
-            rotation={-90}
-            origin="80,80"
+            cx={center}
+            cy={center}
+            r={radius}
+            stroke={tokens.color.chart.track}
+            strokeWidth={strokeWidth}
+            fill="transparent"
           />
-          <Circle cx="80" cy="80" r={radius - 20} fill={tokens.color.surface.frosted} />
+          <Circle
+            cx={center}
+            cy={center}
+            r={radius}
+            stroke={palette.primary}
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${arcLength} ${gapLength}`}
+            strokeLinecap="round"
+            fill="transparent"
+          />
+          <Circle
+            cx={center}
+            cy={center}
+            r={radius - 20}
+            fill={tokens.color.surface.frosted}
+          />
         </Svg>
-      <View style={styles.ringCenter}>
-        <Text style={styles.ringValue}>{Math.round(progress)}%</Text>
-      </View>
+      </Animated.View>
+      <Animated.View style={[styles.ringLayer, styles.ringCenter, pipStyle]} pointerEvents="none">
+        <Pip state="thinking" size={88} />
+      </Animated.View>
     </View>
   );
 }
@@ -162,108 +210,47 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'center',
-    gap: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.xl,
   },
-  hero: {
+  copy: {
     alignItems: 'center',
     gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
   heroTitle: {
     color: tokens.color.text.primary,
     fontFamily: type.body.bold,
-    fontSize: 34,
-    letterSpacing: -0.8,
+    fontSize: 30,
+    letterSpacing: -0.6,
     textAlign: 'center',
   },
   heroSubtitle: {
     color: tokens.color.text.secondary,
     fontFamily: type.body.regular,
-    fontSize: 18,
+    fontSize: 17,
+    lineHeight: 24,
     textAlign: 'center',
   },
+  elapsed: {
+    color: palette.primary,
+    fontFamily: type.body.semibold,
+    fontSize: 14,
+    letterSpacing: 0.2,
+    marginTop: spacing.xs,
+  },
   ringWrap: {
+    width: 160,
+    height: 160,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  ringLayer: {
+    ...StyleSheet.absoluteFillObject,
   },
   ringCenter: {
-    position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  ringValue: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 34,
-    letterSpacing: -0.8,
-  },
-  checklistCard: {
-    gap: spacing.md,
-  },
-  checklistTitle: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 20,
-  },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  checkIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: tokens.color.border.strong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkIconDone: {
-    backgroundColor: palette.primary,
-    borderColor: palette.primary,
-  },
-  checkIconActive: {
-    borderColor: palette.primary,
-  },
-  checkDone: {
-    color: palette.white,
-    fontFamily: type.body.bold,
-    fontSize: 13,
-    marginTop: -1,
-  },
-  checkPulse: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: palette.primary,
-  },
-  checkLabel: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.medium,
-    fontSize: 18,
-  },
-  checkLabelIdle: {
-    color: tokens.color.text.tertiary,
-  },
-  privacyPill: {
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radii.pill,
-    backgroundColor: tokens.color.surface.card.warm,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
-  },
-  privacyIcon: {
-    fontSize: 16,
-  },
-  privacyLabel: {
-    color: tokens.color.text.secondary,
-    fontFamily: type.body.medium,
-    fontSize: 15,
   },
   primaryAction: {
     minHeight: 54,

@@ -1,0 +1,22 @@
+drop function if exists public.complete_reserved_scan_analysis(
+  uuid,
+  uuid,
+  text,
+  integer,
+  text,
+  text,
+  text,
+  jsonb,
+  jsonb,
+  jsonb,
+  text,
+  text,
+  text,
+  jsonb,
+  jsonb,
+  jsonb,
+  jsonb,
+  jsonb,
+  jsonb,
+  jsonb
+);

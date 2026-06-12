@@ -1,20 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AppScreen, EmptyState, SectionCard, SkeletonBlock } from "../../components/common/UI";
+import { AppScreen, SectionCard, SkeletonBlock } from "../../components/common/UI";
+import { TriggersSummaryRow } from "../../components/home/TriggersSummaryRow";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
 import { isLiveBackendConfigured } from "../../config/env";
-import { useHistoryFeed } from "../../features/history/hooks";
-import { useInsightsData } from "../../features/insights/hooks";
+import { useHomeData } from "../../features/home/hooks";
+import { computeEngagementStreak } from "../../features/home/streak";
+import { shouldBlockHomeForInitialRemoteData } from "../../features/home/viewState";
+import { buildTriggerProfileViewState } from "../../features/insights/triggerProfile";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
 import { components, palette, radii, shadows, spacing, tokens, type } from "../../theme";
-import { ScanRecord } from "../../types/domain";
-import { localDaypartGreeting, relativeTime } from "../../utils/time";
+import { DailyGutReport, ScanHistorySummary } from "../../types/domain";
+import { localDaypartGreeting } from "../../utils/time";
 import {
 	buildWeeklyProgressDay,
 	buildWeeklyProgressDays,
@@ -24,53 +28,78 @@ import { GutScoreHomeCard } from "./GutScoreHomeCard";
 import { GutScoreInfoModal } from "./GutScoreInfoModal";
 
 const MTH_TEXT_LOGO = require("../../../assets/mth_text_logo.png");
+const DAILY_REPORT_PROMPT_DISMISSED_KEY = "home.dailyReportPromptDismissedDate";
+const EMPTY_SCANS: ScanHistorySummary[] = [];
+const EMPTY_DAILY_REPORTS: DailyGutReport[] = [];
 
 export function HomeScreen() {
 	const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 	const fallbackScans = useAppStore((state) => state.scans);
 	const fallbackReports = useAppStore((state) => state.dailyReports);
 	const fallbackProfile = useAppStore((state) => state.profile);
-	const fallbackBilling = useAppStore((state) => state.billing);
+	const insights = useAppStore((state) => state.insights);
 	const authUser = useAppStore((state) => state.authUser);
 	const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
 	const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
 	const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
+	const learningSyncInFlight = useAppStore((state) => state.learningSyncInFlight);
 	const [gutScoreInfoVisible, setGutScoreInfoVisible] = useState(false);
 	const [clockNow, setClockNow] = useState(() => new Date());
+	const [dismissedDailyReportPromptDate, setDismissedDailyReportPromptDate] = useState<
+		string | null
+	>(null);
 
 	const greeting = localDaypartGreeting(clockNow);
-	const historyQuery = useHistoryFeed(12);
-	const insightsQuery = useInsightsData("");
-	const hasRemoteQueryData = Boolean(historyQuery.data && insightsQuery.data);
-	const isWaitingForInitialRemoteData = Boolean(
-		isLiveBackendConfigured &&
-			authUser &&
-			!hasRemoteQueryData &&
-			(!remoteDataLoaded || initialServerSyncNeeded || serverSyncInFlight) &&
-			!historyQuery.isError &&
-			!insightsQuery.isError,
-	);
+	const homeQuery = useHomeData();
+	const hasRemoteQueryData = Boolean(homeQuery.data);
+	const hasFallbackHomeData = Boolean(fallbackProfile || fallbackReports.length || fallbackScans.length);
+	const isWaitingForInitialRemoteData = shouldBlockHomeForInitialRemoteData({
+		isLiveBackendConfigured,
+		hasAuthUser: Boolean(authUser),
+		hasRemoteQueryData,
+		hasFallbackHomeData,
+		remoteDataLoaded,
+		initialServerSyncNeeded,
+		serverSyncInFlight,
+		queryLoading: homeQuery.isLoading,
+		queryFetching: homeQuery.isFetching,
+		queryError: homeQuery.isError,
+	});
+	const snapshotLearningInFlight =
+		homeQuery.data?.learningStatus === "pending" || homeQuery.data?.learningStatus === "running";
+	const isWaitingForComputedData = isWaitingForInitialRemoteData;
 	const canUseFallbackData = !isWaitingForInitialRemoteData;
-	const firstPage = historyQuery.data?.pages[0];
-	const scans = canUseFallbackData ? firstPage?.scans ?? fallbackScans : [];
-	const dailyReports = canUseFallbackData ? firstPage?.dailyReports ?? fallbackReports : [];
+	const scans = useMemo(
+		() => (canUseFallbackData ? homeQuery.data?.recentScans ?? fallbackScans : EMPTY_SCANS),
+		[canUseFallbackData, fallbackScans, homeQuery.data?.recentScans]
+	);
+	const dailyReports = useMemo(
+		() =>
+			canUseFallbackData ? homeQuery.data?.dailyReports ?? fallbackReports : EMPTY_DAILY_REPORTS,
+		[canUseFallbackData, fallbackReports, homeQuery.data?.dailyReports]
+	);
 	const profile = canUseFallbackData
-		? insightsQuery.data?.profile ?? fallbackProfile
-		: insightsQuery.data?.profile;
-	const billing = canUseFallbackData
-		? insightsQuery.data?.billing ?? fallbackBilling
-		: undefined;
-	const recentScans = scans
-		.filter((scan) => (scan.scanCategory ?? "food") === "food")
-		.slice(0, 3);
+		? homeQuery.data?.profile ?? fallbackProfile
+		: homeQuery.data?.profile;
+	const gutScoreProfile = profile;
 	const yesterdayDate = yesterdayLocalDate(clockNow);
 	const yesterdayReport = dailyReports.find((report) => report.localDate === yesterdayDate);
 	const needsDailyReport = !yesterdayReport;
+	const shouldShowDailyReportBanner =
+		!isWaitingForComputedData &&
+		!snapshotLearningInFlight &&
+		!learningSyncInFlight &&
+		needsDailyReport &&
+		dismissedDailyReportPromptDate !== yesterdayDate;
 	const displayName = profile?.displayName?.trim();
-	const profileMeta = profile?.stomachProfile.metadata;
+	const profileMeta = gutScoreProfile?.stomachProfile.metadata;
 	const gutScore = profileMeta?.gutScore;
 
-	const streakCount = useMemo(() => computeFoodLogStreak(scans), [scans]);
+	const streakCount = useMemo(
+		() => computeEngagementStreak({ scans, reports: dailyReports }),
+		[scans, dailyReports],
+	);
+	const triggerCounts = useMemo(() => buildTriggerProfileViewState(insights).counts, [insights]);
 	const weeklyProgressDays = useMemo(
 		() =>
 			buildWeeklyProgressDays({
@@ -89,10 +118,6 @@ export function HomeScreen() {
 			}),
 		[dailyReports, scans, yesterdayDate]
 	);
-	const tokensFraction = billing?.monthlyAllowance
-		? Math.min(billing.tokensRemaining / billing.monthlyAllowance, 1)
-		: 0;
-
 	useEffect(() => {
 		trackEvent("home_viewed");
 		trackEvent("gut_score_viewed", {
@@ -106,6 +131,31 @@ export function HomeScreen() {
 		const interval = setInterval(() => setClockNow(new Date()), 60 * 1000);
 		return () => clearInterval(interval);
 	}, []);
+
+	useEffect(() => {
+		let active = true;
+
+		AsyncStorage.getItem(DAILY_REPORT_PROMPT_DISMISSED_KEY)
+			.then((value) => {
+				if (active) {
+					setDismissedDailyReportPromptDate(value);
+				}
+			})
+			.catch(() => {
+				if (active) {
+					setDismissedDailyReportPromptDate(null);
+				}
+			});
+
+		return () => {
+			active = false;
+		};
+	}, []);
+
+	function dismissDailyReportBanner() {
+		setDismissedDailyReportPromptDate(yesterdayDate);
+		void AsyncStorage.setItem(DAILY_REPORT_PROMPT_DISMISSED_KEY, yesterdayDate);
+	}
 
 	return (
 		<AppScreen>
@@ -127,8 +177,8 @@ export function HomeScreen() {
 						style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.78 }]}
 					>
 						<Ionicons
-							name="settings-outline"
-							size={20}
+							name="person-circle-outline"
+							size={22}
 							color={tokens.color.icon.primary}
 						/>
 					</Pressable>
@@ -137,8 +187,8 @@ export function HomeScreen() {
 				<View style={styles.titleStack}>
 					{isWaitingForInitialRemoteData ? (
 						<>
-							<SkeletonBlock width="72%" height={30} radius={radii.sm} />
-							<SkeletonBlock width={112} height={20} radius={radii.sm} />
+							<SkeletonBlock width="72%" height={22} radius={radii.sm} />
+							<SkeletonBlock width={112} height={18} radius={radii.sm} />
 						</>
 					) : (
 						<Text style={styles.greetingText} numberOfLines={1} ellipsizeMode="tail">
@@ -154,21 +204,102 @@ export function HomeScreen() {
 				</View>
 			</View>
 
-			{isWaitingForInitialRemoteData || !gutScore ? (
+			{shouldShowDailyReportBanner ? (
+				<Pressable
+					onPress={() =>
+						navigation.navigate("DailyGutReport", { localDate: yesterdayDate })
+					}
+					style={({ pressed }) => [
+						styles.dailyReportBanner,
+						pressed && { opacity: 0.92 },
+					]}
+				>
+					<View style={styles.dailyReportBannerIcon}>
+						<Ionicons name="pulse-outline" size={18} color={palette.primary} />
+					</View>
+					<View style={styles.dailyReportBannerCopy}>
+						<Text style={styles.dailyReportBannerTitle}>
+							How did your gut feel yesterday?
+						</Text>
+						<Text style={styles.dailyReportBannerSubtitle}>
+							Add a symptom report to personalize your scores.
+						</Text>
+					</View>
+					<Pressable
+						accessibilityRole="button"
+						accessibilityLabel="Dismiss symptom report reminder"
+						hitSlop={10}
+						onPress={(event) => {
+							event.stopPropagation();
+							dismissDailyReportBanner();
+						}}
+						style={({ pressed }) => [
+							styles.dailyReportBannerClose,
+							pressed && { opacity: 0.72 },
+						]}
+					>
+						<Ionicons name="close" size={18} color={palette.textMuted} />
+					</Pressable>
+				</Pressable>
+			) : null}
+
+			{isWaitingForComputedData || !gutScore ? (
 				<GutScoreHomeCardSkeleton />
 			) : (
 				<GutScoreHomeCard
 					score={gutScore.currentScore}
 					trendDelta7d={gutScore.trendDelta7d}
-					onPress={() => {
-						trackEvent("gut_score_detail_opened", { entry_point: "home_card" });
-						navigation.navigate("GutScoreDetail");
-					}}
 					onInfoPress={() => setGutScoreInfoVisible(true)}
 				/>
 			)}
 
-			{isWaitingForInitialRemoteData ? (
+			{!isWaitingForComputedData ? (
+				<TriggersSummaryRow
+					counts={triggerCounts}
+					onPress={() => {
+						trackEvent("trigger_summary_opened", { entry_point: "home_row" });
+						navigation.navigate("MainTabs", { screen: "Insights" });
+					}}
+				/>
+			) : null}
+
+			<Pressable
+				onPress={() => {
+					trackEvent("scan_camera_opened", { entry_point: "home_scan_cta" });
+					navigation.navigate("ScanCapture", {
+						sourceType: "camera",
+						manualMode: false,
+						scanCategory: "food",
+						initialMode: "food",
+					});
+				}}
+				style={({ pressed }) => [styles.scanCtaShell, pressed && { opacity: 0.92 }]}
+			>
+				<LinearGradient
+					colors={[...components.scanCta.gradient]}
+					start={{ x: 0, y: 0 }}
+					end={{ x: 1, y: 1 }}
+					style={styles.scanCtaGradient}
+				>
+					<View style={styles.scanIconBubble}>
+						<Ionicons
+							name="camera-outline"
+							size={18}
+							color={components.scanCta.arrowForeground}
+						/>
+					</View>
+					<Text style={styles.scanTitle}>Scan food</Text>
+					<View style={styles.scanArrow}>
+						<Ionicons
+							name="arrow-forward"
+							size={16}
+							color={components.scanCta.arrowForeground}
+						/>
+					</View>
+				</LinearGradient>
+			</Pressable>
+
+			{isWaitingForComputedData ? (
 				<WeeklyProgressCardSkeleton />
 			) : (
 				<WeeklyProgressCard
@@ -187,154 +318,6 @@ export function HomeScreen() {
 				/>
 			)}
 
-			<Pressable
-				onPress={() =>
-					navigation.navigate("ScanCapture", { sourceType: "camera", manualMode: false })
-				}
-				style={({ pressed }) => [styles.scanCtaShell, pressed && { opacity: 0.92 }]}
-			>
-				<LinearGradient
-					colors={[...components.scanCta.gradient]}
-					start={{ x: 0, y: 0 }}
-					end={{ x: 1, y: 1 }}
-					style={styles.scanCtaGradient}
-				>
-					<View style={styles.scanAccentLeft} />
-					<View style={styles.scanAccentRight} />
-					<Ionicons name="camera-outline" size={42} color={components.scanCta.title} />
-					<Text style={styles.scanTitle}>Scan a meal</Text>
-					<Text style={styles.scanSubtitle}>Get instant insights</Text>
-					<View style={styles.scanArrow}>
-						<Ionicons
-							name="arrow-forward"
-							size={18}
-							color={components.scanCta.arrowForeground}
-						/>
-					</View>
-				</LinearGradient>
-			</Pressable>
-
-			<View style={styles.sectionHeader}>
-				<Text style={styles.sectionTitle}>Your day</Text>
-			</View>
-
-			{isWaitingForInitialRemoteData ? (
-				<DailyReportCardSkeleton />
-			) : (
-				<Pressable
-					onPress={() =>
-						navigation.navigate("DailyGutReport", { localDate: yesterdayDate })
-					}
-					style={({ pressed }) => [
-						styles.dailyReportCard,
-						pressed && { opacity: 0.92 },
-					]}
-				>
-					<View style={styles.dailyReportIcon}>
-						<Ionicons
-							name={needsDailyReport ? "pulse-outline" : "checkmark"}
-							size={19}
-							color={palette.primary}
-						/>
-					</View>
-					<View style={styles.dailyReportCopy}>
-						<Text style={styles.dailyReportTitle}>
-							{needsDailyReport
-								? "How did your gut feel yesterday?"
-								: `Yesterday felt ${severityLabel(yesterdayReport.gutSeverity)}`}
-						</Text>
-						<Text style={styles.dailyReportSubtitle}>
-							{needsDailyReport
-								? "Log one daily report so your food history can become personalized evidence."
-								: `${yesterdayReport.gutSeverity}/10 severity. Tap to edit the report.`}
-						</Text>
-					</View>
-					<Ionicons name="chevron-forward" size={19} color={palette.textMuted} />
-				</Pressable>
-			)}
-
-			{isWaitingForInitialRemoteData || !billing ? (
-				<TokenStatSkeleton />
-			) : (
-				<SectionCard style={styles.statCard}>
-					<View style={styles.statRow}>
-						<View style={styles.statLabelWrap}>
-							<View style={[styles.statIcon, { backgroundColor: palette.softBlue }]}>
-								<Ionicons
-									name="flash-outline"
-									size={16}
-									color={tokens.color.icon.info}
-								/>
-							</View>
-							<Text style={styles.statLabel}>Scans left this month</Text>
-						</View>
-						<Text style={styles.statValue}>
-							{billing.tokensRemaining} / {billing.monthlyAllowance}
-						</Text>
-					</View>
-					<View style={styles.progressTrack}>
-						<View
-							style={[
-								styles.progressFill,
-								{ width: `${Math.max(tokensFraction * 100, 8)}%` },
-							]}
-						/>
-					</View>
-				</SectionCard>
-			)}
-
-			{isWaitingForInitialRemoteData ? (
-				<RecentScansSkeleton />
-			) : recentScans.length ? (
-				<View style={styles.recentWrap}>
-					{recentScans.map((scan) => {
-						return (
-							<Pressable
-								key={scan.id}
-								onPress={() =>
-									navigation.navigate("ScanResult", {
-										scanId: scan.id,
-									})
-								}
-								style={({ pressed }) => [
-									styles.recentCard,
-									pressed && { opacity: 0.92 },
-								]}
-							>
-								<View style={styles.recentCopy}>
-									<Text style={styles.recentTitle} numberOfLines={1}>
-										{scan.dishName}
-									</Text>
-									<Text style={styles.recentMeta}>
-										{relativeTime(scan.createdAt)}
-									</Text>
-								</View>
-								<View
-									style={[
-										styles.recentScore,
-										{ borderColor: riskTone(scan.overallRiskLevel) },
-									]}
-								>
-									<Text
-										style={[
-											styles.recentScoreText,
-											{ color: riskTone(scan.overallRiskLevel) },
-										]}
-									>
-										{scan.overallRiskScore}
-									</Text>
-								</View>
-							</Pressable>
-						);
-					})}
-				</View>
-			) : (
-				<EmptyState
-					title="Nothing logged yet"
-					subtitle="Your first food scan will start building your personalized stomach profile."
-				/>
-			)}
-
 			<GutScoreInfoModal
 				visible={gutScoreInfoVisible}
 				onClose={() => setGutScoreInfoVisible(false)}
@@ -348,44 +331,29 @@ function GutScoreHomeCardSkeleton() {
 		<SectionCard style={styles.gutScoreSkeletonCard}>
 			<View style={styles.skeletonCopyColumn}>
 				<View style={styles.skeletonHeaderRow}>
-					<SkeletonBlock width={96} height={24} radius={radii.sm} />
-					<SkeletonBlock width={28} height={28} radius={14} />
+					<SkeletonBlock width={84} height={22} radius={radii.sm} />
+					<SkeletonBlock width={26} height={26} radius={13} />
 				</View>
 				<View style={styles.skeletonScoreRow}>
-					<SkeletonBlock width={84} height={58} radius={radii.md} />
+					<SkeletonBlock width={68} height={44} radius={radii.md} />
 					<SkeletonBlock
-						width={52}
-						height={26}
+						width={44}
+						height={22}
 						radius={radii.sm}
 						style={styles.skeletonScoreScale}
 					/>
 				</View>
-				<SkeletonBlock width={124} height={18} radius={radii.sm} />
-				<SkeletonBlock width={150} height={44} radius={radii.sm} />
-				<View style={styles.skeletonTrendCard}>
-					<SkeletonBlock width={88} height={16} radius={radii.sm} />
-					<SkeletonBlock width={106} height={24} radius={radii.sm} />
-					<SkeletonBlock width={82} height={18} radius={radii.sm} />
+				<SkeletonBlock width={138} height={36} radius={radii.sm} />
+				<View style={styles.skeletonTrendRow}>
+					<SkeletonBlock width={14} height={14} radius={7} />
+					<SkeletonBlock width={108} height={14} radius={radii.sm} />
 				</View>
 			</View>
 			<View style={styles.skeletonVisualWrap}>
-				<SkeletonBlock width={150} height={118} radius={radii.xxl} />
-				<SkeletonBlock width={92} height={34} radius={radii.pill} />
+				<SkeletonBlock width={124} height={96} radius={radii.xxl} />
+				<SkeletonBlock width={78} height={28} radius={radii.pill} />
 			</View>
 		</SectionCard>
-	);
-}
-
-function DailyReportCardSkeleton() {
-	return (
-		<View style={styles.dailyReportCard}>
-			<SkeletonBlock width={42} height={42} radius={21} />
-			<View style={styles.dailyReportCopy}>
-				<SkeletonBlock width="82%" height={22} radius={radii.sm} />
-				<SkeletonBlock width="96%" height={18} radius={radii.sm} />
-			</View>
-			<SkeletonBlock width={18} height={18} radius={9} />
-		</View>
 	);
 }
 
@@ -394,129 +362,33 @@ function WeeklyProgressCardSkeleton() {
 		<SectionCard style={styles.weeklyProgressSkeletonCard}>
 			<View style={styles.weeklyProgressSkeletonHeader}>
 				<View style={styles.skeletonCopyColumn}>
-					<SkeletonBlock width={136} height={24} radius={radii.sm} />
+					<SkeletonBlock width={118} height={20} radius={radii.sm} />
 				</View>
-				<SkeletonBlock width={18} height={18} radius={9} />
+				<SkeletonBlock width={16} height={16} radius={8} />
 			</View>
 			<View style={styles.weeklyProgressSkeletonFeature}>
-				<SkeletonBlock width={116} height={116} radius={58} />
+				<SkeletonBlock width={92} height={92} radius={46} />
 				<View style={styles.weeklyProgressSkeletonFeatureCopy}>
-					<SkeletonBlock width={118} height={14} radius={radii.sm} />
-					<SkeletonBlock width="90%" height={18} radius={radii.sm} />
-					<SkeletonBlock width="82%" height={18} radius={radii.sm} />
+					<SkeletonBlock width={108} height={14} radius={radii.sm} />
+					<SkeletonBlock width="90%" height={16} radius={radii.sm} />
+					<SkeletonBlock width="82%" height={16} radius={radii.sm} />
 				</View>
 			</View>
 			<View style={styles.weeklyProgressSkeletonDays}>
 				{[0, 1, 2, 3, 4, 5, 6].map((item) => (
 					<View key={item} style={styles.weeklyProgressSkeletonDay}>
-						<SkeletonBlock width={14} height={14} radius={radii.sm} />
-						<SkeletonBlock width={30} height={30} radius={15} />
-						<SkeletonBlock width={18} height={18} radius={9} />
-						<SkeletonBlock width={22} height={14} radius={radii.sm} />
+						<SkeletonBlock width={12} height={12} radius={radii.sm} />
+						<SkeletonBlock width={24} height={24} radius={12} />
+						<SkeletonBlock width={14} height={14} radius={7} />
+						<SkeletonBlock width={20} height={12} radius={radii.sm} />
 					</View>
 				))}
 			</View>
-			<SkeletonBlock width="88%" height={16} radius={radii.sm} />
+			<SkeletonBlock width="78%" height={12} radius={radii.sm} />
 		</SectionCard>
 	);
 }
 
-function TokenStatSkeleton() {
-	return (
-		<SectionCard style={styles.statCard}>
-			<View style={styles.statRow}>
-				<View style={styles.statLabelWrap}>
-					<SkeletonBlock width={30} height={30} radius={15} />
-					<SkeletonBlock width={160} height={20} radius={radii.sm} />
-				</View>
-				<SkeletonBlock width={62} height={22} radius={radii.sm} />
-			</View>
-			<SkeletonBlock height={10} radius={radii.pill} />
-		</SectionCard>
-	);
-}
-
-function RecentScansSkeleton() {
-	return (
-		<View style={styles.recentWrap}>
-			{[0, 1].map((item) => (
-				<View key={item} style={styles.recentCard}>
-					<View style={styles.recentCopy}>
-						<SkeletonBlock width="62%" height={20} radius={radii.sm} />
-						<SkeletonBlock width="38%" height={16} radius={radii.sm} />
-					</View>
-					<SkeletonBlock width={44} height={44} radius={22} />
-				</View>
-			))}
-		</View>
-	);
-}
-
-function computeFoodLogStreak(scans: ScanRecord[]) {
-	const days = Array.from(
-		new Set(
-			scans
-				.filter((scan) => (scan.scanCategory ?? "food") === "food")
-				.map((scan) =>
-					new Date(scan.createdAt).toLocaleDateString("en-US", {
-						year: "numeric",
-						month: "2-digit",
-						day: "2-digit",
-					})
-				)
-		)
-	)
-		.map((value) => new Date(value))
-		.sort((left, right) => right.getTime() - left.getTime());
-
-	let streak = 0;
-	let cursor = new Date();
-	cursor.setHours(0, 0, 0, 0);
-
-	for (const day of days) {
-		day.setHours(0, 0, 0, 0);
-		if (day.getTime() === cursor.getTime()) {
-			streak += 1;
-			cursor.setDate(cursor.getDate() - 1);
-			continue;
-		}
-
-		if (streak === 0) {
-			const yesterday = new Date(cursor);
-			yesterday.setDate(yesterday.getDate() - 1);
-			if (day.getTime() === yesterday.getTime()) {
-				streak += 1;
-				cursor = yesterday;
-			}
-		}
-	}
-
-	return streak;
-}
-
-function riskTone(level: ScanRecord["overallRiskLevel"]) {
-	if (level === "high") {
-		return palette.high;
-	}
-
-	if (level === "medium") {
-		return palette.medium;
-	}
-
-	return palette.low;
-}
-
-function severityLabel(value: number) {
-	if (value <= 3) {
-		return "calm";
-	}
-
-	if (value <= 6) {
-		return "mixed";
-	}
-
-	return "reactive";
-}
 
 const styles = StyleSheet.create({
 	headerStack: {
@@ -538,10 +410,10 @@ const styles = StyleSheet.create({
 	},
 	greetingText: {
 		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 24,
-		lineHeight: 30,
-		letterSpacing: -0.4,
+		fontFamily: type.body.semibold,
+		fontSize: 17,
+		lineHeight: 22,
+		letterSpacing: -0.2,
 	},
 	streakRow: {
 		flexDirection: "row",
@@ -566,13 +438,57 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		justifyContent: "center",
 	},
+	dailyReportBanner: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.sm,
+		backgroundColor: tokens.color.surface.card.default,
+		borderRadius: radii.xl,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.md,
+		...shadows.card,
+	},
+	dailyReportBannerIcon: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		backgroundColor: tokens.color.status.success.background,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	dailyReportBannerCopy: {
+		flex: 1,
+		minWidth: 0,
+		gap: 2,
+	},
+	dailyReportBannerTitle: {
+		color: palette.text,
+		fontFamily: type.body.bold,
+		fontSize: 16,
+		letterSpacing: -0.2,
+	},
+	dailyReportBannerSubtitle: {
+		color: palette.textMuted,
+		fontFamily: type.body.medium,
+		fontSize: 13,
+		lineHeight: 18,
+	},
+	dailyReportBannerClose: {
+		width: 30,
+		height: 30,
+		borderRadius: 15,
+		alignItems: "center",
+		justifyContent: "center",
+	},
 	gutScoreSkeletonCard: {
-		minHeight: 224,
+		minHeight: 168,
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.sm,
-		paddingVertical: spacing.xl,
+		paddingVertical: spacing.md,
 	},
 	skeletonCopyColumn: {
 		flex: 1,
@@ -593,27 +509,21 @@ const styles = StyleSheet.create({
 	skeletonScoreScale: {
 		marginBottom: 8,
 	},
-	skeletonTrendCard: {
-		alignSelf: "flex-start",
-		minWidth: 132,
-		marginTop: spacing.sm,
-		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
-		borderRadius: radii.md,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
-		gap: spacing.xs,
+	skeletonTrendRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 5,
+		marginTop: spacing.xs,
 	},
 	skeletonVisualWrap: {
-		width: 156,
+		width: 132,
 		alignItems: "center",
 		justifyContent: "center",
 		gap: spacing.xs,
 	},
 	weeklyProgressSkeletonCard: {
-		gap: spacing.md,
-		padding: spacing.md,
+		gap: spacing.sm,
+		padding: spacing.sm,
 	},
 	weeklyProgressSkeletonHeader: {
 		flexDirection: "row",
@@ -624,8 +534,7 @@ const styles = StyleSheet.create({
 	weeklyProgressSkeletonFeature: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: spacing.lg,
-		paddingVertical: spacing.xs,
+		gap: spacing.md,
 	},
 	weeklyProgressSkeletonFeatureCopy: {
 		flex: 1,
@@ -637,205 +546,51 @@ const styles = StyleSheet.create({
 	},
 	weeklyProgressSkeletonDay: {
 		flex: 1,
-		minHeight: 142,
+		minHeight: 108,
 		alignItems: "center",
 		justifyContent: "space-between",
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.xs,
 		borderRadius: radii.md,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.frosted,
 	},
 	scanCtaShell: {
-		borderRadius: radii.xxl,
+		borderRadius: radii.lg,
 		overflow: "hidden",
-		...shadows.lift,
+		...shadows.card,
 	},
 	scanCtaGradient: {
-		minHeight: 212,
-		borderRadius: radii.xxl,
-		paddingHorizontal: spacing.lg,
-		paddingVertical: spacing.xl,
+		minHeight: 60,
+		borderRadius: radii.lg,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+		flexDirection: "row",
 		alignItems: "center",
-		justifyContent: "center",
 		gap: spacing.sm,
-		position: "relative",
 	},
-	scanAccentLeft: {
-		position: "absolute",
-		width: 84,
-		height: 84,
-		borderRadius: 42,
-		backgroundColor: components.scanCta.ornamentLeft,
-		left: -16,
-		bottom: -10,
-	},
-	scanAccentRight: {
-		position: "absolute",
-		width: 118,
-		height: 118,
-		borderRadius: 59,
-		backgroundColor: components.scanCta.ornamentRight,
-		right: -28,
-		top: -20,
-	},
-	scanTitle: {
-		color: components.scanCta.title,
-		fontFamily: type.body.bold,
-		fontSize: 38,
-		letterSpacing: -1,
-	},
-	scanSubtitle: {
-		color: components.scanCta.subtitle,
-		fontFamily: type.body.medium,
-		fontSize: 18,
-	},
-	scanArrow: {
-		position: "absolute",
-		right: spacing.lg,
-		bottom: spacing.lg,
-		width: 42,
-		height: 42,
-		borderRadius: 21,
+	scanIconBubble: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
 		backgroundColor: components.scanCta.arrowBackground,
 		alignItems: "center",
 		justifyContent: "center",
 	},
-	sectionHeader: {
-		marginTop: 2,
-	},
-	sectionTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 24,
-		letterSpacing: -0.4,
-	},
-	dailyReportCard: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.md,
-		backgroundColor: components.card.default.backgroundColor,
-		borderRadius: radii.xl,
-		borderWidth: 1,
-		borderColor: components.card.default.borderColor,
-		padding: spacing.lg,
-		...shadows.card,
-	},
-	dailyReportIcon: {
-		width: 42,
-		height: 42,
-		borderRadius: 21,
-		backgroundColor: tokens.color.status.success.background,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	dailyReportCopy: {
+	scanTitle: {
 		flex: 1,
-		gap: 3,
-	},
-	dailyReportTitle: {
-		color: palette.text,
+		color: components.scanCta.title,
 		fontFamily: type.body.bold,
-		fontSize: 18,
+		fontSize: 17,
 		letterSpacing: -0.2,
+		textAlign: "center",
 	},
-	dailyReportSubtitle: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 14,
-		lineHeight: 20,
-	},
-	statCard: {
-		gap: spacing.sm,
-	},
-	statRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: spacing.md,
-	},
-	statLabelWrap: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.sm,
-	},
-	statIcon: {
-		width: 30,
-		height: 30,
-		borderRadius: 15,
+	scanArrow: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		backgroundColor: components.scanCta.arrowBackground,
 		alignItems: "center",
 		justifyContent: "center",
-	},
-	statLabel: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 16,
-	},
-	statValue: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 16,
-	},
-	progressTrack: {
-		height: 10,
-		borderRadius: radii.pill,
-		backgroundColor: palette.line,
-		overflow: "hidden",
-	},
-	progressFill: {
-		height: "100%",
-		borderRadius: radii.pill,
-		backgroundColor: tokens.color.chart.info,
-	},
-	recentWrap: {
-		gap: spacing.sm,
-	},
-	recentCard: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: spacing.md,
-		backgroundColor: tokens.color.surface.card.default,
-		borderRadius: radii.xl,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		paddingHorizontal: spacing.lg,
-		paddingVertical: spacing.md,
-	},
-	recentCopy: {
-		flex: 1,
-		gap: 3,
-	},
-	recentTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-	},
-	recentMeta: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 13,
-	},
-	recentScore: {
-		width: 54,
-		height: 54,
-		borderRadius: 27,
-		borderWidth: 4,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	recentScoreText: {
-		fontFamily: type.body.bold,
-		fontSize: 20,
-		letterSpacing: -0.5,
-	},
-	dismissLink: {
-		alignSelf: "center",
-		paddingVertical: 6,
-	},
-	dismissLabel: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 14,
 	},
 });

@@ -1,394 +1,507 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useState } from 'react';
-import { Image as RNImage, StyleSheet, Text, View } from 'react-native';
+import { ComponentProps, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RiskBar } from '../../components/charts/RiskBar';
-import { AppScreen, InfoPill, PipAnalysisCard, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
+import {
+  IngredientsBreakdownCard,
+  DietFitCard,
+  MenuRankingCard,
+  ScanHeroCard,
+  WhyThisScoreCard,
+  type HeroConditionChip,
+  type MenuTierItem,
+  type ScanIngredient,
+  toggleExpandedId,
+} from '../../components/scan-result/ScanResultCards';
+import { ScanResultSkeleton } from '../../components/scan-result/ScanResultSkeleton';
+import { SkeletonImage } from '../../components/common/SkeletonImage';
+import { AppScreen, PipAnalysisCard, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
+import { isLiveBackendConfigured } from '../../config/env';
+import { useScanDetail } from '../../features/history/hooks';
+import { presentRisk, verdictForRisk } from '../../features/scan/riskPresentation';
+import { formatConditionName } from '../../utils/conditionFormat';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { selectLatestScan, useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
-import { ExtractedIngredient, ScanRecord } from '../../types/domain';
+import { ScanIngredientRisk, ScanRecord } from '../../types/domain';
+import { normalizeScanRecord, selectPreferredScan } from './resultSelection';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanResult'>;
 
-const swapSuggestions: { match: string[]; label: string; detail: string }[] = [
-  { match: ['dairy', 'cream', 'milk', 'cheese'], label: 'Lactose-free alternative', detail: 'Lower dairy load' },
-  { match: ['garlic', 'onion'], label: 'Garlic-infused oil', detail: 'Flavor with lower fructan load' },
-  { match: ['wheat', 'bread', 'pasta', 'noodle'], label: 'Gluten-free swap', detail: 'Lower wheat exposure' },
-  { match: ['bean', 'lentil', 'chickpea'], label: 'Smaller portion or gentler base', detail: 'Lower fermentable load' },
-];
-
 export function ScanResultScreen({ navigation, route }: Props) {
   const scans = useAppStore((state) => state.scans);
-  const profile = useAppStore((state) => state.profile);
-  const finishOnboarding = useAppStore((state) => state.finishOnboarding);
-  const [imageFailed, setImageFailed] = useState(false);
-
-  const scan = selectLatestScan(scans, route.params.scanId);
-  const visibleIngredients = useMemo(
-    () => (scan ? dedupeIngredients(scan.structuredAnalysis.visibleIngredients) : []),
-    [scan],
+  const authUser = useAppStore((state) => state.authUser);
+  const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const storeScan = selectLatestScan(scans, route.params.scanId);
+  const shouldFetchDetail = Boolean(isLiveBackendConfigured && authUser);
+  const scanDetailQuery = useScanDetail(route.params.scanId, shouldFetchDetail);
+  const detailScan = scanDetailQuery.data?.scan;
+  const rawScan = useMemo(() => selectPreferredScan(storeScan, detailScan), [detailScan, storeScan]);
+  const scan = useMemo(() => (rawScan ? normalizeScanRecord(rawScan) : undefined), [rawScan]);
+  const ingredientRisks = useMemo(() => (scan ? scan.ingredientRisks : []), [scan]);
+  const updateScanConsumption = useAppStore((state) => state.updateScanConsumption);
+  const [consumptionStatus, setConsumptionStatus] = useState<'unknown' | 'consumed' | 'skipped'>(
+    rawScan?.consumptionStatus ?? 'unknown',
   );
-  const inferredIngredients = useMemo(
-    () => (scan ? dedupeIngredients(scan.structuredAnalysis.inferredIngredients) : []),
-    [scan],
-  );
-  const allIngredientTokens = useMemo(
+  const riskPresentation = useMemo(() => (scan ? presentRisk(scan) : {}), [scan]);
+  const heroConditionChips = useMemo<HeroConditionChip[]>(
     () =>
-      [
-        ...(scan?.structuredAnalysis.visibleIngredients.map((ingredient) => ingredient.canonicalName) ?? []),
-        ...(scan?.structuredAnalysis.inferredIngredients.map((ingredient) => ingredient.canonicalName) ?? []),
-      ].map(normalizeToken),
-    [scan],
+      (scan?.conditionRisks ?? [])
+        .slice()
+        .sort((left, right) => right.riskScore - left.riskScore)
+        .slice(0, 2)
+        .map((risk) => ({ name: formatConditionName(risk.conditionName), level: risk.riskLevel })),
+    [scan?.conditionRisks],
   );
-  const triggerLookup = useMemo(() => {
-    const userSignals = [
-      ...(profile?.knownIngredientSensitivities ?? []),
-      ...(scan?.possibleTriggers ?? []),
-    ].map(normalizeToken);
-    return new Set(userSignals);
-  }, [profile?.knownIngredientSensitivities, scan?.possibleTriggers]);
-  const swapSuggestion = useMemo(() => (scan ? findSwapSuggestion(scan, visibleIngredients, inferredIngredients) : null), [scan, inferredIngredients, visibleIngredients]);
-  const declaredMatches = useMemo(
-    () =>
-      (profile?.knownIngredientSensitivities ?? []).filter((item) => {
-        const token = normalizeToken(item);
-        return triggerLookup.has(token) || allIngredientTokens.some((ingredient) => ingredient.includes(token) || token.includes(ingredient));
-      }),
-    [allIngredientTokens, profile?.knownIngredientSensitivities, triggerLookup],
-  );
-  const topCondition = useMemo(
-    () => Object.entries(scan?.conditionRiskScores ?? {}).sort((left, right) => right[1].score - left[1].score)[0],
-    [scan?.conditionRiskScores],
-  );
-  const learnedMatches = useMemo(() => {
-    const ingredientScores = profile?.stomachProfile.ingredientScores ?? {};
-    return Object.entries(ingredientScores)
-      .filter(([ingredientName, score]) => allIngredientTokens.includes(normalizeToken(ingredientName)) && score.evidenceCount > 0)
-      .sort((left, right) => right[1].combinedRiskScore - left[1].combinedRiskScore);
-  }, [allIngredientTokens, profile?.stomachProfile.ingredientScores]);
-  const topLearnedMatch = learnedMatches[0];
 
   useEffect(() => {
     trackEvent('scan_result_viewed', { scan_id: route.params.scanId });
   }, [route.params.scanId]);
 
-  useEffect(() => {
-    setImageFailed(false);
-  }, [scan?.id]);
-
   if (!scan) {
+    if (scanDetailQuery.isLoading || scanDetailQuery.isFetching) {
+      return (
+        <AppScreen>
+          <ScanResultSkeleton />
+        </AppScreen>
+      );
+    }
+
     return (
       <AppScreen>
         <ScreenHeader eyebrow="Missing scan" title="We couldn't find that result." subtitle="Try scanning the meal again." />
-        <PrimaryButton label="Scan again" onPress={() => navigation.replace('ScanCapture', {})} />
+        <PrimaryButton label="Scan again" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'food', initialMode: 'food' })} />
       </AppScreen>
     );
   }
 
-  function handleDone() {
+  if (scan.scanCategory === 'menu') {
+    if (scan.menuResult) {
+      return <MenuScanResult scan={scan} navigation={navigation} />;
+    }
+
+    return <MenuResultUnavailable navigation={navigation} scan={scan} />;
+  }
+
+  function confirmDelete() {
+    if (!scan || isDeleting) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete this scan?',
+      `Remove "${scan.dishName}" from your history? This removes it from learning evidence too.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDelete();
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleDelete() {
     if (!scan) {
       return;
     }
 
-    trackEvent('scan_result_dismissed', { scan_id: scan.id });
-
-    if (route.params.fromOnboarding) {
-      finishOnboarding();
+    setIsDeleting(true);
+    try {
+      await deleteScanRecord(scan.id);
+      trackEvent('scan_result_deleted', { scan_id: scan.id });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (error) {
+      setIsDeleting(false);
+      Alert.alert('Could not delete scan', error instanceof Error ? error.message : 'Please try again.');
     }
-
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'MainTabs' }],
-    });
   }
 
-  const riskColor = toneForLevel(scan.overallRiskLevel);
-  const riskSurface = surfaceForLevel(scan.overallRiskLevel);
-  const riskLabel = scan.overallRiskLevel.charAt(0).toUpperCase() + scan.overallRiskLevel.slice(1);
+  const scanAnotherParams =
+    scan.sourceType === 'barcode'
+      ? { sourceType: 'barcode' as const, scanCategory: 'grocery' as const, initialMode: 'barcode' as const }
+      : { sourceType: 'camera' as const, scanCategory: 'food' as const, initialMode: 'food' as const };
 
   return (
     <AppScreen>
       <ScreenHeader eyebrow="Result" title="Scan result" />
 
-      <View style={styles.heroRow}>
-        <View style={styles.heroCopy}>
-          <Text style={styles.heroTitle}>{scan.dishName}</Text>
-          <Text style={styles.heroMeta}>{formatTimestamp(scan.createdAt)}</Text>
-        </View>
+      <ScanHeroCard
+        title={scan.dishName}
+        meta={formatTimestamp(scan.createdAt)}
+        score={scan.overallRiskScore}
+        level={scan.overallRiskLevel}
+        verdict={verdictForRisk(scan.overallRiskScore, riskPresentation.cautionNote)}
+        conditionChips={heroConditionChips}
+        image={
+          <SkeletonImage
+            uri={scan.groceryProduct?.imageUrl ?? scan.imageUri}
+            style={styles.heroSlotImage}
+            resizeMode="cover"
+            skeletonRadius={18}
+            accessibilityLabel={`${scan.dishName} photo`}
+            fallback={
+              <ResultImageFallback
+                title={scan.dishName}
+                compact
+                subtitle={undefined}
+              />
+            }
+          />
+        }
+      />
 
-        {scan.imageUri && !imageFailed ? (
-          <RNImage source={{ uri: scan.imageUri }} style={styles.heroImage} resizeMode="cover" onError={() => setImageFailed(true)} />
-        ) : (
-          <ResultImageFallback title={scan.dishName} compact subtitle={imageFailed ? 'Photo unavailable' : undefined} />
-        )}
-      </View>
-
-      <SectionCard style={[styles.riskCard, { backgroundColor: riskSurface.background, borderColor: riskSurface.border }]}>
-        <Text style={styles.riskEyebrow}>Personalized risk</Text>
-        <View style={styles.riskRow}>
-          <Text style={[styles.riskWord, { color: riskColor }]}>{riskLabel}</Text>
-          <View style={styles.riskScoreBlock}>
-            <Text style={[styles.riskScore, { color: riskColor }]}>{scan.overallRiskScore}</Text>
-            <Text style={styles.riskScale}>/100</Text>
-          </View>
-        </View>
-      </SectionCard>
-
-      {scan.gutScoreImpact ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Gut Score impact</Text>
-          <View style={styles.gutImpactRow}>
-            <View>
-              <Text style={styles.gutImpactLabel}>
-                {scan.gutScoreImpact.direction === 'raise'
-                  ? 'May support Gut Score'
-                  : scan.gutScoreImpact.direction === 'lower'
-                    ? 'May lower Gut Score'
-                    : 'Likely neutral'}
-              </Text>
-              <Text style={styles.gutImpactSummary}>{scan.gutScoreImpact.summary}</Text>
-            </View>
-            <Text style={[styles.gutImpactDelta, { color: gutImpactTone(scan.gutScoreImpact.projectedDelta) }]}>
-              {scan.gutScoreImpact.projectedDelta > 0 ? '+' : ''}
-              {scan.gutScoreImpact.projectedDelta}
-            </Text>
-          </View>
-          {scan.gutScoreImpact.projectedScore ? (
-            <Text style={styles.gutImpactFootnote}>Projected score after eating: {scan.gutScoreImpact.projectedScore}/100</Text>
-          ) : (
-            <Text style={styles.gutImpactFootnote}>Daily reports help the app learn whether days like this felt calm or reactive.</Text>
-          )}
-        </SectionCard>
-      ) : null}
+      <WhyThisScoreCard
+        contributors={scan.scoreContributors}
+        level={scan.overallRiskLevel}
+        impactSummary={scan.gutScoreImpact?.summary}
+      />
 
       <SectionCard>
         <Text style={styles.sectionTitle}>Conditions impact</Text>
         <View style={styles.barList}>
-          {Object.entries(scan.conditionRiskScores).map(([condition, risk]) => (
-            <RiskBar key={condition} label={condition} score={risk.score} level={risk.level} />
+          {(scan.conditionRisks.length
+            ? scan.conditionRisks
+            : Object.entries(scan.conditionRiskScores).map(([conditionName, risk], index) => ({
+                conditionName,
+                riskScore: risk.score,
+                riskLevel: risk.level,
+                reason: '',
+                displayOrder: index,
+              }))
+          ).map((risk) => (
+            <View key={risk.conditionName} style={styles.conditionRow}>
+              <RiskBar label={formatConditionName(risk.conditionName)} score={risk.riskScore} level={risk.riskLevel} />
+              {risk.reason ? <Text style={styles.conditionReason}>{risk.reason}</Text> : null}
+            </View>
           ))}
         </View>
       </SectionCard>
 
+      <DietFitCard evaluations={scan.dietEvaluations} />
+
+      <PipAnalysisCard title="Pip's take" body={scan.pipTake ?? scan.interpretation} />
+
+      <IngredientsBreakdownCard
+        ingredients={ingredientRisks.map(toScanIngredient)}
+      />
+
+
       <SectionCard>
-        <Text style={styles.sectionTitle}>Why this score</Text>
-        <View style={styles.metaStack}>
-          <Text style={styles.metaLabel}>Declared profile</Text>
-          <Text style={styles.metaValue}>
-            {declaredMatches.length
-              ? `Matched ${declaredMatches.slice(0, 2).join(', ')} from your declared sensitivities.`
-              : 'No direct declared sensitivity match in this meal.'}
-          </Text>
-        </View>
-        <View style={styles.metaStack}>
-          <Text style={styles.metaLabel}>Known condition patterns</Text>
-          <Text style={styles.metaValue}>
-            {topCondition ? `${topCondition[0]} is the main driver at ${topCondition[1].score}/100.` : 'No strong condition-level signal yet.'}
-          </Text>
-        </View>
-        <View style={styles.metaStack}>
-          <Text style={styles.metaLabel}>Your learned outcomes</Text>
-          <Text style={styles.metaValue}>
-            {topLearnedMatch
-              ? `${topLearnedMatch[0]} has ${topLearnedMatch[1].evidenceCount} daily report signal${topLearnedMatch[1].evidenceCount === 1 ? '' : 's'} in your profile.`
-              : 'Keep logging food and daily reports to make future scores more personal.'}
-          </Text>
+        <Text style={styles.sectionTitle}>Did you eat this?</Text>
+        <Text style={styles.sectionBody}>
+          Confirmed meals count toward your triggers and Daily Score; skipped ones stay out of your data.
+        </Text>
+        <View style={styles.consumeRow}>
+          <ConsumeChoice
+            label="Ate it"
+            icon="restaurant-outline"
+            active={consumptionStatus === 'consumed'}
+            onPress={() => {
+              setConsumptionStatus('consumed');
+              void updateScanConsumption({ scanId: scan.id, consumptionStatus: 'consumed' });
+            }}
+          />
+          <ConsumeChoice
+            label="Skipped it"
+            icon="close-circle-outline"
+            active={consumptionStatus === 'skipped'}
+            onPress={() => {
+              setConsumptionStatus('skipped');
+              void updateScanConsumption({ scanId: scan.id, consumptionStatus: 'skipped' });
+            }}
+          />
         </View>
       </SectionCard>
 
-      {scan.possibleTriggers.length ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Likely triggers</Text>
-          <View style={styles.chipWrap}>
-            {scan.possibleTriggers.map((trigger) => (
-              <InfoPill key={trigger} label={trigger} tone="warm" />
-            ))}
-          </View>
-        </SectionCard>
-      ) : null}
-
-      {swapSuggestion ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Safer swap</Text>
-          <View style={styles.swapCard}>
-            <View style={styles.swapIcon}>
-              <Ionicons name="leaf-outline" size={18} color={palette.primary} />
-            </View>
-            <View style={styles.swapCopy}>
-              <Text style={styles.swapTitle}>{swapSuggestion.label}</Text>
-              <Text style={styles.swapDetail}>{swapSuggestion.detail}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
-          </View>
-        </SectionCard>
-      ) : null}
-
-      <SectionCard>
-        <Text style={styles.sectionTitle}>Ingredients</Text>
-        <View style={styles.ingredientList}>
-          {visibleIngredients.map((ingredient) => (
-            <IngredientRow key={`visible-${ingredient.canonicalName}`} ingredient={ingredient} triggerLookup={triggerLookup} visible />
-          ))}
-          {visibleIngredients.length === 0 ? (
-            <Text style={styles.sectionBody}>No confident visible ingredients were extracted from the image.</Text>
-          ) : null}
-        </View>
-        {inferredIngredients.length ? (
-          <View style={styles.inferredWrap}>
-            <Text style={styles.inferredLabel}>Likely inferred ingredients</Text>
-            <View style={styles.chipWrap}>
-              {inferredIngredients.map((ingredient) => (
-                <InfoPill key={`inferred-${ingredient.canonicalName}`} label={ingredient.canonicalName} tone="soft" />
-              ))}
-            </View>
-          </View>
-        ) : null}
-      </SectionCard>
-
-      <SectionCard>
-        <Text style={styles.sectionTitle}>How it was recognized</Text>
-        <View style={styles.metaStack}>
-          <Text style={styles.metaLabel}>Preparation</Text>
-          <Text style={styles.metaValue}>
-            {scan.structuredAnalysis.prepStyle.length ? scan.structuredAnalysis.prepStyle.join(', ') : 'No strong preparation cues detected'}
-          </Text>
-        </View>
-        {scan.structuredAnalysis.notes.length ? (
-          <View style={styles.metaStack}>
-            <Text style={styles.metaLabel}>Recognition notes</Text>
-            <Text style={styles.metaValue}>{scan.structuredAnalysis.notes.join(', ')}</Text>
-          </View>
-        ) : null}
-      </SectionCard>
-
-      <PipAnalysisCard title="Pip's take" body={scan.interpretation} />
+      <Text style={styles.disclaimerText}>
+        Informational guidance, not medical advice. For diagnosis or treatment, talk to a clinician.
+      </Text>
 
       <View style={styles.actionStack}>
-        {route.params.manualMode ? (
-          <PrimaryButton label="Done" onPress={handleDone} />
-        ) : (
-          <PrimaryButton label="Scan another" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera' })} />
+        {route.params.manualMode ? null : (
+          <PrimaryButton label={scan.sourceType === 'barcode' ? 'Scan another barcode' : 'Scan another'} onPress={() => navigation.replace('ScanCapture', scanAnotherParams)} />
         )}
-        {route.params.manualMode ? null : <SecondaryButton label="Done" onPress={handleDone} />}
+        <DeleteAction onPress={confirmDelete} isDeleting={isDeleting} />
       </View>
     </AppScreen>
   );
 }
 
-function IngredientRow({
-  ingredient,
-  triggerLookup,
-  visible,
+function ConsumeChoice({
+  label,
+  icon,
+  active,
+  onPress,
 }: {
-  ingredient: ExtractedIngredient;
-  triggerLookup: Set<string>;
-  visible: boolean;
+  label: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
+  active: boolean;
+  onPress: () => void;
 }) {
-  const tone = determineIngredientTone(ingredient, triggerLookup);
-  const toneColor =
-    tone === 'high'
-      ? tokens.color.status.risk.high.tint
-      : tone === 'medium'
-        ? tokens.color.status.risk.medium.tint
-        : tokens.color.status.risk.low.tint;
-
   return (
-    <View style={styles.ingredientRow}>
-      <View style={[styles.ingredientDot, { backgroundColor: toneColor }]} />
-      <View style={styles.ingredientCopy}>
-        <Text style={styles.ingredientName}>{ingredient.canonicalName}</Text>
-        <Text style={styles.ingredientMeta}>{visible ? 'Visible' : 'Inferred'}</Text>
-      </View>
-      <Text style={[styles.ingredientRisk, { color: toneColor }]}>{capitalize(tone)}</Text>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.consumeChoice, active && styles.consumeChoiceActive, pressed && { opacity: 0.88 }]}
+    >
+      <Ionicons name={icon} size={16} color={active ? palette.primaryDark : palette.textMuted} />
+      <Text style={[styles.consumeChoiceText, active && { color: palette.primaryDark }]}>{label}</Text>
+    </Pressable>
   );
 }
 
-function dedupeIngredients(ingredients: ExtractedIngredient[]) {
-  return Array.from(new Map(ingredients.map((ingredient) => [ingredient.canonicalName, ingredient])).values());
+function DeleteAction({ onPress, isDeleting }: { onPress: () => void; isDeleting: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isDeleting}
+      style={({ pressed }) => [styles.deleteAction, (pressed || isDeleting) && { opacity: pressed ? 0.7 : 0.5 }]}
+    >
+      <Text style={styles.deleteActionLabel}>{isDeleting ? 'Deleting…' : 'Delete'}</Text>
+    </Pressable>
+  );
 }
 
-function determineIngredientTone(ingredient: ExtractedIngredient, triggerLookup: Set<string>) {
-  const token = normalizeToken(ingredient.canonicalName);
-  const component = normalizeToken(ingredient.component);
-  const matchesTrigger = triggerLookup.has(token) || (component ? triggerLookup.has(component) : false);
+function MenuScanResult({
+  scan,
+  navigation,
+}: {
+  scan: ScanRecord;
+  navigation: Props['navigation'];
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
+  const updateScanConsumption = useAppStore((state) => state.updateScanConsumption);
+  const [consumedItemIds, setConsumedItemIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const menu = scan.menuResult!;
+  const rankedItems = rankedMenuItems(menu);
 
-  if (matchesTrigger) {
-    return 'high';
+  function confirmDelete() {
+    if (isDeleting) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete this scan?',
+      `Remove "${menu.menuTitle}" from your history? This removes it from learning evidence too.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDelete();
+          },
+        },
+      ],
+    );
   }
 
-  if (ingredient.confidence === 'low' || ingredient.evidence === 'inferred') {
-    return 'medium';
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      await deleteScanRecord(scan.id);
+      trackEvent('scan_result_deleted', { scan_id: scan.id, scan_category: 'menu' });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (error) {
+      setIsDeleting(false);
+      Alert.alert('Could not delete scan', error instanceof Error ? error.message : 'Please try again.');
+    }
   }
 
-  return 'low';
+  return (
+    <AppScreen>
+      <ScreenHeader eyebrow="Menu result" title="Menu risk ranking" />
+
+      <ScanHeroCard
+        title={menu.menuTitle}
+        meta={`${menu.inputPageCount} page${menu.inputPageCount === 1 ? '' : 's'} analyzed • ${formatTimestamp(scan.createdAt)}`}
+        verdict={`We ranked ${menu.items.length} item${menu.items.length === 1 ? '' : 's'} for your gut — safest picks first.`}
+        image={
+          <SkeletonImage
+            uri={scan.imageUri}
+            style={styles.heroSlotImage}
+            resizeMode="cover"
+            skeletonRadius={18}
+            accessibilityLabel={`${menu.menuTitle} photo`}
+            fallback={<ResultImageFallback title="Menu" compact subtitle={undefined} />}
+          />
+        }
+      />
+
+      {menu.summary ? (
+        <SectionCard style={styles.menuSummaryCard}>
+          <View style={styles.menuSummaryIcon}>
+            <Ionicons name="restaurant-outline" size={22} color={palette.primary} />
+          </View>
+          <View style={styles.menuSummaryCopy}>
+            <Text style={styles.sectionBody}>{menu.summary}</Text>
+          </View>
+        </SectionCard>
+      ) : null}
+
+      <MenuRankingCard
+        items={rankedItems.map((item) => ({
+          ...toMenuTierItem(item),
+          consumed: Boolean(item.consumedAt) || consumedItemIds.has(item.sourceItemId),
+        }))}
+        expandedId={expanded}
+        onToggle={(id) => toggleExpandedId(expanded, id, setExpanded)}
+        onConsume={(item) => {
+          if (!item.sourceItemId) {
+            return;
+          }
+          setConsumedItemIds((current) => new Set(current).add(item.sourceItemId!));
+          void updateScanConsumption({
+            scanId: scan.id,
+            consumedMenuItemSourceIds: [item.sourceItemId],
+          });
+        }}
+      />
+
+      {rankedItems.length < 3 ? (
+        <SectionCard>
+          <Text style={styles.sectionTitle}>Limited menu read</Text>
+          <Text style={styles.sectionBody}>We only found enough detail to rank a few menu items.</Text>
+        </SectionCard>
+      ) : null}
+
+      <Text style={styles.disclaimerText}>
+        Informational guidance, not medical advice. For diagnosis or treatment, talk to a clinician.
+      </Text>
+
+      <View style={styles.actionStack}>
+        <PrimaryButton label="Scan another" onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'menu', initialMode: 'menu' })} />
+        <DeleteAction onPress={confirmDelete} isDeleting={isDeleting} />
+      </View>
+    </AppScreen>
+  );
 }
 
-function normalizeToken(value?: string | null) {
-  return value?.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '') ?? '';
+function MenuResultUnavailable({
+  navigation,
+  scan,
+}: {
+  navigation: Props['navigation'];
+  scan: ScanRecord;
+}) {
+  const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  function confirmDelete() {
+    if (isDeleting) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete this scan?',
+      `Remove "${scan.dishName || 'this menu scan'}" from your history? This removes it from learning evidence too.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDelete();
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      await deleteScanRecord(scan.id);
+      trackEvent('scan_result_deleted', { scan_id: scan.id, scan_category: 'menu' });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (error) {
+      setIsDeleting(false);
+      Alert.alert('Could not delete scan', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
+
+  return (
+    <AppScreen>
+      <ScreenHeader
+        eyebrow="Menu result"
+        title="Menu ranking unavailable"
+        subtitle="This saved menu scan is missing its ranking details, so we are not showing it as a meal result."
+      />
+
+      <SectionCard>
+        <Text style={styles.sectionTitle}>{scan.dishName || 'Menu scan'}</Text>
+        <Text style={styles.sectionBody}>
+          Scan the menu again to rebuild the lowest and highest risk options.
+        </Text>
+      </SectionCard>
+
+      <View style={styles.actionStack}>
+        <PrimaryButton
+          label="Scan another"
+          onPress={() => navigation.replace('ScanCapture', { sourceType: 'camera', scanCategory: 'menu', initialMode: 'menu' })}
+        />
+        <DeleteAction onPress={confirmDelete} isDeleting={isDeleting} />
+      </View>
+    </AppScreen>
+  );
 }
 
-function findSwapSuggestion(scan: ScanRecord, visibleIngredients: ExtractedIngredient[], inferredIngredients: ExtractedIngredient[]) {
-  const search = [
-    ...scan.possibleTriggers,
-    ...visibleIngredients.map((ingredient) => ingredient.canonicalName),
-    ...inferredIngredients.map((ingredient) => ingredient.canonicalName),
-  ].map(normalizeToken);
-
-  return swapSuggestions.find((suggestion) => suggestion.match.some((match) => search.some((entry) => entry.includes(match))));
+function rankedMenuItems(menu: NonNullable<ScanRecord['menuResult']>) {
+  const items = menu.items?.length
+    ? menu.items
+    : [...menu.bestForYou, ...menu.eatWithCaution, ...menu.tryToAvoid];
+  return [...items].sort((left, right) => left.displayOrder - right.displayOrder);
 }
 
-function toneForLevel(level: ScanRecord['overallRiskLevel']) {
-  if (level === 'high') {
-    return tokens.color.status.risk.high.tint;
-  }
-
-  if (level === 'medium') {
-    return tokens.color.status.risk.medium.tint;
-  }
-
-  return tokens.color.status.risk.low.tint;
-}
-
-function surfaceForLevel(level: ScanRecord['overallRiskLevel']) {
-  if (level === 'high') {
-    return {
-      background: tokens.color.status.risk.high.background,
-      border: tokens.color.border.subtle,
-    };
-  }
-
-  if (level === 'medium') {
-    return {
-      background: tokens.color.status.risk.medium.background,
-      border: tokens.color.border.subtle,
-    };
-  }
-
+function toMenuTierItem(item: NonNullable<ScanRecord['menuResult']>['items'][number]): MenuTierItem {
   return {
-    background: tokens.color.status.risk.low.background,
-    border: tokens.color.border.subtle,
+    id: item.id,
+    sourceItemId: item.sourceItemId,
+    consumed: Boolean(item.consumedAt),
+    rank: item.displayOrder + 1,
+    name: item.name,
+    section: item.section,
+    price: item.price,
+    score: item.riskScore,
+    level: item.riskLevel,
+    reason: item.whyThisScore,
+    insight: item.whyThisScore,
+    triggers: item.ingredientRisks.length ? item.ingredientRisks.slice(0, 3).map((ingredient) => ingredient.canonicalName) : undefined,
+    scoreContributors: item.scoreContributors,
+    scoringConfidence: item.scoringConfidence,
+    dietEvaluations: item.dietEvaluations,
+    saferSwap: item.gutRecommendation,
   };
 }
 
-function gutImpactTone(delta: number) {
-  if (delta > 0) {
-    return tokens.color.status.risk.low.tint;
-  }
-
-  if (delta < 0) {
-    return tokens.color.status.risk.high.tint;
-  }
-
-  return tokens.color.text.secondary;
+function toScanIngredient(ingredient: ScanIngredientRisk): ScanIngredient {
+  return {
+    name: ingredient.rawName || ingredient.canonicalName,
+    level: ingredient.riskLevel,
+  };
 }
 
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
+
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString([], {
@@ -443,6 +556,116 @@ const styles = StyleSheet.create({
     height: 104,
     borderRadius: 28,
   },
+  menuSummaryCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  menuSummaryIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: tokens.color.status.success.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuSummaryCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  menuSectionCard: {
+    gap: spacing.md,
+  },
+  menuOptionList: {
+    gap: spacing.sm,
+  },
+  menuOptionCard: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.card.default,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  menuOptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  menuRank: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuRankLabel: {
+    color: palette.white,
+    fontFamily: type.body.bold,
+    fontSize: 15,
+  },
+  menuOptionCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  menuOptionTitle: {
+    color: palette.text,
+    fontFamily: type.body.bold,
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  menuOptionMeta: {
+    color: palette.textMuted,
+    fontFamily: type.body.medium,
+    fontSize: 13,
+    textTransform: 'capitalize',
+  },
+  menuRiskPill: {
+    minWidth: 48,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  menuRiskScore: {
+    fontFamily: type.body.bold,
+    fontSize: 17,
+  },
+  menuExpanded: {
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: tokens.color.border.subtle,
+  },
+  menuReasonRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  menuReasonText: {
+    flex: 1,
+    color: palette.textMuted,
+    fontFamily: type.body.medium,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  menuModification: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: tokens.color.status.success.background,
+    padding: spacing.sm,
+  },
+  menuModificationText: {
+    flex: 1,
+    color: palette.primaryDark,
+    fontFamily: type.body.semibold,
+    fontSize: 14,
+    lineHeight: 20,
+  },
   riskCard: {
     gap: spacing.sm,
   },
@@ -480,48 +703,27 @@ const styles = StyleSheet.create({
     fontSize: 24,
     marginBottom: 8,
   },
-  gutImpactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  gutImpactLabel: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 17,
-  },
-  gutImpactSummary: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  gutImpactDelta: {
-    fontFamily: type.body.bold,
-    fontSize: 34,
-    letterSpacing: -0.8,
-  },
-  gutImpactFootnote: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 13,
-    lineHeight: 18,
-  },
   sectionTitle: {
     color: palette.text,
     fontFamily: type.body.bold,
     fontSize: 22,
     letterSpacing: -0.4,
   },
+  heroSlotImage: {
+    width: 64,
+    height: 64,
+  },
   barList: {
     gap: spacing.md,
   },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+  conditionRow: {
+    gap: spacing.xs,
+  },
+  conditionReason: {
+    color: palette.textMuted,
+    fontFamily: type.body.regular,
+    fontSize: 12,
+    lineHeight: 17,
   },
   swapCard: {
     flexDirection: 'row',
@@ -616,8 +818,53 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  consumeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  consumeChoice: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    minHeight: 44,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.card.default,
+  },
+  consumeChoiceActive: {
+    borderColor: palette.primary,
+    backgroundColor: tokens.color.surface.card.success,
+  },
+  consumeChoiceText: {
+    color: palette.textMuted,
+    fontFamily: type.body.semibold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  disclaimerText: {
+    color: tokens.color.text.tertiary,
+    fontFamily: type.body.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+  },
   actionStack: {
     gap: spacing.sm,
+  },
+  deleteAction: {
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteActionLabel: {
+    color: palette.danger,
+    fontFamily: type.body.semibold,
+    fontSize: 16,
+    letterSpacing: 0.1,
   },
   fallbackImage: {
     alignItems: 'center',

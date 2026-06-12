@@ -33,6 +33,24 @@ export function errorResponse(
   );
 }
 
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  details?: Record<string, unknown>;
+
+  constructor(message: string, status = 400, code = 'bad_request', details?: Record<string, unknown>) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export function apiErrorResponse(error: ApiError) {
+  return errorResponse(error.message, error.status, error.code, error.details);
+}
+
 export async function readJsonBody<T>(request: Request): Promise<T> {
   const text = await request.text();
   if (!text) {
@@ -55,6 +73,7 @@ export function requireInternalSecret(request: Request, envKey = 'FOLLOWUP_DISPA
   const provided =
     request.headers.get('x-dispatch-secret') ??
     request.headers.get('x-internal-secret') ??
+    request.headers.get('x-maintenance-secret') ??
     request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() ??
     '';
 

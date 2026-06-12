@@ -28,3 +28,12 @@ jobs:
             -H "content-type: application/json" \
             -H "x-maintenance-secret: $SCHEDULED_MAINTENANCE_SECRET" \
             -d '{}'
+
+      - name: Keep hot edge functions warm
+        run: |
+          BASE="https://nisdwzlvofjkqnbreflk.supabase.co/functions/v1"
+          for fn in home-get history-get insights-get scan-get billing-sync notifications-register-token scan-analyze-image scan-analyze-text scan-analyze-barcode daily-report-upsert profile-update learning-recompute; do
+            curl -s -o /dev/null -X OPTIONS "$BASE/$fn" &
+          done
+          wait
+          echo "warm pings sent"

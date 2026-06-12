@@ -7,7 +7,7 @@ export type OnboardingStackParamList = {
   OnboardingFlow: undefined;
   OnboardingPaywall: undefined;
   OnboardingAuth: undefined;
-  FirstScanLanding: undefined;
+  OnboardingSignIn: undefined;
 };
 
 export type MainTabParamList = {
@@ -20,39 +20,42 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   OnboardingStack: NavigatorScreenParams<OnboardingStackParamList>;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
+  FinishingSetup: undefined;
   Settings: undefined;
   ScanCapture: {
     sourceType?: ScanInputPayload['sourceType'];
     manualMode?: boolean;
-    fromOnboarding?: boolean;
+    scanCategory?: ScanInputPayload['scanCategory'];
+    initialMode?: 'food' | 'menu' | 'barcode';
   };
   ScanAnalyzing: {
     payload: ScanInputPayload;
     manualMode?: boolean;
-    fromOnboarding?: boolean;
   };
   ScanResult: {
     scanId: string;
     manualMode?: boolean;
-    fromOnboarding?: boolean;
   };
   DailyGutReport: {
     localDate?: string;
+  };
+  DailyReportPayoff: {
+    localDate: string;
   };
   WeeklyProgress: undefined;
   DailyScoreDay: {
     localDate: string;
     weekStart?: string;
   };
-  GutScoreDetail: undefined;
   ManualMeal: {
     scanId?: string;
   };
   LegalDocument: {
-    document: 'privacy' | 'terms';
+    document: 'privacy' | 'terms' | 'science';
   };
   DesignSystemShowcase: undefined;
   InsightDetail: {
-    ingredientName: string;
+    ingredientName?: string;
+    groupKey?: string;
   };
 };

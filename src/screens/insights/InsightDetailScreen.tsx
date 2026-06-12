@@ -1,27 +1,78 @@
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { AppScreen, ScreenHeader, SectionCard } from '../../components/common/UI';
-import { useInsightsData } from '../../features/insights/hooks';
+import { RiskBar } from '../../components/charts/RiskBar';
+import {
+  AppScreen,
+  DetailRow,
+  DetailScreenHeader,
+  PipAnalysisCard,
+  ScreenHeader,
+  SectionCard,
+} from '../../components/common/UI';
+import {
+  buildGroupSyntheticInsight,
+  groupByKey,
+  groupForIngredient,
+} from '../../features/insights/triggerGroups';
+import {
+  evidenceDetailForInsight,
+  statusForInsight,
+  type TriggerStatus,
+} from '../../features/insights/triggerProfile';
 import { RootStackParamList } from '../../navigation/types';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, radii, spacing, tokens, type } from '../../theme';
+import { useInsightsData } from '../../features/insights/hooks';
+import { formatConditionName } from '../../utils/conditionFormat';
+import { palette, spacing, tokens, type } from '../../theme';
+import { RiskLevel } from '../../types/domain';
+import { EmptyHint } from './InsightsScreen';
+import { STATUS_META } from './TriggerProfileRow';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'InsightDetail'>;
 
-export function InsightDetailScreen({ route }: Props) {
+const STATUS_HEADLINE: Record<TriggerStatus, string> = {
+  confirmed: 'Confirmed trigger',
+  suspect: 'Under review',
+  cleared: 'Cleared',
+  safe: 'Safe food',
+};
+
+export function InsightDetailScreen({ route, navigation }: Props) {
   const fallbackInsights = useAppStore((state) => state.insights);
   const fallbackConditionInsights = useAppStore((state) => state.conditionInsights);
   const scans = useAppStore((state) => state.scans);
   const dailyReports = useAppStore((state) => state.dailyReports);
   const insightsQuery = useInsightsData('');
 
-  const insight = (insightsQuery.data?.insights ?? fallbackInsights).find(
-    (entry) => entry.ingredientName === route.params.ingredientName,
+  const allInsights = insightsQuery.data?.insights ?? fallbackInsights;
+  const group = route.params.groupKey ? groupByKey(route.params.groupKey) : null;
+  const members = useMemo(
+    () =>
+      group
+        ? allInsights.filter((entry) => groupForIngredient(entry.ingredientName)?.key === group.key)
+        : [],
+    [allInsights, group],
   );
+
+  const insight = group
+    ? members.length
+      ? buildGroupSyntheticInsight(group, members)
+      : undefined
+    : allInsights.find((entry) => entry.ingredientName === route.params.ingredientName);
+
+  const subjectNames = useMemo(
+    () =>
+      group
+        ? new Set(members.map((member) => member.ingredientName.toLowerCase()))
+        : new Set(route.params.ingredientName ? [route.params.ingredientName.toLowerCase()] : []),
+    [group, members, route.params.ingredientName],
+  );
+
   const conditionInsights = (insightsQuery.data?.conditionInsights ?? fallbackConditionInsights).filter(
-    (entry) => entry.ingredientName === route.params.ingredientName,
+    (entry) => subjectNames.has(entry.ingredientName.toLowerCase()),
   );
 
   const examples = useMemo(() => {
@@ -29,7 +80,9 @@ export function InsightDetailScreen({ route }: Props) {
       return [];
     }
 
-    const token = normalizeToken(insight.ingredientName);
+    const tokens = group
+      ? members.map((member) => normalizeToken(member.ingredientName))
+      : [normalizeToken(insight.ingredientName)];
     return scans
       .filter((scan) => (scan.scanCategory ?? 'food') === 'food')
       .map((scan) => {
@@ -41,7 +94,7 @@ export function InsightDetailScreen({ route }: Props) {
           ...scan.structuredAnalysis.inferredIngredients.map((ingredient) => ingredient.canonicalName),
         ].map(normalizeToken);
 
-        if (!scanTokens.some((value) => value.includes(token))) {
+        if (!scanTokens.some((value) => tokens.some((token) => token && value.includes(token)))) {
           return null;
         }
 
@@ -49,119 +102,192 @@ export function InsightDetailScreen({ route }: Props) {
           id: scan.id,
           mealTitle: scan.dishName,
           note: report ? severityCopy(report.gutSeverity) : 'Food logged',
+          severity: report?.gutSeverity,
           when: formatDate(scan.createdAt),
         };
       })
       .filter(Boolean)
-      .slice(0, 6) as { id: string; mealTitle: string; note: string; when: string }[];
-  }, [dailyReports, insight, scans]);
+      .slice(0, 6) as { id: string; mealTitle: string; note: string; severity?: number; when: string }[];
+  }, [dailyReports, group, insight, members, scans]);
 
   if (!insight) {
     return (
       <AppScreen>
-        <ScreenHeader eyebrow="Insight" title="We couldn't find that ingredient." subtitle="Go back and try another insight." />
+        <ScreenHeader
+          eyebrow="Trigger Profile"
+          title="We couldn't find that ingredient."
+          subtitle="Go back and try another entry."
+        />
       </AppScreen>
     );
   }
 
-  const isTrigger = insight.triggerScore >= insight.safeScore;
-  const confidence = insight.confidenceLevel === 'high' ? 86 : insight.confidenceLevel === 'medium' ? 68 : 52;
-  const sourceLabel = insight.sourceBreakdown.declared && insight.sourceBreakdown.personal
-    ? 'Declared + learned'
-    : insight.sourceBreakdown.personal
-      ? 'Learned from daily reports'
-      : insight.sourceBreakdown.declared
-        ? 'Declared by you'
-        : 'Pattern in progress';
+  const status: TriggerStatus =
+    statusForInsight(insight) ?? (insight.triggerScore >= insight.safeScore ? 'suspect' : 'safe');
+  const meta = STATUS_META[status];
+  const displayName = group
+    ? group.label
+    : insight.ingredientName.charAt(0).toUpperCase() + insight.ingredientName.slice(1);
+  const confidenceFill = insight.confidenceLevel === 'high' ? 3 : insight.confidenceLevel === 'medium' ? 2 : 1;
+  const hasOutcomes = insight.positiveEvidenceCount + insight.negativeEvidenceCount > 0;
 
   return (
     <AppScreen>
-      <ScreenHeader title={insight.ingredientName} />
+      <DetailScreenHeader eyebrow="Trigger Profile" title={displayName} />
 
-      <View style={styles.heroRow}>
-        <View style={[styles.heroIcon, { backgroundColor: isTrigger ? tokens.color.status.risk.high.background : tokens.color.status.success.background }]}>
-          <Text style={[styles.heroGlyph, { color: isTrigger ? palette.high : palette.primary }]}>{insight.ingredientName.charAt(0).toUpperCase()}</Text>
+      <SectionCard style={styles.verdictCard}>
+        <View style={[styles.glyph, { backgroundColor: meta.tone.background }]}>
+          {group ? (
+            <Text style={styles.glyphEmoji}>{group.emoji}</Text>
+          ) : (
+            <Text style={[styles.glyphLabel, { color: meta.tone.foreground }]}>{displayName.charAt(0)}</Text>
+          )}
         </View>
-        <View style={[styles.heroBadge, { backgroundColor: isTrigger ? tokens.color.status.danger.background : tokens.color.status.success.background }]}>
-          <Text style={[styles.heroBadgeLabel, { color: isTrigger ? palette.high : palette.primary }]}>
-            {isTrigger ? 'High impact' : 'Safer pattern'}
+        {group ? <Text style={styles.groupSubtitle}>{group.subtitle}</Text> : null}
+        <View style={[styles.statusPill, { backgroundColor: meta.tone.background }]}>
+          <Text style={[styles.statusPillText, { color: meta.tone.foreground }]}>
+            {STATUS_HEADLINE[status]}
           </Text>
         </View>
-      </View>
-
-      <SectionCard>
-        <Text style={styles.cardTitle}>{isTrigger ? 'Why it looks risky for you' : 'Why it looks gentler for you'}</Text>
-        <Text style={styles.cardBody}>{insight.summary}</Text>
-        <Text style={styles.supportingLabel}>{sourceLabel}</Text>
+        <Text style={styles.verdictDetail}>{evidenceDetailForInsight(insight, status)}</Text>
+        <View style={styles.confidenceRow}>
+          {[0, 1, 2].map((segment) => (
+            <View
+              key={segment}
+              style={[
+                styles.confidenceSegment,
+                segment < confidenceFill && { backgroundColor: meta.tone.tint },
+              ]}
+            />
+          ))}
+          <Text style={styles.confidenceLabel}>{insight.confidenceLevel} confidence</Text>
+        </View>
+        {insight.sourceBreakdown.declared ? (
+          <View style={styles.declaredBadge}>
+            <Ionicons name="person" size={10} color={palette.primary} />
+            <Text style={styles.declaredBadgeText}>You told us about this one</Text>
+          </View>
+        ) : null}
       </SectionCard>
 
       <SectionCard>
-        <View style={styles.confidenceHeader}>
-          <Text style={styles.cardTitle}>Confidence</Text>
-          <Text style={styles.confidenceLabel}>{confidence}%</Text>
+        <Text style={styles.sectionTitle}>Evidence</Text>
+        <View style={styles.evidenceCounts}>
+          <EvidenceCount
+            value={insight.negativeEvidenceCount}
+            label="Rough-day data points"
+            color={tokens.color.status.risk.high.foreground}
+          />
+          <View style={styles.evidenceDivider} />
+          <EvidenceCount
+            value={insight.positiveEvidenceCount}
+            label="Calm-day data points"
+            color={tokens.color.status.risk.low.foreground}
+          />
         </View>
-        <View style={styles.confidenceTrack}>
-          <View style={[styles.confidenceFill, { width: `${confidence}%`, backgroundColor: isTrigger ? palette.high : palette.primary }]} />
-        </View>
-        <View style={styles.metricStack}>
-          <Text style={styles.metricText}>Supporting evidence: {insight.supportingEvidenceCount} daily report signal{insight.supportingEvidenceCount === 1 ? '' : 's'}</Text>
-          <Text style={styles.metricText}>Reactive-day signals: {insight.negativeEvidenceCount}</Text>
-          <Text style={styles.metricText}>Calm-day signals: {insight.positiveEvidenceCount}</Text>
-          <Text style={styles.metricText}>Pattern strength: {insight.patternStrength}</Text>
-          <Text style={styles.metricText}>
-            Linked conditions: {insight.linkedConditions.length ? insight.linkedConditions.join(', ') : 'General digestive pattern'}
+        {!hasOutcomes ? (
+          <Text style={styles.evidenceHint}>
+            No real-world outcomes yet — daily check-ins after meals with {insight.ingredientName} build this up.
           </Text>
+        ) : null}
+        <View style={styles.detailRows}>
+          <DetailRow label="Pattern strength" value={capitalize(insight.patternStrength)} />
+          {insight.lastSeenAt ? <DetailRow label="Last seen in a scan" value={formatDate(insight.lastSeenAt)} /> : null}
+          {insight.lastOutcomeAt ? <DetailRow label="Last outcome logged" value={formatDate(insight.lastOutcomeAt)} /> : null}
         </View>
       </SectionCard>
+
+      {group && members.length ? (
+        <SectionCard>
+          <Text style={styles.sectionTitle}>In this group</Text>
+          <View style={styles.memberList}>
+            {[...members]
+              .sort(
+                (left, right) =>
+                  right.positiveEvidenceCount +
+                  right.negativeEvidenceCount -
+                  (left.positiveEvidenceCount + left.negativeEvidenceCount),
+              )
+              .map((member) => {
+                const outcomes = member.positiveEvidenceCount + member.negativeEvidenceCount;
+                return (
+                  <Text
+                    key={member.id}
+                    accessibilityRole="button"
+                    onPress={() => navigation.push('InsightDetail', { ingredientName: member.ingredientName })}
+                    style={styles.memberRow}
+                    suppressHighlighting
+                  >
+                    <Text style={styles.memberName}>{capitalize(member.ingredientName)}</Text>
+                    <Text style={styles.memberMeta}>
+                      {'  '}
+                      {outcomes > 0
+                        ? `${member.negativeEvidenceCount} rough · ${member.positiveEvidenceCount} calm`
+                        : member.sourceBreakdown.declared
+                          ? 'from your profile'
+                          : 'no outcomes yet'}
+                    </Text>
+                  </Text>
+                );
+              })}
+          </View>
+        </SectionCard>
+      ) : null}
 
       {conditionInsights.length ? (
         <SectionCard>
-          <Text style={styles.cardTitle}>Condition links</Text>
-          <View style={styles.metricStack}>
+          <Text style={styles.sectionTitle}>How it hits your conditions</Text>
+          <View style={styles.barList}>
             {conditionInsights.slice(0, 4).map((entry) => (
-              <Text key={`${entry.conditionName}-${entry.id}`} style={styles.metricText}>
-                {entry.conditionName}: {entry.riskScore >= 67 ? 'high' : entry.riskScore >= 45 ? 'medium' : 'low'} signal
-              </Text>
+              <RiskBar
+                key={`${entry.conditionName}-${entry.id}`}
+                label={formatConditionName(entry.conditionName)}
+                score={entry.riskScore}
+                level={riskLevelForScore(entry.riskScore)}
+              />
             ))}
           </View>
         </SectionCard>
       ) : null}
 
-      <SectionCard>
-        <Text style={styles.cardTitle}>Examples from your log</Text>
-        {examples.length ? (
+      {examples.length ? (
+        <SectionCard>
+          <Text style={styles.sectionTitle}>Seen in your meals</Text>
           <View style={styles.exampleList}>
             {examples.map((example) => (
               <View key={example.id} style={styles.exampleRow}>
-                <View
-                  style={[
-                    styles.exampleDot,
-                    {
-                      backgroundColor: isTrigger ? tokens.color.status.risk.high.tint : tokens.color.status.risk.low.tint,
-                    },
-                  ]}
-                />
+                <View style={[styles.exampleDot, { backgroundColor: dotColorForSeverity(example.severity) }]} />
                 <View style={styles.exampleCopy}>
-                  <Text style={styles.exampleTitle}>{example.mealTitle}</Text>
+                  <Text style={styles.exampleTitle} numberOfLines={1}>
+                    {example.mealTitle}
+                  </Text>
                   <Text style={styles.exampleMeta}>
-                    {example.note}
-                    {' • '}
-                    {example.when}
+                    {example.note} · {example.when}
                   </Text>
                 </View>
               </View>
             ))}
           </View>
-        ) : (
-          <Text style={styles.cardBody}>No linked foods are stored locally yet. This insight will strengthen as more foods and daily reports are logged.</Text>
-        )}
-      </SectionCard>
+        </SectionCard>
+      ) : (
+        <EmptyHint
+          pipState="thinking"
+          title="No linked meals yet"
+          subtitle="Scans and check-ins referencing this ingredient will land here."
+        />
+      )}
 
-      <SectionCard>
-        <Text style={styles.cardTitle}>What to try</Text>
-        <Text style={styles.cardBody}>{buildSuggestion(insight.ingredientName, isTrigger)}</Text>
-      </SectionCard>
+      <PipAnalysisCard title="What to try" body={buildSuggestion(insight.ingredientName, status)} />
     </AppScreen>
+  );
+}
+
+function EvidenceCount({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <View style={styles.evidenceCount}>
+      <Text style={[styles.evidenceCountValue, { color }]}>{value}</Text>
+      <Text style={styles.evidenceCountLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -172,105 +298,204 @@ function normalizeToken(value?: string | null) {
 function severityCopy(value?: number) {
   if (typeof value === 'number') {
     if (value <= 3) return 'Calm day';
-    if (value <= 5) return 'Neutral day';
-    return 'Reactive day';
+    if (value <= 6) return 'Neutral day';
+    return 'Rough day';
   }
 
   return 'Food logged';
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function dotColorForSeverity(value?: number) {
+  if (typeof value !== 'number') {
+    return tokens.color.chart.track;
+  }
+  if (value <= 3) return tokens.color.status.risk.low.tint;
+  if (value <= 6) return tokens.color.status.risk.medium.tint;
+  return tokens.color.status.risk.high.tint;
 }
 
-function buildSuggestion(name: string, isTrigger: boolean) {
-  if (!isTrigger) {
-    return `${name} has looked gentler in your recent meals. Keep portions steady and pair it with foods that have also felt easy on your stomach.`;
+function riskLevelForScore(score: number): RiskLevel {
+  if (score >= 64) return 'high';
+  if (score >= 37) return 'medium';
+  return 'low';
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function buildSuggestion(name: string, status: TriggerStatus) {
+  if (status === 'confirmed') {
+    return `${capitalize(name)} has real evidence behind it. Try a smaller portion or a swap when you can, and keep logging — if your gut changes, the evidence will show it.`;
   }
 
-  return `Try a smaller portion of ${name} next time, or swap it for a lower-risk alternative when possible. Repeated daily reports will keep sharpening this pattern.`;
+  if (status === 'suspect') {
+    return `The case on ${name} is still open. Eat normally and keep filing daily check-ins — each one moves it toward confirmed or cleared.`;
+  }
+
+  if (status === 'cleared') {
+    return `You suspected ${name}, but your calm days say it sits fine. It can stay on the menu — we'll flag it again if the pattern shifts.`;
+  }
+
+  return `${capitalize(name)} has looked gentle for you. Pairing it with your other safe foods is a good base for rough weeks.`;
 }
 
 const styles = StyleSheet.create({
-  heroRow: {
-    flexDirection: 'row',
+  verdictCard: {
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
-  heroIcon: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+  glyph: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroGlyph: {
+  glyphLabel: {
     fontFamily: type.body.bold,
-    fontSize: 48,
+    fontSize: 30,
   },
-  heroBadge: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: radii.pill,
+  glyphEmoji: {
+    fontSize: 34,
   },
-  heroBadgeLabel: {
+  groupSubtitle: {
+    color: palette.textMuted,
     fontFamily: type.body.semibold,
-    fontSize: 18,
+    fontSize: 12,
+    lineHeight: 16,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  cardTitle: {
-    color: palette.text,
+  memberList: {
+    gap: spacing.xs,
+  },
+  memberRow: {
+    paddingVertical: 2,
+  },
+  memberName: {
+    color: palette.primary,
+    fontFamily: type.body.semibold,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  memberMeta: {
+    color: palette.textMuted,
+    fontFamily: type.body.regular,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+  },
+  statusPillText: {
     fontFamily: type.body.bold,
-    fontSize: 22,
-    letterSpacing: -0.4,
+    fontSize: 14,
+    lineHeight: 18,
   },
-  cardBody: {
-    color: palette.text,
+  verdictDetail: {
+    color: palette.textMuted,
     fontFamily: type.body.medium,
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
-  confidenceHeader: {
+  confidenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  confidenceSegment: {
+    width: 18,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: tokens.color.chart.track,
+  },
+  confidenceLabel: {
+    marginLeft: spacing.xs,
+    color: palette.textMuted,
+    fontFamily: type.body.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    textTransform: 'capitalize',
+  },
+  declaredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: palette.sageSoft,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  declaredBadgeText: {
+    color: palette.primary,
+    fontFamily: type.body.semibold,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  sectionTitle: {
+    color: palette.text,
+    fontFamily: type.body.semibold,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  evidenceCounts: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
   },
-  confidenceLabel: {
-    color: palette.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 18,
+  evidenceCount: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
   },
-  confidenceTrack: {
-    height: 8,
-    borderRadius: radii.pill,
-    backgroundColor: palette.line,
-    overflow: 'hidden',
+  evidenceCountValue: {
+    fontFamily: type.body.bold,
+    fontSize: 28,
+    lineHeight: 34,
   },
-  confidenceFill: {
-    height: '100%',
-    borderRadius: radii.pill,
-  },
-  metricStack: {
-    gap: 6,
-  },
-  metricText: {
+  evidenceCountLabel: {
     color: palette.textMuted,
     fontFamily: type.body.medium,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 11,
+    lineHeight: 14,
+    textAlign: 'center',
   },
-  supportingLabel: {
+  evidenceDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: tokens.color.border.subtle,
+  },
+  evidenceHint: {
     color: palette.textMuted,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
+    fontFamily: type.body.regular,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  detailRows: {
+    gap: spacing.xs,
+  },
+  barList: {
+    gap: spacing.md,
   },
   exampleList: {
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   exampleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   exampleDot: {
     width: 10,
@@ -279,16 +504,18 @@ const styles = StyleSheet.create({
   },
   exampleCopy: {
     flex: 1,
-    gap: 2,
+    gap: 1,
   },
   exampleTitle: {
     color: palette.text,
     fontFamily: type.body.semibold,
-    fontSize: 16,
+    fontSize: 14,
+    lineHeight: 19,
   },
   exampleMeta: {
     color: palette.textMuted,
     fontFamily: type.body.medium,
-    fontSize: 14,
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

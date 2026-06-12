@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ComponentProps, useEffect, useMemo, useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
+import * as StoreReview from "expo-store-review";
+import { ComponentProps, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Image,
 	KeyboardAvoidingView,
@@ -8,17 +10,14 @@ import {
 	Platform,
 	Pressable,
 	ScrollView,
+	StyleProp,
 	StyleSheet,
 	Text,
 	useWindowDimensions,
 	View,
+	ViewStyle,
 } from "react-native";
-import Animated, {
-	Easing,
-	useAnimatedStyle,
-	useSharedValue,
-	withTiming,
-} from "react-native-reanimated";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { Gauge } from "../../components/charts/Gauge";
 import { RiskBar } from "../../components/charts/RiskBar";
@@ -34,7 +33,13 @@ import {
 	ScreenHeader,
 	SectionCard,
 } from "../../components/common/UI";
-import { onboardingSteps } from "../../data/onboarding";
+import {
+	calibrationFoodOptions,
+	dietPreferenceKeyFromLabel,
+	dietPreferenceLabelFromKey,
+	noSpecificDietOption,
+} from "../../data/catalog";
+import { getMascotStateForStep, normalizeOnboardingAnswers, onboardingSteps } from "../../data/onboarding";
 import { trackEvent } from "../../services/analytics";
 import { computeGutScoreState } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
@@ -48,6 +53,15 @@ import { RaiseGutScorePlanPreview } from "./components/RaiseGutScorePlanPreview"
 import { WelcomeFoodScene } from "./components/WelcomeFoodScene";
 import { type PhaseDiscoveryState } from "./components/PhaseDiscoveryGraphic";
 import { OnboardingCenterGraphic } from "./components/OnboardingCenterGraphic";
+import { OnboardingPipCompanion } from "./components/OnboardingPipCompanion";
+import { OnboardingProgressBar } from "./components/OnboardingProgressBar";
+import { CalibrationDeck } from "./components/CalibrationDeck";
+import { CommitmentHoldCard } from "./components/CommitmentHoldCard";
+import { KnowBeforeEatDemo, type KnowBeforeEatStage } from "./components/KnowBeforeEatDemo";
+import { PersonalHealingApproach } from "./components/PersonalHealingApproach";
+import { StepTransition, StepTransitionDirection } from "./components/StepTransition";
+import { TrialFreePreview } from "./components/TrialFreePreview";
+import { AppStoreRatingPreview } from "./components/AppStoreRatingPreview";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "OnboardingFlow">;
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -55,9 +69,15 @@ type IoniconName = ComponentProps<typeof Ionicons>["name"];
 const GET_STARTED_BACKGROUND_IMAGE = require("../../../assets/get_started_background_image.png");
 const GUT_ISSUES_DIAGRAM = require("../../../assets/ui/gut_issues_diagram.png");
 
+const STAGGER_BASE_MS = 80;
+const STAGGER_STEP_MS = 50;
+const ENTER_DURATION_MS = 360;
+const INGREDIENT_SENSITIVITY_UNKNOWN_OPTION = "I'm not sure";
+
 export function OnboardingFlowScreen({ navigation }: Props) {
 	const stepIndex = useAppStore((state) => state.onboardingStepIndex);
-	const answers = useAppStore((state) => state.onboardingAnswers);
+	const persistedAnswers = useAppStore((state) => state.onboardingAnswers);
+	const answers = useMemo(() => normalizeOnboardingAnswers(persistedAnswers), [persistedAnswers]);
 	const setStepIndex = useAppStore((state) => state.setOnboardingStepIndex);
 	const setOnboardingStage = useAppStore((state) => state.setOnboardingStage);
 	const updateField = useAppStore((state) => state.updateOnboardingField);
@@ -68,8 +88,12 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const [customOptionModalVisible, setCustomOptionModalVisible] = useState(false);
 	const [phaseDiscoveryState, setPhaseDiscoveryState] = useState<PhaseDiscoveryState>("scan");
 	const [startingScoreState, setStartingScoreState] = useState<StartingScoreState>("ready");
+	const [knowBeforeEatStage, setKnowBeforeEatStage] = useState<KnowBeforeEatStage>("menu-scan");
+	const [reviewPromptBusy, setReviewPromptBusy] = useState(false);
+	const [direction, setDirection] = useState<StepTransitionDirection>("forward");
 	const phaseDiscoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const startingScoreTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const knowBeforeEatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
 	const step = onboardingSteps[Math.min(stepIndex, onboardingSteps.length - 1)]!;
@@ -93,7 +117,30 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		trackEvent("onboarding_step_viewed", { step_id: step.id, step_number: stepNumber });
 	}, [step.id, stepNumber]);
 
-	const progress = ((stepIndex + 1) / stepCount) * 100;
+	useEffect(() => {
+		clearPhaseDiscoveryTimeout();
+		clearStartingScoreTimeout();
+		clearKnowBeforeEatTimeout();
+		if (step.id === "phase-discovery") {
+			setPhaseDiscoveryState("scan");
+		}
+		if (step.id === "gut-score-analyzing") {
+			setStartingScoreState("ready");
+		}
+		if (step.id === "know-before-eat") {
+			setKnowBeforeEatStage("menu-scan");
+		}
+	}, [step.id]);
+
+	useEffect(() => {
+		return () => {
+			clearPhaseDiscoveryTimeout();
+			clearStartingScoreTimeout();
+			clearKnowBeforeEatTimeout();
+		};
+	}, []);
+
+	const progress = (stepIndex + 1) / stepCount;
 	const hasImageBackground = step.backgroundVariant === "getStartedImage";
 	const backIconColor = hasImageBackground ? tokens.color.utility.white : palette.primary;
 	const titleColor = hasImageBackground ? tokens.color.utility.white : palette.primary;
@@ -103,14 +150,17 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const centerImageWidth = centerImageHeight * (1024 / 1535);
 	const isPhaseDiscoveryStep = step.id === "phase-discovery";
 	const isStartingScoreStep = step.id === "gut-score-analyzing";
+	const isKnowBeforeEatStep = step.id === "know-before-eat";
+	const isAppStoreRatingStep = step.previewVariant === "appStoreReview";
+	const isKnowBeforeEatLoading =
+		isKnowBeforeEatStep &&
+		(knowBeforeEatStage === "menu-loading" ||
+			knowBeforeEatStage === "food-loading" ||
+			knowBeforeEatStage === "barcode-loading");
+	const isCommitmentStep = step.previewVariant === "commitmentHold";
 	const isChoiceStep = step.type === "multi_select" || step.type === "single_select";
 	const hasRequiredAnswer = currentStepHasRequiredAnswer();
-	const transitionOpacity = useSharedValue(1);
-	const transitionTranslateY = useSharedValue(0);
-	const transitionStyle = useAnimatedStyle(() => ({
-		opacity: transitionOpacity.value,
-		transform: [{ translateY: transitionTranslateY.value }],
-	}));
+	const mascotState = getMascotStateForStep(step.id);
 	const headerTitle =
 		isStartingScoreStep && startingScoreState === "revealed"
 			? "Your starting Gut Score is ready"
@@ -131,39 +181,19 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			: startingScoreState === "loading"
 			? "Computing..."
 			: "Show my score"
+		: isKnowBeforeEatStep
+		? knowBeforeEatCtaLabel(knowBeforeEatStage)
+		: isAppStoreRatingStep
+		? reviewPromptBusy
+			? "Opening..."
+			: step.cta
 		: step.cta;
 	const ctaDisabled =
 		(isPhaseDiscoveryStep && phaseDiscoveryState === "loading") ||
 		(isStartingScoreStep && startingScoreState === "loading") ||
+		isKnowBeforeEatLoading ||
+		reviewPromptBusy ||
 		!hasRequiredAnswer;
-
-	useEffect(() => {
-		clearPhaseDiscoveryTimeout();
-		clearStartingScoreTimeout();
-		transitionOpacity.value = 0;
-		transitionTranslateY.value = 10;
-		transitionOpacity.value = withTiming(1, {
-			duration: 240,
-			easing: Easing.out(Easing.cubic),
-		});
-		transitionTranslateY.value = withTiming(0, {
-			duration: 240,
-			easing: Easing.out(Easing.cubic),
-		});
-		if (step.id === "phase-discovery") {
-			setPhaseDiscoveryState("scan");
-		}
-		if (step.id === "gut-score-analyzing") {
-			setStartingScoreState("ready");
-		}
-	}, [step.id, transitionOpacity, transitionTranslateY]);
-
-	useEffect(() => {
-		return () => {
-			clearPhaseDiscoveryTimeout();
-			clearStartingScoreTimeout();
-		};
-	}, []);
 
 	function clearPhaseDiscoveryTimeout() {
 		if (phaseDiscoveryTimeoutRef.current) {
@@ -179,10 +209,29 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		}
 	}
 
+	function clearKnowBeforeEatTimeout() {
+		if (knowBeforeEatTimeoutRef.current) {
+			clearTimeout(knowBeforeEatTimeoutRef.current);
+			knowBeforeEatTimeoutRef.current = null;
+		}
+	}
+
+	function advanceStep() {
+		trackEvent("onboarding_step_completed", { step_id: step.id, step_number: stepNumber });
+		if (stepIndex >= onboardingSteps.length - 1) {
+			navigation.replace("OnboardingPaywall");
+			return;
+		}
+		setDirection("forward");
+		setStepIndex(stepIndex + 1);
+	}
+
 	function handleContinue() {
 		if (ctaDisabled) {
 			return;
 		}
+
+		void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
 		if (isPhaseDiscoveryStep && phaseDiscoveryState === "scan") {
 			trackEvent("onboarding_phase_discovery_analyze_tapped");
@@ -214,17 +263,94 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 
-		trackEvent("onboarding_step_completed", { step_id: step.id, step_number: stepNumber });
-
-		if (stepIndex >= onboardingSteps.length - 1) {
-			navigation.replace("OnboardingPaywall");
+		if (isKnowBeforeEatStep) {
+			const nextStage = nextKnowBeforeEatStageOnTap(knowBeforeEatStage);
+			if (nextStage === "advance") {
+				advanceStep();
+				return;
+			}
+			if (nextStage === null) {
+				return;
+			}
+			setKnowBeforeEatStage(nextStage);
+			if (nextStage.endsWith("-loading")) {
+				const resultStage: KnowBeforeEatStage =
+					nextStage === "menu-loading"
+						? "menu-result"
+						: nextStage === "food-loading"
+						? "food-result"
+						: "barcode-result";
+				clearKnowBeforeEatTimeout();
+				knowBeforeEatTimeoutRef.current = setTimeout(() => {
+					setKnowBeforeEatStage(resultStage);
+					knowBeforeEatTimeoutRef.current = null;
+				}, 1500);
+			}
 			return;
 		}
 
-		setStepIndex(stepIndex + 1);
+		if (isAppStoreRatingStep) {
+			void requestNativeAppStoreReview();
+			return;
+		}
+
+		advanceStep();
+	}
+
+	async function requestNativeAppStoreReview() {
+		if (reviewPromptBusy) {
+			return;
+		}
+
+		setReviewPromptBusy(true);
+		trackEvent("onboarding_app_store_review_submit_tapped", {
+			platform: Platform.OS,
+		});
+
+		try {
+			const [available, hasAction] = await Promise.all([
+				StoreReview.isAvailableAsync(),
+				StoreReview.hasAction(),
+			]);
+
+			if (available && hasAction) {
+				await StoreReview.requestReview();
+				trackEvent("onboarding_app_store_review_requested", {
+					platform: Platform.OS,
+				});
+			} else {
+				trackEvent("onboarding_app_store_review_unavailable", {
+					platform: Platform.OS,
+					available,
+					has_action: hasAction,
+				});
+			}
+		} catch (error) {
+			trackEvent("onboarding_app_store_review_failed", {
+				platform: Platform.OS,
+				message: error instanceof Error ? error.message : "unknown_error",
+			});
+		} finally {
+			setReviewPromptBusy(false);
+			advanceStep();
+		}
+	}
+
+	function skipNativeAppStoreReview() {
+		if (reviewPromptBusy) {
+			return;
+		}
+
+		void Haptics.selectionAsync();
+		trackEvent("onboarding_app_store_review_skipped", {
+			platform: Platform.OS,
+		});
+		advanceStep();
 	}
 
 	function handleBack() {
+		void Haptics.selectionAsync();
+
 		if (isStartingScoreStep && startingScoreState !== "ready") {
 			clearStartingScoreTimeout();
 			setStartingScoreState("ready");
@@ -237,11 +363,19 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 
+		if (isKnowBeforeEatStep && knowBeforeEatStage !== "menu-scan") {
+			clearKnowBeforeEatTimeout();
+			setKnowBeforeEatStage(previousKnowBeforeEatStage(knowBeforeEatStage));
+			return;
+		}
+
 		if (stepIndex <= 0) {
 			setOnboardingStage("intro");
 			navigation.replace("GetStarted");
 			return;
 		}
+
+		setDirection("backward");
 		setStepIndex(stepIndex - 1);
 	}
 
@@ -252,6 +386,17 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		}
 
 		if (step.type === "multi_select" && step.field) {
+			if (step.field === "dietPreferenceKeys") {
+				return Boolean(answers.dietPreferenceNone) || (answers.dietPreferenceKeys ?? []).length > 0;
+			}
+
+			if (
+				step.field === "ingredientSensitivities" &&
+				answers.ingredientSensitivitiesUnknown
+			) {
+				return true;
+			}
+
 			const value = answers[step.field];
 			const customField = customFieldForCurrentStep();
 			const customValues = customField ? answers[customField] ?? [] : [];
@@ -319,22 +464,26 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 						))}
 					</View>
 				);
-			case "trust":
+			case "knowBeforeEat":
 				return (
-					<SectionCard>
-						<DetailRow
-							label="Uses"
-							value="Food analysis + your profile + learned patterns"
-						/>
-						<DetailRow
-							label="Avoids"
-							value="Diagnosis language or guaranteed safety claims"
-						/>
-						<Text style={styles.previewNote}>
-							Hidden ingredients and preparation still matter.
-						</Text>
-					</SectionCard>
+					<KnowBeforeEatDemo
+						stage={knowBeforeEatStage}
+						imageHeight={centerImageHeight}
+					/>
 				);
+			case "trust":
+				return <PersonalHealingApproach />;
+			case "commitmentHold":
+				return <CommitmentHoldCard onCommitted={advanceStep} />;
+			case "appStoreReview":
+				return (
+					<AppStoreRatingPreview
+						busy={reviewPromptBusy}
+						onSkip={skipNativeAppStoreReview}
+					/>
+				);
+			case "trialFreePreview":
+				return <TrialFreePreview />;
 			case "summaryIntro":
 				return (
 					<SectionCard>
@@ -367,7 +516,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 					/>
 				);
 			case "lowerScorePlan":
-				return <RaiseGutScorePlanPreview />;
+				return <RaiseGutScorePlanPreview currentScore={startingGutScore.currentScore} />;
 			case "recap":
 				return (
 					<View style={styles.metricRow}>
@@ -430,6 +579,15 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				/>
 				<Divider />
 				<DetailRow
+					label="Diet goal"
+					value={
+						answers.dietPreferenceKeys.length
+							? answers.dietPreferenceKeys.map(dietPreferenceLabelFromKey).join(", ")
+							: "No specific diet, just help me feel better."
+					}
+				/>
+				<Divider />
+				<DetailRow
 					label="Foods to earn back"
 					value={
 						favoriteFoodsToReintroduce.trim() || "No reintroduction foods added yet."
@@ -483,6 +641,10 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			return;
 		}
 
+		if (field === "customIngredientSensitivities") {
+			updateField("ingredientSensitivitiesUnknown", false);
+		}
+
 		addCustomValue(field, customEntry);
 		setCustomEntry("");
 	}
@@ -503,41 +665,109 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			const values = answers[step.field];
 			const customField = customFieldForCurrentStep();
 			const customCount = customField ? (answers[customField] ?? []).length : 0;
+			const isIngredientSensitivityStep = step.field === "ingredientSensitivities";
+			const isDietPreferenceStep = step.field === "dietPreferenceKeys";
+
+			function handleMultiSelectOptionPress(option: string) {
+				if (isDietPreferenceStep) {
+					if (option === noSpecificDietOption) {
+						updateField("dietPreferenceNone", true);
+						updateField("dietPreferenceKeys", []);
+						return;
+					}
+
+					const dietKey = dietPreferenceKeyFromLabel(option);
+					if (!dietKey) {
+						return;
+					}
+
+					updateField("dietPreferenceNone", false);
+					toggleValue("dietPreferenceKeys", dietKey);
+					return;
+				}
+
+				if (isIngredientSensitivityStep) {
+					updateField("ingredientSensitivitiesUnknown", false);
+				}
+
+				toggleValue(
+					step.field as
+						| "conditions"
+						| "ingredientSensitivities"
+						| "symptoms"
+						| "mealContexts"
+						| "motivations"
+						| "currentEatingPatterns"
+						| "lifestyleFactors"
+						| "dietPreferenceKeys",
+					option
+				);
+			}
+
+			function handleCustomOptionPress() {
+				if (isIngredientSensitivityStep) {
+					updateField("ingredientSensitivitiesUnknown", false);
+				}
+
+				setCustomOptionModalVisible(true);
+			}
+
+			function handleIngredientSensitivityUnknownPress() {
+				updateField("ingredientSensitivitiesUnknown", true);
+				updateField("ingredientSensitivities", []);
+				updateField("customIngredientSensitivities", []);
+			}
 
 			return (
 				<View style={styles.optionGrid}>
-					{step.options.map((option) => (
-						<OnboardingPickerOption
-							key={option}
-							label={option}
-							iconName={step.optionIcons?.[option] as IoniconName | undefined}
-							variant={pickerVariant}
-							selected={
-								Array.isArray(values) ? values.includes(option) : values === option
-							}
-							onPress={() =>
-								toggleValue(
-									step.field as
-										| "conditions"
-										| "ingredientSensitivities"
-										| "symptoms"
-										| "mealContexts"
-										| "currentEatingPatterns"
-										| "lifestyleFactors",
-									option
-								)
-							}
-						/>
+					{step.options.map((option, index) => (
+						<StaggerItem key={option} delayMs={optionDelayMs(index)}>
+							<OnboardingPickerOption
+								label={option}
+								iconName={step.optionIcons?.[option] as IoniconName | undefined}
+								variant={pickerVariant}
+								selected={
+									isDietPreferenceStep
+										? option === noSpecificDietOption
+											? Boolean(answers.dietPreferenceNone)
+											: Boolean(
+													dietPreferenceKeyFromLabel(option) &&
+														answers.dietPreferenceKeys.includes(
+															dietPreferenceKeyFromLabel(option)!
+														)
+											  )
+											: Array.isArray(values)
+											? (values as string[]).includes(option)
+										: values === option
+								}
+								onPress={() => handleMultiSelectOptionPress(option)}
+							/>
+						</StaggerItem>
 					))}
-
 					{step.allowCustom ? (
-						<OnboardingPickerOption
-							label="Other"
-							variant={pickerVariant}
-							badgeText={customCount > 0 ? `+${customCount}` : undefined}
-							selected={false}
-							onPress={() => setCustomOptionModalVisible(true)}
-						/>
+						<StaggerItem delayMs={optionDelayMs(step.options.length)}>
+							<OnboardingPickerOption
+								label="Other"
+								variant={pickerVariant}
+								badgeText={customCount > 0 ? `+${customCount}` : undefined}
+								selected={false}
+								onPress={handleCustomOptionPress}
+							/>
+						</StaggerItem>
+					) : null}
+					{isIngredientSensitivityStep ? (
+						<StaggerItem
+							delayMs={optionDelayMs(
+								step.options.length + (step.allowCustom ? 1 : 0)
+							)}
+						>
+							<OnboardingPickerOption
+								label={INGREDIENT_SENSITIVITY_UNKNOWN_OPTION}
+								variant={pickerVariant}
+								selected={Boolean(answers.ingredientSensitivitiesUnknown)}
+								onPress={handleIngredientSensitivityUnknownPress}
+							/>
+						</StaggerItem>
 					) : null}
 				</View>
 			);
@@ -547,61 +777,97 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			const value = answers[step.field];
 			return (
 				<View style={styles.optionGrid}>
-					{step.options.map((option) => (
-						<OnboardingPickerOption
-							key={option}
-							label={option}
-							iconName={step.optionIcons?.[option] as IoniconName | undefined}
-							variant={pickerVariant}
-							selected={value === option}
-							onPress={() =>
-								updateField(
-									step.field as
-										| "symptomFrequency"
-										| "symptomSeverityBaseline"
-										| "triedOtherGutHealthApps"
-										| "motivation",
-									option
-								)
-							}
-						/>
+					{step.options.map((option, index) => (
+						<StaggerItem key={option} delayMs={optionDelayMs(index)}>
+							<OnboardingPickerOption
+								label={option}
+								iconName={step.optionIcons?.[option] as IoniconName | undefined}
+								variant={pickerVariant}
+								selected={value === option}
+								onPress={() =>
+									updateField(
+										step.field as
+											| "symptomFrequency"
+											| "symptomSeverityBaseline"
+											| "triedOtherGutHealthApps"
+											| "motivation",
+										option
+									)
+								}
+							/>
+						</StaggerItem>
 					))}
 				</View>
 			);
 		}
 
+		const blockDelay = STAGGER_BASE_MS + STAGGER_STEP_MS * 2;
+
+		if (step.type === "calibration") {
+			return (
+				<CalibrationDeck
+					foods={calibrationFoodOptions}
+					ratings={answers.foodCalibrations}
+					onRate={(food, rating) => {
+						const next = { ...answers.foodCalibrations };
+						if (rating === null) {
+							delete next[food];
+						} else {
+							next[food] = rating;
+						}
+						updateField("foodCalibrations", next);
+					}}
+				/>
+			);
+		}
+
 		if (
 			step.type === "text_input" &&
-			(step.field === "displayName" || step.field === "favoriteFoodsToReintroduce")
+			(step.field === "displayName" ||
+				step.field === "favoriteFoodsToReintroduce" ||
+				step.field === "lastBadMealText")
 		) {
 			const value =
-				step.field === "displayName" ? answers.displayName : favoriteFoodsToReintroduce;
+				step.field === "displayName"
+					? answers.displayName
+					: step.field === "lastBadMealText"
+					? answers.lastBadMealText
+					: favoriteFoodsToReintroduce;
 			return (
-				<SectionCard>
-					<InputField
-						value={value}
-						placeholder={
-							step.field === "displayName"
-								? "Enter a display name"
-								: "pizza, coffee, pasta"
-						}
-						onChangeText={(nextValue) =>
-							updateField(
-								step.field as "displayName" | "favoriteFoodsToReintroduce",
-								nextValue
-							)
-						}
-					/>
-				</SectionCard>
+				<StaggerItem delayMs={blockDelay}>
+					<SectionCard>
+						<InputField
+							value={value}
+							multiline={step.field === "lastBadMealText"}
+							placeholder={
+								step.field === "displayName"
+									? "Enter a display name"
+									: step.field === "lastBadMealText"
+									? "Chicken alfredo with garlic bread, glass of red wine..."
+									: "pizza, coffee, pasta"
+							}
+							onChangeText={(nextValue) =>
+								updateField(
+									step.field as
+										| "displayName"
+										| "favoriteFoodsToReintroduce"
+										| "lastBadMealText",
+									nextValue
+								)
+							}
+						/>
+						{step.helper ? <Text style={styles.previewNote}>{step.helper}</Text> : null}
+					</SectionCard>
+				</StaggerItem>
 			);
 		}
 
 		if (step.type === "summary") {
-			return renderSummary();
+			return <StaggerItem delayMs={blockDelay}>{renderSummary()}</StaggerItem>;
 		}
 
 		if (step.type === "preview") {
-			return renderPreview();
+			return <StaggerItem delayMs={blockDelay}>{renderPreview()}</StaggerItem>;
 		}
 
 		return null;
@@ -619,26 +885,27 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				windowWidth,
 				windowHeight
 			)}
-			contentContainerStyle={[
-				styles.onboardingContent,
-				isChoiceStep ? styles.choiceStepContent : null,
-			]}
+			contentContainerStyle={styles.onboardingContent}
 		>
 			<View style={styles.topBar}>
 				<Pressable
 					accessibilityRole="button"
 					accessibilityLabel="Back"
 					onPress={handleBack}
+					hitSlop={8}
 					style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.7 }]}
 				>
 					<Ionicons name="chevron-back" size={26} color={backIconColor} />
 				</Pressable>
-				<View style={styles.progressTrack}>
-					<View style={[styles.progressFill, { width: `${progress}%` }]} />
-				</View>
+				<OnboardingProgressBar progress={progress} />
+				<OnboardingPipCompanion state={mascotState} />
 			</View>
 
-			<Animated.View style={[styles.stepContent, transitionStyle]}>
+			<StepTransition
+				stepKey={step.id}
+				direction={direction}
+				style={isChoiceStep ? styles.choiceStepShell : null}
+			>
 				<ScrollView
 					showsVerticalScrollIndicator={false}
 					keyboardShouldPersistTaps="handled"
@@ -648,23 +915,36 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 						isChoiceStep ? styles.choiceStepScrollContent : null,
 					]}
 				>
-					{step.id === "welcome" ? <WelcomeFoodScene /> : null}
+					{step.id === "welcome" ? (
+						<StaggerItem delayMs={0}>
+							<WelcomeFoodScene />
+						</StaggerItem>
+					) : null}
 
-					<ScreenHeader
-						title={headerTitle}
-						subtitle={headerSubtitle}
-						titleColor={titleColor}
-						titleStyle={hasImageBackground ? styles.imageBackgroundTitle : null}
-						subtitleColor={subtitleColor}
-						fullWidth
-					/>
+					<StaggerItem delayMs={STAGGER_BASE_MS}>
+						<ScreenHeader
+							title={headerTitle}
+							subtitle={headerSubtitle}
+							titleColor={titleColor}
+							titleStyle={hasImageBackground ? styles.imageBackgroundTitle : null}
+							subtitleColor={subtitleColor}
+							fullWidth
+						/>
+					</StaggerItem>
 
-					{step.helper ? <InfoPill label={step.helper} tone="soft" /> : null}
+					{step.helper ? (
+						<StaggerItem delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS}>
+							<InfoPill label={step.helper} tone="soft" />
+						</StaggerItem>
+					) : null}
 
 					{renderSelectionControls()}
 
 					{centerImageSource ? (
-						<View style={styles.centerImageSlot}>
+						<StaggerItem
+							delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS * 3}
+							style={styles.centerImageSlot}
+						>
 							<Image
 								source={centerImageSource}
 								style={[
@@ -674,33 +954,46 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 								resizeMode="contain"
 								accessibilityIgnoresInvertColors
 							/>
-						</View>
+						</StaggerItem>
 					) : null}
 
 					{step.centerGraphic ? (
-						<View style={styles.centerGraphicSlot}>
+						<StaggerItem
+							delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS * 3}
+							style={styles.centerGraphicSlot}
+						>
 							<OnboardingCenterGraphic
 								centerGraphic={step.centerGraphic}
 								phaseDiscoveryState={phaseDiscoveryState}
 							/>
-						</View>
+						</StaggerItem>
 					) : null}
 				</ScrollView>
 
-				<View style={[styles.footer, isChoiceStep ? styles.choiceFooter : null]}>
-					{step.footerBody ? (
-						<Text
-							style={[
-								styles.footerBody,
-								hasImageBackground ? styles.footerBodyOnImage : null,
-							]}
-						>
-							{step.footerBody}
-						</Text>
-					) : null}
-					<PrimaryButton label={ctaLabel} onPress={handleContinue} disabled={ctaDisabled} />
-				</View>
-			</Animated.View>
+				{isCommitmentStep ? null : (
+					<StaggerItem
+						delayMs={STAGGER_BASE_MS + STAGGER_STEP_MS * 4}
+						style={[styles.footer, isChoiceStep ? styles.choiceFooter : null]}
+					>
+						{step.footerBody ? (
+							<Text
+								style={[
+									styles.footerBody,
+									hasImageBackground ? styles.footerBodyOnImage : null,
+									step.id === "free-trial" ? styles.trialFooterBody : null,
+								]}
+							>
+								{step.footerBody}
+							</Text>
+						) : null}
+						<PrimaryButton
+							label={ctaLabel}
+							onPress={handleContinue}
+							disabled={ctaDisabled}
+						/>
+					</StaggerItem>
+				)}
+			</StepTransition>
 
 			<Modal
 				animationType="fade"
@@ -790,6 +1083,26 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	);
 }
 
+function StaggerItem({
+	children,
+	delayMs,
+	style,
+}: {
+	children: ReactNode;
+	delayMs: number;
+	style?: StyleProp<ViewStyle>;
+}) {
+	return (
+		<Animated.View entering={FadeInUp.duration(ENTER_DURATION_MS).delay(delayMs)} style={style}>
+			{children}
+		</Animated.View>
+	);
+}
+
+function optionDelayMs(index: number) {
+	return STAGGER_BASE_MS + STAGGER_STEP_MS * 2 + index * 36;
+}
+
 function renderOnboardingBackground(
 	backgroundVariant: "plain" | "getStartedImage" | undefined,
 	windowWidth: number,
@@ -828,6 +1141,67 @@ function getCenterImageSource(centerImage: string | undefined) {
 	return null;
 }
 
+function knowBeforeEatCtaLabel(stage: KnowBeforeEatStage) {
+	switch (stage) {
+		case "menu-scan":
+		case "food-scan":
+		case "barcode-scan":
+			return "Scan";
+		case "menu-loading":
+		case "food-loading":
+		case "barcode-loading":
+			return "Analyzing...";
+		case "menu-result":
+			return "Scan food";
+		case "food-result":
+			return "Scan grocery item";
+		case "barcode-result":
+			return "Show me my Gut Score";
+	}
+}
+
+function nextKnowBeforeEatStageOnTap(
+	stage: KnowBeforeEatStage
+): KnowBeforeEatStage | "advance" | null {
+	switch (stage) {
+		case "menu-scan":
+			return "menu-loading";
+		case "menu-result":
+			return "food-scan";
+		case "food-scan":
+			return "food-loading";
+		case "food-result":
+			return "barcode-scan";
+		case "barcode-scan":
+			return "barcode-loading";
+		case "barcode-result":
+			return "advance";
+		default:
+			return null;
+	}
+}
+
+function previousKnowBeforeEatStage(stage: KnowBeforeEatStage): KnowBeforeEatStage {
+	switch (stage) {
+		case "menu-loading":
+		case "menu-result":
+			return "menu-scan";
+		case "food-scan":
+			return "menu-result";
+		case "food-loading":
+		case "food-result":
+			return "food-scan";
+		case "barcode-scan":
+			return "food-result";
+		case "barcode-loading":
+		case "barcode-result":
+			return "barcode-scan";
+		case "menu-scan":
+		default:
+			return "menu-scan";
+	}
+}
+
 const styles = StyleSheet.create({
 	backgroundLayer: {
 		...StyleSheet.absoluteFillObject,
@@ -845,9 +1219,6 @@ const styles = StyleSheet.create({
 	onboardingContent: {
 		paddingBottom: spacing.lg,
 	},
-	choiceStepContent: {
-		gap: spacing.md,
-	},
 	topBar: {
 		flexDirection: "row",
 		alignItems: "center",
@@ -859,22 +1230,8 @@ const styles = StyleSheet.create({
 		alignItems: "flex-start",
 		justifyContent: "center",
 	},
-	progressTrack: {
-		flex: 1,
-		height: 10,
-		borderRadius: 99,
-		backgroundColor: tokens.color.chart.track,
-		overflow: "hidden",
-	},
-	progressFill: {
-		height: "100%",
-		borderRadius: 99,
-		backgroundColor: palette.primary,
-	},
-	stepContent: {
-		flex: 1,
-		flexGrow: 1,
-		width: "100%",
+	choiceStepShell: {
+		gap: spacing.md,
 	},
 	stepScroll: {
 		flex: 1,
@@ -1025,14 +1382,6 @@ const styles = StyleSheet.create({
 		flexWrap: "wrap",
 		gap: spacing.sm,
 	},
-	planCard: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-	},
-	planCopy: {
-		flex: 1,
-		gap: spacing.xs,
-	},
 	footer: {
 		paddingTop: spacing.md,
 	},
@@ -1052,5 +1401,9 @@ const styles = StyleSheet.create({
 		textShadowColor: "rgba(64, 152, 119, 0.28)",
 		textShadowOffset: { width: 0, height: 1 },
 		textShadowRadius: 2,
+	},
+	trialFooterBody: {
+		color: palette.primaryDark,
+		fontFamily: type.body.semibold,
 	},
 });

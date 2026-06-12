@@ -1,11 +1,13 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
-import { createSignedStorageUrl, ensureUserRow, getBillingState, getInsights, getProfile, getScanById } from '../_shared/db.ts';
-import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
-import { extractMealFromImage } from '../_shared/openai.ts';
-import { rebuildInsightsAndProfile } from '../_shared/profile.ts';
-import { computeScanResultFromStructured } from '../_shared/scoring.ts';
+import { ensureUserRow } from '../_shared/db.ts';
+import { ApiError, apiErrorResponse, errorResponse, isOptionsRequest, jsonResponse, readJsonBody } from '../_shared/http.ts';
+import { errorMetadata, recordSystemEvent } from '../_shared/observability.ts';
+import { analyzeReservedScan } from '../_shared/scanAnalysis.ts';
 import { createAdminClient, requireUser } from '../_shared/supabase.ts';
+
+const SCAN_ANALYZE_IMAGE_DEPLOY_MARKER = 'food-risk-rubric-v2-20260522';
+void SCAN_ANALYZE_IMAGE_DEPLOY_MARKER;
 
 serve(async (request) => {
   if (isOptionsRequest(request)) {
@@ -16,121 +18,48 @@ serve(async (request) => {
     return errorResponse('Method not allowed.', 405, 'method_not_allowed');
   }
 
+  const admin = createAdminClient();
+
   try {
     const user = await requireUser(request);
-    const body = await readJsonBody<{ imagePath?: string; sourceType?: string; scanCategory?: string; localDate?: string; timezone?: string }>(request);
-    const admin = createAdminClient();
+    const body = await readJsonBody<{
+      requestId?: string;
+      imagePath?: string;
+      imagePaths?: string[];
+      thumbnailImagePaths?: (string | null)[];
+      imageDataUrl?: string;
+      imageDataUrls?: string[];
+      sourceType?: string;
+      scanCategory?: string;
+      localDate?: string;
+      timezone?: string;
+    }>(request);
 
     await ensureUserRow(admin, user);
-
-    const [profile, insights] = await Promise.all([getProfile(admin, user.id), getInsights(admin, user.id)]);
-    const signedImageUrl = await createSignedStorageUrl(admin, body.imagePath);
-    const extraction = await extractMealFromImage(signedImageUrl, {
-      knownConditions: profile?.knownConditions ?? [],
-      knownIngredients: profile?.knownIngredientSensitivities ?? [],
+    const response = await analyzeReservedScan(admin, user, {
+      kind: 'image',
+      imagePath: body.imagePath,
+      imagePaths: body.imagePaths,
+      body,
     });
 
-    const normalizedIngredients = [...extraction.visibleIngredients, ...extraction.inferredIngredients];
-    if (extraction.clarity === 'unclear' || normalizedIngredients.length === 0) {
-      return errorResponse(
-        'The meal could not be analyzed clearly. Try retaking the photo with the full meal visible.',
-        422,
-        'unclear_image',
-        { reason: extraction.unclearReason ?? null },
-      );
-    }
-
-    const result = computeScanResultFromStructured(
-      extraction,
-      profile,
-      insights,
-      signedImageUrl ?? undefined,
-    );
-
-    const { data, error } = await admin.rpc('complete_scan_analysis', {
-      p_user_id: user.id,
-      p_source_type: body.sourceType ?? 'camera',
-      p_image_storage_path: body.imagePath ?? null,
-      p_input_text: null,
-      p_dish_name: result.dishName,
-      p_overall_risk_score: result.overallRiskScore,
-      p_overall_risk_level: result.overallRiskLevel,
-      p_condition_risk_scores: result.conditionRiskScores,
-      p_possible_triggers: result.possibleTriggers,
-      p_structured_analysis: {
-        ...result.structuredAnalysis,
-        interpretation: result.interpretation,
-        gutScoreImpact: result.gutScoreImpact,
-      },
-      p_scan_ingredients: normalizedIngredients.map((ingredient, index) => ({
-        raw_name: ingredient.rawName,
-        canonical_name: ingredient.canonicalName,
-        confidence: ingredient.confidence,
-        evidence: ingredient.evidence,
-        component_name: ingredient.component ?? null,
-        display_order: index,
-      })),
-      p_extraction_model: result.structuredAnalysis.model,
-      p_extraction_prompt_version: result.structuredAnalysis.promptVersion,
-      p_extraction_clarity: result.structuredAnalysis.clarity,
-      p_extraction_unclear_reason: result.structuredAnalysis.unclearReason ?? null,
-      p_dish_confidence: result.structuredAnalysis.dishConfidence,
-      p_scan_category: body.scanCategory ?? 'food',
-      p_local_date: body.localDate ?? null,
-      p_timezone: body.timezone ?? null,
-    });
-
-    if (error) {
-      const message = String(error.message ?? '');
-      if (message.includes('subscription_required')) {
-        return errorResponse('A subscription is required before running scans.', 402, 'subscription_required');
-      }
-
-      if (message.includes('insufficient_tokens')) {
-        return errorResponse('You are out of scan tokens.', 402, 'token_exhausted');
-      }
-
-      throw error;
-    }
-
-    const finalized = data?.[0];
-    if (!finalized) {
-      throw new Error('missing_scan_result');
-    }
-
-    const scanCategory = body.scanCategory ?? 'food';
-    const learning = scanCategory === 'food'
-      ? await rebuildInsightsAndProfile(admin, user.id, {
-          eventType: 'scan_completed',
-          sourceType: 'scan',
-          sourceId: String(finalized.scan_id),
-        })
-      : null;
-
-    const [scan, billing] = await Promise.all([
-      getScanById(admin, finalized.scan_id),
-      getBillingState(admin, user.id),
-    ]);
-
-    return jsonResponse({
-      scanId: finalized.scan_id,
-      tokensRemaining: finalized.tokens_remaining,
-      scan,
-      billing,
-      ...(learning
-        ? {
-            profile: learning.profile,
-            insights: learning.insights,
-            conditionInsights: learning.conditionInsights,
-          }
-        : {}),
-    });
+    return jsonResponse(response);
   } catch (error) {
     if (error instanceof Error && error.message === 'unauthorized') {
       return errorResponse('Unauthorized.', 401, 'unauthorized');
     }
 
+    if (error instanceof ApiError) {
+      return apiErrorResponse(error);
+    }
+
     console.error('[scan-analyze-image]', error);
+    await recordSystemEvent(admin, {
+      eventType: 'scan_analyze_image_unhandled_error',
+      severity: 'error',
+      operation: 'scan_analysis',
+      metadata: errorMetadata(error),
+    });
     return errorResponse('The meal could not be analyzed.', 500, 'analysis_failed');
   }
 });

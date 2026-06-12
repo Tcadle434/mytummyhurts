@@ -3,13 +3,18 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { addPlanDuration, derivePlanFromProductId } from '../_shared/billing.ts';
 import { sendApnsNotification } from '../_shared/apns.ts';
 import {
+  claimDailyGutReportReminder,
   getActiveDeviceTokens,
   getLatestSubscription,
   getUsersDueForRenewal,
+  markDailyGutReportReminderFailed,
+  markDailyGutReportReminderSent,
   markDeviceTokenDelivery,
 } from '../_shared/db.ts';
 import { errorResponse, isOptionsRequest, jsonResponse, readJsonBody, requireInternalSecret } from '../_shared/http.ts';
-import { rebuildInsightsAndProfile } from '../_shared/profile.ts';
+import { processDueLearningJobs } from '../_shared/learningJobs.ts';
+import { errorMetadata, recordSystemEvent } from '../_shared/observability.ts';
+import { OperationLockBusyError, rebuildInsightsAndProfile } from '../_shared/profile.ts';
 import { createAdminClient } from '../_shared/supabase.ts';
 
 function requireMaintenanceSecret(request: Request) {
@@ -101,10 +106,15 @@ function yesterdayUtcDate() {
 async function processDailyReportReminders(limit: number) {
   const admin = createAdminClient();
   const localDate = yesterdayUtcDate();
+  const workerId = `scheduled-maintenance:${crypto.randomUUID()}`;
+  // Active users get local daily check-ins scheduled on-device; remote push is
+  // reserved for win-back so nobody gets double-notified.
+  const lapsedCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
   const { data: userRows, error: usersError } = await admin
     .from('users')
     .select('id')
     .in('subscription_status', ['trialing', 'active', 'in_grace'])
+    .or(`last_seen_at.lt.${lapsedCutoff},last_seen_at.is.null`)
     .order('last_seen_at', { ascending: false })
     .limit(limit);
 
@@ -118,25 +128,22 @@ async function processDailyReportReminders(limit: number) {
       attempted: 0,
       sent: 0,
       suppressed: 0,
+      claimed: 0,
+      skippedClaimed: 0,
+      failed: 0,
     };
   }
 
-  const [deviceTokens, reportsResult, remindersResult] = await Promise.all([
+  const [deviceTokens, reportsResult] = await Promise.all([
     getActiveDeviceTokens(admin, userIds),
     admin.from('daily_gut_reports').select('user_id').eq('local_date', localDate).in('user_id', userIds),
-    admin.from('daily_gut_report_reminders').select('user_id').eq('local_date', localDate).in('user_id', userIds),
   ]);
 
   if (reportsResult.error) {
     throw reportsResult.error;
   }
 
-  if (remindersResult.error) {
-    throw remindersResult.error;
-  }
-
   const completedUserIds = new Set((reportsResult.data ?? []).map((row) => String(row.user_id)));
-  const remindedUserIds = new Set((remindersResult.data ?? []).map((row) => String(row.user_id)));
   const tokensByUser = new Map<string, Array<{ push_token: string }>>();
   for (const tokenRow of deviceTokens) {
     const current = tokensByUser.get(String(tokenRow.user_id)) ?? [];
@@ -147,9 +154,12 @@ async function processDailyReportReminders(limit: number) {
   let sent = 0;
   let suppressed = 0;
   let attempted = 0;
+  let claimed = 0;
+  let skippedClaimed = 0;
+  let failed = 0;
 
   for (const userId of userIds) {
-    if (completedUserIds.has(userId) || remindedUserIds.has(userId)) {
+    if (completedUserIds.has(userId)) {
       continue;
     }
 
@@ -159,8 +169,30 @@ async function processDailyReportReminders(limit: number) {
       continue;
     }
 
+    const reminderClaim = await claimDailyGutReportReminder(admin, {
+      userId,
+      localDate,
+      workerId,
+      claimTtlSeconds: 600,
+    });
+    if (!reminderClaim.claimed || !reminderClaim.reminderId) {
+      skippedClaimed += 1;
+      continue;
+    }
+
+    claimed += 1;
+    await recordSystemEvent(admin, {
+      eventType: 'daily_report_reminder_claimed',
+      userId,
+      operation: 'daily_report_reminder',
+      entityType: 'daily_gut_report_reminder',
+      entityId: reminderClaim.reminderId,
+      metadata: { localDate, workerId },
+    });
+
     let pushSucceeded = false;
     attempted += 1;
+    let lastError = '';
     for (const token of userTokens) {
       const result = await sendApnsNotification({
         pushToken: token.push_token,
@@ -182,6 +214,7 @@ async function processDailyReportReminders(limit: number) {
       }
 
       const disableToken = result.status === 400 || result.status === 410;
+      lastError = result.error;
       await markDeviceTokenDelivery(admin, token.push_token, {
         disabled: disableToken,
         error: result.error,
@@ -189,20 +222,35 @@ async function processDailyReportReminders(limit: number) {
     }
 
     if (pushSucceeded) {
-      const { error: reminderInsertError } = await admin
-        .from('daily_gut_report_reminders')
-        .upsert(
-          {
-            user_id: userId,
-            local_date: localDate,
-            sent_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,local_date' },
-        );
-      if (reminderInsertError) {
-        throw reminderInsertError;
-      }
+      await markDailyGutReportReminderSent(admin, {
+        reminderId: reminderClaim.reminderId,
+        workerId,
+      });
+      await recordSystemEvent(admin, {
+        eventType: 'daily_report_reminder_sent',
+        userId,
+        operation: 'daily_report_reminder',
+        entityType: 'daily_gut_report_reminder',
+        entityId: reminderClaim.reminderId,
+        metadata: { localDate, workerId },
+      });
       sent += 1;
+    } else {
+      failed += 1;
+      await markDailyGutReportReminderFailed(admin, {
+        reminderId: reminderClaim.reminderId,
+        workerId,
+        error: lastError || 'all_push_tokens_failed',
+      });
+      await recordSystemEvent(admin, {
+        eventType: 'daily_report_reminder_failed',
+        severity: 'warn',
+        userId,
+        operation: 'daily_report_reminder',
+        entityType: 'daily_gut_report_reminder',
+        entityId: reminderClaim.reminderId,
+        metadata: { localDate, workerId, error: lastError || 'all_push_tokens_failed' },
+      });
     }
   }
 
@@ -210,6 +258,9 @@ async function processDailyReportReminders(limit: number) {
     attempted,
     sent,
     suppressed,
+    claimed,
+    skippedClaimed,
+    failed,
   };
 }
 
@@ -227,15 +278,43 @@ async function processGutScoreRefresh(limit: number) {
   }
 
   let refreshed = 0;
+  let skippedLocked = 0;
+  let failed = 0;
   for (const row of data ?? []) {
-    await rebuildInsightsAndProfile(admin, String(row.id), {
-      eventType: 'daily_score_refresh',
-      sourceType: 'scheduled_maintenance',
-    });
-    refreshed += 1;
+    try {
+      await rebuildInsightsAndProfile(admin, String(row.id), {
+        eventType: 'daily_score_refresh',
+        sourceType: 'scheduled_maintenance',
+        preserveGutScore: true,
+        skipIfLocked: true,
+      });
+      refreshed += 1;
+    } catch (caughtError) {
+      if (caughtError instanceof OperationLockBusyError) {
+        skippedLocked += 1;
+        continue;
+      }
+
+      failed += 1;
+      await recordSystemEvent(admin, {
+        eventType: 'scheduled_gut_score_refresh_failed',
+        severity: 'error',
+        userId: String(row.id),
+        operation: 'learning_recompute',
+        metadata: errorMetadata(caughtError),
+      });
+    }
   }
 
-  return refreshed;
+  return { refreshed, skippedLocked, failed };
+}
+
+async function processLearningJobs(limit: number) {
+  const admin = createAdminClient();
+  return processDueLearningJobs(admin, {
+    limit,
+    workerId: `scheduled-maintenance:${crypto.randomUUID()}`,
+  });
 }
 
 serve(async (request) => {
@@ -251,10 +330,11 @@ serve(async (request) => {
     requireMaintenanceSecret(request);
     const body = await readJsonBody<{ limit?: number }>(request);
     const limit = Math.min(100, Math.max(1, Number(body.limit ?? 40)));
-    const [renewedSubscriptions, dailyReportReminders, gutScoresRefreshed] = await Promise.all([
+    const [renewedSubscriptions, dailyReportReminders, gutScoresRefreshed, learningJobs] = await Promise.all([
       processRenewals(limit),
       processDailyReportReminders(limit),
       processGutScoreRefresh(limit),
+      processLearningJobs(limit),
     ]);
 
     return jsonResponse({
@@ -262,6 +342,7 @@ serve(async (request) => {
       renewedSubscriptions,
       dailyReportReminders,
       gutScoresRefreshed,
+      learningJobs,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'forbidden') {

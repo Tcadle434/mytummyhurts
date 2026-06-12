@@ -1,4 +1,4 @@
-import { isSuperwallConfigured, shouldUseLiveBackend, shouldUsePostHog } from './env';
+import { isRevenueCatConfigured, shouldUseLiveBackend, shouldUsePostHog } from './env';
 import { topUpOptions } from '../data/catalog';
 
 export const remoteConfig = {
@@ -13,7 +13,9 @@ export const remoteConfig = {
   featureFlags: {
     liveSupabase: shouldUseLiveBackend,
     livePostHog: shouldUsePostHog,
-    liveSuperwall: isSuperwallConfigured,
-    livePush: false,
+    liveRevenueCat: isRevenueCatConfigured,
+    // Daily check-ins are local notifications; remote push is the win-back
+    // leg for lapsed users (scheduled-maintenance only targets stale users).
+    livePush: true,
   },
 };

@@ -1,4 +1,4 @@
-import { dishLibrary } from '../../data/catalog';
+import { dietPreferenceLabelFromKey, dishLibrary } from '../../data/catalog';
 import {
   ConditionIngredientInsight,
   ConditionRisk,
@@ -18,6 +18,8 @@ import {
   OnboardingAnswers,
   PatternStrength,
   RiskLevel,
+  ScanConditionRisk,
+  ScanIngredientRisk,
   ScanInputPayload,
   ScanRecord,
   ScanResult,
@@ -189,11 +191,89 @@ function toRiskLevel(score: number): RiskLevel {
   return 'low';
 }
 
+function riskReason(level: RiskLevel, noun: string, triggers: string[] = []) {
+  if (level === 'high') {
+    return triggers.length
+      ? `${noun} is high risk here because of ${triggers.slice(0, 2).join(' and ')}.`
+      : `${noun} is high risk for your current profile.`;
+  }
+
+  if (level === 'medium') {
+    return triggers.length
+      ? `${noun} has watch-outs around ${triggers.slice(0, 2).join(' and ')}.`
+      : `${noun} has some watch-outs for your current profile.`;
+  }
+
+  return `${noun} looks lower risk for your current profile.`;
+}
+
+function buildConditionRiskRows(
+  conditionRiskScores: Record<string, ConditionRisk>,
+  possibleTriggers: string[],
+): ScanConditionRisk[] {
+  return Object.entries(conditionRiskScores).map(([conditionName, risk], index) => ({
+    conditionName,
+    riskScore: risk.score,
+    riskLevel: risk.level,
+    reason: riskReason(risk.level, conditionName, possibleTriggers),
+    displayOrder: index,
+  }));
+}
+
+function buildIngredientRiskRows(
+  structuredAnalysis: StructuredAnalysisV2,
+  triggerScores: { name: string; score: number }[],
+  profile: UserProfile | null,
+): ScanIngredientRisk[] {
+  const triggerScoreMap = new Map(triggerScores.map((entry) => [normalizeKey(entry.name), entry.score]));
+  const rows: ScanIngredientRisk[] = [];
+  const seen = new Set<string>();
+
+  for (const ingredient of [...structuredAnalysis.visibleIngredients, ...structuredAnalysis.inferredIngredients]) {
+    const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
+    if (!canonicalName || seen.has(canonicalName)) {
+      continue;
+    }
+
+    seen.add(canonicalName);
+    const triggerScore = Math.max(0, triggerScoreMap.get(canonicalName) ?? 0);
+    const matchedSensitivity = Boolean(
+      profile?.knownIngredientSensitivities.some((sensitivity) =>
+        ingredientMatchesSensitivityLabel(canonicalName, sensitivity),
+      ),
+    );
+    const riskScore = clamp(
+      matchedSensitivity
+        ? Math.max(72, 48 + triggerScore)
+        : triggerScore >= 18
+          ? 42 + triggerScore
+          : ingredient.evidence === 'inferred'
+            ? 32
+            : 18,
+    );
+    const riskLevel = toRiskLevel(riskScore);
+
+    rows.push({
+      rawName: ingredient.rawName,
+      canonicalName,
+      riskScore,
+      riskLevel,
+      evidence: ingredient.evidence,
+      confidence: ingredient.confidence,
+      componentName: ingredient.component,
+      reason: '',
+      displayOrder: rows.length,
+    });
+  }
+
+  return rows;
+}
+
 function extractedIngredientToScoring(entry: ExtractedIngredient): ScoringIngredient {
   return {
     name: normalizeKey(entry.canonicalName || entry.rawName),
     confidence: entry.confidence,
-    evidence: entry.evidence,
+    evidence: entry.evidence === 'inferred' ? 'inferred' : 'visible',
   };
 }
 
@@ -783,14 +863,8 @@ function baselineGutScore(answers: OnboardingAnswers) {
 }
 
 function symptomDailyScore(gutSeverity: number) {
-  const severity = Math.max(1, Math.min(10, Math.round(gutSeverity)));
-  return clamp(110 - severity * 11);
-}
-
-function clampDailyScoreForSeverity(score: number, gutSeverity: number) {
-  if (gutSeverity <= 3) return Math.max(67, score);
-  if (gutSeverity <= 6) return Math.max(34, Math.min(66, score));
-  return Math.min(33, score);
+  const severity = Math.max(0, Math.min(10, Math.round(gutSeverity)));
+  return clamp(90 - severity * 8);
 }
 
 function foodExposureForDailyScore(report: DailyGutReport, scans: ScanRecord[]) {
@@ -819,13 +893,18 @@ function foodExposureForDailyScore(report: DailyGutReport, scans: ScanRecord[]) 
     };
   }
 
+  const qualityMultiplier = report.evidenceQuality === 'unscanned' ? 0.5 : 1;
   const weightedRisk = weightedRiskTotal / evidenceWeight;
-  const foodAdjustment = Math.max(-12, Math.min(10, (50 - weightedRisk) * 0.22 * Math.min(evidenceWeight, 1)));
+  const effectiveEvidenceWeight = evidenceWeight * qualityMultiplier;
+  const foodAdjustment = Math.max(
+    -15,
+    Math.min(15, (50 - weightedRisk) * 0.375 * Math.min(effectiveEvidenceWeight, 1)),
+  );
 
   return {
     foodExposure: clamp(100 - weightedRisk),
     foodAdjustment: Math.round(foodAdjustment),
-    evidenceWeight: Number(evidenceWeight.toFixed(2)),
+    evidenceWeight: Number(effectiveEvidenceWeight.toFixed(2)),
     weightedRisk,
   };
 }
@@ -833,7 +912,7 @@ function foodExposureForDailyScore(report: DailyGutReport, scans: ScanRecord[]) 
 export function computeDailyScoreForReport(report: DailyGutReport, scans: ScanRecord[], now = new Date().toISOString()): DailyGutReport {
   const symptomScore = symptomDailyScore(report.gutSeverity);
   const food = foodExposureForDailyScore(report, scans);
-  const dailyScore = clampDailyScoreForSeverity(clamp(symptomScore + food.foodAdjustment), report.gutSeverity);
+  const dailyScore = clamp(symptomScore + food.foodAdjustment);
   const drivers: DailyGutReport['dailyScoreDrivers'] = [
     {
       id: 'symptom-severity',
@@ -976,14 +1055,27 @@ function dataConfidenceComponent(reportCount: number, recentReports: DailyGutRep
   return clamp(100 - clamp(90 - reportCount * 7 - recentReports.length * 5));
 }
 
-function movementLimitForSource(source?: GutScoreMovementSource) {
+function dailyReportMovementDelta(latestDailyScore?: number) {
+  if (typeof latestDailyScore !== 'number') return 0;
+  if (latestDailyScore <= 10) return -4;
+  if (latestDailyScore <= 25) return -3;
+  if (latestDailyScore <= 33) return -2;
+  if (latestDailyScore <= 49) return -1;
+  if (latestDailyScore <= 66) return 0;
+  if (latestDailyScore <= 79) return 1;
+  if (latestDailyScore <= 89) return 2;
+  if (latestDailyScore <= 94) return 3;
+  return 4;
+}
+
+function movementLimitForSource(source?: GutScoreMovementSource, latestDailyScore?: number) {
   switch (source) {
     case 'scan':
-      return 2;
+      return 0;
     case 'daily_report':
-      return 8;
+      return Math.abs(dailyReportMovementDelta(latestDailyScore));
     case 'profile':
-      return 12;
+      return 8;
     case 'backfill':
       return undefined;
     default:
@@ -991,10 +1083,19 @@ function movementLimitForSource(source?: GutScoreMovementSource) {
   }
 }
 
-function applyMovementLimit(rawScore: number, previousScore: GutScoreState | null | undefined, source?: GutScoreMovementSource) {
-  const limit = movementLimitForSource(source);
+function applyMovementLimit(
+  rawScore: number,
+  previousScore: GutScoreState | null | undefined,
+  source?: GutScoreMovementSource,
+  latestDailyScore?: number,
+) {
+  const limit = movementLimitForSource(source, latestDailyScore);
   if (typeof limit !== 'number' || typeof previousScore?.currentScore !== 'number') {
     return rawScore;
+  }
+
+  if (source === 'daily_report') {
+    return clamp(previousScore.currentScore + dailyReportMovementDelta(latestDailyScore));
   }
 
   const delta = clampNumber(rawScore - previousScore.currentScore, -limit, limit);
@@ -1138,11 +1239,12 @@ function historyWithCurrent(history: GutScoreHistoryPoint[] = [], currentScore: 
 
 function computeTrendDelta(currentScore: number, history: GutScoreHistoryPoint[], nowMs: number) {
   if (!history.length) return 0;
+  const chronologicalHistory = [...history].sort((left, right) => scoreEventTime(left.createdAt) - scoreEventTime(right.createdAt));
   const sevenDaysAgo = nowMs - 7 * 24 * 60 * 60 * 1000;
-  const oldestEligible = [...history]
+  const oldestEligible = chronologicalHistory
     .filter((point) => scoreEventTime(point.createdAt) <= sevenDaysAgo)
     .sort((left, right) => scoreEventTime(right.createdAt) - scoreEventTime(left.createdAt))[0];
-  const comparison = oldestEligible ?? history[0];
+  const comparison = oldestEligible ?? chronologicalHistory[0];
 
   return comparison ? currentScore - comparison.score : 0;
 }
@@ -1163,6 +1265,7 @@ export function computeGutScoreState(params: {
   const foodScanCount = params.scans.filter((scan) => (scan.scanCategory ?? 'food') === 'food').length;
   const recentReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 7, nowMs));
   const monthReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 30, nowMs));
+  const latestReport = [...recentReports].sort((left, right) => scoreEventTime(right.updatedAt) - scoreEventTime(left.updatedAt))[0];
   const recentDailyOutcome = clamp(averageScore(
     (recentReports.length ? recentReports : monthReports).map((report) => report.dailyScore ?? symptomDailyScore(report.gutSeverity)),
     baselineScore,
@@ -1185,7 +1288,12 @@ export function computeGutScoreState(params: {
   } else if (!recentReports.length) {
     currentScore = Math.min(currentScore, Math.max(28, baselineScore + 4));
   }
-  currentScore = applyMovementLimit(currentScore, params.previousGutScore, params.movementSource);
+  currentScore = applyMovementLimit(
+    currentScore,
+    params.previousGutScore,
+    params.movementSource,
+    latestReport?.dailyScore ?? (latestReport ? symptomDailyScore(latestReport.gutSeverity) : undefined),
+  );
 
   const phase = gutScorePhase(currentScore, reportCount, recentReports);
   const confidenceLevel = gutScoreConfidence(reportCount);
@@ -1299,6 +1407,12 @@ export function buildUserProfile(userId: string, answers: OnboardingAnswers, pri
     currentEatingPatterns: answers.currentEatingPatterns ?? [],
     lifestyleFactors: answers.lifestyleFactors ?? [],
     foodsToReintroduce: foodsToReintroduceFromAnswers(answers),
+    dietPreferences: (answers.dietPreferenceKeys ?? []).map((key) => ({
+      key,
+      label: dietPreferenceLabelFromKey(key),
+      strictness: 'standard' as const,
+      source: 'onboarding' as const,
+    })),
     stomachProfile: {
       version: 3,
       conditions: knownConditions.map((name) => ({ name, source: 'user' as const, active: true })),
@@ -1386,6 +1500,14 @@ export function analyzeMealInput(
   );
   const overallRiskLevel = toRiskLevel(overallRiskScore);
   const hasLearnedSignals = insights.some((insight) => insight.supportingEvidenceCount > 0);
+  const interpretation = createInterpretation(
+    overallRiskLevel,
+    possibleTriggers,
+    profile,
+    conditionRiskScores,
+    matchedSensitivityLabels,
+    hasLearnedSignals,
+  );
 
   return {
     dishName: structuredAnalysis.dishName,
@@ -1393,14 +1515,12 @@ export function analyzeMealInput(
     overallRiskLevel,
     conditionRiskScores,
     possibleTriggers,
-    interpretation: createInterpretation(
-      overallRiskLevel,
-      possibleTriggers,
-      profile,
-      conditionRiskScores,
-      matchedSensitivityLabels,
-      hasLearnedSignals,
-    ),
+    interpretation,
+    pipTake: interpretation,
+    summary: interpretation,
+    conditionRisks: buildConditionRiskRows(conditionRiskScores, possibleTriggers),
+    ingredientRisks: buildIngredientRiskRows(structuredAnalysis, triggerScores, profile),
+    dietEvaluations: [],
     imageUri: payload.imageUri,
     structuredAnalysis,
     gutScoreImpact: computeGutScoreImpact(overallRiskScore, possibleTriggers, profile),

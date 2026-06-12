@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps } from "react";
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
-import Svg, { Circle } from "react-native-svg";
 
+import { DailyScoreRing as SharedDailyScoreRing } from "./DailyScoreRing";
 import { components, radii, spacing, tokens, type } from "../../theme";
 import {
 	WeeklyProgressDay,
@@ -78,12 +78,6 @@ export function WeeklyProgressCard({
 				/>
 			) : null}
 
-			<View style={styles.sectionDivider} />
-
-			<View style={styles.weekSummaryRow}>
-				<Text style={styles.weekSummaryLabel}>This Week</Text>
-			</View>
-
 			<View style={styles.daysRow}>
 				{days.map((day) => (
 					<WeeklyProgressColumn key={day.localDate} day={day} />
@@ -148,6 +142,7 @@ function FeaturedDailyScore({
 					<FeaturedDetailLine
 						iconName="pulse-outline"
 						text={symptomLine}
+						tone={symptomSeverityTone(day.report?.gutSeverity)}
 						onPress={onSymptomsPress}
 					/>
 				</View>
@@ -160,15 +155,24 @@ function FeaturedDetailLine({
 	iconName,
 	text,
 	onPress,
+	tone,
 }: {
 	iconName: IoniconName;
 	text: string;
 	onPress?: () => void;
+	tone?: string;
 }) {
+	const iconColor = tone ?? tokens.color.icon.accent;
 	const content = (
 		<>
-			<Ionicons name={iconName} size={15} color={tokens.color.icon.accent} />
-			<Text style={[styles.featuredDetailText, onPress && styles.featuredDetailTextLink]}>
+			<Ionicons name={iconName} size={14} color={iconColor} />
+			<Text
+				style={[
+					styles.featuredDetailText,
+					onPress && styles.featuredDetailTextLink,
+					tone ? { color: tone } : null,
+				]}
+			>
 				{text}
 			</Text>
 		</>
@@ -188,65 +192,13 @@ function FeaturedDetailLine({
 			style={({ pressed }) => [styles.featuredDetailLine, pressed && { opacity: 0.72 }]}
 		>
 			{content}
-			<Ionicons name="chevron-forward" size={14} color={tokens.color.icon.muted} />
+			<Ionicons name="chevron-forward" size={12} color={tokens.color.icon.muted} />
 		</Pressable>
 	);
 }
 
 function DailyScoreRing({ score }: { score?: number }) {
-	const size = 116;
-	const strokeWidth = 11;
-	const radius = (size - strokeWidth) / 2;
-	const circumference = 2 * Math.PI * radius;
-	const hasScore = score !== undefined;
-	const clampedScore = Math.max(0, Math.min(100, score ?? 0));
-	const progressOffset = circumference * (1 - clampedScore / 100);
-	const ringColor = hasScore ? scoreTint(clampedScore) : tokens.color.chart.track;
-
-	return (
-		<View
-			style={styles.ringWrap}
-			accessible
-			accessibilityLabel={hasScore ? `Daily Score ${score}` : "Daily Score pending"}
-		>
-			<Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-				<Circle
-					cx={size / 2}
-					cy={size / 2}
-					r={radius}
-					stroke={tokens.color.chart.track}
-					strokeWidth={strokeWidth}
-					fill="none"
-					opacity={hasScore ? 0.58 : 0.78}
-				/>
-				{hasScore ? (
-					<Circle
-						cx={size / 2}
-						cy={size / 2}
-						r={radius}
-						stroke={ringColor}
-						strokeWidth={strokeWidth}
-						fill="none"
-						strokeLinecap="round"
-						strokeDasharray={`${circumference} ${circumference}`}
-						strokeDashoffset={progressOffset}
-						rotation="-90"
-						origin={`${size / 2}, ${size / 2}`}
-					/>
-				) : null}
-			</Svg>
-			<View style={styles.ringCenter}>
-				<Text
-					style={[
-						styles.ringScore,
-						{ color: hasScore ? ringColor : tokens.color.text.tertiary },
-					]}
-				>
-					{hasScore ? score : "—"}
-				</Text>
-			</View>
-		</View>
-	);
+	return <SharedDailyScoreRing score={score} size={92} />;
 }
 
 function WeeklyProgressColumn({ day }: { day: WeeklyProgressDay }) {
@@ -265,7 +217,7 @@ function WeeklyProgressColumn({ day }: { day: WeeklyProgressDay }) {
 			>
 				<Ionicons
 					name="restaurant-outline"
-					size={16}
+					size={14}
 					color={day.mealCount > 0 ? tokens.color.icon.accent : tokens.color.icon.muted}
 				/>
 			</View>
@@ -303,7 +255,7 @@ function LegendItem({
 			) : (
 				<Ionicons
 					name={iconName ?? "ellipse-outline"}
-					size={15}
+					size={13}
 					color={tokens.color.icon.muted}
 				/>
 			)}
@@ -332,10 +284,20 @@ function dayTrend(direction: WeeklyProgressTrendDirection): {
 }
 
 function symptomSeverityLabel(gutSeverity: number | undefined) {
-	if (!gutSeverity || gutSeverity <= 1) return "no";
+	if (gutSeverity === undefined || gutSeverity <= 0) return "no";
 	if (gutSeverity <= 3) return "mild";
 	if (gutSeverity <= 6) return "medium";
 	return "severe";
+}
+
+function symptomSeverityTone(gutSeverity: number | undefined) {
+	if (gutSeverity === undefined || gutSeverity <= 3) {
+		return tokens.color.status.risk.low.tint;
+	}
+	if (gutSeverity <= 6) {
+		return tokens.color.status.risk.medium.tint;
+	}
+	return tokens.color.status.risk.high.tint;
 }
 
 function scoreTint(score: number) {
@@ -349,18 +311,19 @@ const styles = StyleSheet.create({
 		...components.card.default,
 		width: "100%",
 		maxWidth: 390,
-		gap: spacing.md,
-		padding: spacing.md,
+		gap: spacing.sm,
+		padding: spacing.sm,
 	},
 	headerRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",
 		justifyContent: "space-between",
 		gap: spacing.md,
+		paddingLeft: spacing.xs,
 	},
 	titleStack: {
 		flex: 1,
-		gap: 3,
+		gap: 2,
 	},
 	title: {
 		color: tokens.color.text.primary,
@@ -371,41 +334,23 @@ const styles = StyleSheet.create({
 	subtitle: {
 		color: tokens.color.text.secondary,
 		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
+		fontSize: 12,
+		lineHeight: 16,
 	},
 	headerRight: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.xs,
-		minHeight: 24,
+		minHeight: 22,
 	},
 	featuredWrap: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: spacing.lg,
-		paddingVertical: spacing.xs,
-	},
-	ringWrap: {
-		width: 116,
-		height: 116,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	ringCenter: {
-		position: "absolute",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	ringScore: {
-		fontFamily: type.body.bold,
-		fontSize: 34,
-		lineHeight: 39,
-		fontVariant: ["tabular-nums"],
+		gap: spacing.md,
 	},
 	featuredCopy: {
 		flex: 1,
-		gap: spacing.sm,
+		gap: spacing.xs,
 	},
 	featuredEyebrowRow: {
 		flexDirection: "row",
@@ -415,28 +360,29 @@ const styles = StyleSheet.create({
 	featuredEyebrow: {
 		color: tokens.color.text.tertiary,
 		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
+		fontSize: 11,
+		lineHeight: 14,
+		letterSpacing: 0.6,
 		textTransform: "uppercase",
 	},
 	featuredSeparatorDot: {
-		width: 4,
-		height: 4,
-		borderRadius: 2,
+		width: 3,
+		height: 3,
+		borderRadius: 1.5,
 		backgroundColor: tokens.color.text.tertiary,
 		opacity: 0.7,
 	},
 	featuredDate: {
 		color: tokens.color.text.secondary,
 		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
+		fontSize: 11,
+		lineHeight: 14,
 	},
 	featuredDetailStack: {
-		gap: spacing.xs,
+		gap: 4,
 	},
 	featuredDetailLine: {
-		minHeight: 25,
+		minHeight: 22,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.xs,
@@ -445,27 +391,11 @@ const styles = StyleSheet.create({
 		flex: 1,
 		color: tokens.color.text.secondary,
 		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 19,
+		fontSize: 12,
+		lineHeight: 16,
 	},
 	featuredDetailTextLink: {
 		color: tokens.color.text.accent,
-	},
-	sectionDivider: {
-		height: StyleSheet.hairlineWidth,
-		backgroundColor: tokens.color.border.emphasis,
-	},
-	weekSummaryRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: spacing.md,
-	},
-	weekSummaryLabel: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 20,
 	},
 	daysRow: {
 		flexDirection: "row",
@@ -473,26 +403,27 @@ const styles = StyleSheet.create({
 	},
 	dayColumn: {
 		flex: 1,
-		minHeight: 142,
+		minHeight: 108,
 		alignItems: "center",
 		justifyContent: "space-between",
 		paddingHorizontal: 4,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.xs,
 		borderRadius: radii.md,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.frosted,
+		gap: 4,
 	},
 	weekday: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
+		fontSize: 11,
+		lineHeight: 14,
 	},
 	mealIconWrap: {
-		width: 34,
-		height: 34,
-		borderRadius: 17,
+		width: 28,
+		height: 28,
+		borderRadius: 14,
 		alignItems: "center",
 		justifyContent: "center",
 		borderWidth: 1,
@@ -508,13 +439,13 @@ const styles = StyleSheet.create({
 		opacity: 0.78,
 	},
 	scoreDot: {
-		width: 18,
-		height: 18,
-		borderRadius: 9,
+		width: 14,
+		height: 14,
+		borderRadius: 7,
 		borderWidth: 2,
 	},
 	scoreRow: {
-		minHeight: 18,
+		minHeight: 16,
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "center",
@@ -523,8 +454,8 @@ const styles = StyleSheet.create({
 	dayScore: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 17,
+		fontSize: 12,
+		lineHeight: 15,
 		fontVariant: ["tabular-nums"],
 	},
 	legendRow: {
@@ -532,24 +463,24 @@ const styles = StyleSheet.create({
 		flexWrap: "wrap",
 		alignItems: "center",
 		justifyContent: "center",
-		gap: spacing.md,
-		paddingTop: spacing.xs,
+		gap: spacing.sm,
+		paddingTop: 2,
 	},
 	legendItem: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: 5,
+		gap: 4,
 	},
 	legendDot: {
-		width: 10,
-		height: 10,
-		borderRadius: 5,
+		width: 8,
+		height: 8,
+		borderRadius: 4,
 		backgroundColor: tokens.color.status.risk.medium.tint,
 	},
 	legendLabel: {
 		color: tokens.color.text.tertiary,
 		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+		fontSize: 11,
+		lineHeight: 14,
 	},
 });

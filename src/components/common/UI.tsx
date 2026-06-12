@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ComponentProps, ReactNode } from 'react';
+import { ComponentProps, ReactNode, useEffect, useRef } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleProp,
@@ -14,11 +17,23 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import Animated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RootStackParamList } from '../../navigation/types';
 import { components, radii, spacing, tokens, type } from '../../theme';
 import { Pip } from './Pip';
+
+const PICKER_PRESS_SPRING = { damping: 16, stiffness: 360, mass: 0.6 } as const;
+const PICKER_RELEASE_SPRING = { damping: 14, stiffness: 220, mass: 0.7 } as const;
+const PICKER_POP_UP_SPRING = { damping: 11, stiffness: 280, mass: 0.55 } as const;
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -27,6 +42,7 @@ type AppScreenProps = {
   scroll?: boolean;
   background?: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  keyboardAvoiding?: boolean;
 };
 
 type ButtonProps = {
@@ -45,7 +61,7 @@ type SectionCardProps = {
 
 type SkeletonBlockProps = {
   width?: number | `${number}%`;
-  height: number;
+  height: number | `${number}%`;
   radius?: number;
   style?: StyleProp<ViewStyle>;
 };
@@ -113,23 +129,46 @@ export function ScreenLayout({ title, children, scroll = true, contentContainerS
   );
 }
 
-export function AppScreen({ children, scroll = true, background, contentContainerStyle }: AppScreenProps) {
+export function AppScreen({
+  children,
+  scroll = true,
+  background,
+  contentContainerStyle,
+  keyboardAvoiding = true,
+}: AppScreenProps) {
   const insets = useSafeAreaInsets();
 
   const content = (
     <View style={[styles.content, { paddingTop: insets.top + spacing.md }, contentContainerStyle]}>{children}</View>
   );
 
+  const screenContent = scroll ? (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      contentContainerStyle={styles.scrollContent}
+    >
+      {content}
+    </ScrollView>
+  ) : (
+    content
+  );
+
   return (
     <View style={styles.screenFill}>
       {background}
       <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-        {scroll ? (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            {content}
-          </ScrollView>
+        {keyboardAvoiding ? (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={0}
+            style={styles.keyboardAvoiding}
+          >
+            {screenContent}
+          </KeyboardAvoidingView>
         ) : (
-          content
+          screenContent
         )}
       </SafeAreaView>
     </View>
@@ -182,6 +221,77 @@ export function ScreenHeader({
           {rightAccessory ?? <View style={styles.headerSpacer} />}
         </View>
       </View>
+    </View>
+  );
+}
+
+type TabScreenHeaderProps = {
+  title: string;
+};
+
+type DetailScreenHeaderProps = {
+  eyebrow: string;
+  title?: string;
+  titleAccessory?: ReactNode;
+};
+
+export function TabScreenHeader({ title }: TabScreenHeaderProps) {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+
+  return (
+    <View style={styles.tabHeaderRow}>
+      <Text style={styles.tabHeaderTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open settings"
+        onPress={() => navigation.navigate('Settings')}
+        style={({ pressed }) => [styles.tabHeaderIconButton, pressed && { opacity: 0.78 }]}
+      >
+        <Ionicons name="person-circle-outline" size={22} color={tokens.color.icon.primary} />
+      </Pressable>
+    </View>
+  );
+}
+
+export function DetailScreenHeader({ eyebrow, title, titleAccessory }: DetailScreenHeaderProps) {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const canGoBack = navigation.canGoBack();
+
+  return (
+    <View style={styles.detailHeaderShell}>
+      <View style={styles.detailHeaderTopRow}>
+        <View style={styles.detailHeaderSide}>
+          {canGoBack ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              onPress={() => navigation.goBack()}
+              hitSlop={8}
+              style={({ pressed }) => [styles.iconCircle, pressed && { opacity: 0.72 }]}
+            >
+              <Ionicons name="chevron-back" size={22} color={tokens.color.icon.primary} />
+            </Pressable>
+          ) : (
+            <View style={styles.headerSpacer} />
+          )}
+        </View>
+        <Text style={styles.detailEyebrow}>{eyebrow.toUpperCase()}</Text>
+        <View style={styles.detailHeaderSide} />
+      </View>
+      {title || titleAccessory ? (
+        <View style={styles.detailTitleRow}>
+          {title ? (
+            <Text style={styles.detailTitle} numberOfLines={2}>
+              {title}
+            </Text>
+          ) : null}
+          {titleAccessory ? (
+            <View style={styles.detailTitleAccessory}>{titleAccessory}</View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -290,49 +400,94 @@ export function OnboardingPickerOption({
   variant = 'plain',
 }: OnboardingPickerOptionProps) {
   const colors = getOnboardingPickerColors(variant, selected);
+  const pair = getOnboardingPickerColorPair(variant);
+  const selectedness = useSharedValue(selected ? 1 : 0);
+  const scale = useSharedValue(1);
+  const previousSelectedRef = useRef(selected);
+
+  useEffect(() => {
+    selectedness.value = withTiming(selected ? 1 : 0, { duration: 220 });
+    if (!previousSelectedRef.current && selected) {
+      scale.value = withSequence(
+        withSpring(1.04, PICKER_POP_UP_SPRING),
+        withSpring(1, PICKER_RELEASE_SPRING),
+      );
+    }
+    previousSelectedRef.current = selected;
+  }, [selected, selectedness, scale]);
+
+  const containerStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      selectedness.value,
+      [0, 1],
+      [pair.backgroundFrom, pair.backgroundTo],
+    ),
+    borderColor: interpolateColor(
+      selectedness.value,
+      [0, 1],
+      [pair.borderFrom, pair.borderTo],
+    ),
+    transform: [{ scale: scale.value }],
+  }));
+
+  function handlePressIn() {
+    scale.value = withSpring(0.97, PICKER_PRESS_SPRING);
+  }
+
+  function handlePressOut() {
+    if (!selected) {
+      scale.value = withSpring(1, PICKER_RELEASE_SPRING);
+    }
+  }
+
+  function handlePress() {
+    void Haptics.selectionAsync();
+    onPress();
+  }
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.onboardingPickerOption,
-        {
-          backgroundColor: colors.background,
-          borderColor: colors.border,
-        },
-        pressed && { opacity: 0.86 },
-      ]}
-    >
-      {iconName ? (
-        <View style={[styles.onboardingPickerIconSlot, { backgroundColor: colors.iconBackground }]}>
-          <Ionicons name={iconName} size={16} color={colors.icon} />
-        </View>
-      ) : null}
-      <View style={styles.onboardingPickerLabelWrap}>
-        <Text
-          numberOfLines={2}
-          style={[
-            styles.onboardingPickerLabel,
-            {
-              color: colors.text,
-              flex: badgeText ? 0 : 1,
-              textAlign: 'left',
-            },
-          ]}
-        >
-          {label}
-        </Text>
-        {badgeText ? (
-          <View style={[styles.onboardingPickerBadge, { backgroundColor: colors.badgeBackground }]}>
-            <Text style={[styles.onboardingPickerBadgeLabel, { color: colors.badgeText }]}>
-              {badgeText}
-            </Text>
+    <Animated.View style={[styles.onboardingPickerOption, containerStyle]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={styles.onboardingPickerHit}
+      >
+        {iconName ? (
+          <View
+            style={[styles.onboardingPickerIconSlot, { backgroundColor: colors.iconBackground }]}
+          >
+            <Ionicons name={iconName} size={16} color={colors.icon} />
           </View>
         ) : null}
-      </View>
-    </Pressable>
+        <View style={styles.onboardingPickerLabelWrap}>
+          <Text
+            numberOfLines={2}
+            style={[
+              styles.onboardingPickerLabel,
+              {
+                color: colors.text,
+                flex: badgeText ? 0 : 1,
+                textAlign: 'left',
+              },
+            ]}
+          >
+            {label}
+          </Text>
+          {badgeText ? (
+            <View
+              style={[styles.onboardingPickerBadge, { backgroundColor: colors.badgeBackground }]}
+            >
+              <Text style={[styles.onboardingPickerBadgeLabel, { color: colors.badgeText }]}>
+                {badgeText}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -486,6 +641,24 @@ function getPillStyle(tone: InfoPillTone) {
   }
 }
 
+function getOnboardingPickerColorPair(variant: OnboardingPickerVariant) {
+  if (variant === 'image') {
+    return {
+      backgroundFrom: 'rgba(255,255,255,0.94)',
+      backgroundTo: tokens.color.accent.brand,
+      borderFrom: tokens.color.border.subtle,
+      borderTo: tokens.color.accent.brand,
+    };
+  }
+
+  return {
+    backgroundFrom: tokens.color.surface.card.default,
+    backgroundTo: tokens.color.status.success.background,
+    borderFrom: tokens.color.border.subtle,
+    borderTo: tokens.color.border.emphasis,
+  };
+}
+
 function getOnboardingPickerColors(variant: OnboardingPickerVariant, selected: boolean) {
   if (variant === 'image') {
     return {
@@ -518,6 +691,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  keyboardAvoiding: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
@@ -574,6 +750,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     paddingTop: 2,
+  },
+  detailHeaderShell: {
+    width: '100%',
+    gap: spacing.md,
+  },
+  detailHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  detailHeaderSide: {
+    width: 44,
+    alignItems: 'center',
+  },
+  detailEyebrow: {
+    flex: 1,
+    ...tokens.type.label.eyebrow,
+    color: tokens.color.text.tertiary,
+    textAlign: 'center',
+    letterSpacing: 1.2,
+  },
+  detailTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  detailTitle: {
+    flex: 1,
+    ...tokens.type.title.screen,
+    color: tokens.color.text.primary,
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.6,
+  },
+  detailTitleAccessory: {
+    flexShrink: 0,
+  },
+  tabHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  tabHeaderTitle: {
+    flex: 1,
+    color: tokens.color.text.primary,
+    fontFamily: type.body.bold,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.3,
+  },
+  tabHeaderIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: tokens.color.surface.frosted,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   eyebrow: {
     ...tokens.type.label.eyebrow,
@@ -670,6 +908,8 @@ const styles = StyleSheet.create({
   optionChip: {
     ...components.chip.option,
     alignSelf: 'flex-start',
+    backgroundColor: 'transparent',
+    borderColor: tokens.color.border.strong,
   },
   optionChipSelected: {
     ...components.chip.optionSelected,
@@ -686,11 +926,15 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: radii.md,
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
+    ...tokens.shadow.card,
+  },
+  onboardingPickerHit: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    ...tokens.shadow.card,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
   },
   onboardingPickerBadge: {
     minWidth: 28,
@@ -771,8 +1015,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   inputMultiline: {
-    minHeight: 110,
-    paddingTop: spacing.md,
+    minHeight: 64,
+    paddingTop: spacing.sm,
     textAlignVertical: 'top',
   },
   emptyState: {

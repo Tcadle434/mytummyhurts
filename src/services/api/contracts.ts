@@ -3,30 +3,50 @@ import {
   ConditionIngredientInsight,
   DailyGutReport,
   IngredientInsight,
-  ScanCategory,
+  ScanHistorySummary,
   ScanInputPayload,
   ScanRecord,
+  DietPreference,
+  DietPreferenceKey,
   UserProfile,
 } from '../../types/domain';
 
 export interface AnalyzeImageRequest {
-  imagePath: string;
+  requestId: string;
+  imagePath?: string;
+  imagePaths?: string[];
+  thumbnailImagePaths?: (string | null)[];
+  imageDataUrl?: string;
+  imageDataUrls?: string[];
   sourceType: ScanInputPayload['sourceType'];
-  scanCategory?: ScanCategory;
+  scanCategory?: ScanInputPayload['scanCategory'];
   localDate?: string;
   timezone?: string;
 }
 
 export interface AnalyzeTextRequest {
+  requestId: string;
   text: string;
   sourceType: ScanInputPayload['sourceType'];
-  scanCategory?: ScanCategory;
+  scanCategory?: ScanInputPayload['scanCategory'];
+  localDate?: string;
+  timezone?: string;
+}
+
+export interface AnalyzeBarcodeRequest {
+  requestId: string;
+  barcode: string;
+  sourceType: ScanInputPayload['sourceType'];
+  scanCategory?: ScanInputPayload['scanCategory'];
   localDate?: string;
   timezone?: string;
 }
 
 export interface AnalyzeResponse {
   scanId: string;
+  requestId?: string;
+  deduped?: boolean;
+  learningSyncStatus?: 'updated' | 'locked' | 'failed' | 'queued' | 'skipped' | 'not_applicable';
   tokensRemaining: number;
   scan: ScanRecord;
   billing: BillingState;
@@ -42,9 +62,19 @@ export interface ScanDeleteRequest {
 export interface ScanDeleteResponse {
   ok: true;
   scanId: string;
-  profile: UserProfile | null;
-  insights: IngredientInsight[];
-  conditionInsights: ConditionIngredientInsight[];
+  profile?: UserProfile | null;
+  insights?: IngredientInsight[];
+  conditionInsights?: ConditionIngredientInsight[];
+  learningSyncStatus?: 'queued' | 'failed';
+}
+
+export interface ScanGetRequest {
+  scanId: string;
+}
+
+export interface ScanGetResponse {
+  ok: true;
+  scan: ScanRecord;
 }
 
 export interface DailyReportUpsertRequest {
@@ -52,27 +82,56 @@ export interface DailyReportUpsertRequest {
   gutSeverity: number;
   symptomTags?: string[];
   notes?: string;
+  evidenceQuality?: 'typical' | 'unscanned';
+}
+
+export interface ScanConsumptionUpdateRequest {
+  scanId: string;
+  consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
+  consumedMenuItemSourceIds?: string[];
+}
+
+export interface ScanConsumptionUpdateResponse {
+  ok: true;
+  consumptionStatus: 'unknown' | 'consumed' | 'skipped';
+  consumedMenuItemSourceIds: string[];
+  learningSyncStatus: 'queued' | 'failed';
 }
 
 export interface DailyReportUpsertResponse {
   ok: true;
   report: DailyGutReport;
-  profile: UserProfile | null;
-  insights: IngredientInsight[];
-  conditionInsights: ConditionIngredientInsight[];
+  learningSyncStatus: 'queued' | 'failed' | 'skipped';
+}
+
+export interface LearningRecomputeRequest {
+  sourceType: 'daily_gut_report' | 'scan' | 'profile';
+  sourceId?: string;
+  eventType?: string;
+}
+
+export interface LearningRecomputeResponse {
+  ok: true;
+  learningSyncStatus: 'updated' | 'locked' | 'failed';
+  profile?: UserProfile | null;
+  insights?: IngredientInsight[];
+  conditionInsights?: ConditionIngredientInsight[];
+  dailyReports?: DailyGutReport[];
 }
 
 export interface HistoryRequest {
   page?: number;
   pageSize?: number;
+  includeDailyReports?: boolean;
+  scanCategory?: 'food' | 'menu' | 'grocery';
 }
 
 export interface HistoryResponse {
   page: number;
   pageSize: number;
   hasMore: boolean;
-  scans: ScanRecord[];
-  dailyReports: DailyGutReport[];
+  scans: ScanHistorySummary[];
+  dailyReports?: DailyGutReport[];
 }
 
 export interface InsightsRequest {
@@ -87,6 +146,25 @@ export interface InsightsResponse {
   billing: BillingState;
 }
 
+export type HomeLearningStatus = 'idle' | 'pending' | 'running' | 'failed';
+
+export interface HomeResponse {
+  ok: true;
+  snapshotVersion: number;
+  profile: UserProfile | null;
+  billing: BillingState;
+  recentScans: ScanHistorySummary[];
+  dailyReports: DailyGutReport[];
+  insightSummary: {
+    triggers: IngredientInsight[];
+    safeFoods: IngredientInsight[];
+    conditionInsights: ConditionIngredientInsight[];
+  };
+  learningStatus: HomeLearningStatus;
+  generatedAt: string;
+  serverTime: string;
+}
+
 export interface ProfileUpdateRequest {
   onboardingAnswers?: {
     displayName?: string | null;
@@ -94,6 +172,8 @@ export interface ProfileUpdateRequest {
     customConditions?: string[];
     ingredientSensitivities?: string[];
     customIngredientSensitivities?: string[];
+    foodCalibrations?: Record<string, 'fine' | 'unsure' | 'bad'>;
+    lastBadMealText?: string;
     symptoms?: string[];
     customSymptoms?: string[];
     symptomFrequency?: string;
@@ -103,6 +183,7 @@ export interface ProfileUpdateRequest {
     currentEatingPatterns?: string[];
     lifestyleFactors?: string[];
     favoriteFoodsToReintroduce?: string;
+    dietPreferenceKeys?: DietPreferenceKey[];
   };
   displayName?: string | null;
   knownConditions?: string[];
@@ -115,14 +196,17 @@ export interface ProfileUpdateRequest {
   currentEatingPatterns?: string[];
   lifestyleFactors?: string[];
   foodsToReintroduce?: string[];
+  dietPreferences?: DietPreference[];
 }
 
 export interface ProfileUpdateResponse {
   ok: true;
-  profile: UserProfile | null;
-  insights: IngredientInsight[];
-  conditionInsights: ConditionIngredientInsight[];
-  billing: BillingState;
+  profile?: UserProfile | null;
+  insights?: IngredientInsight[];
+  conditionInsights?: ConditionIngredientInsight[];
+  billing?: BillingState;
+  displayName?: string | null;
+  learningSyncStatus?: 'queued' | 'failed' | 'skipped';
 }
 
 export interface BillingSyncRequest {
@@ -162,4 +246,15 @@ export interface NotificationRegistrationRequest {
 
 export interface DeleteAccountResponse {
   ok: true;
+}
+
+export interface ExistingAccountCheckRequest {
+  cleanupFreshUnentitledUser?: boolean;
+}
+
+export interface ExistingAccountCheckResponse {
+  ok: true;
+  allowed: boolean;
+  reason?: 'missing_entitlement' | 'incomplete_profile' | 'fresh_orphan_deleted' | 'not_found';
+  deletedOrphan?: boolean;
 }

@@ -13,7 +13,9 @@ import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { LearningSyncToastBridge } from '../components/system/LearningSyncToastBridge';
 import { RuntimeServices } from '../components/system/RuntimeServices';
+import { ToastProvider } from '../components/system/ToastProvider';
 import { queryClient } from '../services/query/client';
 import { palette } from '../theme';
 
@@ -51,7 +53,12 @@ export function AppProviders({ children }: AppProvidersProps) {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="dark" />
-          <RuntimeServices>{children}</RuntimeServices>
+          <RuntimeServices>
+            <ToastProvider>
+              <LearningSyncToastBridge />
+              {children}
+            </ToastProvider>
+          </RuntimeServices>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

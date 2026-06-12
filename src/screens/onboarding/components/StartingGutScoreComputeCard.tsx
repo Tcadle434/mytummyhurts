@@ -57,9 +57,9 @@ export function StartingGutScoreComputeCard({
 		? "Computing"
 		: "Ready to compute";
 	const checklistItems = [
-		"Symptoms and severity",
-		"Known conditions",
-		"Declared sensitivities",
+		"Symptoms",
+		"Conditions",
+		"Sensitivities",
 		"Current patterns",
 	];
 
@@ -70,7 +70,14 @@ export function StartingGutScoreComputeCard({
 			ringProgress.value = withTiming(0.16, { duration: 240 });
 			resultOpacity.value = withTiming(0, { duration: 120 });
 			resultTranslate.value = withTiming(10, { duration: 120 });
-			ringScale.value = withTiming(1, { duration: 160 });
+			ringScale.value = withRepeat(
+				withTiming(1.035, {
+					duration: 1100,
+					easing: Easing.inOut(Easing.quad),
+				}),
+				-1,
+				true
+			);
 			return;
 		}
 
@@ -81,6 +88,7 @@ export function StartingGutScoreComputeCard({
 				duration: 2100,
 				easing: Easing.out(Easing.cubic),
 			});
+			ringScale.value = withTiming(1, { duration: 200 });
 			resultOpacity.value = withTiming(0, { duration: 120 });
 			resultTranslate.value = withTiming(10, { duration: 120 });
 			const timers = [320, 760, 1220, 1700].map((delay, index) =>
@@ -275,9 +283,9 @@ function StartingScoreLoadingDot({ color, delay }: { color: string; delay: numbe
 }
 
 function scoreTone(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.foreground;
-	if (score >= 34) return tokens.color.status.risk.medium.foreground;
-	return tokens.color.status.risk.high.foreground;
+	if (score >= 67) return tokens.color.status.risk.low.tint;
+	if (score >= 34) return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.high.tint;
 }
 
 function scoreBackground(score: number) {
@@ -314,6 +322,7 @@ const styles = StyleSheet.create({
 	card: {
 		width: "100%",
 		maxWidth: 360,
+		alignSelf: "center",
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		borderRadius: 30,
@@ -401,12 +410,14 @@ const styles = StyleSheet.create({
 	},
 	checkRow: {
 		width: "48%",
-		minHeight: 32,
+		height: 44,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.xs,
-		borderRadius: 17,
-		backgroundColor: tokens.color.surface.card.warm,
+		borderRadius: 22,
+		backgroundColor: tokens.color.surface.card.default,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
 		paddingHorizontal: spacing.xs,
 	},
 	checkIcon: {

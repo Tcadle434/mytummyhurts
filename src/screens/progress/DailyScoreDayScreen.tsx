@@ -1,15 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, {
+	Easing,
+	FadeIn,
+	FadeInDown,
+	useAnimatedStyle,
+	useSharedValue,
+	withDelay,
+	withSpring,
+	withTiming,
+} from "react-native-reanimated";
 
-import { AppScreen, PrimaryButton, ScreenHeader, SectionCard } from "../../components/common/UI";
+import { DailyScoreRing, scoreTint } from "../../components/progress/DailyScoreRing";
+import {
+	AppScreen,
+	DetailScreenHeader,
+	PrimaryButton,
+	SectionCard,
+} from "../../components/common/UI";
+import { useHomeData } from "../../features/home/hooks";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
 import { radii, spacing, tokens, type } from "../../theme";
-import { ScanRecord } from "../../types/domain";
+import { ScanHistorySummary } from "../../types/domain";
 import {
 	WeeklyProgressDay,
 	buildWeeklyProgressDays,
@@ -24,10 +41,16 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 	const weekStart = route.params.weekStart ?? getWeekStartForLocalDate(localDate);
 	const fallbackScans = useAppStore((state) => state.scans);
 	const fallbackReports = useAppStore((state) => state.dailyReports);
+	const homeQuery = useHomeData();
 	const historyQuery = useHistoryFeed(100);
-	const scans = historyQuery.data?.pages.flatMap((page) => page.scans ?? []) ?? fallbackScans;
+	const scans =
+		historyQuery.data?.pages.flatMap((page) => page.scans ?? []) ??
+		homeQuery.data?.recentScans ??
+		fallbackScans;
 	const reports =
-		historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ?? fallbackReports;
+		historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ??
+		homeQuery.data?.dailyReports ??
+		fallbackReports;
 	const day = useMemo(
 		() =>
 			buildWeeklyProgressDays({ scans, reports, weekStart }).find(
@@ -44,115 +67,145 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 		navigation.navigate("DailyGutReport", { localDate });
 	}
 
+	function openAddMeal() {
+		trackEvent("manual_meal_opened", {
+			entry_point: "daily_score_day",
+			local_date: localDate,
+		});
+		navigation.navigate("ManualMeal", {});
+	}
+
+	function openScan(scan: ScanHistorySummary) {
+		navigation.navigate("ScanResult", { scanId: scan.id });
+	}
+
 	return (
 		<AppScreen>
-			<ScreenHeader
-				eyebrow={formatDayTitle(localDate)}
-				title="Daily recap"
-				subtitle="Meals, symptoms, and the Daily Score for this day."
-			/>
+			<DetailScreenHeader eyebrow="Daily Score" title={formatDayTitle(localDate)} />
 
-			<DailyScoreSummary day={day} onReportPress={openReport} />
+			<Animated.View entering={FadeIn.duration(280)}>
+				<DailyScoreHero day={day} />
+			</Animated.View>
 
-			<SectionCard style={styles.sectionCard}>
-				<View style={styles.sectionHeader}>
-					<Text style={styles.sectionTitle}>Meals logged</Text>
-					<Text style={styles.sectionMeta}>{day.mealCount}</Text>
-				</View>
-				{day.scans.length ? (
-					<View style={styles.mealList}>
-						{day.scans.map((scan) => (
-							<MealRow
-								key={scan.id}
-								scan={scan}
-								onPress={() => navigation.navigate("ScanResult", { scanId: scan.id })}
-							/>
-						))}
-					</View>
-				) : (
-					<Text style={styles.emptyCopy}>No meals were logged for this day.</Text>
-				)}
-			</SectionCard>
-
-			<SectionCard style={styles.sectionCard}>
-				<View style={styles.sectionHeader}>
-					<Text style={styles.sectionTitle}>Symptoms</Text>
-					<Pressable
-						accessibilityRole="button"
-						onPress={openReport}
-						style={({ pressed }) => [styles.editButton, pressed && { opacity: 0.78 }]}
-					>
-						<Text style={styles.editButtonText}>{day.report ? "Edit" : "Add"}</Text>
-					</Pressable>
-				</View>
-				{day.report ? (
-					<View style={styles.symptomStack}>
-						<View style={styles.symptomSeverityRow}>
-							<Text style={styles.symptomLabel}>Gut severity</Text>
-							<Text style={styles.symptomValue}>{day.report.gutSeverity}/10</Text>
+			<Animated.View entering={FadeInDown.duration(320).delay(120)}>
+				<SectionCard style={styles.sectionCard}>
+					<View style={styles.sectionHeader}>
+						<View style={styles.sectionTitleStack}>
+							<Text style={styles.sectionTitle}>Meals</Text>
+							<Text style={styles.sectionMeta}>
+								{day.mealCount} {day.mealCount === 1 ? "logged" : "logged"}
+							</Text>
 						</View>
-						<Text style={styles.symptomBody}>
-							{day.report.symptomTags.length
-								? day.report.symptomTags.join(", ")
-								: "No symptoms tagged."}
-						</Text>
-						{day.report.notes ? (
-							<Text style={styles.notesText}>{day.report.notes}</Text>
-						) : null}
+						<SectionEditButton label="Add" onPress={openAddMeal} />
 					</View>
-				) : (
-					<View style={styles.noReportStack}>
-						<Text style={styles.emptyCopy}>
-							No gut report was logged for this day yet.
-						</Text>
-						<PrimaryButton label="Log this day" onPress={openReport} />
+					{day.scans.length ? (
+						<View style={styles.mealList}>
+							{day.scans.map((scan) => (
+								<MealRow
+									key={scan.id}
+									scan={scan}
+									onPress={() => openScan(scan)}
+								/>
+							))}
+						</View>
+					) : (
+						<Text style={styles.emptyCopy}>No meals were logged for this day.</Text>
+					)}
+				</SectionCard>
+			</Animated.View>
+
+			<Animated.View entering={FadeInDown.duration(320).delay(200)}>
+				<SectionCard style={styles.sectionCard}>
+					<View style={styles.sectionHeader}>
+						<View style={styles.sectionTitleStack}>
+							<Text style={styles.sectionTitle}>Symptoms</Text>
+							{day.report ? (
+								<Text style={styles.sectionMeta}>
+									Severity {day.report.gutSeverity}/10
+								</Text>
+							) : (
+								<Text style={styles.sectionMeta}>Not logged</Text>
+							)}
+						</View>
+						<SectionEditButton
+							label={day.report ? "Edit" : "Add"}
+							onPress={openReport}
+						/>
 					</View>
-				)}
-			</SectionCard>
+					{day.report ? (
+						<View style={styles.symptomStack}>
+							<Text style={styles.symptomBody}>
+								{day.report.symptomTags.length
+									? day.report.symptomTags.join(", ")
+									: "No symptoms tagged."}
+							</Text>
+							{day.report.notes ? (
+								<Text style={styles.notesText}>{day.report.notes}</Text>
+							) : null}
+						</View>
+					) : (
+						<View style={styles.noReportStack}>
+							<Text style={styles.emptyCopy}>
+								No gut report was logged for this day yet.
+							</Text>
+							<PrimaryButton label="Log this day" onPress={openReport} />
+						</View>
+					)}
+				</SectionCard>
+			</Animated.View>
 		</AppScreen>
 	);
 }
 
-function DailyScoreSummary({
-	day,
-	onReportPress,
-}: {
-	day: WeeklyProgressDay;
-	onReportPress: () => void;
-}) {
+function DailyScoreHero({ day }: { day: WeeklyProgressDay }) {
 	const hasScore = day.hasReport && day.dailyScore !== undefined;
 	const score = hasScore ? (day.dailyScore as number) : undefined;
-	const tone = score !== undefined ? scoreTone(score) : tokens.color.text.tertiary;
+	const tone = score !== undefined ? scoreTint(score) : tokens.color.text.tertiary;
+	const ringScale = useSharedValue(0.7);
+	const ringOpacity = useSharedValue(0);
+
+	useEffect(() => {
+		ringScale.value = withDelay(60, withSpring(1, { damping: 14, stiffness: 180, mass: 0.7 }));
+		ringOpacity.value = withDelay(
+			60,
+			withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) })
+		);
+	}, [ringOpacity, ringScale]);
+
+	const ringAnimatedStyle = useAnimatedStyle(() => ({
+		opacity: ringOpacity.value,
+		transform: [{ scale: ringScale.value }],
+	}));
 
 	return (
-		<SectionCard style={styles.summaryCard}>
-			<View style={styles.summaryCopy}>
-				<Text style={styles.summaryLabel}>Daily Score</Text>
-				<Text style={[styles.summaryScore, { color: tone }]}>
-					{score !== undefined ? score : "—"}
-					{score !== undefined ? <Text style={styles.summaryScale}>/100</Text> : null}
-				</Text>
-				<Text style={styles.summaryDetail}>
-					{score !== undefined
-						? "Based on the gut report and food exposure for this day."
-						: day.mealCount
-							? "Meals were logged, but this day still needs a gut report."
-							: "No meals or gut report were logged for this day."}
-				</Text>
+		<SectionCard style={styles.heroCard}>
+			<Animated.View style={ringAnimatedStyle}>
+				<DailyScoreRing score={score} size={156} strokeWidth={14} />
+			</Animated.View>
+			<View style={styles.heroCopy}>
+				<Text style={[styles.heroVerdict, { color: tone }]}>{verdictForScore(score)}</Text>
+				<Text style={styles.heroDescription}>{descriptionForDay(day)}</Text>
 			</View>
-			<Pressable
-				accessibilityRole="button"
-				onPress={onReportPress}
-				style={({ pressed }) => [styles.summaryAction, pressed && { opacity: 0.82 }]}
-			>
-				<Ionicons name="create-outline" size={18} color={tokens.color.icon.accent} />
-				<Text style={styles.summaryActionText}>{day.report ? "Edit report" : "Add report"}</Text>
-			</Pressable>
 		</SectionCard>
 	);
 }
 
-function MealRow({ scan, onPress }: { scan: ScanRecord; onPress: () => void }) {
+function SectionEditButton({ label, onPress }: { label: string; onPress: () => void }) {
+	return (
+		<Pressable
+			accessibilityRole="button"
+			accessibilityLabel={label}
+			onPress={onPress}
+			hitSlop={8}
+			style={({ pressed }) => [styles.editButton, pressed && { opacity: 0.78 }]}
+		>
+			<Ionicons name="add" size={14} color={tokens.color.text.accent} />
+			<Text style={styles.editButtonText}>{label}</Text>
+		</Pressable>
+	);
+}
+
+function MealRow({ scan, onPress }: { scan: ScanHistorySummary; onPress: () => void }) {
 	const tone = riskTone(scan.overallRiskLevel);
 
 	return (
@@ -189,65 +242,53 @@ function emptyDay(localDate: string): WeeklyProgressDay {
 	};
 }
 
-function scoreTone(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.foreground;
-	if (score >= 34) return tokens.color.status.risk.medium.foreground;
-	return tokens.color.status.risk.high.foreground;
+function verdictForScore(score: number | undefined) {
+	if (score === undefined) return "Awaiting report";
+	if (score >= 67) return "Calm day";
+	if (score >= 34) return "Mixed day";
+	return "Reactive day";
 }
 
-function riskTone(level: ScanRecord["overallRiskLevel"]) {
+function descriptionForDay(day: WeeklyProgressDay) {
+	const hasScore = day.hasReport && day.dailyScore !== undefined;
+	if (hasScore) {
+		return "Based on meals and symptoms.";
+	}
+	if (day.mealCount) {
+		return "Meals were logged, but need symptom report.";
+	}
+	return "Nothing was logged for this day.";
+}
+
+function riskTone(level: ScanHistorySummary["overallRiskLevel"]) {
 	if (level === "high") return tokens.color.status.risk.high.tint;
 	if (level === "medium") return tokens.color.status.risk.medium.tint;
 	return tokens.color.status.risk.low.tint;
 }
 
 const styles = StyleSheet.create({
-	summaryCard: {
-		flexDirection: "row",
+	heroCard: {
 		alignItems: "center",
+		paddingVertical: spacing.lg,
 		gap: spacing.md,
 	},
-	summaryCopy: {
-		flex: 1,
+	heroCopy: {
+		alignItems: "center",
 		gap: spacing.xs,
+		paddingHorizontal: spacing.md,
 	},
-	summaryLabel: {
-		color: tokens.color.text.tertiary,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 18,
-	},
-	summaryScore: {
+	heroVerdict: {
 		fontFamily: type.body.bold,
-		fontSize: 60,
-		lineHeight: 66,
-		fontVariant: ["tabular-nums"],
-	},
-	summaryScale: {
-		color: tokens.color.text.tertiary,
 		fontSize: 20,
 		lineHeight: 26,
+		letterSpacing: -0.3,
 	},
-	summaryDetail: {
+	heroDescription: {
 		color: tokens.color.text.secondary,
 		fontFamily: type.body.medium,
 		fontSize: 14,
 		lineHeight: 20,
-	},
-	summaryAction: {
-		alignItems: "center",
-		justifyContent: "center",
-		gap: spacing.xs,
-		borderRadius: radii.lg,
-		backgroundColor: tokens.color.status.success.background,
-		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
-	},
-	summaryActionText: {
-		color: tokens.color.text.accent,
-		fontFamily: type.body.bold,
-		fontSize: 12,
-		lineHeight: 16,
+		textAlign: "center",
 	},
 	sectionCard: {
 		gap: spacing.md,
@@ -258,16 +299,21 @@ const styles = StyleSheet.create({
 		justifyContent: "space-between",
 		gap: spacing.md,
 	},
+	sectionTitleStack: {
+		flex: 1,
+		gap: 2,
+	},
 	sectionTitle: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.bold,
-		fontSize: 20,
-		lineHeight: 25,
+		fontSize: 18,
+		lineHeight: 23,
 	},
 	sectionMeta: {
 		color: tokens.color.text.tertiary,
 		fontFamily: type.body.semibold,
-		fontSize: 14,
+		fontSize: 13,
+		lineHeight: 17,
 	},
 	mealList: {
 		gap: spacing.sm,
@@ -320,10 +366,13 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 	},
 	editButton: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 3,
 		borderRadius: radii.pill,
 		backgroundColor: tokens.color.status.success.background,
-		paddingHorizontal: spacing.md,
-		paddingVertical: 7,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 6,
 	},
 	editButtonText: {
 		color: tokens.color.text.accent,
@@ -333,22 +382,6 @@ const styles = StyleSheet.create({
 	},
 	symptomStack: {
 		gap: spacing.sm,
-	},
-	symptomSeverityRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: spacing.md,
-	},
-	symptomLabel: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.semibold,
-		fontSize: 14,
-	},
-	symptomValue: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 18,
 	},
 	symptomBody: {
 		color: tokens.color.text.primary,

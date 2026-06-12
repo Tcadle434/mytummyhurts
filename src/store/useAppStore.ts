@@ -4,23 +4,38 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { isLiveBackendConfigured } from '../config/env';
 import { topUpOptions } from '../data/catalog';
-import { defaultOnboardingAnswers } from '../data/onboarding';
+import {
+  defaultOnboardingAnswers,
+  getOnboardingMotivationSummary,
+  normalizeOnboardingAnswers,
+} from '../data/onboarding';
 import { trackEvent } from '../services/analytics';
 import { apiClient } from '../services/api/client';
-import { ProfileUpdateRequest } from '../services/api/contracts';
+import {
+  HomeResponse,
+  LearningRecomputeRequest,
+  LearningRecomputeResponse,
+  ProfileUpdateRequest,
+} from '../services/api/contracts';
+import { ApiError } from '../services/api/errors';
+import { isEntitledSubscriptionStatus } from '../features/access/appAccess';
+import { buildPayoffBaseline, type ReportPayoffBaseline } from '../features/home/reportPayoff';
 import {
   analyzeMealInput,
   buildGutScoreEvent,
   buildUserProfile,
+  computeDailyScoreForReport,
   computeGutScoreState,
   recomputeConditionIngredientInsights,
   recomputeDailyScores,
   recomputeInsights,
 } from '../services/ai/scoring';
 import { buildSubscriptionWindow } from '../services/billing/plans';
+import { getRevenueCatBillingSyncRequest } from '../services/billing/revenueCat';
 import { queryClient } from '../services/query/client';
 import { queryKeys } from '../services/query/keys';
 import { uploadMealImage } from '../services/storage';
+import { showToast } from '../services/toast';
 import {
   AppUser,
   BillingState,
@@ -36,7 +51,7 @@ import {
   SubscriptionPlan,
   UserProfile,
 } from '../types/domain';
-import { createId } from '../utils/id';
+import { createId, createScanRequestId } from '../utils/id';
 
 type AppStoreState = {
   onboardingStage: OnboardingStage;
@@ -49,14 +64,27 @@ type AppStoreState = {
   dailyReports: DailyGutReport[];
   insights: IngredientInsight[];
   conditionInsights: ConditionIngredientInsight[];
-  pendingOnboardingScan: boolean;
   initialServerSyncNeeded: boolean;
   serverSyncInFlight: boolean;
   serverSyncError: string | null;
+  learningSyncInFlight: boolean;
+  learningSyncRequestId: string | null;
+  learningSyncError: string | null;
   remoteDataLoaded: boolean;
+  reportPayoffBaseline: ReportPayoffBaseline | null;
+  clearReportPayoffBaseline: () => void;
+  cacheScanRecord: (scan: ScanRecord) => void;
   updateOnboardingField: <K extends keyof OnboardingAnswers>(field: K, value: OnboardingAnswers[K]) => void;
   toggleOnboardingValue: (
-    field: 'conditions' | 'ingredientSensitivities' | 'symptoms' | 'mealContexts' | 'currentEatingPatterns' | 'lifestyleFactors',
+    field:
+      | 'conditions'
+      | 'ingredientSensitivities'
+      | 'symptoms'
+      | 'mealContexts'
+      | 'motivations'
+      | 'currentEatingPatterns'
+      | 'lifestyleFactors'
+      | 'dietPreferenceKeys',
     value: string,
   ) => void;
   addCustomOnboardingValue: (field: 'customConditions' | 'customIngredientSensitivities' | 'customSymptoms', value: string) => void;
@@ -64,14 +92,15 @@ type AppStoreState = {
   setOnboardingStepIndex: (index: number) => void;
   setOnboardingStage: (stage: OnboardingStage) => void;
   selectPlan: (plan: SubscriptionPlan) => void;
-  completePurchase: () => void;
   stageEntitlementAccess: (status: BillingState['subscriptionStatus']) => void;
+  completeAuthSetup: () => Promise<void>;
   syncAuthUser: (user: AppUser) => void;
-  finishOnboarding: () => void;
   refreshRemoteState: () => Promise<void>;
   syncInitialAccountState: () => Promise<void>;
+  triggerLearningRecompute: (request: LearningRecomputeRequest) => void;
   updateProfileSettings: (request: ProfileUpdateRequest) => Promise<void>;
   applyBillingState: (billing: BillingState) => void;
+  applyHomeResponse: (response: HomeResponse) => void;
   analyzeScanInput: (payload: ScanInputPayload) => Promise<{ scanId: string }>;
   deleteScanRecord: (scanId: string) => Promise<void>;
   upsertDailyReport: (params: {
@@ -79,6 +108,12 @@ type AppStoreState = {
     gutSeverity: number;
     symptomTags?: string[];
     notes?: string;
+    evidenceQuality?: 'typical' | 'unscanned';
+  }) => Promise<void>;
+  updateScanConsumption: (params: {
+    scanId: string;
+    consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
+    consumedMenuItemSourceIds?: string[];
   }) => Promise<void>;
   purchaseTopUp: (tokens: number) => Promise<void>;
   signOut: () => void;
@@ -108,11 +143,247 @@ function currentTimezone() {
 }
 
 function scanCategoryForPayload(payload: ScanInputPayload): ScanCategory {
-  return payload.scanCategory ?? 'food';
+  if (payload.scanCategory === 'menu' || payload.scanCategory === 'grocery') {
+    return payload.scanCategory;
+  }
+  return 'food';
+}
+
+type HistoryQueryCache = {
+  pages?: { scans?: { id?: string }[]; [key: string]: unknown }[];
+  scans?: { id?: string }[];
+  [key: string]: unknown;
+};
+
+function removeScanFromHistoryCache(scanId: string) {
+  queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const historyCache = cached as HistoryQueryCache;
+    if (Array.isArray(historyCache.pages)) {
+      let changed = false;
+      const pages = historyCache.pages.map((page) => {
+        if (!Array.isArray(page.scans)) {
+          return page;
+        }
+
+        const scans = page.scans.filter((scan) => scan.id !== scanId);
+        if (scans.length === page.scans.length) {
+          return page;
+        }
+
+        changed = true;
+        return { ...page, scans };
+      });
+
+      return changed ? { ...historyCache, pages } : cached;
+    }
+
+    if (Array.isArray(historyCache.scans)) {
+      const scans = historyCache.scans.filter((scan) => scan.id !== scanId);
+      return scans.length === historyCache.scans.length ? cached : { ...historyCache, scans };
+    }
+
+    return cached;
+  });
+}
+
+function scanRequestId(payload: ScanInputPayload) {
+  return payload.requestId ?? createScanRequestId();
+}
+
+function apiErrorCode(error: unknown) {
+  return typeof error === 'object' && error && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : error instanceof Error
+      ? error.name
+      : 'unknown_error';
+}
+
+function isSubscriptionRequiredError(error: unknown) {
+  return error instanceof ApiError && error.code === 'subscription_required';
+}
+
+function isDisplayNameOnlyProfileRequest(request: ProfileUpdateRequest) {
+  const keys = Object.keys(request);
+  return keys.length === 1 && keys[0] === 'displayName';
+}
+
+function patchDisplayNameInInsightsCache(displayName: string | null | undefined) {
+  const normalizedDisplayName = displayName?.trim() || undefined;
+  queryClient.setQueriesData({ queryKey: queryKeys.insights }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object' || !('profile' in cached)) {
+      return cached;
+    }
+
+    const response = cached as { profile?: UserProfile | null };
+    if (!response.profile) {
+      return cached;
+    }
+
+    return {
+      ...response,
+      profile: {
+        ...response.profile,
+        displayName: normalizedDisplayName,
+      },
+    };
+  });
+}
+
+function patchInsightsCacheFromLearning(response: LearningRecomputeResponse) {
+  if (
+    typeof response.profile === 'undefined' &&
+    typeof response.insights === 'undefined' &&
+    typeof response.conditionInsights === 'undefined'
+  ) {
+    return;
+  }
+
+  queryClient.setQueriesData({ queryKey: queryKeys.insights }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const current = cached as {
+      profile?: UserProfile | null;
+      insights?: IngredientInsight[];
+      conditionInsights?: ConditionIngredientInsight[];
+      [key: string]: unknown;
+    };
+
+    return {
+      ...current,
+      profile: typeof response.profile === 'undefined' ? current.profile : response.profile,
+      insights: response.insights ?? current.insights,
+      conditionInsights: response.conditionInsights ?? current.conditionInsights,
+    };
+  });
+}
+
+function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] | undefined) {
+  if (!dailyReports) {
+    return;
+  }
+
+  const orderedReports = [...dailyReports].sort(
+    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+  );
+
+  queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const historyCache = cached as {
+      pages?: { dailyReports?: DailyGutReport[]; [key: string]: unknown }[];
+      dailyReports?: DailyGutReport[];
+      [key: string]: unknown;
+    };
+
+    if (Array.isArray(historyCache.pages)) {
+      return {
+        ...historyCache,
+        pages: historyCache.pages.map((page) =>
+          Array.isArray(page.dailyReports)
+            ? { ...page, dailyReports: orderedReports }
+            : page,
+        ),
+      };
+    }
+
+    if (Array.isArray(historyCache.dailyReports)) {
+      return {
+        ...historyCache,
+        dailyReports: orderedReports,
+      };
+    }
+
+    return cached;
+  });
+}
+
+function homeSummaryInsights(response: HomeResponse) {
+  const byId = new Map<string, IngredientInsight>();
+
+  for (const insight of [...response.insightSummary.triggers, ...response.insightSummary.safeFoods]) {
+    byId.set(insight.id || insight.ingredientName, insight);
+  }
+
+  return [...byId.values()];
+}
+
+function sortDailyReportsByDate(dailyReports: DailyGutReport[]) {
+  return [...dailyReports].sort(
+    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+  );
+}
+
+function homeResponseStatePatch(
+  currentState: AppStoreState,
+  response: HomeResponse,
+): Partial<AppStoreState> {
+  const summaryInsights = homeSummaryInsights(response);
+  const learningIsInFlight = response.learningStatus === 'pending' || response.learningStatus === 'running';
+  const learningFailed = response.learningStatus === 'failed';
+
+  return {
+    profile: response.profile,
+    billing: response.billing,
+    dailyReports: sortDailyReportsByDate(response.dailyReports),
+    insights: currentState.insights.length ? currentState.insights : summaryInsights,
+    conditionInsights: currentState.conditionInsights.length
+      ? currentState.conditionInsights
+      : response.insightSummary.conditionInsights,
+    initialServerSyncNeeded: response.profile ? false : currentState.initialServerSyncNeeded,
+    remoteDataLoaded: true,
+    serverSyncError: null,
+    learningSyncInFlight: learningIsInFlight,
+    learningSyncRequestId: learningIsInFlight ? currentState.learningSyncRequestId : null,
+    learningSyncError: learningFailed
+      ? 'Learning refresh is still catching up. Your latest reports are saved.'
+      : null,
+  };
 }
 
 function mergeById<T extends { id: string }>(items: T[], incoming: T) {
   return [incoming, ...items.filter((item) => item.id !== incoming.id)];
+}
+
+function mergeDailyReportByLocalDate(items: DailyGutReport[], incoming: DailyGutReport) {
+  return [incoming, ...items.filter((item) => item.localDate !== incoming.localDate)];
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isHomeLearningActive(response: HomeResponse) {
+  return response.learningStatus === 'pending' || response.learningStatus === 'running';
+}
+
+async function pollHomeSnapshotUntilIdle(
+  applyHomeResponse: (response: HomeResponse) => void,
+  options: { maxAttempts?: number; intervalMs?: number } = {},
+) {
+  const maxAttempts = options.maxAttempts ?? 12;
+  const intervalMs = options.intervalMs ?? 2500;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(intervalMs);
+    }
+
+    const response = await apiClient.getHome();
+    applyHomeResponse(response);
+    if (!isHomeLearningActive(response)) {
+      return response;
+    }
+  }
+
+  return null;
 }
 
 function createLocalProfile(userId: string, answers: OnboardingAnswers, insights: IngredientInsight[]) {
@@ -172,7 +443,7 @@ function rebuildLocalLearningState(
 
 function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
   AppStoreState,
-  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'initialServerSyncNeeded' | 'pendingOnboardingScan' | 'onboardingStage'
+  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'learningSyncInFlight' | 'learningSyncRequestId' | 'learningSyncError' | 'initialServerSyncNeeded' | 'onboardingStage'
 > {
   return {
     authUser: null,
@@ -188,8 +459,10 @@ function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
     remoteDataLoaded: false,
     serverSyncError: null,
     serverSyncInFlight: false,
+    learningSyncInFlight: false,
+    learningSyncRequestId: null,
+    learningSyncError: null,
     initialServerSyncNeeded: false,
-    pendingOnboardingScan: false,
     onboardingStage: 'auth',
   };
 }
@@ -207,11 +480,141 @@ export const useAppStore = create<AppStoreState>()(
       dailyReports: [],
       insights: [],
       conditionInsights: [],
-      pendingOnboardingScan: false,
       initialServerSyncNeeded: false,
       serverSyncInFlight: false,
       serverSyncError: null,
+      learningSyncInFlight: false,
+      learningSyncRequestId: null,
+      learningSyncError: null,
       remoteDataLoaded: false,
+      reportPayoffBaseline: null,
+      clearReportPayoffBaseline: () => {
+        set({ reportPayoffBaseline: null });
+      },
+      updateScanConsumption: async ({ scanId, consumptionStatus, consumedMenuItemSourceIds }) => {
+        const nextStatus = consumptionStatus ?? (consumedMenuItemSourceIds?.length ? 'consumed' : undefined);
+        if (nextStatus) {
+          set((state) => ({
+            scans: state.scans.map((scan) =>
+              scan.id === scanId ? { ...scan, consumptionStatus: nextStatus } : scan,
+            ),
+          }));
+        }
+
+        trackEvent('scan_consumption_updated', {
+          scan_id: scanId,
+          status: nextStatus ?? 'consumed',
+          menu_item_count: consumedMenuItemSourceIds?.length ?? 0,
+        });
+
+        if (!isLiveBackendConfigured || !get().authUser) {
+          return;
+        }
+
+        try {
+          await apiClient.updateScanConsumption({
+            scanId,
+            consumptionStatus,
+            consumedMenuItemSourceIds,
+          });
+        } catch (error) {
+          console.warn('[scan] consumption update failed', error);
+          showToast({
+            message: 'Could not save that just now',
+            detail: 'No worries — it will not affect your data.',
+            tone: 'error',
+          });
+        }
+      },
+      cacheScanRecord: (scan) => {
+        set((state) => ({
+          scans: mergeById(state.scans, scan),
+        }));
+      },
+      triggerLearningRecompute: (request) => {
+        if (!isLiveBackendConfigured || !get().authUser) {
+          return;
+        }
+
+        const syncRequestId = createId('learning-sync');
+        set({
+          learningSyncInFlight: true,
+          learningSyncRequestId: syncRequestId,
+          learningSyncError: null,
+        });
+
+        const run = async (attempt = 0): Promise<void> => {
+          try {
+            const response = await apiClient.learningRecompute(request);
+
+            if (response.learningSyncStatus === 'locked' && attempt === 0) {
+              await sleep(1000);
+              return run(1);
+            }
+
+            if (response.learningSyncStatus === 'updated') {
+              patchInsightsCacheFromLearning(response);
+              patchDailyReportsInHistoryCache(response.dailyReports);
+
+              set((state) => {
+                if (state.learningSyncRequestId !== syncRequestId) {
+                  return state;
+                }
+
+                return {
+                  profile: response.profile ?? state.profile,
+                  insights: response.insights ?? state.insights,
+                  conditionInsights: response.conditionInsights ?? state.conditionInsights,
+                  dailyReports: response.dailyReports
+                    ? response.dailyReports.sort(
+                        (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+                      )
+                    : state.dailyReports,
+                };
+              });
+
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+              ]);
+            }
+
+            if (response.learningSyncStatus === 'failed' || response.learningSyncStatus === 'locked') {
+              trackEvent('learning_recompute_failed', {
+                source_type: request.sourceType,
+                source_id: request.sourceId,
+                status: response.learningSyncStatus,
+              });
+            }
+          } catch (error) {
+            trackEvent('learning_recompute_failed', {
+              source_type: request.sourceType,
+              source_id: request.sourceId,
+              error_code: apiErrorCode(error),
+            });
+            set((state) =>
+              state.learningSyncRequestId === syncRequestId
+                ? {
+                    learningSyncError:
+                      error instanceof Error ? error.message : 'Learning refresh could not be completed.',
+                  }
+                : state,
+            );
+          } finally {
+            set((state) =>
+              state.learningSyncRequestId === syncRequestId
+                ? {
+                    learningSyncInFlight: false,
+                    learningSyncRequestId: null,
+                  }
+                : state,
+            );
+          }
+        };
+
+        void run();
+      },
       updateOnboardingField: (field, value) => {
         set((state) => ({
           onboardingAnswers: {
@@ -231,6 +634,7 @@ export const useAppStore = create<AppStoreState>()(
             onboardingAnswers: {
               ...state.onboardingAnswers,
               [field]: nextValues,
+              ...(field === 'motivations' ? { motivation: nextValues.join(', ') } : {}),
             },
           };
         });
@@ -272,11 +676,6 @@ export const useAppStore = create<AppStoreState>()(
             selectedPlan: plan,
           },
         })),
-      completePurchase: () => {
-        get().stageEntitlementAccess('trialing');
-        trackEvent('trial_started', { plan_code: get().billing.selectedPlan });
-        trackEvent('subscription_started', { plan_code: get().billing.selectedPlan, trial_started: true });
-      },
       stageEntitlementAccess: (status) => {
         const window = buildSubscriptionWindow(get().billing.selectedPlan);
         set((state) => ({
@@ -299,24 +698,35 @@ export const useAppStore = create<AppStoreState>()(
         set({
           authUser: user,
           profile,
-          onboardingStage: state.onboardingStage === 'auth' ? 'landing' : state.onboardingStage,
+          onboardingStage: state.onboardingStage,
         });
       },
-      finishOnboarding: () => {
+      completeAuthSetup: async () => {
         const state = get();
-        const profile =
-          state.profile ??
-          createLocalProfile(state.authUser?.id ?? createId('guest'), state.onboardingAnswers, state.insights);
+        if (state.initialServerSyncNeeded) {
+          await get().syncInitialAccountState();
+        }
 
-        set({
-          onboardingStage: 'complete',
-          profile,
-          pendingOnboardingScan: true,
-        });
-        trackEvent('onboarding_completed');
+        const nextState = get();
+        if (!isEntitledSubscriptionStatus(nextState.billing.subscriptionStatus)) {
+          set({ onboardingStage: 'paywall' });
+          throw new Error('An active subscription or trial is required to continue.');
+        }
+
+        if (!nextState.profile) {
+          set({ onboardingStage: 'flow' });
+          throw new Error('Finish your profile setup to continue.');
+        }
+
+        set({ onboardingStage: 'complete' });
       },
       applyBillingState: (billing) => {
         set({ billing });
+      },
+      applyHomeResponse: (response) => {
+        queryClient.setQueryData(queryKeys.home, response);
+        patchDailyReportsInHistoryCache(response.dailyReports);
+        set((currentState) => homeResponseStatePatch(currentState, response));
       },
       refreshRemoteState: async () => {
         const state = get();
@@ -324,21 +734,26 @@ export const useAppStore = create<AppStoreState>()(
           return;
         }
 
-        const [history, insightsResponse] = await Promise.all([
-          apiClient.getHistory({ page: 1, pageSize: 20 }),
-          apiClient.getInsights(),
-        ]);
+        let homeResponse: HomeResponse;
+        try {
+          homeResponse = await apiClient.getHome();
+        } catch (error) {
+          if (isSubscriptionRequiredError(error)) {
+            set((currentState) => ({
+              billing: {
+                ...currentState.billing,
+                subscriptionStatus: 'expired',
+              },
+              onboardingStage: currentState.authUser ? 'paywall' : currentState.onboardingStage,
+              serverSyncError: null,
+            }));
+          }
+          throw error;
+        }
 
-        set((currentState) => ({
-          scans: history.scans,
-          dailyReports: history.dailyReports ?? [],
-          profile: insightsResponse.profile ?? currentState.profile,
-          insights: insightsResponse.insights,
-          conditionInsights: insightsResponse.conditionInsights,
-          billing: insightsResponse.billing,
-          remoteDataLoaded: true,
-          serverSyncError: null,
-        }));
+        queryClient.setQueryData(queryKeys.home, homeResponse);
+        patchDailyReportsInHistoryCache(homeResponse.dailyReports);
+        set((currentState) => homeResponseStatePatch(currentState, homeResponse));
       },
       syncInitialAccountState: async () => {
         const state = get();
@@ -349,15 +764,33 @@ export const useAppStore = create<AppStoreState>()(
         set({ serverSyncInFlight: true, serverSyncError: null });
 
         try {
-          const effectiveStatus = state.billing.subscriptionStatus === 'none' ? 'trialing' : state.billing.subscriptionStatus;
+          const revenueCatBillingRequest = await getRevenueCatBillingSyncRequest(
+            state.authUser.id,
+            state.billing.monthlyAllowance,
+            state.authUser.email,
+          );
 
-          await apiClient.syncBilling({
-            planCode: state.billing.selectedPlan,
-            status: effectiveStatus,
-            trialEndsAt: state.billing.trialEndsAt,
-            renewalAt: state.billing.renewalAt,
-            monthlyAllowance: state.billing.monthlyAllowance,
-          });
+          if (!revenueCatBillingRequest) {
+            set({
+              initialServerSyncNeeded: false,
+              serverSyncInFlight: false,
+              serverSyncError: null,
+              onboardingStage: 'paywall',
+            });
+            throw new Error('Your subscription could not be verified. Restore purchases or choose a plan to continue.');
+          }
+
+          const billingResponse = await apiClient.syncBilling(revenueCatBillingRequest);
+          if (!isEntitledSubscriptionStatus(billingResponse.billing.subscriptionStatus)) {
+            set({
+              billing: billingResponse.billing,
+              initialServerSyncNeeded: false,
+              serverSyncInFlight: false,
+              serverSyncError: null,
+              onboardingStage: 'paywall',
+            });
+            return;
+          }
 
           const profileResponse = await apiClient.updateProfile({
             onboardingAnswers: {
@@ -366,28 +799,37 @@ export const useAppStore = create<AppStoreState>()(
               customConditions: state.onboardingAnswers.customConditions,
               ingredientSensitivities: state.onboardingAnswers.ingredientSensitivities,
               customIngredientSensitivities: state.onboardingAnswers.customIngredientSensitivities,
+              foodCalibrations: state.onboardingAnswers.foodCalibrations ?? {},
+              lastBadMealText: state.onboardingAnswers.lastBadMealText?.trim() || undefined,
               symptoms: state.onboardingAnswers.symptoms,
               customSymptoms: state.onboardingAnswers.customSymptoms ?? [],
               symptomFrequency: state.onboardingAnswers.symptomFrequency,
               symptomSeverityBaseline: state.onboardingAnswers.symptomSeverityBaseline,
               mealContexts: state.onboardingAnswers.mealContexts,
-              motivation: state.onboardingAnswers.motivation,
+              motivation: getOnboardingMotivationSummary(state.onboardingAnswers),
               currentEatingPatterns: state.onboardingAnswers.currentEatingPatterns ?? [],
               lifestyleFactors: state.onboardingAnswers.lifestyleFactors ?? [],
               favoriteFoodsToReintroduce: state.onboardingAnswers.favoriteFoodsToReintroduce ?? '',
+              dietPreferenceKeys: state.onboardingAnswers.dietPreferenceKeys ?? [],
             },
           });
 
-          set((currentState) => ({
-            profile: profileResponse.profile ?? currentState.profile,
-            insights: profileResponse.insights,
-            conditionInsights: profileResponse.conditionInsights,
-            billing: profileResponse.billing,
-            initialServerSyncNeeded: false,
-            serverSyncInFlight: false,
-            serverSyncError: null,
-            remoteDataLoaded: false,
-          }));
+          set((currentState) => {
+            const nextBilling = profileResponse.billing ?? currentState.billing;
+            return {
+              profile: profileResponse.profile ?? currentState.profile,
+              insights: profileResponse.insights,
+              conditionInsights: profileResponse.conditionInsights,
+              billing: nextBilling,
+              initialServerSyncNeeded: false,
+              serverSyncInFlight: false,
+              serverSyncError: null,
+              remoteDataLoaded: false,
+              onboardingStage: isEntitledSubscriptionStatus(nextBilling.subscriptionStatus)
+                ? 'complete'
+                : 'paywall',
+            };
+          });
 
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
@@ -437,26 +879,50 @@ export const useAppStore = create<AppStoreState>()(
                   currentEatingPatterns: request.currentEatingPatterns ?? currentState.profile.currentEatingPatterns,
                   lifestyleFactors: request.lifestyleFactors ?? currentState.profile.lifestyleFactors,
                   foodsToReintroduce: request.foodsToReintroduce ?? currentState.profile.foodsToReintroduce,
+                  dietPreferences: request.dietPreferences ?? currentState.profile.dietPreferences,
                 }
               : currentState.profile,
           }));
           return;
         }
 
+        const displayNameOnly = isDisplayNameOnlyProfileRequest(request);
         const response = await apiClient.updateProfile(request);
+        const nextDisplayName =
+          typeof response.displayName !== 'undefined'
+            ? response.displayName?.trim() || undefined
+            : typeof request.displayName !== 'undefined'
+              ? request.displayName?.trim() || undefined
+              : undefined;
         set((currentState) => ({
           onboardingAnswers:
             typeof request.displayName === 'undefined'
               ? currentState.onboardingAnswers
               : {
                   ...currentState.onboardingAnswers,
-                  displayName: request.displayName?.trim() ?? '',
+                  displayName: nextDisplayName ?? '',
                 },
-          profile: response.profile ?? currentState.profile,
-          insights: response.insights,
-          conditionInsights: response.conditionInsights,
-          billing: response.billing,
+          profile:
+            response.profile ??
+            (currentState.profile
+              ? {
+                  ...currentState.profile,
+                  displayName:
+                    typeof nextDisplayName !== 'undefined' || typeof request.displayName !== 'undefined'
+                      ? nextDisplayName
+                      : currentState.profile.displayName,
+                }
+              : currentState.profile),
+          insights: response.insights ?? currentState.insights,
+          conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+          billing: response.billing ?? currentState.billing,
         }));
+
+        if (displayNameOnly) {
+          patchDisplayNameInInsightsCache(nextDisplayName);
+          return;
+        }
+
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
           queryClient.invalidateQueries({ queryKey: queryKeys.home }),
@@ -464,63 +930,119 @@ export const useAppStore = create<AppStoreState>()(
       },
       analyzeScanInput: async (payload) => {
         const state = get();
-        if (state.billing.subscriptionStatus === 'none') {
+        if (!isEntitledSubscriptionStatus(state.billing.subscriptionStatus)) {
           throw new Error('Subscription required before running scans.');
         }
 
         if (state.billing.tokensRemaining <= 0) {
-          throw new Error('You are out of scan tokens.');
+          throw new Error('You are out of scans for this month. Your allowance refreshes at renewal.');
         }
 
         const scanStartedAt = now();
+        const requestId = scanRequestId(payload);
         const scanCategory = scanCategoryForPayload(payload);
+        const requestedScanCategory = payload.scanCategory ?? scanCategory;
         const localDate = payload.localDate ?? localDateString();
         const timezone = payload.timezone ?? currentTimezone();
-        trackEvent('scan_started', { source_type: payload.sourceType, scan_category: scanCategory, entry_point: payload.sourceType });
-        trackEvent('scan_analysis_started', { source_type: payload.sourceType, scan_category: scanCategory });
+        trackEvent('scan_started', { request_id: requestId, source_type: payload.sourceType, scan_category: requestedScanCategory, entry_point: payload.sourceType });
+        trackEvent('scan_analysis_started', { request_id: requestId, source_type: payload.sourceType, scan_category: requestedScanCategory });
 
         if (isLiveBackendConfigured && state.authUser) {
+          const authUser = state.authUser;
           if (state.initialServerSyncNeeded) {
             await get().syncInitialAccountState();
           }
 
-          const response = payload.imageUri
-            ? await apiClient.analyzeImage({
-                imagePath: await uploadMealImage(payload.imageUri, state.authUser.id),
-                sourceType: payload.sourceType,
-                scanCategory,
-                localDate,
-                timezone,
-              })
-            : await apiClient.analyzeText({
-                text: payload.text?.trim() || 'demo meal with rice and chicken',
-                sourceType: payload.sourceType,
-                scanCategory,
-                localDate,
-                timezone,
-              });
+          try {
+            const imageUris = payload.imageUris?.length ? payload.imageUris : payload.imageUri ? [payload.imageUri] : [];
+            const imageDataUrls = payload.imageDataUrls?.length
+              ? payload.imageDataUrls
+              : payload.imageDataUrl
+                ? [payload.imageDataUrl]
+                : [];
+            const imageUploadResults = imageUris.length
+              ? (
+                  await Promise.all(
+                    imageUris.map((imageUri, index) =>
+                      uploadMealImage(imageUri, authUser.id, imageDataUrls[index]).catch((error) => {
+                        console.warn('[scan] image upload failed; continuing with inline image data.', error);
+                        return null;
+                      }),
+                    ),
+                  )
+                )
+              : [];
+            const imagePaths = imageUploadResults
+              .map((result) => result?.storagePath)
+              .filter((path): path is string => Boolean(path));
+            const thumbnailImagePaths = imageUploadResults.map((result) => result?.thumbnailStoragePath ?? null);
+            const hasThumbnailImagePaths = thumbnailImagePaths.some((path) => Boolean(path));
+            const inlineImageDataUrls = imageDataUrls;
+            const inlineImageDataUrl = inlineImageDataUrls[0];
+            const response = payload.barcode?.trim()
+              ? await apiClient.analyzeBarcode({
+                  requestId,
+                  barcode: payload.barcode.trim(),
+                  sourceType: payload.sourceType,
+                  scanCategory: 'grocery',
+                  localDate,
+                  timezone,
+                })
+              : imageUris.length || imageDataUrls.length
+              ? await apiClient.analyzeImage({
+                  requestId,
+                  imagePath: imagePaths[0],
+                  imagePaths: imagePaths.length > 1 ? imagePaths : undefined,
+                  thumbnailImagePaths: hasThumbnailImagePaths ? thumbnailImagePaths : undefined,
+                  imageDataUrl: inlineImageDataUrl,
+                  imageDataUrls: inlineImageDataUrls.length > 1 ? inlineImageDataUrls : undefined,
+                  sourceType: payload.sourceType,
+                  scanCategory: requestedScanCategory,
+                  localDate,
+                  timezone,
+                })
+              : await apiClient.analyzeText({
+                  requestId,
+                  text: payload.text?.trim() || 'demo meal with rice and chicken',
+                  sourceType: payload.sourceType,
+                  scanCategory: requestedScanCategory,
+                  localDate,
+                  timezone,
+                });
 
-          set((currentState) => ({
-            scans: mergeById(currentState.scans, response.scan),
-            billing: response.billing,
-            profile: response.profile ?? currentState.profile,
-            insights: response.insights ?? currentState.insights,
-            conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
-          }));
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-            queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-          ]);
+            set((currentState) => ({
+              scans: mergeById(currentState.scans, response.scan),
+              billing: response.billing,
+              profile: response.profile ?? currentState.profile,
+              insights: response.insights ?? currentState.insights,
+              conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+            }));
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+            ]);
 
-          trackEvent('scan_analysis_completed', {
-            scan_id: response.scanId,
-            overall_risk_level: response.scan.overallRiskLevel,
-            overall_risk_score: response.scan.overallRiskScore,
-            token_balance_after: response.billing.tokensRemaining,
-          });
+            trackEvent('scan_analysis_completed', {
+              request_id: requestId,
+              scan_id: response.scanId,
+              deduped: Boolean(response.deduped),
+              learning_sync_status: response.learningSyncStatus ?? 'unknown',
+              overall_risk_level: response.scan.overallRiskLevel,
+              overall_risk_score: response.scan.overallRiskScore,
+              token_balance_after: response.billing.tokensRemaining,
+            });
 
-          return { scanId: response.scanId };
+            return { scanId: response.scanId };
+          } catch (error) {
+            trackEvent('scan_analysis_failed', {
+              request_id: requestId,
+              source_type: payload.sourceType,
+              scan_category: requestedScanCategory,
+              error_code: apiErrorCode(error),
+            });
+            throw error;
+          }
         }
 
         const result = analyzeMealInput(payload, get().profile, get().insights);
@@ -528,6 +1050,7 @@ export const useAppStore = create<AppStoreState>()(
 
         const scan: ScanRecord = {
           id: scanId,
+          requestId,
           sourceType: payload.sourceType,
           scanCategory,
           analysisStatus: 'completed',
@@ -550,6 +1073,7 @@ export const useAppStore = create<AppStoreState>()(
         }));
 
         trackEvent('scan_analysis_completed', {
+          request_id: requestId,
           scan_id: scanId,
           overall_risk_level: result.overallRiskLevel,
           overall_risk_score: result.overallRiskScore,
@@ -560,30 +1084,106 @@ export const useAppStore = create<AppStoreState>()(
       },
       deleteScanRecord: async (scanId) => {
         const existingScan = get().scans.find((scan) => scan.id === scanId);
+
+        if (isLiveBackendConfigured && get().authUser) {
+          await Promise.all([
+            queryClient.cancelQueries({ queryKey: queryKeys.history }),
+            queryClient.cancelQueries({ queryKey: queryKeys.scan(scanId) }),
+          ]);
+
+          set((state) => ({
+            scans: state.scans.filter((scan) => scan.id !== scanId),
+          }));
+          removeScanFromHistoryCache(scanId);
+          queryClient.removeQueries({ queryKey: queryKeys.scan(scanId) });
+
+          trackEvent('history_item_deleted', {
+            scan_id: scanId,
+            scan_category: existingScan?.scanCategory ?? 'unknown',
+            source_type: existingScan?.sourceType ?? 'unknown',
+          });
+
+          void (async () => {
+            try {
+              const response = await apiClient.deleteScan({ scanId });
+              set((state) => ({
+                profile: response.profile ?? state.profile,
+                insights: response.insights ?? state.insights,
+                conditionInsights: response.conditionInsights ?? state.conditionInsights,
+              }));
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              ]);
+              trackEvent('history_item_delete_synced', {
+                scan_id: scanId,
+                learning_sync_status: response.learningSyncStatus ?? 'unknown',
+              });
+            } catch (error) {
+              const errorCode = apiErrorCode(error);
+              if (errorCode === 'scan_not_found') {
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                  queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                  queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+                ]);
+                trackEvent('history_item_delete_synced', {
+                  scan_id: scanId,
+                  learning_sync_status: 'not_found',
+                });
+                return;
+              }
+
+              if (existingScan) {
+                set((state) => {
+                  if (state.scans.some((scan) => scan.id === scanId)) {
+                    return state;
+                  }
+
+                  return {
+                    scans: [existingScan, ...state.scans].sort(
+                      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+                    ),
+                  };
+                });
+              }
+
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              ]);
+              showToast({
+                message: 'Delete failed',
+                detail: existingScan ? 'The scan was restored.' : 'Refresh your history and try again.',
+                tone: 'error',
+              });
+              trackEvent('history_item_delete_failed', {
+                scan_id: scanId,
+                error_code: errorCode,
+              });
+            }
+          })();
+
+          return;
+        }
+
         if (!existingScan) {
           return;
         }
 
-        if (isLiveBackendConfigured && get().authUser) {
-          const response = await apiClient.deleteScan({ scanId });
-          set((state) => ({
-            scans: state.scans.filter((scan) => scan.id !== scanId),
-            profile: response.profile ?? state.profile,
-            insights: response.insights,
-            conditionInsights: response.conditionInsights,
-          }));
-        } else {
-          set((state) => {
-            const scans = state.scans.filter((scan) => scan.id !== scanId);
-            return {
-              scans,
-              ...rebuildLocalLearningState(state, scans, state.dailyReports, 'scan_deleted'),
-            };
-          });
-        }
+        set((state) => {
+          const scans = state.scans.filter((scan) => scan.id !== scanId);
+          return {
+            scans,
+            ...rebuildLocalLearningState(state, scans, state.dailyReports, 'scan_deleted'),
+          };
+        });
 
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+          queryClient.removeQueries({ queryKey: queryKeys.scan(scanId) }),
           queryClient.invalidateQueries({ queryKey: queryKeys.home }),
           queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
         ]);
@@ -594,23 +1194,149 @@ export const useAppStore = create<AppStoreState>()(
           source_type: existingScan.sourceType,
         });
       },
-      upsertDailyReport: async ({ localDate, gutSeverity, symptomTags = [], notes }) => {
-        if (isLiveBackendConfigured && get().authUser) {
-          const response = await apiClient.upsertDailyReport({
+      upsertDailyReport: async ({ localDate, gutSeverity, symptomTags = [], notes, evidenceQuality }) => {
+        const normalizedSymptomTags = gutSeverity === 0
+          ? ['None']
+          : symptomTags.filter((tag) => tag.trim().toLowerCase() !== 'none');
+        // Snapshot the pre-report state so the payoff screen can show what this
+        // report changed once the learning recompute lands.
+        set((currentState) => ({
+          reportPayoffBaseline: buildPayoffBaseline({
             localDate,
-            gutSeverity,
-            symptomTags,
-            notes,
-          });
+            gutScore: currentState.profile?.stomachProfile.metadata.gutScore ?? null,
+            insights: currentState.insights,
+          }),
+        }));
+        const authUser = get().authUser;
+        if (isLiveBackendConfigured && authUser) {
+          const state = get();
+          const existing = state.dailyReports.find((report) => report.localDate === localDate);
+          const timestamp = now();
+          const optimisticReport = computeDailyScoreForReport(
+            {
+              id: existing?.id ?? createId('report'),
+              userId: authUser.id,
+              localDate,
+              gutSeverity,
+              symptomTags: normalizedSymptomTags,
+              evidenceQuality,
+              notes: notes?.trim() || undefined,
+              createdAt: existing?.createdAt ?? timestamp,
+              updatedAt: timestamp,
+            },
+            state.scans,
+            timestamp,
+          );
 
-          set((state) => ({
-            dailyReports: mergeById(state.dailyReports, response.report).sort(
+          set((currentState) => ({
+            dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, optimisticReport).sort(
               (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
             ),
-            profile: response.profile ?? state.profile,
-            insights: response.insights,
-            conditionInsights: response.conditionInsights,
+            learningSyncInFlight: true,
+            learningSyncRequestId: optimisticReport.id,
+            learningSyncError: null,
           }));
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          ]);
+          void (async () => {
+            try {
+              const response = await apiClient.upsertDailyReport({
+                localDate,
+                gutSeverity,
+                symptomTags: normalizedSymptomTags,
+                notes,
+                evidenceQuality,
+              });
+              const learningSyncError =
+                response.learningSyncStatus === 'failed'
+                  ? 'Daily report saved, but learning refresh could not be queued.'
+                  : null;
+              const learningIsQueued = response.learningSyncStatus === 'queued';
+
+              set((currentState) => ({
+                dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
+                  (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+                ),
+                learningSyncInFlight: learningIsQueued,
+                learningSyncRequestId: learningIsQueued ? response.report.id : null,
+                learningSyncError,
+              }));
+              void Promise.all([
+                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+              ]);
+
+              trackEvent('learning_recompute_queued', {
+                source_type: 'daily_gut_report',
+                source_id: response.report.id,
+                status: response.learningSyncStatus,
+              });
+
+              const components = response.report.dailyScoreComponents;
+              if (components && components.evidenceWeight > 0) {
+                const predictedRisk = 100 - components.foodExposure;
+                trackEvent('prediction_outcome_recorded', {
+                  local_date: localDate,
+                  reported_severity: gutSeverity,
+                  evidence_weight: components.evidenceWeight,
+                  evidence_quality: evidenceQuality ?? 'typical',
+                  predicted_risk: predictedRisk,
+                  predicted_risk_band: predictedRisk >= 64 ? 'high' : predictedRisk >= 37 ? 'medium' : 'low',
+                  false_reassurance: gutSeverity >= 7 && predictedRisk <= 36,
+                });
+              }
+
+              if (learningIsQueued) {
+                try {
+                  const finalHome = await pollHomeSnapshotUntilIdle(get().applyHomeResponse);
+                  await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+                    queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+                    queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+                  ]);
+
+                  if (!finalHome) {
+                    set({
+                      learningSyncInFlight: false,
+                      learningSyncRequestId: null,
+                      learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+                    });
+                    return;
+                  }
+
+                  trackEvent('learning_recompute_completed', {
+                    source_type: 'daily_gut_report',
+                    source_id: response.report.id,
+                    status: finalHome.learningStatus,
+                  });
+                } catch (pollError) {
+                  console.warn('[learning] home snapshot polling failed', pollError);
+                  set({
+                    learningSyncInFlight: false,
+                    learningSyncRequestId: null,
+                    learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+                  });
+                }
+              }
+            } catch (error) {
+              set((currentState) =>
+                currentState.learningSyncRequestId === optimisticReport.id
+                  ? {
+                      learningSyncInFlight: false,
+                      learningSyncRequestId: null,
+                      learningSyncError:
+                        error instanceof Error ? error.message : 'Daily report could not be saved.',
+                    }
+                  : currentState,
+              );
+              trackEvent('daily_gut_report_save_failed', {
+                local_date: localDate,
+                error_code: apiErrorCode(error),
+              });
+            }
+          })();
         } else {
           const existing = get().dailyReports.find((report) => report.localDate === localDate);
           const timestamp = now();
@@ -619,7 +1345,7 @@ export const useAppStore = create<AppStoreState>()(
             userId: get().authUser?.id ?? 'local-user',
             localDate,
             gutSeverity,
-            symptomTags,
+            symptomTags: normalizedSymptomTags,
             notes: notes?.trim() || undefined,
             createdAt: existing?.createdAt ?? timestamp,
             updatedAt: timestamp,
@@ -641,16 +1367,18 @@ export const useAppStore = create<AppStoreState>()(
           });
         }
 
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-        ]);
+        if (!isLiveBackendConfigured || !get().authUser) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          ]);
+        }
 
         trackEvent('daily_gut_report_saved', {
           local_date: localDate,
           gut_severity: gutSeverity,
-          tags_count: symptomTags.length,
+          tags_count: normalizedSymptomTags.length,
         });
       },
       purchaseTopUp: async (tokens) => {
@@ -674,6 +1402,15 @@ export const useAppStore = create<AppStoreState>()(
     {
       name: 'mytummyhurts-store',
       storage: createJSONStorage(() => AsyncStorage),
+      merge: (persisted, current) => {
+        const persistedState = persisted as Partial<AppStoreState> | undefined;
+        return {
+          ...current,
+          ...persistedState,
+          onboardingAnswers: normalizeOnboardingAnswers(persistedState?.onboardingAnswers),
+          remoteDataLoaded: false,
+        };
+      },
       partialize: (state) => ({
         onboardingStage: state.onboardingStage,
         onboardingStepIndex: state.onboardingStepIndex,
@@ -685,10 +1422,8 @@ export const useAppStore = create<AppStoreState>()(
         dailyReports: state.dailyReports,
         insights: state.insights,
         conditionInsights: state.conditionInsights,
-        pendingOnboardingScan: state.pendingOnboardingScan,
         initialServerSyncNeeded: state.initialServerSyncNeeded,
         serverSyncError: state.serverSyncError,
-        remoteDataLoaded: state.remoteDataLoaded,
       }),
     },
   ),

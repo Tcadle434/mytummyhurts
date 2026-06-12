@@ -6,13 +6,13 @@ import { createAdminClient, requireUser } from '../_shared/supabase.ts';
 
 const mealImagesBucket = 'meal-images';
 
-async function removeMealImages(userId: string) {
+async function listMealImagePaths(prefix: string) {
   const admin = createAdminClient();
   const pathsToDelete: string[] = [];
   let offset = 0;
 
   while (true) {
-    const { data, error } = await admin.storage.from(mealImagesBucket).list(userId, {
+    const { data, error } = await admin.storage.from(mealImagesBucket).list(prefix, {
       limit: 100,
       offset,
     });
@@ -28,7 +28,7 @@ async function removeMealImages(userId: string) {
 
     for (const entry of data) {
       if (entry.name) {
-        pathsToDelete.push(`${userId}/${entry.name}`);
+        pathsToDelete.push(`${prefix}/${entry.name}`);
       }
     }
 
@@ -37,6 +37,18 @@ async function removeMealImages(userId: string) {
       break;
     }
   }
+
+  return pathsToDelete;
+}
+
+async function removeMealImages(userId: string) {
+  const admin = createAdminClient();
+  const pathsToDelete = Array.from(
+    new Set([
+      ...(await listMealImagePaths(userId)),
+      ...(await listMealImagePaths(`${userId}/thumbnails`)),
+    ]),
+  );
 
   if (!pathsToDelete.length) {
     return;

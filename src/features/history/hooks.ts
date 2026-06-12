@@ -1,13 +1,14 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 import { isLiveBackendConfigured } from '../../config/env';
 import { apiClient } from '../../services/api/client';
 import { queryKeys } from '../../services/query/keys';
-import { ScanRecord } from '../../types/domain';
+import { useAppStore } from '../../store/useAppStore';
+import { ScanCategory, ScanHistorySummary } from '../../types/domain';
 
 type HistoryGroup = {
   label: string;
-  items: ScanRecord[];
+  items: ScanHistorySummary[];
 };
 
 function formatGroupLabel(isoDate: string) {
@@ -31,8 +32,8 @@ function formatGroupLabel(isoDate: string) {
   });
 }
 
-export function groupHistoryScans(scans: ScanRecord[]) {
-  const groups = new Map<string, ScanRecord[]>();
+export function groupHistoryScans(scans: ScanHistorySummary[]) {
+  const groups = new Map<string, ScanHistorySummary[]>();
 
   for (const scan of scans) {
     const label = formatGroupLabel(scan.createdAt);
@@ -47,16 +48,41 @@ export function groupHistoryScans(scans: ScanRecord[]) {
   }));
 }
 
-export function useHistoryFeed(pageSize = 20) {
+type HistoryFeedOptions = {
+  includeDailyReports?: boolean;
+  scanCategory?: ScanCategory;
+};
+
+export function useHistoryFeed(pageSize = 20, options: HistoryFeedOptions = {}) {
+  const includeDailyReports = options.includeDailyReports ?? true;
+  const authUser = useAppStore((state) => state.authUser);
+
   return useInfiniteQuery({
-    queryKey: [...queryKeys.history, pageSize],
+    queryKey: [...queryKeys.history, pageSize, includeDailyReports, options.scanCategory ?? 'all'],
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       apiClient.getHistory({
         page: pageParam,
         pageSize,
+        includeDailyReports,
+        scanCategory: options.scanCategory,
       }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
-    enabled: isLiveBackendConfigured,
+    enabled: isLiveBackendConfigured && Boolean(authUser),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    // Filter switches and remounts show the previous list instantly while the
+    // fresh page loads, instead of dropping back to a skeleton.
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useScanDetail(scanId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.scan(scanId),
+    queryFn: () => apiClient.getScan({ scanId }),
+    enabled: isLiveBackendConfigured && enabled,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
   });
 }

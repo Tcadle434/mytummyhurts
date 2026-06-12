@@ -1,4 +1,4 @@
-import { DishBlueprint, TopUpOption } from "../types/domain";
+import type { DietPreferenceKey, DishBlueprint, TopUpOption } from "../types/domain";
 
 export const conditionOptions = [
 	"IBS",
@@ -8,13 +8,23 @@ export const conditionOptions = [
 	"Unsure, just general discomfort",
 ];
 
-export const ingredientSensitivityOptions = [
-	"Dairy",
-	"Gluten",
-	"Garlic",
-	"Onion",
-	"Tomato",
-	"Spicy foods",
+export const ingredientSensitivityOptions = ["Dairy", "Gluten", "Garlic", "Tomato"];
+
+// Labels intentionally match declaredSensitivityProfiles keys/aliases in the
+// scoring engines so calibration answers seed insights that match scans.
+export const calibrationFoodOptions: { label: string; emoji: string }[] = [
+	{ label: "Dairy", emoji: "🥛" },
+	{ label: "Garlic", emoji: "🧄" },
+	{ label: "Onion", emoji: "🧅" },
+	{ label: "Gluten", emoji: "🍞" },
+	{ label: "Spicy foods", emoji: "🌶️" },
+	{ label: "Fried foods", emoji: "🍟" },
+	{ label: "Coffee", emoji: "☕" },
+	{ label: "Alcohol", emoji: "🍺" },
+	{ label: "Tomato", emoji: "🍅" },
+	{ label: "Beans", emoji: "🫘" },
+	{ label: "Red meat", emoji: "🥩" },
+	{ label: "Artificial sweeteners", emoji: "🧃" },
 ];
 
 export const symptomOptions = [
@@ -35,6 +45,42 @@ export const symptomFrequencyOptions = [
 ];
 
 export const symptomSeverityOptions = ["Mild", "Moderate", "Severe", "It varies a lot"];
+
+export const noSpecificDietOption = "No specific diet, just help me feel better";
+
+export const dietPreferenceOptions: { key: DietPreferenceKey; label: string }[] = [
+	{ key: "low_fodmap", label: "Low FODMAP" },
+	{ key: "anti_inflammatory", label: "Anti-inflammatory" },
+	{ key: "dairy_free", label: "Dairy-free / lactose-free" },
+	{ key: "gluten_free", label: "Gluten-free" },
+	{ key: "seed_oil_free", label: "Seed oil-free" },
+	{ key: "low_histamine", label: "Low histamine" },
+	{ key: "gerd_friendly", label: "GERD / reflux-friendly" },
+	{ key: "low_fat_gentle", label: "Low-fat / gentle digestion" },
+	{ key: "vegetarian", label: "Vegetarian" },
+	{ key: "vegan", label: "Vegan" },
+];
+
+export const dietPreferenceLabels = dietPreferenceOptions.reduce<Record<DietPreferenceKey, string>>(
+	(accumulator, option) => {
+		accumulator[option.key] = option.label;
+		return accumulator;
+	},
+	{} as Record<DietPreferenceKey, string>
+);
+
+export const dietPreferenceOnboardingOptions = [
+	noSpecificDietOption,
+	...dietPreferenceOptions.map((option) => option.label),
+];
+
+export function dietPreferenceKeyFromLabel(label: string): DietPreferenceKey | null {
+	return dietPreferenceOptions.find((option) => option.label === label)?.key ?? null;
+}
+
+export function dietPreferenceLabelFromKey(key: DietPreferenceKey) {
+	return dietPreferenceLabels[key] ?? key;
+}
 
 export const mealContextOptions = [
 	"Restaurants",
@@ -68,6 +114,7 @@ export const motivationOptions = [
 	"Avoid flare-ups",
 	"Figure out triggers",
 	"Find safe foods",
+	"Feel better at restaurants",
 	"Reset my gut",
 	"Feel consitently healthier",
 ];

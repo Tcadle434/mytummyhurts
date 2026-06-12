@@ -1,17 +1,30 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
-import { useSuperwall, useSuperwallEvents } from 'expo-superwall';
 import { ReactNode, useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 
 import { useAppStore } from '../../store/useAppStore';
 import { restoreSupabaseSession, syncSessionToStore } from '../../services/auth';
 import { apiClient } from '../../services/api/client';
 import { trackEvent } from '../../services/analytics';
 import { supabase } from '../../services/supabase/client';
-import { buildSubscriptionWindow, derivePlanFromProductId } from '../../services/billing/plans';
 import { posthogClient } from '../../services/analytics/posthog';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { navigationRef } from '../../navigation/navigationRef';
+import { getRevenueCatBillingSyncRequest, resetRevenueCatIdentity } from '../../services/billing/revenueCat';
+import { remoteConfig } from '../../config/remoteConfig';
+import {
+  ensureDailyCheckinScheduled,
+  ensureNotificationPermission,
+  ensureWeeklyReportScheduled,
+  registerDailyReportNotifications,
+} from '../../services/notifications';
+import {
+  DAILY_CHECKIN_TYPE,
+  WEEKLY_REPORT_TYPE,
+  severityForCheckinAction,
+} from '../../services/notifications/dailyCheckin';
 
 export function SupabaseSessionBridge() {
   useEffect(() => {
@@ -87,184 +100,58 @@ export function RemoteBootstrapBridge() {
   return null;
 }
 
-export function SuperwallIdentityBridge() {
-  const authUser = useAppStore((state) => state.authUser);
-  const { identify, reset, setUserAttributes } = useSuperwall((state) => ({
-    identify: state.identify,
-    reset: state.reset,
-    setUserAttributes: state.setUserAttributes,
-  }));
-  const lastIdentitySignatureRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const nextIdentitySignature = authUser
-      ? `${authUser.id}:${authUser.email ?? ''}:${authUser.provider ?? 'unknown'}`
-      : '__signed_out__';
-
-    if (lastIdentitySignatureRef.current === nextIdentitySignature) {
-      return;
-    }
-
-    lastIdentitySignatureRef.current = nextIdentitySignature;
-
-    if (!authUser) {
-      reset().catch((error) => {
-        lastIdentitySignatureRef.current = null;
-        console.warn('[superwall] failed to sign out user', error);
-      });
-      return;
-    }
-
-    identify(authUser.id)
-      .then(() =>
-        setUserAttributes({
-          email: authUser.email,
-          auth_provider: authUser.provider,
-        }),
-      )
-      .catch((error) => {
-        lastIdentitySignatureRef.current = null;
-        console.warn('[superwall] failed to identify user', error);
-      });
-  }, [authUser?.email, authUser?.id, authUser?.provider, identify, reset, setUserAttributes]);
-
-  return null;
-}
-
-type SuperwallEventPayload = {
-  event?: string;
-  product?: {
-    id?: string;
-    productIdentifier?: string;
-    fullIdentifier?: string;
-  };
-  transaction?: {
-    transactionDate?: string;
-    expirationDate?: string;
-    storeTransactionId?: string;
-    originalTransactionIdentifier?: string;
-  };
-};
-
-export function SuperwallBillingBridge() {
+export function RevenueCatBillingBridge() {
   const authUser = useAppStore((state) => state.authUser);
   const billing = useAppStore((state) => state.billing);
   const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
   const applyBillingState = useAppStore((state) => state.applyBillingState);
-  const lastSyncedTransactionRef = useRef<string | null>(null);
+  const lastSyncedUserRef = useRef<string | null>(null);
+  const hadIdentifiedUserRef = useRef(false);
 
-  async function syncBillingEvent(params: {
-    status: 'trialing' | 'active' | 'expired';
-    productId?: string | null;
-    transactionDate?: string | null;
-    expirationDate?: string | null;
-    transactionId?: string | null;
-    originalTransactionId?: string | null;
-  }) {
-    if (!authUser || initialServerSyncNeeded) {
+  useEffect(() => {
+    if (!authUser) {
+      lastSyncedUserRef.current = null;
+      if (hadIdentifiedUserRef.current) {
+        hadIdentifiedUserRef.current = false;
+        void resetRevenueCatIdentity().catch((error) => {
+          console.warn('[revenuecat] failed to reset identity', error);
+        });
+      }
       return;
     }
 
-    const planCode = derivePlanFromProductId(params.productId) ?? billing.selectedPlan;
-    const startedAt = params.transactionDate ? new Date(params.transactionDate) : new Date();
-    const windows = buildSubscriptionWindow(planCode, startedAt);
-    const trialEndsAt = params.status === 'trialing' ? params.expirationDate ?? windows.trialEndsAt : windows.trialEndsAt;
-    const renewalAt = params.expirationDate ?? windows.renewalAt;
-    const transactionId =
-      params.transactionId ??
-      params.originalTransactionId ??
-      `${params.status}:${params.productId ?? planCode}:${startedAt.toISOString()}`;
-
-    if (lastSyncedTransactionRef.current === transactionId) {
+    hadIdentifiedUserRef.current = true;
+    if (initialServerSyncNeeded || lastSyncedUserRef.current === authUser.id) {
       return;
     }
 
-    lastSyncedTransactionRef.current = transactionId;
+    lastSyncedUserRef.current = authUser.id;
+    getRevenueCatBillingSyncRequest(authUser.id, billing.monthlyAllowance, authUser.email)
+      .then(async (request) => {
+        if (!request) {
+          return;
+        }
 
-    const response = await apiClient.syncBilling({
-      planCode,
-      status: params.status,
-      productId: params.productId ?? undefined,
-      transactionId,
-      originalTransactionId: params.originalTransactionId ?? undefined,
-      currentPeriodStart: params.transactionDate ?? windows.currentPeriodStart,
-      trialEndsAt,
-      renewalAt,
-      monthlyAllowance: billing.monthlyAllowance,
-    });
-
-    applyBillingState(response.billing);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-    ]);
-  }
-
-  useSuperwallEvents({
-    onSubscriptionStatusChange: (status) => {
-      if (!authUser || initialServerSyncNeeded) {
-        return;
-      }
-
-      if (status.status === 'INACTIVE' && billing.subscriptionStatus !== 'none') {
-        void syncBillingEvent({
-          status: 'expired',
-          productId: null,
-          transactionDate: null,
-          expirationDate: null,
-          transactionId: `inactive:${authUser.id}:${Date.now()}`,
-          originalTransactionId: null,
-        }).catch((error) => {
-          console.warn('[superwall] failed to sync inactive subscription state', error);
-        });
-      }
-    },
-    onSuperwallEvent: (payload: unknown) => {
-      const event = payload as SuperwallEventPayload;
-      const eventName = event.event;
-      if (!eventName || !authUser || initialServerSyncNeeded) {
-        return;
-      }
-
-      const productId = event.product?.productIdentifier ?? event.product?.id ?? event.product?.fullIdentifier ?? null;
-      const transactionDate = event.transaction?.transactionDate ?? null;
-      const expirationDate = event.transaction?.expirationDate ?? null;
-      const transactionId = event.transaction?.storeTransactionId ?? null;
-      const originalTransactionId = event.transaction?.originalTransactionIdentifier ?? null;
-
-      if (eventName === 'freeTrialStart') {
-        void syncBillingEvent({
-          status: 'trialing',
-          productId,
-          transactionDate,
-          expirationDate,
-          transactionId,
-          originalTransactionId,
-        }).catch((error) => {
-          console.warn('[superwall] failed to sync trial start', error);
-        });
-      }
-
-      if (eventName === 'subscriptionStart' || eventName === 'transactionComplete' || eventName === 'transactionRestore') {
-        void syncBillingEvent({
-          status: 'active',
-          productId,
-          transactionDate,
-          expirationDate,
-          transactionId,
-          originalTransactionId,
-        }).catch((error) => {
-          console.warn('[superwall] failed to sync purchase state', error);
-        });
-      }
-    },
-  });
+        const response = await apiClient.syncBilling(request);
+        applyBillingState(response.billing);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+        ]);
+      })
+      .catch((error) => {
+        lastSyncedUserRef.current = null;
+        console.warn('[revenuecat] failed to sync billing state', error);
+      });
+  }, [applyBillingState, authUser, billing.monthlyAllowance, initialServerSyncNeeded]);
 
   return null;
 }
 
 export function NotificationResponseBridge() {
+  const handledResponseRef = useRef<string | null>(null);
+
   useEffect(() => {
     function openDailyReport(localDate?: string) {
       trackEvent('daily_report_push_opened', { local_date: localDate });
@@ -273,24 +160,144 @@ export function NotificationResponseBridge() {
       }
     }
 
-    void Notifications.getLastNotificationResponseAsync().then((response) => {
-      const data = response?.notification.request.content.data;
+    // One-tap check-in: the notification action carries the severity; save the
+    // report immediately and land on the payoff screen. A body tap (default
+    // action) opens the full report form instead.
+    function handleCheckinResponse(localDate: string, actionIdentifier: string) {
+      const severity = severityForCheckinAction(actionIdentifier);
+      if (severity === null) {
+        openDailyReport(localDate);
+        return;
+      }
+
+      trackEvent('daily_checkin_action_tapped', {
+        local_date: localDate,
+        severity,
+      });
+      void useAppStore
+        .getState()
+        .upsertDailyReport({ localDate, gutSeverity: severity })
+        .catch((error) => {
+          console.warn('[notifications] one-tap report failed', error);
+        });
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('DailyReportPayoff', { localDate });
+      }
+    }
+
+    function handleResponse(response: Notifications.NotificationResponse) {
+      const responseKey = `${response.notification.request.identifier}:${response.actionIdentifier}`;
+      if (handledResponseRef.current === responseKey) {
+        return;
+      }
+      handledResponseRef.current = responseKey;
+
+      const data = response.notification.request.content.data;
+      const localDate = typeof data?.localDate === 'string' ? data.localDate : undefined;
+
+      if (data?.type === DAILY_CHECKIN_TYPE && localDate) {
+        handleCheckinResponse(localDate, response.actionIdentifier);
+        return;
+      }
+
+      if (data?.type === WEEKLY_REPORT_TYPE) {
+        trackEvent('weekly_report_notification_opened');
+        if (navigationRef.isReady()) {
+          navigationRef.navigate('WeeklyProgress');
+        }
+        return;
+      }
+
       if (data?.type === 'daily_gut_report') {
-        openDailyReport(typeof data.localDate === 'string' ? data.localDate : undefined);
+        openDailyReport(localDate);
+      }
+    }
+
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        handleResponse(response);
       }
     });
 
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data;
-      if (data?.type === 'daily_gut_report') {
-        openDailyReport(typeof data.localDate === 'string' ? data.localDate : undefined);
-      }
-    });
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
 
     return () => {
       subscription.remove();
     };
   }, []);
+
+  return null;
+}
+
+const PERMISSION_PROMPTED_KEY = 'notifications.permissionPrompted';
+
+export function NotificationSchedulerBridge() {
+  const onboardingStage = useAppStore((state) => state.onboardingStage);
+  const authUser = useAppStore((state) => state.authUser);
+  const dailyReports = useAppStore((state) => state.dailyReports);
+  const scans = useAppStore((state) => state.scans);
+  const registeredPushRef = useRef(false);
+
+  const active = onboardingStage === 'complete' && Boolean(authUser);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncSchedule() {
+      try {
+        // First entry after onboarding: surface the iOS permission dialog once
+        // (the priming step in onboarding sets this up). Later runs are silent.
+        const alreadyPrompted = await AsyncStorage.getItem(PERMISSION_PROMPTED_KEY);
+        if (!alreadyPrompted) {
+          await AsyncStorage.setItem(PERMISSION_PROMPTED_KEY, 'yes');
+          const granted = await ensureNotificationPermission();
+          trackEvent('notification_permission_resolved', { granted });
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        await ensureDailyCheckinScheduled({
+          reports: dailyReports,
+          scans,
+        });
+        await ensureWeeklyReportScheduled({
+          accountCreatedAt: useAppStore.getState().authUser?.createdAt ?? null,
+        });
+
+        if (remoteConfig.featureFlags.livePush && !registeredPushRef.current) {
+          registeredPushRef.current = true;
+          // Token registration is not launch-critical; defer it off the
+          // first-paint window so it doesn't contend with home/history fetches.
+          setTimeout(() => {
+            void registerDailyReportNotifications().catch((error) => {
+              console.warn('[notifications] push token registration failed', error);
+            });
+          }, 8000);
+        }
+      } catch (error) {
+        console.warn('[notifications] daily check-in scheduling failed', error);
+      }
+    }
+
+    void syncSchedule();
+
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void syncSchedule();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      appStateSubscription.remove();
+    };
+  }, [active, dailyReports, scans]);
 
   return null;
 }
@@ -305,7 +312,9 @@ export function RuntimeServices({ children }: RuntimeServicesProps) {
       <SupabaseSessionBridge />
       <PostHogIdentityBridge />
       <RemoteBootstrapBridge />
+      <RevenueCatBillingBridge />
       <NotificationResponseBridge />
+      <NotificationSchedulerBridge />
       {children}
     </>
   );

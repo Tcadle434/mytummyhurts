@@ -1,17 +1,38 @@
 export type RiskLevel = 'low' | 'medium' | 'high';
-export type ScanSourceType = 'camera' | 'upload' | 'manual_photo' | 'manual_upload' | 'manual_text';
+export type ScanSourceType = 'camera' | 'upload' | 'manual_photo' | 'manual_upload' | 'manual_text' | 'barcode';
 export type ScanCategory = 'food' | 'menu' | 'grocery';
+export type ScanInputCategory = ScanCategory;
 export type AuthProvider = 'apple' | 'google' | 'email';
 export type SubscriptionPlan = 'monthly' | 'annual';
-export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'expired' | 'canceled';
-export type OnboardingStage = 'intro' | 'flow' | 'paywall' | 'auth' | 'landing' | 'complete';
+export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'expired' | 'canceled' | 'in_grace';
+export type OnboardingStage = 'intro' | 'flow' | 'paywall' | 'auth' | 'complete';
 export type AnalysisStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type DietPreferenceKey =
+  | 'low_fodmap'
+  | 'gerd_friendly'
+  | 'dairy_free'
+  | 'gluten_free'
+  | 'anti_inflammatory'
+  | 'seed_oil_free'
+  | 'low_histamine'
+  | 'low_fat_gentle'
+  | 'vegetarian'
+  | 'vegan';
+export type DietFitStatus = 'fits' | 'caution' | 'does_not_fit' | 'unknown';
 export type PatternStrength = 'weak' | 'moderate' | 'strong';
 export type IngredientConfidence = 'low' | 'medium' | 'high';
-export type IngredientEvidence = 'visible' | 'inferred';
+export type IngredientEvidence = 'visible' | 'inferred' | 'label' | 'database';
 export type ExtractionClarity = 'clear' | 'unclear';
 export type ExtractionImageDetail = 'high' | 'low' | 'not_applicable';
-export type OnboardingStepType = 'message' | 'preview' | 'multi_select' | 'single_select' | 'text_input' | 'summary';
+export type OnboardingStepType =
+  | 'message'
+  | 'preview'
+  | 'multi_select'
+  | 'single_select'
+  | 'text_input'
+  | 'calibration'
+  | 'summary';
+export type FoodCalibrationRating = 'fine' | 'unsure' | 'bad';
 export type OnboardingCenterImage = 'gutIssuesDiagram';
 export type OnboardingCenterGraphic =
   | 'empathyProblem'
@@ -24,7 +45,8 @@ export type OnboardingCenterGraphic =
   | 'phaseReintroduction'
   | 'scannerModesOverview'
   | 'foodControlIntro'
-  | 'foodLeverComparison';
+  | 'foodLeverComparison'
+  | 'personalGutPromise';
 export type ProfileConfidenceLevel = 'early' | 'growing' | 'stable';
 export type InsightConfidenceLevel = 'low' | 'medium' | 'high';
 export type GutScorePhase = 'calm' | 'learn' | 'reintroduce';
@@ -137,6 +159,9 @@ export interface OnboardingAnswers {
   customConditions: string[];
   ingredientSensitivities: string[];
   customIngredientSensitivities: string[];
+  ingredientSensitivitiesUnknown?: boolean;
+  foodCalibrations: Record<string, FoodCalibrationRating>;
+  lastBadMealText: string;
   symptoms: string[];
   customSymptoms: string[];
   symptomFrequency?: string;
@@ -144,9 +169,12 @@ export interface OnboardingAnswers {
   mealContexts: string[];
   triedOtherGutHealthApps?: string;
   motivation?: string;
+  motivations: string[];
   currentEatingPatterns: string[];
   lifestyleFactors: string[];
   favoriteFoodsToReintroduce: string;
+  dietPreferenceKeys: DietPreferenceKey[];
+  dietPreferenceNone?: boolean;
 }
 
 export interface StomachProfileIngredientScore {
@@ -196,7 +224,46 @@ export interface UserProfile {
   currentEatingPatterns: string[];
   lifestyleFactors: string[];
   foodsToReintroduce: string[];
+  dietPreferences: DietPreference[];
   stomachProfile: StomachProfile;
+}
+
+export interface DietPreference {
+  key: DietPreferenceKey;
+  label: string;
+  strictness: 'standard' | 'strict';
+  source: 'onboarding' | 'settings';
+}
+
+export interface DietFitHypothesis {
+  dietKey: DietPreferenceKey;
+  status: DietFitStatus;
+  confidence: IngredientConfidence;
+  evidence: string[];
+  conflicts: string[];
+  missingInfo: string[];
+  reason: string;
+}
+
+export interface DietEvaluation {
+  id?: string;
+  menuItemId?: string;
+  menuItemSourceId?: string;
+  dietKey: DietPreferenceKey;
+  dietLabel: string;
+  status: DietFitStatus;
+  confidence: IngredientConfidence;
+  reason: string;
+  supportingFactors: string[];
+  conflicts: string[];
+  missingInfo: string[];
+  scoreAdjustment: number;
+  modelStatus?: DietFitStatus;
+  modelConfidence?: IngredientConfidence;
+  modelReason?: string;
+  acceptedModelStatus: boolean;
+  rubricVersion: string;
+  displayOrder?: number;
 }
 
 export interface StructuredIngredient {
@@ -218,6 +285,17 @@ export interface ExtractedIngredient {
   evidence: IngredientEvidence;
 }
 
+export type ConditionSeverityBand = 'none' | 'mild' | 'moderate' | 'high' | 'severe';
+
+// Mirror of the server type. LLM-judged per-condition severity used by the
+// scoring engine; the band is the primary signal the score anchors to.
+export interface ConditionSeverity {
+  condition: string;
+  band: ConditionSeverityBand;
+  drivers: string[];
+  rationale?: string;
+}
+
 export interface StructuredAnalysisV2 {
   dishName: string;
   dishConfidence: IngredientConfidence;
@@ -228,14 +306,233 @@ export interface StructuredAnalysisV2 {
   inferredIngredients: ExtractedIngredient[];
   prepStyle: string[];
   notes: string[];
+  baseFoodCategory?: MenuBaseFoodCategory;
+  riskModifiers?: MenuRiskModifier[];
+  conditionSeverities?: ConditionSeverity[];
+  dietFitHypotheses?: DietFitHypothesis[];
+  scoreContributors?: ScoreContributor[];
+  scoringConfidence?: IngredientConfidence;
+  gutRecommendation?: string;
+  rubricVersion?: string;
   model: string;
   promptVersion: string;
   imageDetail: ExtractionImageDetail;
+  menuAnalysis?: MenuScanAnalysis;
+}
+
+export interface MenuScanAnalysis {
+  kind: 'menu';
+  menuTitle: string;
+  menuConfidence: IngredientConfidence;
+  inputPageCount: number;
+  items: MenuItemAnalysis[];
+  bestOptions: MenuRecommendation[];
+  eatWithCautionOptions: MenuRecommendation[];
+  worstOptions: MenuRecommendation[];
+  summary: string;
+}
+
+export interface MenuItemAnalysis {
+  id: string;
+  name: string;
+  description?: string;
+  section?: string;
+  price?: string;
+  extractedIngredients: ExtractedIngredient[];
+  inferredIngredients: ExtractedIngredient[];
+  prepStyle: string[];
+  baseFoodCategory?: MenuBaseFoodCategory;
+  riskModifiers?: MenuRiskModifier[];
+  conditionSeverities?: ConditionSeverity[];
+  dietFitHypotheses?: DietFitHypothesis[];
+  confidence: IngredientConfidence;
+  personalizedRiskScore: number;
+  personalizedRiskLevel: RiskLevel;
+}
+
+export type MenuBaseFoodCategoryKey =
+  | 'lean_meat_poultry'
+  | 'fatty_or_rich_meat'
+  | 'processed_meat'
+  | 'lean_seafood'
+  | 'fatty_seafood'
+  | 'egg_based'
+  | 'dairy_based'
+  | 'wheat_grain_based'
+  | 'non_wheat_grain_based'
+  | 'root_tuber_starch_based'
+  | 'legume_soy_pulse_based'
+  | 'low_fermentation_vegetable_based'
+  | 'high_fermentation_vegetable_based'
+  | 'fruit_based'
+  | 'nuts_seeds_or_oils_based'
+  | 'dessert_sweet_based'
+  | 'non_alcoholic_beverage'
+  | 'alcoholic_beverage'
+  | 'sauce_condiment_or_dressing'
+  | 'soup_stew_or_broth'
+  | 'mixed_dish_or_entree'
+  | 'unknown';
+
+export type MenuRiskModifierKey =
+  | 'fried_or_crispy'
+  | 'high_fat_or_rich'
+  | 'creamy_or_lactose'
+  | 'spicy_heat'
+  | 'acidic_tomato_citrus_vinegar'
+  | 'allium_garlic_onion'
+  | 'wheat_fructan_or_gluten'
+  | 'legume_gos'
+  | 'high_fiber_or_gassy'
+  | 'fermented_or_histamine'
+  | 'high_fructose'
+  | 'sweet_polyol'
+  | 'added_sugar'
+  | 'caffeine'
+  | 'alcohol'
+  | 'carbonation'
+  | 'large_or_loaded_portion'
+  | 'unknown_sauce_or_marinade'
+  | 'raw_or_undercooked'
+  | 'chocolate_or_mint'
+  | 'ultra_processed_additives'
+  | 'simple_prep'
+  | 'plain_or_lightly_seasoned'
+  | 'rice_or_simple_starch'
+  | 'lean_protein'
+  | 'low_fermentation_plant'
+  | 'broth_based'
+  | 'low_fat';
+
+export type MenuRubricEvidence =
+  | 'name'
+  | 'description'
+  | 'section'
+  | 'prep'
+  | 'ingredient'
+  | 'common_dish_knowledge'
+  | 'nutrition_label'
+  | 'label_claim'
+  | 'unclear';
+
+export interface MenuBaseFoodCategory {
+  key: MenuBaseFoodCategoryKey;
+  confidence: IngredientConfidence;
+  evidence: MenuRubricEvidence;
+  source: string;
+}
+
+export interface MenuRiskModifier {
+  key: MenuRiskModifierKey;
+  confidence: IngredientConfidence;
+  evidence: MenuRubricEvidence;
+  source: string;
+}
+
+export interface MenuRecommendation {
+  rank: number;
+  itemId: string;
+  name: string;
+  personalizedRiskScore: number;
+  personalizedRiskLevel: RiskLevel;
+  reasons: string[];
+  triggerIngredients: string[];
+  saferModification?: string;
 }
 
 export interface ConditionRisk {
   score: number;
   level: RiskLevel;
+}
+
+export interface ScanConditionRisk {
+  conditionName: string;
+  riskScore: number;
+  riskLevel: RiskLevel;
+  reason: string;
+  displayOrder: number;
+}
+
+export interface ScanIngredientRisk {
+  id?: string;
+  menuItemId?: string;
+  menuItemSourceId?: string;
+  rawName: string;
+  canonicalName: string;
+  riskScore: number;
+  riskLevel: RiskLevel;
+  evidence: IngredientEvidence;
+  confidence: IngredientConfidence;
+  componentName?: string;
+  reason: string;
+  displayOrder: number;
+}
+
+export type MenuRecommendationTier = 'best_for_you' | 'eat_with_caution' | 'try_to_avoid';
+export type ScoreContributorEvidence =
+  | 'ingredient'
+  | 'prep'
+  | 'description'
+  | 'profile'
+  | 'learning'
+  | 'uncertainty'
+  | 'protective'
+  | 'rubric';
+
+export interface ScoreContributor {
+  key: string;
+  label: string;
+  points: number;
+  evidence: ScoreContributorEvidence;
+  source: string;
+  reason: string;
+}
+
+export interface ScanMenuItemResult {
+  id: string;
+  sourceItemId: string;
+  consumedAt?: string;
+  tier: MenuRecommendationTier;
+  tierRank: number;
+  displayOrder: number;
+  name: string;
+  description?: string;
+  section?: string;
+  price?: string;
+  riskScore: number;
+  riskLevel: RiskLevel;
+  confidence: IngredientConfidence;
+  scoringConfidence: IngredientConfidence;
+  baseFoodCategory?: MenuBaseFoodCategory;
+  riskModifiers?: MenuRiskModifier[];
+  scoreContributors: ScoreContributor[];
+  whyThisScore: string;
+  gutRecommendation?: string;
+  ingredientRisks: ScanIngredientRisk[];
+  dietEvaluations: DietEvaluation[];
+}
+
+export interface MenuScanResult {
+  menuTitle: string;
+  inputPageCount: number;
+  summary: string;
+  items: ScanMenuItemResult[];
+  bestForYou: ScanMenuItemResult[];
+  eatWithCaution: ScanMenuItemResult[];
+  tryToAvoid: ScanMenuItemResult[];
+}
+
+export interface GroceryProductSummary {
+  id?: string;
+  barcode?: string;
+  brand?: string;
+  name: string;
+  ingredientText?: string;
+  nutrition?: Record<string, unknown>;
+  allergens?: string[];
+  imageUrl?: string;
+  dataSource?: string;
+  sourceConfidence?: IngredientConfidence;
 }
 
 export interface ScanResult {
@@ -245,13 +542,30 @@ export interface ScanResult {
   conditionRiskScores: Record<string, ConditionRisk>;
   possibleTriggers: string[];
   interpretation: string;
+  pipTake?: string;
+  summary?: string;
+  baseFoodCategory?: MenuBaseFoodCategory;
+  riskModifiers?: MenuRiskModifier[];
+  scoreContributors?: ScoreContributor[];
+  scoringConfidence?: IngredientConfidence;
+  gutRecommendation?: string;
+  rubricVersion?: string;
+  conditionRisks: ScanConditionRisk[];
+  ingredientRisks: ScanIngredientRisk[];
+  dietEvaluations: DietEvaluation[];
+  menuResult?: MenuScanResult;
+  groceryProduct?: GroceryProductSummary;
   structuredAnalysis: StructuredAnalysisV2;
   gutScoreImpact?: GutScoreImpact;
   imageUri?: string;
 }
 
+export type ScanConsumptionStatus = 'unknown' | 'consumed' | 'skipped';
+
 export interface ScanRecord extends ScanResult {
   id: string;
+  consumptionStatus?: ScanConsumptionStatus;
+  requestId?: string;
   sourceType: ScanSourceType;
   scanCategory: ScanCategory;
   analysisStatus: AnalysisStatus;
@@ -263,11 +577,29 @@ export interface ScanRecord extends ScanResult {
   timezone?: string;
 }
 
+export interface ScanHistorySummary {
+  id: string;
+  requestId?: string;
+  sourceType: ScanSourceType;
+  scanCategory: ScanCategory;
+  analysisStatus: AnalysisStatus;
+  tokenCost: number;
+  createdAt: string;
+  completedAt?: string;
+  localDate?: string;
+  timezone?: string;
+  dishName: string;
+  overallRiskScore: number;
+  overallRiskLevel: RiskLevel;
+  imageUri?: string;
+}
+
 export interface DailyGutReport {
   id: string;
   userId: string;
   localDate: string;
   gutSeverity: number;
+  evidenceQuality?: 'typical' | 'unscanned';
   dailyScore?: number;
   dailyScoreComponents?: DailyScoreComponents;
   dailyScoreDrivers?: DailyScoreDriver[];
@@ -352,10 +684,14 @@ export interface OnboardingStepDefinition {
     | 'resultPreview'
     | 'triggerPreview'
     | 'safeFoodsPreview'
+    | 'knowBeforeEat'
     | 'trust'
     | 'summaryIntro'
     | 'scoreAnalyzing'
     | 'lowerScorePlan'
+    | 'commitmentHold'
+    | 'appStoreReview'
+    | 'trialFreePreview'
     | 'recap';
 }
 
@@ -367,9 +703,14 @@ export interface DishBlueprint {
 }
 
 export interface ScanInputPayload {
+  requestId?: string;
   sourceType: ScanSourceType;
-  scanCategory?: ScanCategory;
+  scanCategory?: ScanInputCategory;
   imageUri?: string;
+  imageUris?: string[];
+  imageDataUrl?: string;
+  imageDataUrls?: string[];
+  barcode?: string;
   text?: string;
   localDate?: string;
   timezone?: string;

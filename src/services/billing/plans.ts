@@ -1,4 +1,4 @@
-import { SubscriptionPlan, SubscriptionStatus } from '../../types/domain';
+import { SubscriptionPlan } from '../../types/domain';
 import { env } from '../../config/env';
 
 const trialDays = 7;
@@ -34,18 +34,6 @@ export function buildSubscriptionWindow(plan: SubscriptionPlan, startedAt = new 
     currentPeriodStart: startedAt.toISOString(),
     monthlyAllowance,
   };
-}
-
-export function mapSuperwallSubscriptionStatus(status: 'UNKNOWN' | 'INACTIVE' | 'ACTIVE'): SubscriptionStatus {
-  if (status === 'ACTIVE') {
-    return 'active';
-  }
-
-  if (status === 'INACTIVE') {
-    return 'none';
-  }
-
-  return 'none';
 }
 
 function addDuration(date: Date, unit: 'day' | 'month' | 'year', value: number) {

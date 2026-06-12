@@ -145,7 +145,16 @@ verify_jwt = false
 [functions.history-get]
 verify_jwt = false
 
+[functions.home-get]
+verify_jwt = false
+
 [functions.insights-get]
+verify_jwt = false
+
+[functions.learning-recompute]
+verify_jwt = false
+
+[functions.learning-jobs-process]
 verify_jwt = false
 
 [functions.notifications-register-token]
@@ -160,7 +169,16 @@ verify_jwt = false
 [functions.scan-analyze-text]
 verify_jwt = false
 
+[functions.scan-analyze-barcode]
+verify_jwt = false
+
 [functions.scan-delete]
+verify_jwt = false
+
+[functions.scan-consumption-update]
+verify_jwt = false
+
+[functions.scan-get]
 verify_jwt = false
 
 [functions.scheduled-maintenance]

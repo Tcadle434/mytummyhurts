@@ -1,0 +1,44 @@
+{
+  "_readme": "Labeled eval expectations for the scan pipeline, run by scripts/scan-e2e.mjs against the deployed functions with the harness's IBS + GERD profile. falseLow rules are HARD failures: an expected-risky item rendering as 'low risk' (score < 37) is the app-deleting error class. Extend this file as real-world fixtures are added; keep expectations conservative so prompt/model swaps fail loudly, not flakily.",
+  "menu": {
+    "fixtureName": "sushi_den_menu",
+    "falseLowNamePatterns": [
+      "tempura",
+      "katsu",
+      "fried",
+      "crispy",
+      "agedashi",
+      "spicy"
+    ],
+    "falseLowMinScore": 37,
+    "minScoreSpread": 25
+  },
+  "food": {
+    "fixtureName": "pizza_meal",
+    "mustFlagAnyOf": [
+      [
+        "cheese",
+        "mozzarella",
+        "dairy"
+      ],
+      [
+        "tomato",
+        "marinara",
+        "tomato sauce"
+      ]
+    ],
+    "falseLowMinScore": 37
+  },
+  "barcode": {
+    "_comment": "KIND Breakfast Protein Peanut Butter \u2014 the real-world case that exposed speculative-driver inflation. Guarded at engine level by GOLDEN [accuracy] deno tests; this entry documents the expected band for any future live barcode eval leg.",
+    "upc": "602652673955",
+    "expectedRiskBand": {
+      "min": 30,
+      "max": 58
+    },
+    "mustNotFlag": [
+      "allium_garlic_onion above 8 points",
+      "legume_gos"
+    ]
+  }
+}

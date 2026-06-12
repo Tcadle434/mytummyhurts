@@ -5,15 +5,16 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { CustomTabBar } from './CustomTabBar';
 import { MainTabParamList, OnboardingStackParamList, RootStackParamList } from './types';
 import { AuthScreen } from '../screens/auth/AuthScreen';
+import { ExistingAccountSignInScreen } from '../screens/auth/ExistingAccountSignInScreen';
+import { FinishingSetupScreen } from '../screens/auth/FinishingSetupScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
 import { ManualMealScreen } from '../screens/history/ManualMealScreen';
 import { DailyGutReportScreen } from '../screens/home/DailyGutReportScreen';
-import { GutScoreDetailScreen } from '../screens/home/GutScoreDetailScreen';
+import { DailyReportPayoffScreen } from '../screens/home/DailyReportPayoffScreen';
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { DesignSystemShowcaseScreen } from '../screens/internal/DesignSystemShowcaseScreen';
 import { InsightDetailScreen } from '../screens/insights/InsightDetailScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
-import { FirstScanLandingScreen } from '../screens/onboarding/FirstScanLandingScreen';
 import { GetStartedScreen } from '../screens/onboarding/GetStartedScreen';
 import { OnboardingFlowScreen } from '../screens/onboarding/OnboardingFlowScreen';
 import { PaywallScreen } from '../screens/paywall/PaywallScreen';
@@ -27,6 +28,7 @@ import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { SymptomLogScreen } from '../screens/symptoms/SymptomLogScreen';
 import { navigationRef } from './navigationRef';
 import { useAppStore } from '../store/useAppStore';
+import { resolveAppAccessRoute } from '../features/access/appAccess';
 import { palette } from '../theme';
 import { OnboardingStage } from '../types/domain';
 
@@ -38,23 +40,32 @@ function getInitialOnboardingRoute(onboardingStage: OnboardingStage): keyof Onbo
   if (onboardingStage === 'intro') return 'GetStarted';
   if (onboardingStage === 'paywall') return 'OnboardingPaywall';
   if (onboardingStage === 'auth') return 'OnboardingAuth';
-  if (onboardingStage === 'landing') return 'FirstScanLanding';
   return 'OnboardingFlow';
 }
 
-function OnboardingNavigator() {
+function OnboardingNavigator({ initialRouteOverride }: { initialRouteOverride?: keyof OnboardingStackParamList }) {
   const onboardingStage = useAppStore((state) => state.onboardingStage);
+  const initialRouteName = initialRouteOverride ?? getInitialOnboardingRoute(onboardingStage);
 
   return (
     <OnboardingStack.Navigator
-      initialRouteName={getInitialOnboardingRoute(onboardingStage)}
+      key={initialRouteName}
+      initialRouteName={initialRouteName}
       screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
     >
       <OnboardingStack.Screen name="GetStarted" component={GetStartedScreen} />
       <OnboardingStack.Screen name="OnboardingFlow" component={OnboardingFlowScreen} />
-      <OnboardingStack.Screen name="OnboardingPaywall" component={PaywallScreen} />
-      <OnboardingStack.Screen name="OnboardingAuth" component={AuthScreen} />
-      <OnboardingStack.Screen name="FirstScanLanding" component={FirstScanLandingScreen} />
+      <OnboardingStack.Screen
+        name="OnboardingPaywall"
+        component={PaywallScreen}
+        options={{ gestureEnabled: false }}
+      />
+      <OnboardingStack.Screen
+        name="OnboardingAuth"
+        component={AuthScreen}
+        options={{ gestureEnabled: false }}
+      />
+      <OnboardingStack.Screen name="OnboardingSignIn" component={ExistingAccountSignInScreen} />
     </OnboardingStack.Navigator>
   );
 }
@@ -67,14 +78,35 @@ function MainTabsNavigator() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="History" component={HistoryScreen} />
-      <Tab.Screen name="Insights" component={InsightsScreen} />
       <Tab.Screen name="Symptoms" component={SymptomLogScreen} />
+      <Tab.Screen name="Insights" component={InsightsScreen} />
     </Tab.Navigator>
   );
 }
 
 export function RootNavigator() {
   const onboardingStage = useAppStore((state) => state.onboardingStage);
+  const authUser = useAppStore((state) => state.authUser);
+  const profile = useAppStore((state) => state.profile);
+  const billing = useAppStore((state) => state.billing);
+  const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
+  const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
+  const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
+  const accessRoute = resolveAppAccessRoute({
+    authUser,
+    onboardingStage,
+    profile,
+    billing,
+    remoteDataLoaded,
+    initialServerSyncNeeded,
+    serverSyncInFlight,
+  });
+  const onboardingInitialRoute =
+    accessRoute === 'paywall'
+      ? 'OnboardingPaywall'
+      : accessRoute === 'profile_setup'
+        ? 'OnboardingFlow'
+        : undefined;
 
   return (
     <NavigationContainer
@@ -92,21 +124,25 @@ export function RootNavigator() {
       }}
     >
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        {onboardingStage === 'complete' ? (
+        {accessRoute === 'main' ? (
           <RootStack.Screen name="MainTabs" component={MainTabsNavigator} />
+        ) : accessRoute === 'finishing_setup' ? (
+          <RootStack.Screen name="FinishingSetup" component={FinishingSetupScreen} />
         ) : (
-          <RootStack.Screen name="OnboardingStack" component={OnboardingNavigator} />
+          <RootStack.Screen name="OnboardingStack">
+            {() => <OnboardingNavigator initialRouteOverride={onboardingInitialRoute} />}
+          </RootStack.Screen>
         )}
-        <RootStack.Screen name="Settings" component={SettingsScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="Settings" component={SettingsScreen} />
         <RootStack.Screen name="LegalDocument" component={LegalDocumentScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="DesignSystemShowcase" component={DesignSystemShowcaseScreen} />
         <RootStack.Screen name="ScanCapture" component={ScanCaptureScreen} options={{ presentation: 'fullScreenModal' }} />
         <RootStack.Screen name="ScanAnalyzing" component={ScanAnalyzingScreen} options={{ presentation: 'fullScreenModal' }} />
         <RootStack.Screen name="ScanResult" component={ScanResultScreen} />
         <RootStack.Screen name="DailyGutReport" component={DailyGutReportScreen} />
+        <RootStack.Screen name="DailyReportPayoff" component={DailyReportPayoffScreen} />
         <RootStack.Screen name="WeeklyProgress" component={WeeklyProgressScreen} />
         <RootStack.Screen name="DailyScoreDay" component={DailyScoreDayScreen} />
-        <RootStack.Screen name="GutScoreDetail" component={GutScoreDetailScreen} />
         <RootStack.Screen name="ManualMeal" component={ManualMealScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="InsightDetail" component={InsightDetailScreen} />
       </RootStack.Navigator>

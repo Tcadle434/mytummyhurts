@@ -1,655 +1,563 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
-import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 
-import { InsightCard } from '../../components/cards/InsightCard';
-import { AppScreen, InputField, ScreenHeader, SectionCard, SkeletonBlock } from '../../components/common/UI';
+import { Pip } from '../../components/common/Pip';
+import { AppScreen, SectionCard, SkeletonBlock, TabScreenHeader } from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useInsightsData } from '../../features/insights/hooks';
+import {
+  buildTriggerProfileShareText,
+  buildTriggerProfileViewState,
+  type TriggerProfileViewState,
+} from '../../features/insights/triggerProfile';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
-import { selectInsightBuckets, useAppStore } from '../../store/useAppStore';
-import { palette, radii, spacing, tokens, type } from '../../theme';
-import { DailyGutReport, IngredientInsight } from '../../types/domain';
+import { useAppStore } from '../../store/useAppStore';
+import { palette, radii, spacing, tokens, type, type PipState } from '../../theme';
+import { ProfileConfidenceLevel } from '../../types/domain';
+import { ConditionsChipRow } from './ConditionsChipRow';
+import { TriggerProfileRow } from './TriggerProfileRow';
 
-type WindowKey = '7d' | '30d' | 'all';
-
-const windowOptions: { id: WindowKey; label: string }[] = [
-  { id: '7d', label: '7 Days' },
-  { id: '30d', label: '30 Days' },
-  { id: 'all', label: 'All Time' },
-];
+const ROW_STAGGER_MS = 45;
 
 export function InsightsScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const fallbackProfile = useAppStore((state) => state.profile);
   const fallbackInsights = useAppStore((state) => state.insights);
-  const fallbackConditionInsights = useAppStore((state) => state.conditionInsights);
-  const fallbackDailyReports = useAppStore((state) => state.dailyReports);
   const authUser = useAppStore((state) => state.authUser);
   const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
   const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
   const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
-  const [search, setSearch] = useState('');
-  const [windowKey, setWindowKey] = useState<WindowKey>('7d');
-  const deferredSearch = useDeferredValue(search);
-  const insightsQuery = useInsightsData(deferredSearch);
+  const insightsQuery = useInsightsData('');
+  const hasFallbackInsights = Boolean(fallbackProfile || fallbackInsights.length);
+  const [earlyExpanded, setEarlyExpanded] = useState(false);
+
   const isWaitingForInitialRemoteData = Boolean(
     isLiveBackendConfigured &&
       authUser &&
       !insightsQuery.data &&
-      (!remoteDataLoaded || initialServerSyncNeeded || serverSyncInFlight) &&
+      !hasFallbackInsights &&
+      (!remoteDataLoaded ||
+        initialServerSyncNeeded ||
+        serverSyncInFlight ||
+        insightsQuery.isLoading ||
+        (!insightsQuery.data && insightsQuery.isFetching)) &&
       !insightsQuery.isError,
   );
-  const profile = isWaitingForInitialRemoteData
+  const isWaitingForComputedData = isWaitingForInitialRemoteData;
+  const profile = isWaitingForComputedData
     ? insightsQuery.data?.profile
     : insightsQuery.data?.profile ?? fallbackProfile;
-  const insights = isWaitingForInitialRemoteData
-    ? []
-    : insightsQuery.data?.insights ?? fallbackInsights;
-  const conditionInsights = isWaitingForInitialRemoteData
-    ? []
-    : insightsQuery.data?.conditionInsights ?? fallbackConditionInsights;
-  const dailyReports = isWaitingForInitialRemoteData ? [] : fallbackDailyReports;
-  const gutScore = profile?.stomachProfile.metadata.gutScore;
-  const buckets = selectInsightBuckets(insights);
-  const triggerInsights = useMemo(
-    () => [...buckets.triggers].sort((left, right) => right.combinedRiskScore - left.combinedRiskScore).slice(0, 5),
-    [buckets.triggers],
+  const insights = useMemo(
+    () => (isWaitingForComputedData ? [] : insightsQuery.data?.insights ?? fallbackInsights),
+    [fallbackInsights, insightsQuery.data?.insights, isWaitingForComputedData],
   );
-  const safeFoodInsights = useMemo(
-    () => [...buckets.safeFoods].sort((left, right) => left.combinedRiskScore - right.combinedRiskScore).slice(0, 4),
-    [buckets.safeFoods],
-  );
-  const declaredSensitivities = profile?.knownIngredientSensitivities ?? [];
-  const toleranceImproving = useMemo(
-    () =>
-      insights
-        .filter((insight) => insight.positiveEvidenceCount >= 2 && insight.safeScore >= insight.triggerScore)
-        .sort((left, right) => right.positiveEvidenceCount - left.positiveEvidenceCount || left.combinedRiskScore - right.combinedRiskScore)
-        .slice(0, 4),
-    [insights],
-  );
-  const foodsToTestLater = useMemo(() => {
-    const requested = profile?.foodsToReintroduce ?? [];
-    const gentle = safeFoodInsights.map((insight) => insight.ingredientName);
-    return [...new Set([...requested, ...gentle])].slice(0, 6);
-  }, [profile?.foodsToReintroduce, safeFoodInsights]);
-  const needsMoreData = useMemo(() => {
-    const learnedNames = new Set(insights.map((insight) => normalizeToken(insight.ingredientName)));
-    const pendingDeclared = declaredSensitivities.filter((item) => !learnedNames.has(normalizeToken(item)));
-    const lowEvidence = insights
-      .filter((insight) => insight.supportingEvidenceCount < 3)
-      .map((insight) => insight.ingredientName);
 
-    return [...new Set([...pendingDeclared, ...lowEvidence])].slice(0, 6);
-  }, [declaredSensitivities, insights]);
-  const chartPoints = useMemo(() => buildChartPoints(dailyReports, windowKey), [dailyReports, windowKey]);
+  const viewState = useMemo(() => buildTriggerProfileViewState(insights), [insights]);
+  const conditions = profile?.knownConditions ?? [];
+  const confidenceLevel = profile?.stomachProfile.metadata.profileConfidenceLevel ?? 'early';
+  const reportCount = profile?.stomachProfile.metadata.reportCount ?? 0;
 
   useEffect(() => {
-    trackEvent('insights_viewed');
+    trackEvent('trigger_profile_viewed', {
+      confirmed: viewState.counts.confirmed,
+      suspects: viewState.counts.suspects,
+      cleared: viewState.counts.cleared,
+      safe: viewState.counts.safe,
+    });
+    // Counts settle after the first data load; one view event per visit is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function openIngredient(ingredientName: string) {
+    trackEvent('trigger_detail_viewed', { item_name: ingredientName });
+    navigation.navigate('InsightDetail', { ingredientName });
+  }
+
+  function openGroup(groupKey: string, label: string) {
+    trackEvent('trigger_group_detail_viewed', { group_key: groupKey, label });
+    navigation.navigate('InsightDetail', { groupKey });
+  }
+
+  async function shareProfile() {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    trackEvent('trigger_profile_shared', { total_tracked: viewState.totalTracked });
+    try {
+      await Share.share({ message: buildTriggerProfileShareText(viewState) });
+    } catch {
+      // User dismissed the share sheet; nothing to do.
+    }
+  }
+
+  let rowIndex = 0;
 
   return (
     <AppScreen>
-      <ScreenHeader title="Insights" />
+      <TabScreenHeader title="Your Trigger Profile" />
 
-      <View style={styles.segmentedRail}>
-        {windowOptions.map((option) => (
-          <Pressable
-            key={option.id}
-            onPress={() => setWindowKey(option.id)}
-            style={({ pressed }) => [styles.segmentedPill, windowKey === option.id && styles.segmentedPillSelected, pressed && { opacity: 0.82 }]}
-          >
-            <Text style={[styles.segmentedLabel, windowKey === option.id && styles.segmentedLabelSelected]}>{option.label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {isWaitingForComputedData ? (
+        <HeroSkeleton />
+      ) : (
+        <HeroSummaryCard
+          viewState={viewState}
+          confidenceLevel={confidenceLevel}
+          reportCount={reportCount}
+          onShare={() => void shareProfile()}
+        />
+      )}
 
-      {isWaitingForInitialRemoteData ? (
-        <GutScoreDriversSkeleton />
-      ) : gutScore ? (
-        <SectionCard>
-          <View style={styles.scoreHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Gut Score drivers</Text>
-              <Text style={styles.sectionSubtitle}>Higher is better. These are the signals moving your gut calm.</Text>
-            </View>
-            <View style={styles.scoreBubble}>
-              <Text style={[styles.scoreBubbleValue, { color: scoreTone(gutScore.currentScore) }]}>{gutScore.currentScore}</Text>
-            </View>
-          </View>
-          <View style={styles.driverStack}>
-            {gutScore.drivers.slice(0, 3).map((driver) => (
-              <View key={driver.id} style={styles.driverRow}>
-                <View style={[styles.driverDot, { backgroundColor: driverImpactTone(driver.impact) }]} />
-                <View style={styles.driverCopy}>
-                  <Text style={styles.driverTitle}>{driver.label}</Text>
-                  <Text style={styles.driverDetail}>{driver.detail}</Text>
+      <ConditionsChipRow conditions={conditions} onEdit={() => navigation.navigate('Settings')} />
+
+      {!isWaitingForComputedData && viewState.allSeeded ? (
+        <SectionCard style={styles.seedBanner}>
+          <Pip state="thinking" size={44} />
+          <Text style={styles.seedBannerText}>
+            These suspects come straight from your answers. Daily check-ins confirm or clear each
+            one with real evidence.
+          </Text>
+        </SectionCard>
+      ) : null}
+
+      {isWaitingForComputedData ? (
+        <ListSkeleton rows={4} />
+      ) : viewState.sections.length === 0 ? (
+        <EmptyHint
+          pipState="thinking"
+          title="Your Trigger Profile starts here"
+          subtitle="Scan meals and file daily check-ins — suspects, confirmed triggers, and safe foods build up on this screen."
+        />
+      ) : (
+        viewState.sections.map((section) => (
+          <View key={section.status} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+                <View style={styles.sectionCount}>
+                  <Text style={styles.sectionCountText}>{section.entries.length}</Text>
                 </View>
               </View>
-            ))}
+              <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+            </View>
+            <View style={styles.listStack}>
+              {section.entries.map((entry) => {
+                const delay = ROW_STAGGER_MS * Math.min(rowIndex, 10);
+                rowIndex += 1;
+                return (
+                  <Animated.View key={entry.insight.id} entering={FadeInUp.duration(300).delay(delay)}>
+                    <TriggerProfileRow
+                      insight={entry.insight}
+                      status={section.status}
+                      emoji={entry.kind === 'group' ? entry.group.emoji : undefined}
+                      extraDetail={entry.kind === 'group' ? entry.memberSummary : undefined}
+                      onPress={() =>
+                        entry.kind === 'group'
+                          ? openGroup(entry.group.key, entry.group.label)
+                          : openIngredient(entry.insight.ingredientName)
+                      }
+                    />
+                  </Animated.View>
+                );
+              })}
+            </View>
           </View>
-          <Text style={styles.scoreNextAction}>{gutScore.nextAction}</Text>
-        </SectionCard>
-      ) : null}
+        ))
+      )}
 
-      <SectionCard>
-        <Text style={styles.sectionTitle}>Trigger heatmap</Text>
-        <Text style={styles.sectionSubtitle}>Which items were most likely to upset your stomach.</Text>
-
-        {triggerInsights.length ? (
-          <View style={styles.heatList}>
-            {triggerInsights.map((insight) => (
-              <HeatRow key={insight.id} insight={insight} />
-            ))}
-          </View>
-        ) : (
-          <Text style={styles.emptyCopy}>Keep logging food and daily reports to start seeing personalized trigger patterns.</Text>
-        )}
-
-        <View style={styles.legendRow}>
-          <LegendDot color={palette.high} label="High" />
-          <LegendDot color={palette.medium} label="Medium" />
-          <LegendDot color={palette.low} label="Low" />
-        </View>
-      </SectionCard>
-
-      <SectionCard>
-        <Text style={styles.sectionTitle}>Daily Score over time</Text>
-        <Text style={styles.sectionSubtitle}>Higher scores mean calmer reported gut days.</Text>
-        {isWaitingForInitialRemoteData ? (
-          <DailyScoreChartSkeleton />
-        ) : chartPoints.length ? (
-          <LineCard points={chartPoints} />
-        ) : (
-          <Text style={styles.emptyCopy}>Daily Scores will appear here after you log gut reports.</Text>
-        )}
-      </SectionCard>
-
-      <SectionCard>
-        <Text style={styles.sectionTitle}>Search ingredients</Text>
-        <InputField value={search} placeholder="Search garlic, dairy, wheat…" onChangeText={setSearch} />
-      </SectionCard>
-
-      {insights.length ? (
-        <View style={styles.listBlock}>
-          <Text style={styles.listTitle}>Learned triggers</Text>
-          {triggerInsights.slice(0, 3).map((insight) => (
-            <Pressable
-              key={insight.id}
-              onPress={() => {
-                trackEvent('trigger_detail_viewed', { item_name: insight.ingredientName });
-                navigation.navigate('InsightDetail', { ingredientName: insight.ingredientName });
-              }}
-              style={({ pressed }) => [pressed && { opacity: 0.82 }]}
-            >
-              <InsightCard insight={insight} />
-            </Pressable>
-          ))}
-
-          {safeFoodInsights.length ? <Text style={styles.listTitle}>Likely safe foods</Text> : null}
-          {safeFoodInsights.map((insight) => (
-            <Pressable
-              key={insight.id}
-              onPress={() => {
-                trackEvent('safe_food_detail_viewed', { item_name: insight.ingredientName });
-                navigation.navigate('InsightDetail', { ingredientName: insight.ingredientName });
-              }}
-              style={({ pressed }) => [pressed && { opacity: 0.82 }]}
-            >
-              <InsightCard insight={insight} />
-            </Pressable>
-          ))}
+      {!isWaitingForComputedData && viewState.earlySignals.length > 0 ? (
+        <View style={styles.earlyBlock}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setEarlyExpanded((current) => !current)}
+            style={({ pressed }) => [styles.earlyToggle, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons
+              name={earlyExpanded ? 'chevron-down' : 'chevron-forward'}
+              size={15}
+              color={palette.textMuted}
+            />
+            <Text style={styles.earlyToggleText}>
+              {viewState.earlySignals.length} more ingredient
+              {viewState.earlySignals.length === 1 ? '' : 's'} accumulating evidence
+            </Text>
+          </Pressable>
+          {earlyExpanded ? (
+            <View style={styles.earlyList}>
+              {viewState.earlySignals.map((insight) => (
+                <Pressable
+                  key={insight.id}
+                  accessibilityRole="button"
+                  onPress={() => openIngredient(insight.ingredientName)}
+                  style={({ pressed }) => [styles.earlyRow, pressed && { opacity: 0.85 }]}
+                >
+                  <Text style={styles.earlyRowName}>{insight.ingredientName}</Text>
+                  <Text style={styles.earlyRowMeta}>
+                    {insight.positiveEvidenceCount + insight.negativeEvidenceCount} outcome
+                    {insight.positiveEvidenceCount + insight.negativeEvidenceCount === 1 ? '' : 's'} so far
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
-      {declaredSensitivities.length ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Declared sensitivities</Text>
-          <Text style={styles.sectionSubtitle}>Your starting priors. These are declared by you, not learned yet.</Text>
-          <View style={styles.chipWrap}>
-            {declaredSensitivities.map((item) => (
-              <View key={item} style={styles.staticChip}>
-                <Text style={styles.staticChipLabel}>{item}</Text>
-              </View>
-            ))}
-          </View>
-        </SectionCard>
-      ) : null}
-
-      {toleranceImproving.length ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Tolerance improving</Text>
-          <Text style={styles.sectionSubtitle}>These foods are showing repeated no-discomfort outcomes.</Text>
-          <View style={styles.chipWrap}>
-            {toleranceImproving.map((item) => (
-              <View key={item.id} style={styles.staticChip}>
-                <Text style={styles.staticChipLabel}>{item.ingredientName}</Text>
-              </View>
-            ))}
-          </View>
-        </SectionCard>
-      ) : null}
-
-      {foodsToTestLater.length ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Foods to earn back</Text>
-          <Text style={styles.sectionSubtitle}>When your Gut Score is calmer, these become cautious reintroduction targets.</Text>
-          <View style={styles.chipWrap}>
-            {foodsToTestLater.map((item) => (
-              <View key={item} style={styles.staticChipMuted}>
-                <Text style={styles.staticChipMutedLabel}>{item}</Text>
-              </View>
-            ))}
-          </View>
-        </SectionCard>
-      ) : null}
-
-      {needsMoreData.length ? (
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Needs more data</Text>
-          <Text style={styles.sectionSubtitle}>Log more daily reports before these become strong personalized signals.</Text>
-          <View style={styles.chipWrap}>
-            {needsMoreData.map((item) => (
-              <View key={item} style={styles.staticChipMuted}>
-                <Text style={styles.staticChipMutedLabel}>{item}</Text>
-              </View>
-            ))}
-          </View>
-        </SectionCard>
-      ) : null}
-
-      {conditionInsights.length ? (
-        <View style={styles.profileFootnote}>
-          <Text style={styles.profileFootnoteLabel}>Per-condition learning active</Text>
-          <Text style={styles.profileFootnoteValue}>
-            {conditionInsights.slice(0, 2).map((entry) => `${entry.ingredientName} for ${entry.conditionName}`).join(', ')}
-          </Text>
-        </View>
-      ) : (profile?.knownConditions.length || declaredSensitivities.length) ? (
-        <View style={styles.profileFootnote}>
-          <Text style={styles.profileFootnoteLabel}>Learning from</Text>
-          <Text style={styles.profileFootnoteValue}>
-            {[...(profile?.knownConditions ?? []), ...declaredSensitivities].slice(0, 4).join(', ')}
-          </Text>
-        </View>
-      ) : null}
     </AppScreen>
   );
 }
 
-function normalizeToken(value?: string | null) {
-  return value?.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '') ?? '';
-}
-
-function HeatRow({ insight }: { insight: IngredientInsight }) {
-  const score = Math.max(12, Math.min(insight.combinedRiskScore, 100));
-  const level = score >= 70 ? 'High' : score >= 45 ? 'Medium' : 'Low';
-  const tone = level === 'High' ? palette.high : level === 'Medium' ? palette.medium : palette.low;
+function HeroSummaryCard({
+  viewState,
+  confidenceLevel,
+  reportCount,
+  onShare,
+}: {
+  viewState: TriggerProfileViewState;
+  confidenceLevel: ProfileConfidenceLevel;
+  reportCount: number;
+  onShare: () => void;
+}) {
+  const confidenceFill = confidenceLevel === 'stable' ? 3 : confidenceLevel === 'growing' ? 2 : 1;
+  const confidenceCopy =
+    confidenceLevel === 'stable'
+      ? 'Stable — built on your check-ins'
+      : confidenceLevel === 'growing'
+        ? `Growing — ${reportCount} check-in${reportCount === 1 ? '' : 's'} so far`
+        : 'Early — built from your answers';
 
   return (
-    <View style={styles.heatRow}>
-      <Text style={styles.heatLabel}>{insight.ingredientName}</Text>
-      <View style={styles.heatTrack}>
-        <View style={[styles.heatFill, { width: `${score}%`, backgroundColor: tone }]} />
+    <SectionCard style={styles.heroCard}>
+      <View style={styles.heroTopRow}>
+        <Text style={styles.heroKicker}>What we know about your gut</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Share your Trigger Profile"
+          onPress={onShare}
+          hitSlop={8}
+          style={({ pressed }) => [styles.shareButton, pressed && { opacity: 0.8 }]}
+        >
+          <Ionicons name="share-outline" size={17} color={palette.primary} />
+        </Pressable>
       </View>
-      <Text style={[styles.heatLevel, { color: tone }]}>{level}</Text>
-    </View>
-  );
-}
-
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <Text style={styles.legendLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function GutScoreDriversSkeleton() {
-  return (
-    <SectionCard>
-      <View style={styles.scoreHeaderRow}>
-        <View style={styles.skeletonTitleStack}>
-          <SkeletonBlock width={168} height={28} radius={radii.sm} />
-          <SkeletonBlock width={230} height={18} radius={radii.sm} />
+      <View style={styles.heroCountsRow}>
+        <HeroCount
+          value={viewState.counts.confirmed}
+          label="Confirmed"
+          color={tokens.color.status.risk.high.foreground}
+        />
+        <View style={styles.heroDivider} />
+        <HeroCount
+          value={viewState.counts.suspects}
+          label="Under review"
+          color={tokens.color.status.risk.medium.foreground}
+        />
+        <View style={styles.heroDivider} />
+        <HeroCount
+          value={viewState.counts.cleared + viewState.counts.safe}
+          label="Cleared & safe"
+          color={tokens.color.status.risk.low.foreground}
+        />
+      </View>
+      <View style={styles.confidenceRow}>
+        <View style={styles.confidenceSegments}>
+          {[0, 1, 2].map((segment) => (
+            <View
+              key={segment}
+              style={[
+                styles.heroConfidenceSegment,
+                segment < confidenceFill && { backgroundColor: palette.primary },
+              ]}
+            />
+          ))}
         </View>
-        <SkeletonBlock width={64} height={64} radius={32} />
+        <Text style={styles.confidenceCopy}>Profile confidence: {confidenceCopy}</Text>
       </View>
-      <View style={styles.driverStack}>
-        {[0, 1, 2].map((item) => (
-          <View key={item} style={styles.driverRow}>
-            <SkeletonBlock width={10} height={10} radius={5} style={styles.skeletonDriverDot} />
-            <View style={styles.driverCopy}>
-              <SkeletonBlock width="52%" height={18} radius={radii.sm} />
-              <SkeletonBlock width="88%" height={15} radius={radii.sm} />
-            </View>
-          </View>
-        ))}
-      </View>
-      <SkeletonBlock width="78%" height={18} radius={radii.sm} />
     </SectionCard>
   );
 }
 
-function DailyScoreChartSkeleton() {
+function HeroCount({ value, label, color }: { value: number; label: string; color: string }) {
   return (
-    <View style={styles.chartCard}>
-      <SkeletonBlock height={120} radius={radii.lg} />
-      <View style={styles.chartLabels}>
-        {[0, 1, 2, 3, 4, 5].map((item) => (
-          <SkeletonBlock key={item} height={12} radius={radii.sm} style={styles.skeletonChartLabel} />
-        ))}
-      </View>
+    <View style={styles.heroCount}>
+      <Text style={[styles.heroCountValue, { color }]}>{value}</Text>
+      <Text style={styles.heroCountLabel}>{label}</Text>
     </View>
   );
 }
 
-function LineCard({ points }: { points: { label: string; value: number }[] }) {
-  const chartWidth = 290;
-  const chartHeight = 120;
-  const max = Math.max(...points.map((point) => point.value), 1);
-  const min = Math.min(...points.map((point) => point.value), 0);
-  const range = Math.max(max - min, 1);
-  const linePoints = points
-    .map((point, index) => {
-      const x = (chartWidth / Math.max(points.length - 1, 1)) * index;
-      const y = chartHeight - ((point.value - min) / range) * (chartHeight - 12) - 6;
-      return `${x},${y}`;
-    })
-    .join(' ');
-
+export function EmptyHint({
+  pipState,
+  title,
+  subtitle,
+}: {
+  pipState: PipState;
+  title: string;
+  subtitle: string;
+}) {
   return (
-    <View style={styles.chartCard}>
-      <Svg width={chartWidth} height={chartHeight + 12}>
-        {[0, 0.5, 1].map((ratio) => {
-          const y = 6 + ratio * (chartHeight - 12);
-          return <Path key={ratio} d={`M0 ${y} H${chartWidth}`} stroke="rgba(41,49,58,0.08)" strokeWidth="1" strokeDasharray="4 4" />;
-        })}
-        <Polyline points={linePoints} fill="none" stroke={palette.primary} strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" />
-        {points.map((point, index) => {
-          const x = (chartWidth / Math.max(points.length - 1, 1)) * index;
-          const y = chartHeight - ((point.value - min) / range) * (chartHeight - 12) - 6;
-          return <Circle key={`${point.label}-${index}`} cx={x} cy={y} r="5" fill={palette.card} stroke={palette.primary} strokeWidth="3" />;
-        })}
-      </Svg>
-      <View style={styles.chartLabels}>
-        {points.map((point) => (
-          <Text key={point.label} style={styles.chartLabel}>
-            {point.label}
-          </Text>
-        ))}
+    <SectionCard style={styles.emptyHintCard}>
+      <View style={styles.emptyHintBadge}>
+        <Pip state={pipState} size={48} />
       </View>
-    </View>
+      <View style={styles.emptyHintCopy}>
+        <Text style={styles.emptyHintTitle}>{title}</Text>
+        <Text style={styles.emptyHintSubtitle}>{subtitle}</Text>
+      </View>
+    </SectionCard>
   );
 }
 
-function buildChartPoints(reports: DailyGutReport[], windowKey: WindowKey) {
-  const now = Date.now();
-  const filtered = reports.filter((report) => {
-    const ageMs = now - new Date(report.updatedAt).getTime();
-    if (windowKey === '7d') return ageMs <= 7 * 24 * 60 * 60 * 1000;
-    if (windowKey === '30d') return ageMs <= 30 * 24 * 60 * 60 * 1000;
-    return true;
-  });
-
-  const sorted = [...filtered].sort((left, right) => new Date(left.localDate).getTime() - new Date(right.localDate).getTime());
-  const recent = sorted.slice(-6);
-
-  if (recent.length) {
-    return recent.map((report) => ({
-      label: new Date(`${report.localDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-      value: report.dailyScore ?? dailyScoreFromSeverity(report.gutSeverity),
-    }));
-  }
-
-  return [];
+function HeroSkeleton() {
+  return (
+    <SectionCard style={styles.heroCard}>
+      <SkeletonBlock width="58%" height={14} radius={radii.sm} />
+      <View style={styles.heroCountsRow}>
+        <SkeletonBlock width={64} height={44} radius={radii.md} />
+        <SkeletonBlock width={64} height={44} radius={radii.md} />
+        <SkeletonBlock width={64} height={44} radius={radii.md} />
+      </View>
+      <SkeletonBlock width="72%" height={12} radius={radii.sm} />
+    </SectionCard>
+  );
 }
 
-function scoreTone(score: number) {
-  if (score >= 67) return tokens.color.status.risk.low.tint;
-  if (score >= 34) return tokens.color.status.risk.medium.tint;
-  return tokens.color.status.risk.high.tint;
-}
-
-function driverImpactTone(impact: 'raises' | 'lowers' | 'neutral') {
-  if (impact === 'raises') return tokens.color.status.risk.low.tint;
-  if (impact === 'lowers') return tokens.color.status.risk.high.tint;
-  return tokens.color.text.tertiary;
-}
-
-function dailyScoreFromSeverity(gutSeverity: number) {
-  return Math.max(0, Math.min(100, Math.round(110 - gutSeverity * 11)));
+function ListSkeleton({ rows }: { rows: number }) {
+  return (
+    <View style={styles.listStack}>
+      {Array.from({ length: rows }).map((_, index) => (
+        <View key={index} style={styles.skeletonRow}>
+          <SkeletonBlock width={40} height={40} radius={20} />
+          <View style={styles.skeletonCopy}>
+            <SkeletonBlock width="62%" height={14} radius={radii.sm} />
+            <SkeletonBlock width="42%" height={12} radius={radii.sm} />
+          </View>
+          <SkeletonBlock width={64} height={22} radius={radii.pill} />
+        </View>
+      ))}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  segmentedRail: {
-    flexDirection: 'row',
-    padding: 4,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    gap: spacing.xs,
-  },
-  segmentedPill: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentedPillSelected: {
-    backgroundColor: palette.primary,
-  },
-  segmentedLabel: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 15,
-  },
-  segmentedLabelSelected: {
-    color: palette.white,
-    fontFamily: type.body.semibold,
-  },
-  scoreHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  heroCard: {
     gap: spacing.md,
   },
-  skeletonTitleStack: {
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heroKicker: {
+    color: tokens.color.text.tertiary,
+    fontFamily: type.body.bold,
+    fontSize: 11,
+    lineHeight: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  shareButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.sageSoft,
+  },
+  heroCountsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heroCount: {
     flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  heroCountValue: {
+    fontFamily: type.body.bold,
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  heroCountLabel: {
+    color: tokens.color.text.tertiary,
+    fontFamily: type.body.medium,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  heroDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: tokens.color.border.subtle,
+  },
+  confidenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  confidenceSegments: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  heroConfidenceSegment: {
+    width: 18,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: tokens.color.chart.track,
+  },
+  confidenceCopy: {
+    flex: 1,
+    color: tokens.color.text.tertiary,
+    fontFamily: type.body.medium,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  seedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  seedBannerText: {
+    flex: 1,
+    color: tokens.color.text.secondary,
+    fontFamily: type.body.medium,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  section: {
+    gap: spacing.sm,
+  },
+  sectionHeader: {
+    gap: 2,
+    paddingHorizontal: spacing.xs,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
   },
-  scoreBubble: {
+  sectionTitle: {
+    color: tokens.color.text.primary,
+    fontFamily: type.body.bold,
+    fontSize: 18,
+    lineHeight: 23,
+    letterSpacing: -0.2,
+  },
+  sectionCount: {
+    minWidth: 22,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: tokens.color.surface.card.warm,
+  },
+  sectionCountText: {
+    color: tokens.color.text.secondary,
+    fontFamily: type.body.bold,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  sectionSubtitle: {
+    color: tokens.color.text.tertiary,
+    fontFamily: type.body.medium,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  listStack: {
+    gap: spacing.xs,
+  },
+  emptyHintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  emptyHintBadge: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    borderWidth: 4,
-    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.card.warm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scoreBubbleValue: {
-    fontFamily: type.body.bold,
-    fontSize: 24,
-    letterSpacing: -0.6,
-  },
-  driverStack: {
-    gap: spacing.sm,
-  },
-  driverRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  driverDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 6,
-  },
-  skeletonDriverDot: {
-    marginTop: 6,
-  },
-  driverCopy: {
+  emptyHintCopy: {
     flex: 1,
-    gap: 2,
-  },
-  driverTitle: {
-    color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-  },
-  driverDetail: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  scoreNextAction: {
-    color: palette.text,
-    fontFamily: type.body.medium,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  sectionTitle: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 24,
-    letterSpacing: -0.4,
-  },
-  sectionSubtitle: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  emptyCopy: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  heatList: {
-    gap: spacing.md,
-  },
-  heatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  heatLabel: {
-    width: 72,
-    color: palette.text,
-    fontFamily: type.body.medium,
-    fontSize: 16,
-    textTransform: 'capitalize',
-  },
-  heatTrack: {
-    flex: 1,
-    height: 6,
-    borderRadius: radii.pill,
-    backgroundColor: palette.line,
-    overflow: 'hidden',
-  },
-  heatFill: {
-    height: '100%',
-    borderRadius: radii.pill,
-  },
-  heatLevel: {
-    width: 58,
-    textAlign: 'right',
-    fontFamily: type.body.medium,
-    fontSize: 15,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.lg,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendLabel: {
-    color: palette.text,
-    fontFamily: type.body.medium,
-    fontSize: 14,
-  },
-  chartCard: {
-    gap: spacing.sm,
-  },
-  chartLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  chartLabel: {
-    flex: 1,
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  skeletonChartLabel: {
-    flex: 1,
-  },
-  listBlock: {
-    gap: spacing.sm,
-  },
-  listTitle: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 18,
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  staticChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radii.pill,
-    backgroundColor: tokens.color.status.success.background,
-  },
-  staticChipLabel: {
-    color: palette.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
-  },
-  staticChipMuted: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radii.pill,
-    backgroundColor: tokens.color.surface.card.warm,
-  },
-  staticChipMutedLabel: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 13,
-  },
-  profileFootnote: {
-    alignItems: 'center',
     gap: 4,
   },
-  profileFootnoteLabel: {
+  emptyHintTitle: {
+    color: tokens.color.text.primary,
+    fontFamily: type.body.bold,
+    fontSize: 16,
+    letterSpacing: -0.2,
+  },
+  emptyHintSubtitle: {
+    color: tokens.color.text.tertiary,
+    fontFamily: type.body.medium,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  skeletonRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.card.default,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  skeletonCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  earlyBlock: {
+    gap: spacing.xs,
+  },
+  earlyToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  earlyToggleText: {
     color: palette.textMuted,
     fontFamily: type.body.medium,
     fontSize: 13,
+    lineHeight: 18,
   },
-  profileFootnoteValue: {
+  earlyList: {
+    gap: 2,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.card.default,
+    paddingVertical: spacing.xs,
+  },
+  earlyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  earlyRowName: {
+    flexShrink: 1,
     color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-    textAlign: 'center',
+    fontFamily: type.body.medium,
+    fontSize: 13,
+    lineHeight: 18,
+    textTransform: 'capitalize',
+  },
+  earlyRowMeta: {
+    color: palette.textMuted,
+    fontFamily: type.body.regular,
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

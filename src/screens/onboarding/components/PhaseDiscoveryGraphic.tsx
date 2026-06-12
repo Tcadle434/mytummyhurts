@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Circle } from "react-native-svg";
 
 import { palette, spacing, tokens, type } from "../../../theme";
 
@@ -10,21 +11,13 @@ const CREAMY_TOMATO_PASTA_SCAN = require("../../../../assets/ui/creamy_tomato_pa
 
 /**
  * Phase 1 is the only onboarding graphic with internal scan -> loading ->
- * result states. Keeping it isolated makes the main flow responsible only for
- * state transitions and CTA behavior.
+ * result states. The single outer card frames every state so transitions
+ * feel like the same surface changing, not three different screens.
  */
 export function PhaseDiscoveryGraphic({ state }: { state: PhaseDiscoveryState }) {
 	return (
 		<View style={styles.card}>
-			<View style={styles.header}>
-				<View style={styles.phaseNumberBadge}>
-					<Text style={styles.phaseNumber}>1</Text>
-				</View>
-				<View style={styles.headerCopy}>
-					<Text style={styles.eyebrow}>Discovery</Text>
-					<Text style={styles.title}>Adaptive risk scores</Text>
-				</View>
-			</View>
+			<PhaseHeader number="1" eyebrow="Discovery" title="Adaptive risk scores" />
 
 			<View style={styles.stage}>
 				{state === "scan" ? <DiscoveryScanPreview /> : null}
@@ -35,16 +28,38 @@ export function PhaseDiscoveryGraphic({ state }: { state: PhaseDiscoveryState })
 	);
 }
 
+function PhaseHeader({
+	number,
+	eyebrow,
+	title,
+}: {
+	number: string;
+	eyebrow: string;
+	title: string;
+}) {
+	return (
+		<View style={styles.header}>
+			<View style={styles.phaseNumberBadge}>
+				<Text style={styles.phaseNumber}>{number}</Text>
+			</View>
+			<View style={styles.headerCopy}>
+				<Text style={styles.eyebrow}>{eyebrow}</Text>
+				<Text style={styles.title}>{title}</Text>
+			</View>
+		</View>
+	);
+}
+
 function DiscoveryScanPreview() {
 	return (
-		<View style={styles.scanCard}>
+		<View style={styles.scanFrame}>
 			<Image
 				source={CREAMY_TOMATO_PASTA_SCAN}
 				style={styles.scanImage}
 				resizeMode="cover"
 				accessibilityIgnoresInvertColors
 			/>
-			<View style={styles.scanOverlay}>
+			<View style={styles.scanOverlay} pointerEvents="none">
 				<View style={styles.mealScanChip}>
 					<Ionicons name="camera-outline" size={15} color={tokens.color.icon.accent} />
 					<Text style={styles.mealScanChipText}>Meal scan</Text>
@@ -59,7 +74,7 @@ function DiscoveryScanPreview() {
 
 function DiscoveryAnalyzingState() {
 	return (
-		<View style={[styles.scanCard, styles.analyzingCard]}>
+		<View style={styles.analyzingWrap}>
 			<View style={styles.analyzingIconWrap}>
 				<ActivityIndicator color={palette.primary} />
 			</View>
@@ -78,11 +93,11 @@ function DiscoveryAnalyzingState() {
 
 function DiscoveryRiskResult() {
 	return (
-		<View style={styles.resultCard}>
-			<View style={styles.resultHeaderRow}>
-				<View style={styles.resultTitleStack}>
-					<Text style={styles.eyebrow}>Scanned dish</Text>
-					<Text style={styles.resultDishTitle}>Creamy tomato pasta</Text>
+		<View style={styles.resultStage}>
+			<View style={styles.dishRow}>
+				<View style={styles.dishCopy}>
+					<Text style={styles.eyebrowSmall}>Scanned dish</Text>
+					<Text style={styles.dishTitle}>Creamy tomato pasta</Text>
 				</View>
 				<View style={styles.highRiskPill}>
 					<Ionicons
@@ -93,19 +108,48 @@ function DiscoveryRiskResult() {
 					<Text style={styles.highRiskPillText}>High risk</Text>
 				</View>
 			</View>
-			<View style={styles.resultScoreRow}>
-				<AdaptiveRiskGauge />
-				<View style={styles.resultInsightCard}>
-					<Text style={styles.adaptiveRiskTitle}>Tomato keeps showing up</Text>
-					<Text style={styles.adaptiveRiskBody}>
-						Tomato has been a consistent trigger in your reflux symptom reports.
-					</Text>
+
+			<View style={styles.resultRow}>
+				<View style={styles.dialColumn}>
+					<RiskScoreDial score={78} tone="high" />
 				</View>
-			</View>
-			<View style={styles.resultChipRow}>
-				<ResultIngredientChip label="Tomato" tone="high" />
-				<ResultIngredientChip label="Cream" tone="medium" />
-				<ResultIngredientChip label="Garlic" tone="medium" />
+
+				<View style={styles.insightPanel}>
+					<LinearGradient
+						colors={[
+							tokens.color.status.risk.high.background,
+							tokens.color.status.risk.high.background,
+							tokens.color.surface.card.default,
+						]}
+						locations={[0, 0.45, 1]}
+						style={StyleSheet.absoluteFill}
+					/>
+					<View style={styles.insightTop}>
+						<View style={styles.insightHeader}>
+							<View style={styles.insightIcon}>
+								<Ionicons
+									name="pulse-outline"
+									size={17}
+									color={tokens.color.status.risk.high.foreground}
+								/>
+							</View>
+							<Text style={styles.insightTitle}>Tomato keeps showing up</Text>
+						</View>
+						<Text style={styles.insightBody}>
+							A consistent trigger in your reflux reports.
+						</Text>
+					</View>
+					<View style={styles.insightDivider} />
+					<View style={styles.insightBottom}>
+						<View style={styles.chipRow}>
+							<ResultIngredientChip label="Tomato" tone="high" />
+						</View>
+						<View style={styles.chipRow}>
+							<ResultIngredientChip label="Cream" tone="medium" />
+							<ResultIngredientChip label="Garlic" tone="medium" />
+						</View>
+					</View>
+				</View>
 			</View>
 		</View>
 	);
@@ -123,80 +167,63 @@ function ResultIngredientChip({ label, tone }: { label: string; tone: "high" | "
 	);
 }
 
-function AdaptiveRiskGauge() {
-	const centerX = 68;
-	const centerY = 66;
-	const radius = 39;
-	const needleEnd = polarPoint(centerX, centerY, 31, 48);
+function RiskScoreDial({
+	score,
+	tone,
+}: {
+	score: number;
+	tone: "high" | "medium" | "low";
+}) {
+	const size = 124;
+	const strokeWidth = 12;
+	const radius = (size - strokeWidth) / 2;
+	const center = size / 2;
+	const circumference = 2 * Math.PI * radius;
+	const clamped = Math.max(0, Math.min(100, score));
+	const dashOffset = circumference * (1 - clamped / 100);
+	const ringColor = riskRingColor(tone);
 
 	return (
-		<View style={styles.adaptiveGaugeWrap} accessible accessibilityLabel="High risk gauge">
-			<Svg width={136} height={80} viewBox="0 0 136 80">
-				<Path
-					d={gaugeArcPath(centerX, centerY, radius, -116, -42)}
-					stroke={tokens.color.status.risk.low.tint}
-					strokeWidth={11}
-					strokeLinecap="round"
-					fill="none"
-					opacity={0.38}
-				/>
-				<Path
-					d={gaugeArcPath(centerX, centerY, radius, -25, 25)}
-					stroke={tokens.color.status.risk.medium.tint}
-					strokeWidth={11}
-					strokeLinecap="round"
-					fill="none"
-					opacity={0.62}
-				/>
-				<Path
-					d={gaugeArcPath(centerX, centerY, radius, 42, 116)}
-					stroke={tokens.color.status.risk.high.tint}
-					strokeWidth={11}
-					strokeLinecap="round"
-					fill="none"
-				/>
-				<Path
-					d={`M ${centerX} ${centerY} L ${needleEnd.x} ${needleEnd.y}`}
-					stroke={tokens.color.status.risk.high.foreground}
-					strokeWidth={5}
-					strokeLinecap="round"
+		<View
+			style={styles.dialWrap}
+			accessible
+			accessibilityLabel={`Risk score ${clamped} out of 100`}
+		>
+			<Svg width={size} height={size}>
+				<Circle
+					cx={center}
+					cy={center}
+					r={radius}
+					stroke={tokens.color.chart.track}
+					strokeWidth={strokeWidth}
 					fill="none"
 				/>
 				<Circle
-					cx={centerX}
-					cy={centerY}
-					r={9}
-					fill={tokens.color.status.risk.high.foreground}
+					cx={center}
+					cy={center}
+					r={radius}
+					stroke={ringColor}
+					strokeWidth={strokeWidth}
+					strokeLinecap="round"
+					strokeDasharray={`${circumference} ${circumference}`}
+					strokeDashoffset={dashOffset}
+					fill="none"
+					rotation={-90}
+					origin={`${center}, ${center}`}
 				/>
-				<Circle cx={centerX} cy={centerY} r={4} fill={tokens.color.surface.card.default} />
 			</Svg>
-			<Text style={styles.adaptiveGaugeValue}>78</Text>
-			<Text style={styles.adaptiveGaugeLabel}>risk score</Text>
+			<View style={styles.dialCenter} pointerEvents="none">
+				<Text style={[styles.dialScore, { color: ringColor }]}>{clamped}</Text>
+				<Text style={styles.dialLabel}>Risk score</Text>
+			</View>
 		</View>
 	);
 }
 
-function gaugeArcPath(
-	cx: number,
-	cy: number,
-	radius: number,
-	startAngle: number,
-	endAngle: number
-) {
-	const start = polarPoint(cx, cy, radius, endAngle);
-	const end = polarPoint(cx, cy, radius, startAngle);
-	const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-
-	return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
-}
-
-function polarPoint(cx: number, cy: number, radius: number, angleInDegrees: number) {
-	const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
-
-	return {
-		x: cx + radius * Math.cos(angleInRadians),
-		y: cy + radius * Math.sin(angleInRadians),
-	};
+function riskRingColor(tone: "high" | "medium" | "low") {
+	if (tone === "high") return tokens.color.status.risk.high.tint;
+	if (tone === "medium") return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.low.tint;
 }
 
 const styles = StyleSheet.create({
@@ -208,7 +235,7 @@ const styles = StyleSheet.create({
 		borderRadius: 30,
 		backgroundColor: tokens.color.surface.card.default,
 		padding: spacing.md,
-		gap: spacing.md,
+		gap: spacing.sm,
 		...tokens.shadow.card,
 	},
 	header: {
@@ -240,6 +267,14 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 		lineHeight: 18,
 	},
+	eyebrowSmall: {
+		color: tokens.color.text.tertiary,
+		fontFamily: type.body.semibold,
+		fontSize: 11,
+		lineHeight: 14,
+		letterSpacing: 0.6,
+		textTransform: "uppercase",
+	},
 	title: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.bold,
@@ -247,22 +282,19 @@ const styles = StyleSheet.create({
 		lineHeight: 25,
 	},
 	stage: {
-		minHeight: 268,
+		minHeight: 260,
 		justifyContent: "center",
 	},
-	scanCard: {
+	scanFrame: {
 		width: "100%",
-		minHeight: 268,
-		borderRadius: 24,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
+		height: 252,
+		borderRadius: 22,
 		overflow: "hidden",
-		...tokens.shadow.card,
+		backgroundColor: tokens.color.surface.card.warm,
 	},
 	scanImage: {
 		width: "100%",
-		height: 268,
+		height: "100%",
 	},
 	scanOverlay: {
 		...StyleSheet.absoluteFillObject,
@@ -295,16 +327,17 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		justifyContent: "center",
 	},
-	analyzingCard: {
+	analyzingWrap: {
+		width: "100%",
 		alignItems: "center",
 		justifyContent: "center",
 		gap: spacing.sm,
-		padding: spacing.lg,
+		paddingVertical: spacing.xl,
 	},
 	analyzingIconWrap: {
-		width: 48,
-		height: 48,
-		borderRadius: 24,
+		width: 56,
+		height: 56,
+		borderRadius: 28,
 		backgroundColor: tokens.color.status.success.background,
 		alignItems: "center",
 		justifyContent: "center",
@@ -314,9 +347,10 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.bold,
 		fontSize: 19,
 		lineHeight: 24,
+		marginTop: spacing.xs,
 	},
 	analyzingBody: {
-		maxWidth: 230,
+		maxWidth: 240,
 		color: tokens.color.text.secondary,
 		fontFamily: type.body.medium,
 		fontSize: 14,
@@ -325,8 +359,8 @@ const styles = StyleSheet.create({
 	},
 	analyzingDotRow: {
 		flexDirection: "row",
-		gap: 5,
-		marginTop: spacing.xs,
+		gap: 6,
+		marginTop: spacing.sm,
 	},
 	analyzingDot: {
 		width: 7,
@@ -337,46 +371,126 @@ const styles = StyleSheet.create({
 	analyzingDotMuted: {
 		opacity: 0.32,
 	},
-	resultCard: {
+	resultStage: {
 		width: "100%",
-		minHeight: 268,
-		borderRadius: 24,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
-		padding: spacing.md,
 		gap: spacing.md,
 	},
-	resultHeaderRow: {
+	dishRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",
 		justifyContent: "space-between",
 		gap: spacing.md,
 	},
-	resultTitleStack: {
+	dishCopy: {
 		flex: 1,
 		gap: 2,
 	},
-	resultDishTitle: {
+	dishTitle: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
+		fontSize: 19,
+		lineHeight: 24,
 	},
-	resultScoreRow: {
+	highRiskPill: {
+		minHeight: 28,
 		flexDirection: "row",
-		alignItems: "stretch",
-		gap: spacing.md,
+		alignItems: "center",
+		gap: 4,
+		borderRadius: 99,
+		backgroundColor: tokens.color.status.risk.high.background,
+		paddingHorizontal: spacing.sm,
+		marginTop: 2,
 	},
-	resultInsightCard: {
-		flex: 1,
+	highRiskPillText: {
+		color: tokens.color.status.risk.high.foreground,
+		fontFamily: type.body.bold,
+		fontSize: 12,
+		lineHeight: 16,
+	},
+	resultRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.sm,
+	},
+	dialColumn: {
+		alignItems: "center",
 		justifyContent: "center",
-		borderLeftWidth: 1,
-		borderLeftColor: tokens.color.border.subtle,
-		paddingLeft: spacing.md,
+	},
+	dialWrap: {
+		width: 124,
+		height: 124,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	dialCenter: {
+		position: "absolute",
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	dialScore: {
+		fontFamily: type.body.bold,
+		fontSize: 38,
+		lineHeight: 42,
+		fontVariant: ["tabular-nums"],
+		letterSpacing: -0.6,
+	},
+	dialLabel: {
+		color: tokens.color.text.tertiary,
+		fontFamily: type.body.semibold,
+		fontSize: 10,
+		lineHeight: 12,
+		letterSpacing: 0.8,
+		textTransform: "uppercase",
+		marginTop: 2,
+	},
+	insightPanel: {
+		flex: 1,
+		borderRadius: 20,
+		overflow: "hidden",
+	},
+	insightTop: {
+		gap: spacing.xs,
+		paddingHorizontal: spacing.sm,
+		paddingTop: spacing.sm,
+		paddingBottom: spacing.sm,
+	},
+	insightHeader: {
+		flexDirection: "row",
+		alignItems: "center",
 		gap: spacing.xs,
 	},
-	resultChipRow: {
+	insightIcon: {
+		width: 30,
+		height: 30,
+		borderRadius: 15,
+		backgroundColor: tokens.color.surface.card.default,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	insightTitle: {
+		flex: 1,
+		color: tokens.color.status.risk.high.foreground,
+		fontFamily: type.body.bold,
+		fontSize: 14,
+		lineHeight: 18,
+	},
+	insightBody: {
+		color: tokens.color.text.secondary,
+		fontFamily: type.body.medium,
+		fontSize: 12,
+		lineHeight: 16,
+	},
+	insightDivider: {
+		height: 1,
+		marginHorizontal: spacing.sm,
+		backgroundColor: tokens.color.border.subtle,
+	},
+	insightBottom: {
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.sm,
+		gap: spacing.xs,
+	},
+	chipRow: {
 		flexDirection: "row",
 		flexWrap: "wrap",
 		gap: spacing.xs,
@@ -403,55 +517,5 @@ const styles = StyleSheet.create({
 	},
 	ingredientChipTextMedium: {
 		color: tokens.color.status.risk.medium.foreground,
-	},
-	adaptiveGaugeWrap: {
-		width: 136,
-		height: 124,
-		alignItems: "center",
-		justifyContent: "flex-start",
-		marginLeft: -spacing.xs,
-	},
-	adaptiveGaugeValue: {
-		color: tokens.color.status.risk.high.tint,
-		fontFamily: type.body.bold,
-		fontSize: 28,
-		lineHeight: 31,
-		fontVariant: ["tabular-nums"],
-		marginTop: 3,
-	},
-	adaptiveGaugeLabel: {
-		color: tokens.color.text.tertiary,
-		fontFamily: type.body.semibold,
-		fontSize: 11,
-		lineHeight: 14,
-		textTransform: "uppercase",
-	},
-	highRiskPill: {
-		alignSelf: "flex-start",
-		minHeight: 28,
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 4,
-		borderRadius: 99,
-		backgroundColor: tokens.color.status.risk.high.background,
-		paddingHorizontal: spacing.sm,
-	},
-	highRiskPillText: {
-		color: tokens.color.status.risk.high.foreground,
-		fontFamily: type.body.bold,
-		fontSize: 12,
-		lineHeight: 16,
-	},
-	adaptiveRiskTitle: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 16,
-		lineHeight: 21,
-	},
-	adaptiveRiskBody: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
 	},
 });

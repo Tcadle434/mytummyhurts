@@ -1,0 +1,17 @@
+{
+  "prefer_split_fsevents_watcher": true,
+  "ignore_dirs": [
+    ".agents",
+    ".claude",
+    ".design-mocks",
+    ".expo",
+    ".git",
+    ".github",
+    "docs",
+    "ios",
+    "output",
+    "patches",
+    "scripts",
+    "supabase"
+  ]
+}

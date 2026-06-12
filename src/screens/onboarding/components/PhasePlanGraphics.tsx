@@ -1,194 +1,167 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ComponentProps } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { ComponentProps, Fragment } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../../theme";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 type RiskEvidenceTone = "low" | "medium" | "high";
+type CalloutTone = "warm" | "sage";
 
-const PHASE_2_ILLUSTRATION = require("../../../../assets/ui/phase_2_illustration.png");
-
-/**
- * Phase 2 and Phase 3 share the same plan-card system: a compact phase header,
- * evidence rows, and a single outcome callout. Keeping them together avoids the
- * onboarding flow owning repeated card scaffolding.
- */
-export function PhaseLimitationGraphic() {
-	return (
-		<View style={styles.card}>
-			<View style={styles.header}>
-				<View style={styles.phaseNumberBadge}>
-					<Text style={styles.phaseNumber}>2</Text>
-				</View>
-				<View style={styles.headerCopy}>
-					<Text style={styles.eyebrow}>Limitation</Text>
-					<Text style={styles.title}>Risk scores become a plan</Text>
-				</View>
-				<Image
-					source={PHASE_2_ILLUSTRATION}
-					style={styles.phaseLimitationIllustration}
-					resizeMode="contain"
-					accessibilityIgnoresInvertColors
-				/>
-			</View>
-
-			<View style={styles.panel}>
-				<View style={styles.panelHeader}>
-					<Text style={styles.panelTitle}>Likely triggers</Text>
-					<View style={styles.limitPlanBadge}>
-						<Ionicons
-							name="remove-circle-outline"
-							size={15}
-							color={tokens.color.status.risk.medium.foreground}
-						/>
-						<Text style={styles.limitPlanBadgeText}>Limit</Text>
-					</View>
-				</View>
-
-				<View style={styles.evidenceStack}>
-					<IngredientEvidenceRow
-						ingredient="Tomato"
-						evidence="Appears often on reflux days"
-						pillLabel="High risk"
-						tone="high"
-						iconName="alert-circle-outline"
-					/>
-					<IngredientEvidenceRow
-						ingredient="Garlic"
-						evidence="Shows up on reactive reports"
-						pillLabel="Watch closely"
-						tone="medium"
-						iconName="eye-outline"
-					/>
-					<IngredientEvidenceRow
-						ingredient="Cream"
-						evidence="Needs more data"
-						pillLabel="Possible"
-						tone="medium"
-						iconName="flask-outline"
-					/>
-				</View>
-
-				<View style={styles.callout}>
-					<View style={styles.calloutIcon}>
-						<Ionicons
-							name="trending-up"
-							size={17}
-							color={tokens.color.status.risk.low.foreground}
-						/>
-					</View>
-					<Text style={styles.calloutText}>
-						Limit likely triggers and watch your Gut Score rise.
-					</Text>
-				</View>
-			</View>
-		</View>
-	);
-}
-
-export function PhaseReintroductionGraphic() {
-	return (
-		<View style={styles.card}>
-			<View style={styles.header}>
-				<View style={styles.phaseNumberBadge}>
-					<Text style={styles.phaseNumber}>3</Text>
-				</View>
-				<View style={styles.headerCopy}>
-					<Text style={styles.eyebrow}>Reintroduction</Text>
-					<Text style={styles.title}>Earn foods back carefully</Text>
-				</View>
-				<View style={styles.reintroductionHeroIcon}>
-					<Ionicons
-						name="leaf-outline"
-						size={34}
-						color={tokens.color.status.risk.low.foreground}
-					/>
-				</View>
-			</View>
-
-			<View style={styles.panel}>
-				<View style={styles.panelHeader}>
-					<Text style={styles.panelTitle}>Guided tests</Text>
-					<View style={styles.reintroductionPlanBadge}>
-						<Ionicons
-							name="lock-open-outline"
-							size={15}
-							color={tokens.color.status.risk.low.foreground}
-						/>
-						<Text style={styles.reintroductionPlanBadgeText}>Unlocked</Text>
-					</View>
-				</View>
-
-				<View style={styles.evidenceStack}>
-					<PhasePlanRow
-						title="Test one food"
-						body="Small serving, clear baseline"
-						pillLabel="Careful"
-						tone="medium"
-						iconName="flask-outline"
-					/>
-					<PhasePlanRow
-						title="Learn tolerance"
-						body="Scans and reports update future risk"
-						pillLabel="Adaptive"
-						tone="low"
-						iconName="sync-outline"
-					/>
-				</View>
-
-				<View style={styles.callout}>
-					<View style={styles.calloutIcon}>
-						<Ionicons
-							name="heart-outline"
-							size={17}
-							color={tokens.color.status.risk.low.foreground}
-						/>
-					</View>
-					<Text style={styles.calloutText}>Eat more of what you love with confidence.</Text>
-				</View>
-			</View>
-		</View>
-	);
-}
-
-function IngredientEvidenceRow({
-	ingredient,
-	evidence,
-	pillLabel,
-	tone,
-	iconName,
-}: {
-	ingredient: string;
-	evidence: string;
-	pillLabel: string;
-	tone: RiskEvidenceTone;
-	iconName: IoniconName;
-}) {
-	return (
-		<PhasePlanRow
-			title={ingredient}
-			body={evidence}
-			pillLabel={pillLabel}
-			tone={tone}
-			iconName={iconName}
-		/>
-	);
-}
-
-function PhasePlanRow({
-	title,
-	body,
-	pillLabel,
-	tone,
-	iconName,
-}: {
+type PhasePlanRowProps = {
 	title: string;
 	body: string;
 	pillLabel: string;
 	tone: RiskEvidenceTone;
 	iconName: IoniconName;
-}) {
+};
+
+/**
+ * Phase 2 and Phase 3 share the same plan-card system: a clean phase header,
+ * a tinted list group, and a single outcome callout. Keeping them together
+ * avoids duplicating row/callout scaffolding between phases.
+ */
+export function PhaseLimitationGraphic() {
+	const rows: PhasePlanRowProps[] = [
+		{
+			title: "Tomato",
+			body: "Appears often on reflux days",
+			pillLabel: "Avoid",
+			tone: "high",
+			iconName: "alert-circle",
+		},
+		{
+			title: "Garlic",
+			body: "Shows up on reactive reports",
+			pillLabel: "Limit",
+			tone: "medium",
+			iconName: "eye-outline",
+		},
+		{
+			title: "Cream",
+			body: "Needs more data",
+			pillLabel: "Eat in moderation",
+			tone: "medium",
+			iconName: "help-circle-outline",
+		},
+	];
+
+	return (
+		<PhaseCard
+			number="2"
+			eyebrow="Limitation"
+			title="Risk scores become a plan"
+			listLabel="Likely triggers"
+			rows={rows}
+			callout={{
+				iconName: "trending-up",
+				label: "Limit likely triggers and watch your Gut Score rise.",
+				tone: "warm",
+			}}
+		/>
+	);
+}
+
+export function PhaseReintroductionGraphic() {
+	const rows: PhasePlanRowProps[] = [
+		{
+			title: "Test one food",
+			body: "Small serving, clear baseline",
+			pillLabel: "Careful",
+			tone: "medium",
+			iconName: "flask-outline",
+		},
+		{
+			title: "Learn tolerance",
+			body: "Scans and reports update future risk",
+			pillLabel: "Adaptive",
+			tone: "low",
+			iconName: "sync-outline",
+		},
+	];
+
+	return (
+		<PhaseCard
+			number="3"
+			eyebrow="Reintroduction"
+			title="Earn foods back carefully"
+			listLabel="Guided tests"
+			listBadge={{
+				iconName: "sparkles-outline",
+				label: "Unlocked",
+				tone: "low",
+			}}
+			rows={rows}
+			callout={{
+				iconName: "heart-outline",
+				label: "Eat more of what you love with confidence.",
+				tone: "sage",
+			}}
+		/>
+	);
+}
+
+type PhaseCardProps = {
+	number: string;
+	eyebrow: string;
+	title: string;
+	listLabel: string;
+	listBadge?: { iconName: IoniconName; label: string; tone: RiskEvidenceTone };
+	rows: PhasePlanRowProps[];
+	callout: { iconName: IoniconName; label: string; tone: CalloutTone };
+};
+
+function PhaseCard({
+	number,
+	eyebrow,
+	title,
+	listLabel,
+	listBadge,
+	rows,
+	callout,
+}: PhaseCardProps) {
+	return (
+		<View style={styles.card}>
+			<View style={styles.header}>
+				<View style={styles.phaseNumberBadge}>
+					<Text style={styles.phaseNumber}>{number}</Text>
+				</View>
+				<View style={styles.headerCopy}>
+					<Text style={styles.eyebrow}>{eyebrow}</Text>
+					<Text style={styles.title}>{title}</Text>
+				</View>
+			</View>
+
+			<View style={styles.listHeader}>
+				<Text style={styles.listLabel}>{listLabel}</Text>
+				{listBadge ? (
+					<TonedBadge
+						iconName={listBadge.iconName}
+						label={listBadge.label}
+						tone={listBadge.tone}
+					/>
+				) : null}
+			</View>
+
+			<View style={styles.listGroup}>
+				{rows.map((row, index) => (
+					<Fragment key={row.title}>
+						{index > 0 ? <View style={styles.listDivider} /> : null}
+						<PhasePlanRow {...row} />
+					</Fragment>
+				))}
+			</View>
+
+			<PhaseCallout
+				iconName={callout.iconName}
+				label={callout.label}
+				tone={callout.tone}
+			/>
+		</View>
+	);
+}
+
+function PhasePlanRow({ title, body, pillLabel, tone, iconName }: PhasePlanRowProps) {
 	const toneColors = riskEvidenceColors(tone);
 
 	return (
@@ -209,10 +182,64 @@ function PhasePlanRow({
 	);
 }
 
+function TonedBadge({
+	iconName,
+	label,
+	tone,
+}: {
+	iconName: IoniconName;
+	label: string;
+	tone: RiskEvidenceTone;
+}) {
+	const toneColors = riskEvidenceColors(tone);
+
+	return (
+		<View style={[styles.tonedBadge, { backgroundColor: toneColors.background }]}>
+			<Ionicons name={iconName} size={15} color={toneColors.foreground} />
+			<Text style={[styles.tonedBadgeText, { color: toneColors.foreground }]}>{label}</Text>
+		</View>
+	);
+}
+
+function PhaseCallout({
+	iconName,
+	label,
+	tone,
+}: {
+	iconName: IoniconName;
+	label: string;
+	tone: CalloutTone;
+}) {
+	const { background, foreground } = calloutColors(tone);
+
+	return (
+		<View style={[styles.callout, { backgroundColor: background }]}>
+			<View style={styles.calloutIcon}>
+				<Ionicons name={iconName} size={17} color={foreground} />
+			</View>
+			<Text style={[styles.calloutText, { color: foreground }]}>{label}</Text>
+		</View>
+	);
+}
+
 function riskEvidenceColors(tone: RiskEvidenceTone) {
 	if (tone === "high") return tokens.color.status.risk.high;
 	if (tone === "medium") return tokens.color.status.risk.medium;
 	return tokens.color.status.risk.low;
+}
+
+function calloutColors(tone: CalloutTone) {
+	if (tone === "warm") {
+		return {
+			background: tokens.color.status.risk.medium.background,
+			foreground: tokens.color.status.risk.medium.foreground,
+		};
+	}
+
+	return {
+		background: tokens.color.status.success.background,
+		foreground: tokens.color.text.accent,
+	};
 }
 
 const styles = StyleSheet.create({
@@ -223,7 +250,7 @@ const styles = StyleSheet.create({
 		borderColor: tokens.color.border.subtle,
 		borderRadius: 30,
 		backgroundColor: tokens.color.surface.card.default,
-		padding: spacing.md,
+		padding: spacing.lg,
 		gap: spacing.md,
 		...tokens.shadow.card,
 	},
@@ -262,62 +289,49 @@ const styles = StyleSheet.create({
 		fontSize: 20,
 		lineHeight: 25,
 	},
-	phaseLimitationIllustration: {
-		width: 92,
-		height: 72,
-		marginLeft: "auto",
-	},
-	panel: {
-		width: "100%",
-		minHeight: 268,
-		borderRadius: 24,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
-		padding: spacing.md,
-		gap: spacing.md,
-	},
-	panelHeader: {
+	listHeader: {
 		flexDirection: "row",
-		alignItems: "flex-start",
+		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.md,
 	},
-	panelTitle: {
+	listLabel: {
 		color: tokens.color.text.primary,
 		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
+		fontSize: 17,
+		lineHeight: 22,
 	},
-	limitPlanBadge: {
+	tonedBadge: {
 		minHeight: 28,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 4,
 		borderRadius: 99,
-		backgroundColor: tokens.color.status.risk.medium.background,
 		paddingHorizontal: spacing.sm,
 	},
-	limitPlanBadgeText: {
-		color: tokens.color.status.risk.medium.foreground,
+	tonedBadgeText: {
 		fontFamily: type.body.bold,
 		fontSize: 12,
 		lineHeight: 16,
 	},
-	evidenceStack: {
-		gap: spacing.xs,
+	listGroup: {
+		borderRadius: 22,
+		backgroundColor: tokens.color.surface.card.warm,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
+	},
+	listDivider: {
+		height: 1,
+		backgroundColor: tokens.color.border.subtle,
+		marginHorizontal: spacing.xs,
 	},
 	evidenceRow: {
-		minHeight: 61,
+		minHeight: 60,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
-		borderRadius: 18,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.xs,
+		paddingHorizontal: spacing.xs,
+		paddingVertical: spacing.sm,
 	},
 	evidenceIcon: {
 		width: 36,
@@ -358,48 +372,22 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
-		borderRadius: 16,
-		backgroundColor: tokens.color.status.success.background,
+		borderRadius: 18,
 		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.xs,
+		paddingVertical: spacing.sm,
 	},
 	calloutIcon: {
-		width: 30,
-		height: 30,
-		borderRadius: 15,
+		width: 32,
+		height: 32,
+		borderRadius: 16,
 		backgroundColor: tokens.color.surface.card.default,
 		alignItems: "center",
 		justifyContent: "center",
 	},
 	calloutText: {
 		flex: 1,
-		color: tokens.color.text.accent,
 		fontFamily: type.body.semibold,
 		fontSize: 13,
 		lineHeight: 18,
-	},
-	reintroductionHeroIcon: {
-		width: 68,
-		height: 68,
-		borderRadius: 24,
-		backgroundColor: tokens.color.status.success.background,
-		alignItems: "center",
-		justifyContent: "center",
-		marginLeft: "auto",
-	},
-	reintroductionPlanBadge: {
-		minHeight: 28,
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 4,
-		borderRadius: 99,
-		backgroundColor: tokens.color.status.success.background,
-		paddingHorizontal: spacing.sm,
-	},
-	reintroductionPlanBadgeText: {
-		color: tokens.color.status.risk.low.foreground,
-		fontFamily: type.body.bold,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 });
