@@ -50,11 +50,16 @@ export function HistoryScreen() {
     () => groupedScans.map((group) => ({ title: group.label, data: group.items })),
     [groupedScans],
   );
+  // keepPreviousData serves the prior filter's pages as placeholder while the
+  // new filter loads — that placeholder must count as "still loading", not as
+  // an empty result, or switching to Menu/Grocery flashes the empty state.
+  const isShowingPlaceholder = historyQuery.isPlaceholderData && historyQuery.isFetching;
   const historyContentState = getHistoryContentState({
     hasVisibleRows: visibleScans.length > 0,
     hasSelectedFallbackRows: selectedFallbackScans.length > 0,
-    hasRemoteData: Boolean(historyQuery.data),
-    isInitialLoading: historyQuery.isLoading || (!historyQuery.data && historyQuery.isFetching),
+    hasRemoteData: Boolean(historyQuery.data) && !isShowingPlaceholder,
+    isInitialLoading:
+      historyQuery.isLoading || isShowingPlaceholder || (!historyQuery.data && historyQuery.isFetching),
   });
 
   useEffect(() => {
