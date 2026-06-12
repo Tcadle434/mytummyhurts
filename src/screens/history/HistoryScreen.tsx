@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { HistoryCard } from '../../components/cards/HistoryCard';
+import { HistoryCard, historyScanDisplayStatus } from '../../components/cards/HistoryCard';
 import { EmptyState, SectionCard, SkeletonBlock, TabScreenHeader } from '../../components/common/UI';
 import { groupHistoryScans, useHistoryFeed } from '../../features/history/hooks';
 import { resolveHistoryView } from '../../features/history/viewState';
@@ -29,6 +29,7 @@ export function HistoryScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const fallbackScans = useAppStore((state) => state.scans);
+  const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
   const [selectedFilter, setSelectedFilter] = useState<HistoryFilter>('food');
   const historyQuery = useHistoryFeed(12, { includeDailyReports: false, scanCategory: selectedFilter });
 
@@ -71,6 +72,35 @@ export function HistoryScreen() {
   }, []);
 
   function openScan(scan: ScanHistorySummary) {
+    const status = historyScanDisplayStatus(scan);
+
+    if (status === 'analyzing') {
+      Alert.alert('Still analyzing', 'This scan is still being processed — check back in a moment.');
+      return;
+    }
+
+    if (status === 'failed') {
+      Alert.alert(
+        'This scan didn\'t finish',
+        'The analysis failed, so there is no result to show. Remove it from your history?',
+        [
+          { text: 'Keep', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => {
+              void deleteScanRecord(scan.id)
+                .then(() => historyQuery.refetch())
+                .catch(() => {
+                  Alert.alert('Could not remove scan', 'Please try again.');
+                });
+            },
+          },
+        ],
+      );
+      return;
+    }
+
     navigation.navigate('ScanResult', { scanId: scan.id });
   }
 

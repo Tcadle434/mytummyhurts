@@ -1513,6 +1513,7 @@ export async function getPaginatedScanHistory(
     includeDailyReports?: boolean;
     scanCategory?: ScanCategory;
     includeSignedUrls?: boolean;
+    includeIncomplete?: boolean;
   } = {},
 ) {
   const page = Math.max(1, Number(options.page ?? 1));
@@ -1527,8 +1528,16 @@ export async function getPaginatedScanHistory(
     .select(
       'id, request_id, source_type, scan_category, analysis_status, title, overall_risk_score, overall_risk_level, created_at, completed_at, local_date, timezone, grocery_product:grocery_products(image_url)',
     )
-    .eq('user_id', userId)
-    .eq('analysis_status', 'completed');
+    .eq('user_id', userId);
+
+  // Home recent-scans reuses this query and only wants finished results;
+  // the history tab opts in to failed/in-flight rows so they are visible
+  // (and deletable) instead of silently vanishing.
+  if (options.includeIncomplete) {
+    scansQuery = scansQuery.in('analysis_status', ['completed', 'processing', 'queued', 'failed']);
+  } else {
+    scansQuery = scansQuery.eq('analysis_status', 'completed');
+  }
 
   if (options.scanCategory) {
     scansQuery = scansQuery.eq('scan_category', options.scanCategory);

@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { SkeletonImage } from '../common/SkeletonImage';
 import { components, palette, spacing, tokens, type } from '../../theme';
@@ -9,8 +10,34 @@ type HistoryCardProps = {
   onOpen: () => void;
 };
 
+const STALE_ANALYSIS_MS = 10 * 60 * 1000;
+
+export type HistoryScanDisplayStatus = 'completed' | 'analyzing' | 'failed';
+
+// In-flight rows older than the longest possible analysis are orphans (the
+// app was killed mid-scan); treat them like failures so they are removable.
+export function historyScanDisplayStatus(scan: ScanHistorySummary, now = Date.now()): HistoryScanDisplayStatus {
+  if (scan.analysisStatus === 'completed') {
+    return 'completed';
+  }
+
+  if (scan.analysisStatus === 'failed') {
+    return 'failed';
+  }
+
+  const startedAt = new Date(scan.createdAt).getTime();
+  if (Number.isFinite(startedAt) && now - startedAt > STALE_ANALYSIS_MS) {
+    return 'failed';
+  }
+
+  return 'analyzing';
+}
+
 export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
+  const status = historyScanDisplayStatus(scan);
   const tone = scan.overallRiskLevel === 'high' ? palette.high : scan.overallRiskLevel === 'medium' ? palette.medium : palette.low;
+  const title = scan.dishName?.trim() || (status === 'completed' ? 'Meal scan' : 'Scan');
+  const metaLine = `${categoryLabel(scan.scanCategory)} • ${sourceLabel(scan.sourceType)} • ${formatTimestamp(scan.createdAt)}`;
 
   return (
     <Pressable onPress={onOpen} style={({ pressed }) => [styles.card, pressed && { opacity: 0.84 }]}>
@@ -20,10 +47,10 @@ export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
           style={styles.thumb}
           resizeMode="cover"
           skeletonRadius={22}
-          accessibilityLabel={`${scan.dishName} photo`}
+          accessibilityLabel={`${title} photo`}
           fallback={
             <View style={styles.placeholderThumb}>
-              <Text style={styles.placeholderLabel}>{scan.dishName.charAt(0).toUpperCase()}</Text>
+              <Text style={styles.placeholderLabel}>{title.charAt(0).toUpperCase()}</Text>
             </View>
           }
         />
@@ -31,20 +58,33 @@ export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
 
       <View style={styles.content}>
         <Text style={styles.title} numberOfLines={1}>
-          {scan.dishName}
+          {title}
         </Text>
-        <Text style={styles.subtitle} numberOfLines={1}>
-          {categoryLabel(scan.scanCategory)}
-          {' • '}
-          {sourceLabel(scan.sourceType)}
-          {' • '}
-          {formatTimestamp(scan.createdAt)}
+        <Text
+          style={[styles.subtitle, status === 'failed' && styles.subtitleFailed]}
+          numberOfLines={1}
+        >
+          {status === 'analyzing'
+            ? `Analyzing… • ${metaLine}`
+            : status === 'failed'
+              ? `Didn't finish — tap to remove • ${metaLine}`
+              : metaLine}
         </Text>
       </View>
 
-      <View style={[styles.scoreRing, { borderColor: tone }]}>
-        <Text style={[styles.scoreLabel, { color: tone }]}>{scan.overallRiskScore}</Text>
-      </View>
+      {status === 'analyzing' ? (
+        <View style={styles.statusSlot}>
+          <ActivityIndicator size="small" color={palette.textMuted} />
+        </View>
+      ) : status === 'failed' ? (
+        <View style={styles.statusSlot}>
+          <Ionicons name="alert-circle-outline" size={26} color={tokens.color.status.danger.foreground} />
+        </View>
+      ) : (
+        <View style={[styles.scoreRing, { borderColor: tone }]}>
+          <Text style={[styles.scoreLabel, { color: tone }]}>{scan.overallRiskScore}</Text>
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -68,6 +108,15 @@ function formatTimestamp(value: string) {
 }
 
 const styles = StyleSheet.create({
+  statusSlot: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subtitleFailed: {
+    color: tokens.color.status.danger.foreground,
+  },
   card: {
     ...components.card.default,
     flexDirection: 'row',
