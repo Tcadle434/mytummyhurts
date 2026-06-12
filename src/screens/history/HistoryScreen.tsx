@@ -39,7 +39,19 @@ export function HistoryScreen() {
         : null,
     [historyQuery.data],
   );
-  const scans = remoteScans ?? fallbackScans;
+  // While keepPreviousData shows the prior filter's pages, those rows filter
+  // to zero for the new category — prefer the store's own rows for instant
+  // content (e.g. grocery scans already cached locally).
+  const isShowingPlaceholder = historyQuery.isPlaceholderData && historyQuery.isFetching;
+  const scans = useMemo(() => {
+    if (!remoteScans) {
+      return fallbackScans;
+    }
+    if (isShowingPlaceholder && filterScans(remoteScans, selectedFilter).length === 0) {
+      return fallbackScans;
+    }
+    return remoteScans;
+  }, [fallbackScans, isShowingPlaceholder, remoteScans, selectedFilter]);
   const visibleScans = useMemo(() => filterScans(scans, selectedFilter), [scans, selectedFilter]);
   const selectedFallbackScans = useMemo(
     () => filterScans(fallbackScans, selectedFilter),
@@ -50,10 +62,6 @@ export function HistoryScreen() {
     () => groupedScans.map((group) => ({ title: group.label, data: group.items })),
     [groupedScans],
   );
-  // keepPreviousData serves the prior filter's pages as placeholder while the
-  // new filter loads — that placeholder must count as "still loading", not as
-  // an empty result, or switching to Menu/Grocery flashes the empty state.
-  const isShowingPlaceholder = historyQuery.isPlaceholderData && historyQuery.isFetching;
   const historyContentState = getHistoryContentState({
     hasVisibleRows: visibleScans.length > 0,
     hasSelectedFallbackRows: selectedFallbackScans.length > 0,
@@ -61,6 +69,8 @@ export function HistoryScreen() {
     isInitialLoading:
       historyQuery.isLoading || isShowingPlaceholder || (!historyQuery.data && historyQuery.isFetching),
   });
+  // (isShowingPlaceholder keeps the empty state suppressed until real
+  // filtered results arrive; fallback rows render as content meanwhile.)
 
   useEffect(() => {
     trackEvent('history_viewed');
