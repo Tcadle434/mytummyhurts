@@ -132,13 +132,23 @@ export function RevenueCatBillingBridge() {
           return;
         }
 
+        const previousBilling = useAppStore.getState().billing;
         const response = await apiClient.syncBilling(request);
         applyBillingState(response.billing);
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-        ]);
+        // Only refetch downstream data when billing actually changed —
+        // otherwise every launch pays for a redundant home/history/insights
+        // round-trip after the sync.
+        const billingChanged =
+          previousBilling.subscriptionStatus !== response.billing.subscriptionStatus ||
+          previousBilling.tokensRemaining !== response.billing.tokensRemaining ||
+          previousBilling.selectedPlan !== response.billing.selectedPlan;
+        if (billingChanged) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          ]);
+        }
       })
       .catch((error) => {
         lastSyncedUserRef.current = null;
