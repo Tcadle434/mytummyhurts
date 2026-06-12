@@ -20,7 +20,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { palette, radii, spacing, tokens, type, type PipState } from '../../theme';
 import { ProfileConfidenceLevel } from '../../types/domain';
 import { ConditionsChipRow } from './ConditionsChipRow';
-import { TriggerProfileRow } from './TriggerProfileRow';
+import { STATUS_META, TriggerProfileRow } from './TriggerProfileRow';
 
 const ROW_STAGGER_MS = 45;
 
@@ -135,10 +135,12 @@ export function InsightsScreen() {
           <View key={section.status} style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
+                <View
+                  style={[styles.sectionDot, { backgroundColor: STATUS_META[section.status].tone.tint }]}
+                />
                 <Text style={styles.sectionTitle}>{section.title}</Text>
-                <View style={styles.sectionCount}>
-                  <Text style={styles.sectionCountText}>{section.entries.length}</Text>
-                </View>
+                <View style={styles.sectionTitleSpacer} />
+                <Text style={styles.sectionCountText}>{section.entries.length}</Text>
               </View>
               <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
             </View>
@@ -246,19 +248,19 @@ function HeroSummaryCard({
         <HeroCount
           value={viewState.counts.confirmed}
           label="Confirmed"
-          color={tokens.color.status.risk.high.foreground}
+          color={tokens.color.status.risk.high.tint}
         />
         <View style={styles.heroDivider} />
         <HeroCount
           value={viewState.counts.suspects}
           label="Under review"
-          color={tokens.color.status.risk.medium.foreground}
+          color={tokens.color.status.risk.medium.tint}
         />
         <View style={styles.heroDivider} />
         <HeroCount
           value={viewState.counts.cleared + viewState.counts.safe}
           label="Cleared & safe"
-          color={tokens.color.status.risk.low.foreground}
+          color={tokens.color.status.risk.low.tint}
         />
       </View>
       <View style={styles.confidenceRow}>
@@ -445,20 +447,19 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     letterSpacing: -0.2,
   },
-  sectionCount: {
-    minWidth: 22,
-    height: 20,
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: tokens.color.surface.card.warm,
+  sectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  sectionTitleSpacer: {
+    flex: 1,
   },
   sectionCountText: {
-    color: tokens.color.text.secondary,
+    color: tokens.color.text.tertiary,
     fontFamily: type.body.bold,
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 13,
+    lineHeight: 17,
   },
   sectionSubtitle: {
     color: tokens.color.text.tertiary,
@@ -478,7 +479,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: tokens.color.surface.card.warm,
+    backgroundColor: palette.sageSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },

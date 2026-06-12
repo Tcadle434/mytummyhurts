@@ -45,7 +45,7 @@ export function TriggerProfileRow({
 	return (
 		<Pressable
 			accessibilityRole="button"
-			accessibilityLabel={`${displayName}, ${meta.pill}. ${detail}`}
+			accessibilityLabel={`${displayName}, ${meta.pill}, ${insight.confidenceLevel} confidence. ${detail}`}
 			onPress={onPress}
 			style={({ pressed }) => [styles.row, pressed && { opacity: 0.9 }]}
 		>
@@ -53,7 +53,7 @@ export function TriggerProfileRow({
 				{emoji ? (
 					<Text style={styles.glyphEmoji}>{emoji}</Text>
 				) : (
-					<Text style={[styles.glyphLabel, { color: meta.tone.foreground }]}>
+					<Text style={[styles.glyphLabel, { color: meta.tone.tint }]}>
 						{displayName.charAt(0)}
 					</Text>
 				)}
@@ -74,23 +74,17 @@ export function TriggerProfileRow({
 					{detail}
 					{conditionLabel ? ` · ${conditionLabel}` : ""}
 				</Text>
-				<View style={styles.confidenceTrack}>
-					{[0, 1, 2].map((segment) => (
-						<View
-							key={segment}
-							style={[
-								styles.confidenceSegment,
-								segment < filledSegments && { backgroundColor: meta.tone.tint },
-							]}
-						/>
-					))}
-					<Text style={styles.confidenceLabel}>
-						{insight.confidenceLevel} confidence
-					</Text>
-				</View>
 			</View>
-			<View style={[styles.statusPill, { backgroundColor: meta.tone.background }]}>
-				<Text style={[styles.statusPillText, { color: meta.tone.foreground }]}>{meta.pill}</Text>
+			<View style={styles.confidenceTrack} accessibilityElementsHidden>
+				{[0, 1, 2].map((segment) => (
+					<View
+						key={segment}
+						style={[
+							styles.confidenceSegment,
+							segment < filledSegments && { backgroundColor: meta.tone.tint },
+						]}
+					/>
+				))}
 			</View>
 			<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
 		</Pressable>
@@ -107,7 +101,7 @@ const styles = StyleSheet.create({
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.md,
 		...tokens.shadow.card,
 	},
 	glyph: {
@@ -167,27 +161,9 @@ const styles = StyleSheet.create({
 		gap: 3,
 	},
 	confidenceSegment: {
-		width: 14,
-		height: 3,
+		width: 12,
+		height: 4,
 		borderRadius: 2,
 		backgroundColor: tokens.color.chart.track,
-	},
-	confidenceLabel: {
-		marginLeft: spacing.xs,
-		color: tokens.color.text.tertiary,
-		fontFamily: type.body.medium,
-		fontSize: 10,
-		lineHeight: 13,
-		textTransform: "capitalize",
-	},
-	statusPill: {
-		borderRadius: 999,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: 4,
-	},
-	statusPillText: {
-		fontFamily: type.body.bold,
-		fontSize: 11,
-		lineHeight: 14,
 	},
 });

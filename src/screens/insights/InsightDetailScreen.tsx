@@ -140,12 +140,12 @@ export function InsightDetailScreen({ route, navigation }: Props) {
           {group ? (
             <Text style={styles.glyphEmoji}>{group.emoji}</Text>
           ) : (
-            <Text style={[styles.glyphLabel, { color: meta.tone.foreground }]}>{displayName.charAt(0)}</Text>
+            <Text style={[styles.glyphLabel, { color: meta.tone.tint }]}>{displayName.charAt(0)}</Text>
           )}
         </View>
         {group ? <Text style={styles.groupSubtitle}>{group.subtitle}</Text> : null}
         <View style={[styles.statusPill, { backgroundColor: meta.tone.background }]}>
-          <Text style={[styles.statusPillText, { color: meta.tone.foreground }]}>
+          <Text style={[styles.statusPillText, { color: meta.tone.tint }]}>
             {STATUS_HEADLINE[status]}
           </Text>
         </View>
@@ -176,13 +176,13 @@ export function InsightDetailScreen({ route, navigation }: Props) {
           <EvidenceCount
             value={insight.negativeEvidenceCount}
             label="Rough-day data points"
-            color={tokens.color.status.risk.high.foreground}
+            color={tokens.color.status.risk.high.tint}
           />
           <View style={styles.evidenceDivider} />
           <EvidenceCount
             value={insight.positiveEvidenceCount}
             label="Calm-day data points"
-            color={tokens.color.status.risk.low.foreground}
+            color={tokens.color.status.risk.low.tint}
           />
         </View>
         {!hasOutcomes ? (

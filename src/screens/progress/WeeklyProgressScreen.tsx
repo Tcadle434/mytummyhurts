@@ -317,9 +317,9 @@ function WeekDayRow({
 }
 
 function scoreTint(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.foreground;
-	if (score >= 34) return tokens.color.status.risk.medium.foreground;
-	return tokens.color.status.risk.high.foreground;
+	if (score >= 67) return tokens.color.status.risk.low.tint;
+	if (score >= 34) return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.high.tint;
 }
 
 function scoreBackground(score: number) {
