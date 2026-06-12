@@ -59,6 +59,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
             learningSyncInFlight: true,
             learningSyncRequestId: optimisticReport.id,
             learningSyncError: null,
+            learningSyncSource: 'daily_report',
           }));
           void Promise.all([
             queryClient.invalidateQueries({ queryKey: queryKeys.history }),
@@ -86,6 +87,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
                 learningSyncInFlight: learningIsQueued,
                 learningSyncRequestId: learningIsQueued ? response.report.id : null,
                 learningSyncError,
+                learningSyncSource: learningIsQueued ? ('daily_report' as const) : null,
               }));
               void Promise.all([
                 queryClient.invalidateQueries({ queryKey: queryKeys.history }),
@@ -126,6 +128,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
                       learningSyncInFlight: false,
                       learningSyncRequestId: null,
                       learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+                      learningSyncSource: null,
                     });
                     return;
                   }
@@ -141,6 +144,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
                     learningSyncInFlight: false,
                     learningSyncRequestId: null,
                     learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+                    learningSyncSource: null,
                   });
                 }
               }
@@ -152,6 +156,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
                       learningSyncRequestId: null,
                       learningSyncError:
                         error instanceof Error ? error.message : 'Daily report could not be saved.',
+                      learningSyncSource: null,
                     }
                   : currentState,
               );

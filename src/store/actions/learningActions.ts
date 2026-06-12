@@ -22,6 +22,7 @@ export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
           learningSyncInFlight: true,
           learningSyncRequestId: syncRequestId,
           learningSyncError: null,
+          learningSyncSource: 'recompute',
         });
 
         const run = async (attempt = 0): Promise<void> => {
@@ -88,6 +89,7 @@ export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
                 ? {
                     learningSyncInFlight: false,
                     learningSyncRequestId: null,
+                    learningSyncSource: null,
                   }
                 : state,
             );

@@ -5,37 +5,32 @@ import { useAppStore } from '../../store/useAppStore';
 
 const LEARNING_SYNC_TOAST_ID = 'learning-sync';
 
+// One auto-dismissing toast per daily-report save. Never sticky: the toast
+// must not depend on the sync settling (a dropped connection once left the
+// "Queueing your learning update" toast on screen permanently).
 export function LearningSyncToastBridge() {
   const learningSyncInFlight = useAppStore((state) => state.learningSyncInFlight);
-  const learningSyncError = useAppStore((state) => state.learningSyncError);
+  const learningSyncSource = useAppStore((state) => state.learningSyncSource);
   const wasInFlight = useRef(false);
 
   useEffect(() => {
-    if (learningSyncInFlight) {
-      wasInFlight.current = true;
-      showToast({
-        id: LEARNING_SYNC_TOAST_ID,
-        message: 'Report saved',
-        detail: 'Queueing your learning update...',
-        tone: 'success',
-        durationMs: null,
-      });
+    if (!learningSyncInFlight) {
+      wasInFlight.current = false;
       return;
     }
 
-    if (!wasInFlight.current) {
+    if (wasInFlight.current || learningSyncSource !== 'daily_report') {
       return;
     }
 
-    wasInFlight.current = false;
+    wasInFlight.current = true;
     showToast({
       id: LEARNING_SYNC_TOAST_ID,
       message: 'Report saved',
-      detail: learningSyncError ? 'We will keep syncing in the background.' : 'Your scores will update shortly.',
-      tone: learningSyncError ? 'info' : 'success',
-      durationMs: learningSyncError ? 3200 : 2400,
+      detail: 'Your scores will update in the background.',
+      tone: 'success',
     });
-  }, [learningSyncError, learningSyncInFlight]);
+  }, [learningSyncInFlight, learningSyncSource]);
 
   return null;
 }

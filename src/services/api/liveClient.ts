@@ -55,18 +55,47 @@ function mergeDisplayName(profile: UserProfile | null, displayName: string | nul
 
 let homeGetInFlight: Promise<HomeResponse> | null = null;
 
-async function invokeFunction<TResponse>(name: string, body: object): Promise<TResponse> {
+// Edge calls ride a raw fetch with no deadline; if the connection dies while
+// the app is backgrounded the promise never settles and anything gated on it
+// (sync flags, toasts) sticks forever. Race every invoke against a timeout.
+const DEFAULT_INVOKE_TIMEOUT_MS = 45_000;
+
+function invokeTimeout(name: string, timeoutMs: number) {
+  let timer: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new ApiError(`The ${name} request timed out. Please try again.`, {
+          code: 'request_timeout',
+          details: { functionName: name, timeoutMs },
+        }),
+      );
+    }, timeoutMs);
+  });
+  return { promise, clear: () => clearTimeout(timer) };
+}
+
+async function invokeFunction<TResponse>(
+  name: string,
+  body: object,
+  options: { timeoutMs?: number } = {},
+): Promise<TResponse> {
   const client = requireSupabaseClient();
   const startedAt = Date.now();
+  const timeout = invokeTimeout(name, options.timeoutMs ?? DEFAULT_INVOKE_TIMEOUT_MS);
   let response: Awaited<ReturnType<typeof client.functions.invoke>>;
 
   try {
-    response = await client.functions.invoke(name, {
-      body,
-    });
+    response = await Promise.race([
+      client.functions.invoke(name, {
+        body,
+      }),
+      timeout.promise,
+    ]);
   } catch (error) {
     throw normalizeRetryableTransportError(error, name) ?? error;
   } finally {
+    timeout.clear();
     if (__DEV__) {
       console.log(`[api] ${name} ${Date.now() - startedAt}ms`);
     }
@@ -159,15 +188,15 @@ async function fetchDisplayName() {
 
 export const liveApiClient = {
   analyzeImage(request: AnalyzeImageRequest) {
-    return invokeFunction<AnalyzeResponse>('scan-analyze-image', request);
+    return invokeFunction<AnalyzeResponse>('scan-analyze-image', request, { timeoutMs: 300_000 });
   },
 
   analyzeText(request: AnalyzeTextRequest) {
-    return invokeFunction<AnalyzeResponse>('scan-analyze-text', request);
+    return invokeFunction<AnalyzeResponse>('scan-analyze-text', request, { timeoutMs: 300_000 });
   },
 
   analyzeBarcode(request: AnalyzeBarcodeRequest) {
-    return invokeFunction<AnalyzeResponse>('scan-analyze-barcode', request);
+    return invokeFunction<AnalyzeResponse>('scan-analyze-barcode', request, { timeoutMs: 300_000 });
   },
 
   async deleteScan(request: ScanDeleteRequest) {
@@ -204,7 +233,7 @@ export const liveApiClient = {
 
   async learningRecompute(request: LearningRecomputeRequest) {
     const [response, displayName] = await Promise.all([
-      invokeFunction<LearningRecomputeResponse>('learning-recompute', request),
+      invokeFunction<LearningRecomputeResponse>('learning-recompute', request, { timeoutMs: 120_000 }),
       fetchDisplayName(),
     ]);
     return {

@@ -32,6 +32,7 @@ export const useAppStore = create<AppStoreState>()(
       learningSyncInFlight: false,
       learningSyncRequestId: null,
       learningSyncError: null,
+      learningSyncSource: null,
       remoteDataLoaded: false,
       reportPayoffBaseline: null,
       ...createOnboardingActions(set, get),

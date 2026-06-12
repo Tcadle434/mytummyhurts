@@ -1,4 +1,6 @@
 import { isLiveBackendConfigured } from '../../config/env';
+import { trackEvent } from '../../services/analytics';
+import { showToast } from '../../services/toast';
 import { getOnboardingMotivationSummary } from '../../data/onboarding';
 import { apiClient } from '../../services/api/client';
 import { HomeResponse } from '../../services/api/contracts';
@@ -7,7 +9,7 @@ import { getRevenueCatBillingSyncRequest } from '../../services/billing/revenueC
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState } from '../helpers';
+import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, apiErrorCode } from '../helpers';
 
 export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -176,82 +178,72 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
           return;
         }
 
+        // Apply the change locally first so Settings saves feel instant; the
+        // server round-trip (5s+ on a cold function) happens in the
+        // background and rolls back on failure.
+        const previousProfile = state.profile;
+        const previousAnswers = state.onboardingAnswers;
+        set((currentState) => applyProfileRequestLocally(currentState, request));
+
         if (!isLiveBackendConfigured || !state.authUser) {
-          set((currentState) => ({
-            onboardingAnswers:
-              typeof request.displayName === 'undefined'
-                ? currentState.onboardingAnswers
-                : {
-                    ...currentState.onboardingAnswers,
-                    displayName: request.displayName?.trim() ?? '',
-                  },
-            profile: currentState.profile
-              ? {
-                  ...currentState.profile,
-                  displayName:
-                    typeof request.displayName === 'undefined'
-                      ? currentState.profile.displayName
-                      : request.displayName?.trim() || undefined,
-                  knownConditions: request.knownConditions ?? currentState.profile.knownConditions,
-                  knownIngredientSensitivities:
-                    request.knownIngredientSensitivities ?? currentState.profile.knownIngredientSensitivities,
-                  commonSymptoms: request.commonSymptoms ?? currentState.profile.commonSymptoms,
-                  symptomFrequency: request.symptomFrequency ?? currentState.profile.symptomFrequency,
-                  symptomSeverityBaseline:
-                    request.symptomSeverityBaseline ?? currentState.profile.symptomSeverityBaseline,
-                  mealContexts: request.mealContexts ?? currentState.profile.mealContexts,
-                  motivation: request.motivation ?? currentState.profile.motivation,
-                  currentEatingPatterns: request.currentEatingPatterns ?? currentState.profile.currentEatingPatterns,
-                  lifestyleFactors: request.lifestyleFactors ?? currentState.profile.lifestyleFactors,
-                  foodsToReintroduce: request.foodsToReintroduce ?? currentState.profile.foodsToReintroduce,
-                  dietPreferences: request.dietPreferences ?? currentState.profile.dietPreferences,
-                }
-              : currentState.profile,
-          }));
           return;
         }
 
         const displayNameOnly = isDisplayNameOnlyProfileRequest(request);
-        const response = await apiClient.updateProfile(request);
-        const nextDisplayName =
-          typeof response.displayName !== 'undefined'
-            ? response.displayName?.trim() || undefined
-            : typeof request.displayName !== 'undefined'
-              ? request.displayName?.trim() || undefined
-              : undefined;
-        set((currentState) => ({
-          onboardingAnswers:
-            typeof request.displayName === 'undefined'
-              ? currentState.onboardingAnswers
-              : {
-                  ...currentState.onboardingAnswers,
-                  displayName: nextDisplayName ?? '',
-                },
-          profile:
-            response.profile ??
-            (currentState.profile
-              ? {
-                  ...currentState.profile,
-                  displayName:
-                    typeof nextDisplayName !== 'undefined' || typeof request.displayName !== 'undefined'
-                      ? nextDisplayName
-                      : currentState.profile.displayName,
-                }
-              : currentState.profile),
-          insights: response.insights ?? currentState.insights,
-          conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
-          billing: response.billing ?? currentState.billing,
-        }));
+        void (async () => {
+          try {
+            const response = await apiClient.updateProfile(request);
+            const nextDisplayName =
+              typeof response.displayName !== 'undefined'
+                ? response.displayName?.trim() || undefined
+                : typeof request.displayName !== 'undefined'
+                  ? request.displayName?.trim() || undefined
+                  : undefined;
+            set((currentState) => ({
+              onboardingAnswers:
+                typeof request.displayName === 'undefined'
+                  ? currentState.onboardingAnswers
+                  : {
+                      ...currentState.onboardingAnswers,
+                      displayName: nextDisplayName ?? '',
+                    },
+              profile:
+                response.profile ??
+                (currentState.profile
+                  ? {
+                      ...currentState.profile,
+                      displayName:
+                        typeof nextDisplayName !== 'undefined' || typeof request.displayName !== 'undefined'
+                          ? nextDisplayName
+                          : currentState.profile.displayName,
+                    }
+                  : currentState.profile),
+              insights: response.insights ?? currentState.insights,
+              conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+              billing: response.billing ?? currentState.billing,
+            }));
 
-        if (displayNameOnly) {
-          patchDisplayNameInInsightsCache(nextDisplayName);
-          return;
-        }
+            if (displayNameOnly) {
+              patchDisplayNameInInsightsCache(nextDisplayName);
+              return;
+            }
 
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-        ]);
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+            ]);
+          } catch (error) {
+            set((currentState) =>
+              revertProfileRequestLocally(currentState, request, previousProfile, previousAnswers),
+            );
+            trackEvent('profile_update_failed', { error_code: apiErrorCode(error) });
+            showToast({
+              message: "Couldn't save your changes",
+              detail: 'Your previous settings were restored — please try again.',
+              tone: 'error',
+            });
+          }
+        })();
       },
       purchaseTopUp: async (tokens) => {
         if (isLiveBackendConfigured && get().authUser) {

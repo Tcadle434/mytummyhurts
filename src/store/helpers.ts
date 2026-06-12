@@ -324,7 +324,7 @@ export function rebuildLocalLearningState(
 
 export function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
   AppStoreState,
-  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'learningSyncInFlight' | 'learningSyncRequestId' | 'learningSyncError' | 'initialServerSyncNeeded' | 'onboardingStage'
+  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'learningSyncInFlight' | 'learningSyncRequestId' | 'learningSyncError' | 'learningSyncSource' | 'initialServerSyncNeeded' | 'onboardingStage'
 > {
   return {
     authUser: null,
@@ -343,7 +343,102 @@ export function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
     learningSyncInFlight: false,
     learningSyncRequestId: null,
     learningSyncError: null,
+    learningSyncSource: null,
     initialServerSyncNeeded: false,
     onboardingStage: 'auth',
+  };
+}
+
+export function applyProfileRequestLocally(
+  currentState: AppStoreState,
+  request: ProfileUpdateRequest,
+): Partial<AppStoreState> {
+  return {
+    onboardingAnswers:
+      typeof request.displayName === 'undefined'
+        ? currentState.onboardingAnswers
+        : {
+            ...currentState.onboardingAnswers,
+            displayName: request.displayName?.trim() ?? '',
+          },
+    profile: currentState.profile
+      ? {
+          ...currentState.profile,
+          displayName:
+            typeof request.displayName === 'undefined'
+              ? currentState.profile.displayName
+              : request.displayName?.trim() || undefined,
+          knownConditions: request.knownConditions ?? currentState.profile.knownConditions,
+          knownIngredientSensitivities:
+            request.knownIngredientSensitivities ?? currentState.profile.knownIngredientSensitivities,
+          commonSymptoms: request.commonSymptoms ?? currentState.profile.commonSymptoms,
+          symptomFrequency: request.symptomFrequency ?? currentState.profile.symptomFrequency,
+          symptomSeverityBaseline:
+            request.symptomSeverityBaseline ?? currentState.profile.symptomSeverityBaseline,
+          mealContexts: request.mealContexts ?? currentState.profile.mealContexts,
+          motivation: request.motivation ?? currentState.profile.motivation,
+          currentEatingPatterns: request.currentEatingPatterns ?? currentState.profile.currentEatingPatterns,
+          lifestyleFactors: request.lifestyleFactors ?? currentState.profile.lifestyleFactors,
+          foodsToReintroduce: request.foodsToReintroduce ?? currentState.profile.foodsToReintroduce,
+          dietPreferences: request.dietPreferences ?? currentState.profile.dietPreferences,
+        }
+      : currentState.profile,
+  };
+}
+
+// Restores only the fields the failed request touched, so a concurrent save
+// to a different settings section is not stomped by this rollback.
+export function revertProfileRequestLocally(
+  currentState: AppStoreState,
+  request: ProfileUpdateRequest,
+  previousProfile: UserProfile,
+  previousAnswers: OnboardingAnswers,
+): Partial<AppStoreState> {
+  return {
+    onboardingAnswers:
+      typeof request.displayName === 'undefined'
+        ? currentState.onboardingAnswers
+        : {
+            ...currentState.onboardingAnswers,
+            displayName: previousAnswers.displayName ?? '',
+          },
+    profile: currentState.profile
+      ? {
+          ...currentState.profile,
+          displayName:
+            typeof request.displayName === 'undefined'
+              ? currentState.profile.displayName
+              : previousProfile.displayName,
+          knownConditions: request.knownConditions
+            ? previousProfile.knownConditions
+            : currentState.profile.knownConditions,
+          knownIngredientSensitivities: request.knownIngredientSensitivities
+            ? previousProfile.knownIngredientSensitivities
+            : currentState.profile.knownIngredientSensitivities,
+          commonSymptoms: request.commonSymptoms
+            ? previousProfile.commonSymptoms
+            : currentState.profile.commonSymptoms,
+          symptomFrequency: request.symptomFrequency
+            ? previousProfile.symptomFrequency
+            : currentState.profile.symptomFrequency,
+          symptomSeverityBaseline: request.symptomSeverityBaseline
+            ? previousProfile.symptomSeverityBaseline
+            : currentState.profile.symptomSeverityBaseline,
+          mealContexts: request.mealContexts ? previousProfile.mealContexts : currentState.profile.mealContexts,
+          motivation: request.motivation ? previousProfile.motivation : currentState.profile.motivation,
+          currentEatingPatterns: request.currentEatingPatterns
+            ? previousProfile.currentEatingPatterns
+            : currentState.profile.currentEatingPatterns,
+          lifestyleFactors: request.lifestyleFactors
+            ? previousProfile.lifestyleFactors
+            : currentState.profile.lifestyleFactors,
+          foodsToReintroduce: request.foodsToReintroduce
+            ? previousProfile.foodsToReintroduce
+            : currentState.profile.foodsToReintroduce,
+          dietPreferences: request.dietPreferences
+            ? previousProfile.dietPreferences
+            : currentState.profile.dietPreferences,
+        }
+      : currentState.profile,
   };
 }

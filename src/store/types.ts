@@ -20,6 +20,7 @@ export type AppStoreState = {
   learningSyncInFlight: boolean;
   learningSyncRequestId: string | null;
   learningSyncError: string | null;
+  learningSyncSource: 'daily_report' | 'recompute' | null;
   remoteDataLoaded: boolean;
   reportPayoffBaseline: ReportPayoffBaseline | null;
   clearReportPayoffBaseline: () => void;
