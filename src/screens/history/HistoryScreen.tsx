@@ -6,12 +6,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HistoryCard } from '../../components/cards/HistoryCard';
 import { EmptyState, SectionCard, SkeletonBlock, TabScreenHeader } from '../../components/common/UI';
 import { groupHistoryScans, useHistoryFeed } from '../../features/history/hooks';
-import { getHistoryContentState } from '../../features/history/viewState';
+import { resolveHistoryView } from '../../features/history/viewState';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { palette, radii, shadows, spacing, type } from '../../theme';
-import { ScanCategory, ScanHistorySummary } from '../../types/domain';
+import { ScanHistorySummary } from '../../types/domain';
 
 type HistoryFilter = 'food' | 'menu' | 'grocery';
 type HistorySection = {
@@ -39,38 +39,32 @@ export function HistoryScreen() {
         : null,
     [historyQuery.data],
   );
-  // While keepPreviousData shows the prior filter's pages, those rows filter
-  // to zero for the new category — prefer the store's own rows for instant
-  // content (e.g. grocery scans already cached locally).
-  const isShowingPlaceholder = historyQuery.isPlaceholderData && historyQuery.isFetching;
-  const scans = useMemo(() => {
-    if (!remoteScans) {
-      return fallbackScans;
-    }
-    if (isShowingPlaceholder && filterScans(remoteScans, selectedFilter).length === 0) {
-      return fallbackScans;
-    }
-    return remoteScans;
-  }, [fallbackScans, isShowingPlaceholder, remoteScans, selectedFilter]);
-  const visibleScans = useMemo(() => filterScans(scans, selectedFilter), [scans, selectedFilter]);
-  const selectedFallbackScans = useMemo(
-    () => filterScans(fallbackScans, selectedFilter),
-    [fallbackScans, selectedFilter],
+  const { visibleScans, contentState: historyContentState } = useMemo(
+    () =>
+      resolveHistoryView({
+        remoteScans,
+        fallbackScans,
+        selectedFilter,
+        isPlaceholderData: historyQuery.isPlaceholderData,
+        isFetching: historyQuery.isFetching,
+        isLoading: historyQuery.isLoading,
+        hasData: Boolean(historyQuery.data),
+      }),
+    [
+      fallbackScans,
+      historyQuery.data,
+      historyQuery.isFetching,
+      historyQuery.isLoading,
+      historyQuery.isPlaceholderData,
+      remoteScans,
+      selectedFilter,
+    ],
   );
   const groupedScans = useMemo(() => groupHistoryScans(visibleScans), [visibleScans]);
   const historySections = useMemo<HistorySection[]>(
     () => groupedScans.map((group) => ({ title: group.label, data: group.items })),
     [groupedScans],
   );
-  const historyContentState = getHistoryContentState({
-    hasVisibleRows: visibleScans.length > 0,
-    hasSelectedFallbackRows: selectedFallbackScans.length > 0,
-    hasRemoteData: Boolean(historyQuery.data) && !isShowingPlaceholder,
-    isInitialLoading:
-      historyQuery.isLoading || isShowingPlaceholder || (!historyQuery.data && historyQuery.isFetching),
-  });
-  // (isShowingPlaceholder keeps the empty state suppressed until real
-  // filtered results arrive; fallback rows render as content meanwhile.)
 
   useEffect(() => {
     trackEvent('history_viewed');
@@ -155,11 +149,6 @@ function HistoryFilterRail({
   );
 }
 
-function filterScans(scans: ScanHistorySummary[], filter: ScanCategory) {
-  return scans
-    .filter((scan) => (scan.scanCategory ?? 'food') === filter)
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-}
 
 function emptyCopy(filter: HistoryFilter) {
   if (filter === 'menu') {
