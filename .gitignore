@@ -44,3 +44,4 @@ ios-build.log
 
 # generated artifacts
 /output
+tmp/
