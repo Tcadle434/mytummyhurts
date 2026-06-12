@@ -9,7 +9,7 @@ import { getRevenueCatBillingSyncRequest } from '../../services/billing/revenueC
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, apiErrorCode } from '../helpers';
+import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, patchProfileRequestInInsightsCache, apiErrorCode } from '../helpers';
 
 export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -184,6 +184,7 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
         const previousProfile = state.profile;
         const previousAnswers = state.onboardingAnswers;
         set((currentState) => applyProfileRequestLocally(currentState, request));
+        patchProfileRequestInInsightsCache(request);
 
         if (!isLiveBackendConfigured || !state.authUser) {
           return;
@@ -236,6 +237,7 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
             set((currentState) =>
               revertProfileRequestLocally(currentState, request, previousProfile, previousAnswers),
             );
+            void queryClient.invalidateQueries({ queryKey: queryKeys.insights });
             trackEvent('profile_update_failed', { error_code: apiErrorCode(error) });
             showToast({
               message: "Couldn't save your changes",

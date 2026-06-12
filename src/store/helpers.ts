@@ -349,6 +349,31 @@ export function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
   };
 }
 
+export function mergeProfileWithRequest(
+  profile: UserProfile,
+  request: ProfileUpdateRequest,
+): UserProfile {
+  return {
+    ...profile,
+    displayName:
+      typeof request.displayName === 'undefined'
+        ? profile.displayName
+        : request.displayName?.trim() || undefined,
+    knownConditions: request.knownConditions ?? profile.knownConditions,
+    knownIngredientSensitivities:
+      request.knownIngredientSensitivities ?? profile.knownIngredientSensitivities,
+    commonSymptoms: request.commonSymptoms ?? profile.commonSymptoms,
+    symptomFrequency: request.symptomFrequency ?? profile.symptomFrequency,
+    symptomSeverityBaseline: request.symptomSeverityBaseline ?? profile.symptomSeverityBaseline,
+    mealContexts: request.mealContexts ?? profile.mealContexts,
+    motivation: request.motivation ?? profile.motivation,
+    currentEatingPatterns: request.currentEatingPatterns ?? profile.currentEatingPatterns,
+    lifestyleFactors: request.lifestyleFactors ?? profile.lifestyleFactors,
+    foodsToReintroduce: request.foodsToReintroduce ?? profile.foodsToReintroduce,
+    dietPreferences: request.dietPreferences ?? profile.dietPreferences,
+  };
+}
+
 export function applyProfileRequestLocally(
   currentState: AppStoreState,
   request: ProfileUpdateRequest,
@@ -361,29 +386,30 @@ export function applyProfileRequestLocally(
             ...currentState.onboardingAnswers,
             displayName: request.displayName?.trim() ?? '',
           },
-    profile: currentState.profile
-      ? {
-          ...currentState.profile,
-          displayName:
-            typeof request.displayName === 'undefined'
-              ? currentState.profile.displayName
-              : request.displayName?.trim() || undefined,
-          knownConditions: request.knownConditions ?? currentState.profile.knownConditions,
-          knownIngredientSensitivities:
-            request.knownIngredientSensitivities ?? currentState.profile.knownIngredientSensitivities,
-          commonSymptoms: request.commonSymptoms ?? currentState.profile.commonSymptoms,
-          symptomFrequency: request.symptomFrequency ?? currentState.profile.symptomFrequency,
-          symptomSeverityBaseline:
-            request.symptomSeverityBaseline ?? currentState.profile.symptomSeverityBaseline,
-          mealContexts: request.mealContexts ?? currentState.profile.mealContexts,
-          motivation: request.motivation ?? currentState.profile.motivation,
-          currentEatingPatterns: request.currentEatingPatterns ?? currentState.profile.currentEatingPatterns,
-          lifestyleFactors: request.lifestyleFactors ?? currentState.profile.lifestyleFactors,
-          foodsToReintroduce: request.foodsToReintroduce ?? currentState.profile.foodsToReintroduce,
-          dietPreferences: request.dietPreferences ?? currentState.profile.dietPreferences,
-        }
-      : currentState.profile,
+    profile: currentState.profile ? mergeProfileWithRequest(currentState.profile, request) : currentState.profile,
   };
+}
+
+// Screens that read profile query-first (Settings summaries, Triggers
+// condition chips) need the optimistic save reflected in the insights cache
+// too, not just the store — otherwise they show stale values until the
+// background refetch lands.
+export function patchProfileRequestInInsightsCache(request: ProfileUpdateRequest) {
+  queryClient.setQueriesData({ queryKey: queryKeys.insights }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object' || !('profile' in cached)) {
+      return cached;
+    }
+
+    const response = cached as { profile?: UserProfile | null };
+    if (!response.profile) {
+      return cached;
+    }
+
+    return {
+      ...response,
+      profile: mergeProfileWithRequest(response.profile, request),
+    };
+  });
 }
 
 // Restores only the fields the failed request touched, so a concurrent save
