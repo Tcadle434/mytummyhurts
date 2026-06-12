@@ -63,10 +63,6 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           throw new Error('Subscription required before running scans.');
         }
 
-        if (state.billing.tokensRemaining <= 0) {
-          throw new Error('You are out of scans for this month. Your allowance refreshes at renewal.');
-        }
-
         const scanStartedAt = now();
         const requestId = scanRequestId(payload);
         const scanCategory = scanCategoryForPayload(payload);

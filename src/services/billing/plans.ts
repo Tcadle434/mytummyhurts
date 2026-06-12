@@ -2,7 +2,9 @@ import { SubscriptionPlan } from '../../types/domain';
 import { env } from '../../config/env';
 
 const trialDays = 7;
-const monthlyAllowance = 40;
+// Effectively-unlimited scans for subscribers: the user never sees a count.
+// Cost control lives server-side as a daily soft/hard cap (scanAnalysis.ts).
+const monthlyAllowance = 1000;
 
 export function getPlanProductId(plan: SubscriptionPlan) {
   return plan === 'monthly' ? env.monthlyProductId : env.annualProductId;

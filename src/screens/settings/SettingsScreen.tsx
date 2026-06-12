@@ -502,7 +502,6 @@ export function SettingsScreen() {
           <ExpandedBlock>
             <MetricRow label="Status" value={prettyStatus(billing.subscriptionStatus)} />
             <MetricRow label="Plan" value={billing.selectedPlan} />
-            <MetricRow label="Scans left this month" value={`${billing.tokensRemaining}`} />
             <MetricRow
               label="Trial ends"
               value={

@@ -13,7 +13,7 @@ import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisp
 
 export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
-  'syncAuthUser' | 'completeAuthSetup' | 'applyBillingState' | 'applyHomeResponse' | 'refreshRemoteState' | 'syncInitialAccountState' | 'updateProfileSettings' | 'purchaseTopUp' | 'signOut'
+  'syncAuthUser' | 'completeAuthSetup' | 'applyBillingState' | 'applyHomeResponse' | 'refreshRemoteState' | 'syncInitialAccountState' | 'updateProfileSettings' | 'signOut'
 > {
   return {
       syncAuthUser: (user) => {
@@ -246,18 +246,6 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
             });
           }
         })();
-      },
-      purchaseTopUp: async (tokens) => {
-        if (isLiveBackendConfigured && get().authUser) {
-          throw new Error('Token top-ups are not configured yet for live App Store purchases.');
-        }
-
-        set((state) => ({
-          billing: {
-            ...state.billing,
-            tokensRemaining: state.billing.tokensRemaining + tokens,
-          },
-        }));
       },
       signOut: () => {
         const selectedPlan = get().billing.selectedPlan;

@@ -66,7 +66,6 @@ export type AppStoreState = {
     consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
     consumedMenuItemSourceIds?: string[];
   }) => Promise<void>;
-  purchaseTopUp: (tokens: number) => Promise<void>;
   signOut: () => void;
 };
 
@@ -78,7 +77,7 @@ export type AppStoreGet = () => AppStoreState;
 export const defaultBillingState: BillingState = {
   selectedPlan: 'annual',
   subscriptionStatus: 'none',
-  tokensRemaining: 40,
-  monthlyAllowance: 40,
+  tokensRemaining: 1000,
+  monthlyAllowance: 1000,
   topUpOptions,
 };

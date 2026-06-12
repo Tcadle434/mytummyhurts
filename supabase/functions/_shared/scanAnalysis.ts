@@ -114,6 +114,54 @@ async function fetchLearningState(admin: SupabaseClient, userId: string) {
   return { profile, insights, conditionInsights };
 }
 
+// Users never see scan counts; cost control is a background daily cap.
+// Past the soft cap each scan logs a system_events row to monitor; past the
+// hard cap (runaway client / abuse) scans are blocked until the window rolls.
+const SCAN_DAILY_SOFT_CAP = Math.max(1, Number(Deno.env.get('SCAN_DAILY_SOFT_CAP') ?? 30));
+const SCAN_DAILY_HARD_CAP = Math.max(SCAN_DAILY_SOFT_CAP, Number(Deno.env.get('SCAN_DAILY_HARD_CAP') ?? 60));
+
+async function assertDailyScanCaps(admin: SupabaseClient, userId: string, requestId: string) {
+  const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await admin
+    .from('scans')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gte('created_at', windowStart);
+
+  if (error) {
+    throw error;
+  }
+
+  const scansInWindow = count ?? 0;
+
+  if (scansInWindow >= SCAN_DAILY_HARD_CAP) {
+    await recordSystemEvent(admin, {
+      eventType: 'scan_daily_hard_cap_blocked',
+      severity: 'warn',
+      userId,
+      operation: 'scan_analysis',
+      requestId,
+      metadata: { scansInWindow, hardCap: SCAN_DAILY_HARD_CAP },
+    });
+    throw new ApiError(
+      "You've hit today's scan limit. Scanning opens back up tomorrow.",
+      429,
+      'daily_scan_limit',
+    );
+  }
+
+  if (scansInWindow >= SCAN_DAILY_SOFT_CAP) {
+    await recordSystemEvent(admin, {
+      eventType: 'scan_daily_soft_cap_exceeded',
+      severity: 'warn',
+      userId,
+      operation: 'scan_analysis',
+      requestId,
+      metadata: { scansInWindow, softCap: SCAN_DAILY_SOFT_CAP },
+    });
+  }
+}
+
 async function assertScanAllowed(admin: SupabaseClient, userId: string) {
   const billing = await getBillingState(admin, userId);
   if (!['trialing', 'active', 'in_grace'].includes(String(billing.subscriptionStatus))) {
@@ -454,6 +502,8 @@ export async function analyzeReservedScan(
   if (options.kind === 'barcode' && !barcode) {
     throw new ApiError('Scan a valid product barcode.', 400, 'invalid_barcode');
   }
+
+  await assertDailyScanCaps(admin, user.id, requestId);
 
   if (options.kind === 'image' && requestedScanCategory === 'auto') {
     await assertScanAllowed(admin, user.id);
