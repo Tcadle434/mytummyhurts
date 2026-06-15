@@ -2241,15 +2241,16 @@ function ruleExceptionApplies(rule: MenuTraitRule, source: string) {
   return menuTextHasAny(normalizeMenuScoringText(source), [...rule.exceptionTerms]);
 }
 
-// Speculative inferences (low-confidence or unclear evidence) never charge
-// full price: half points, hard ceiling of 8. A guessed allium in "natural
-// flavor" must not weigh like confirmed gluten.
-const SPECULATIVE_POINT_CAP = 8;
+// Speculative inferences (low-confidence or unclear evidence) must not drive the
+// risk score at all: a guessed "possible trace of garlic" should read as ~0, not
+// a few points that can tip a gentle dish into "medium". Positive speculative
+// contributors are dropped (callers treat 0 as "no contributor"). Protective
+// (negative) signals are left untouched so they can still lower a gentle dish.
 function applySpeculativeCap(points: number, speculative: boolean) {
   if (!speculative || points <= 0) {
     return points;
   }
-  return Math.min(Math.round(points * 0.5), SPECULATIVE_POINT_CAP);
+  return 0;
 }
 
 function menuRuleContributor(rule: MenuTraitRule, item: MenuItemAnalysis, profile: UserProfile | null): ScoreContributor | null {
@@ -2454,24 +2455,79 @@ function secondaryComponentNames(components: { name: string }[], dishName: strin
     .filter(Boolean);
 }
 
-// Down-weights a contributor whose source maps to a side/condiment/drink so a
-// side of fries does not score like a fried entree.
-function roleWeightForSignal(source: string, item: MenuItemAnalysis): number {
-  const secondary = item.componentRoles?.secondaryComponents ?? [];
-  if (!secondary.length) {
-    return 1;
-  }
+// Structured role/prominence the LLM tags on each ingredient. Used only to
+// DOWN-weight (every value <= 1), so attaching roles can never raise a score.
+const ROLE_FACTOR: Record<string, number> = {
+  main: 1,
+  base: 1,
+  side: 0.6,
+  condiment: 0.5,
+  garnish: 0.4,
+};
+const PROMINENCE_FACTOR: Record<string, number> = {
+  primary: 1,
+  secondary: 0.8,
+  trace: 0.5,
+};
 
+// Weight from the structured role/prominence of the ingredient the modifier's
+// source names. Reads explicit LLM fields instead of guessing main-vs-side from
+// phrasing, so the same ingredient (e.g. vinegar) weighs the same however it is
+// worded. Returns 1 when no role-tagged ingredient matches.
+function structuredRoleWeightForSource(source: string, item: MenuItemAnalysis): number {
   const normalizedSource = normalizeMenuScoringText(source);
   if (!normalizedSource) {
     return 1;
   }
 
-  const isSecondary = secondary.some((name) => {
-    const normalizedName = normalizeMenuScoringText(name);
-    return Boolean(normalizedName) && (normalizedSource.includes(normalizedName) || normalizedName.includes(normalizedSource));
-  });
-  return isSecondary ? SIDE_ROLE_WEIGHT : 1;
+  const ingredients = [...(item.extractedIngredients ?? []), ...(item.inferredIngredients ?? [])];
+  let best = 1;
+  let bestMatchLen = 0;
+  for (const ingredient of ingredients) {
+    if (!ingredient.role && !ingredient.prominence) {
+      continue;
+    }
+    const names = [ingredient.canonicalName, ingredient.rawName]
+      .map((name) => normalizeMenuScoringText(name ?? ''))
+      .filter(Boolean);
+    const matchName = names.find((name) => normalizedSource.includes(name) || name.includes(normalizedSource));
+    if (!matchName) {
+      continue;
+    }
+
+    const weight = clampNumber(
+      (ingredient.role ? ROLE_FACTOR[ingredient.role] ?? 1 : 1) *
+        (ingredient.prominence ? PROMINENCE_FACTOR[ingredient.prominence] ?? 1 : 1),
+      0.3,
+      1,
+    );
+    // Prefer the most specific (longest) ingredient-name match.
+    if (matchName.length > bestMatchLen) {
+      bestMatchLen = matchName.length;
+      best = weight;
+    }
+  }
+
+  return best;
+}
+
+// Down-weights a contributor whose source maps to a side/condiment/garnish so a
+// side of fries does not score like a fried entree. Combines the legacy
+// dish-name-overlap heuristic with the LLM's structured role via min(): the
+// structured role can only lower the weight, never raise it.
+function roleWeightForSignal(source: string, item: MenuItemAnalysis): number {
+  const normalizedSource = normalizeMenuScoringText(source);
+  const secondary = item.componentRoles?.secondaryComponents ?? [];
+  let heuristic = 1;
+  if (secondary.length && normalizedSource) {
+    const isSecondary = secondary.some((name) => {
+      const normalizedName = normalizeMenuScoringText(name);
+      return Boolean(normalizedName) && (normalizedSource.includes(normalizedName) || normalizedName.includes(normalizedSource));
+    });
+    heuristic = isSecondary ? SIDE_ROLE_WEIGHT : 1;
+  }
+
+  return Math.min(heuristic, structuredRoleWeightForSource(source, item));
 }
 
 function foodRiskEntityFromStructured(structuredAnalysis: StructuredAnalysisV2): MenuItemAnalysis {
@@ -2561,26 +2617,10 @@ function conditionRiskScoresFromFoodEntity(
     const conditionProfile = profileForConditionScore(profile, condition);
     const rubric = scoreFoodRiskEntity(foodEntity, conditionProfile, insights);
     const band = matchConditionBand(structuredAnalysis.conditionSeverities, condition);
-    let score = band ? scoreConditionFromBand(band, rubric.contributors, conditionProfile, foodEntity) : rubric.score;
-
-    // Coherence floor (no-band fallback only — an explicit LLM band is the
-    // holistic judgment and stays authoritative): when this condition's own
-    // rubric rules contributed real points (e.g. +20 high-fat citing reflux),
-    // the condition row cannot read "low" while the headline cites it.
-    if (!band) {
-      const relevantPoints = rubric.contributors.reduce((total, contributor) => {
-        const rule = menuTraitRulesByKey.get(contributor.key as MenuBaseFoodCategoryKey | MenuRiskModifierKey);
-        const relevant = rule?.conditionMultipliers?.some((entry) =>
-          entry.conditions.some((name) => canonicalConditionKey(name) === canonicalConditionKey(condition)),
-        );
-        return relevant && contributor.points > 0 ? total + contributor.points : total;
-      }, 0);
-      if (relevantPoints >= 30) {
-        score = Math.max(score, 50);
-      } else if (relevantPoints >= 18) {
-        score = Math.max(score, RISK_LEVEL_MEDIUM_MIN);
-      }
-    }
+    // No coherence floor: the presence of a condition-linked ingredient (e.g. a
+    // little edamame for IBS) must not force the row to "medium". Gentle dishes
+    // are allowed to read low; the band + within-band placement decide the score.
+    const score = band ? scoreConditionFromBand(band, rubric.contributors, conditionProfile, foodEntity) : rubric.score;
 
     accumulator[displayName] = {
       score,

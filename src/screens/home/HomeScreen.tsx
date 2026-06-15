@@ -68,7 +68,9 @@ export function HomeScreen() {
 		}
 	}, []);
 	const hasRemoteQueryData = Boolean(homeQuery.data);
-	const hasFallbackHomeData = Boolean(fallbackProfile || fallbackReports.length || fallbackScans.length);
+	const hasFallbackHomeData = Boolean(
+		fallbackProfile || fallbackReports.length || fallbackScans.length,
+	);
 	const isWaitingForInitialRemoteData = shouldBlockHomeForInitialRemoteData({
 		isLiveBackendConfigured,
 		hasAuthUser: Boolean(authUser),
@@ -82,23 +84,26 @@ export function HomeScreen() {
 		queryError: homeQuery.isError,
 	});
 	const snapshotLearningInFlight =
-		homeQuery.data?.learningStatus === "pending" || homeQuery.data?.learningStatus === "running";
+		homeQuery.data?.learningStatus === "pending" ||
+		homeQuery.data?.learningStatus === "running";
 	const isWaitingForComputedData = isWaitingForInitialRemoteData;
 	const canUseFallbackData = !isWaitingForInitialRemoteData;
 	const scans = useMemo(
-		() => (canUseFallbackData ? homeQuery.data?.recentScans ?? fallbackScans : EMPTY_SCANS),
-		[canUseFallbackData, fallbackScans, homeQuery.data?.recentScans]
+		() => (canUseFallbackData ? (homeQuery.data?.recentScans ?? fallbackScans) : EMPTY_SCANS),
+		[canUseFallbackData, fallbackScans, homeQuery.data?.recentScans],
 	);
 	const dailyReports = useMemo(
 		() =>
-			canUseFallbackData ? homeQuery.data?.dailyReports ?? fallbackReports : EMPTY_DAILY_REPORTS,
-		[canUseFallbackData, fallbackReports, homeQuery.data?.dailyReports]
+			canUseFallbackData
+				? (homeQuery.data?.dailyReports ?? fallbackReports)
+				: EMPTY_DAILY_REPORTS,
+		[canUseFallbackData, fallbackReports, homeQuery.data?.dailyReports],
 	);
 	const profile = canUseFallbackData
-		? homeQuery.data?.profile ?? fallbackProfile
+		? (homeQuery.data?.profile ?? fallbackProfile)
 		: homeQuery.data?.profile;
 	const insights = useMemo(
-		() => (canUseFallbackData ? insightsQuery.data?.insights ?? fallbackInsights : []),
+		() => (canUseFallbackData ? (insightsQuery.data?.insights ?? fallbackInsights) : []),
 		[canUseFallbackData, fallbackInsights, insightsQuery.data?.insights],
 	);
 	const gutScoreProfile = profile;
@@ -127,7 +132,7 @@ export function HomeScreen() {
 				reports: dailyReports,
 				anchorDate: clockNow,
 			}),
-		[clockNow, dailyReports, scans]
+		[clockNow, dailyReports, scans],
 	);
 	const featuredDailyScoreDay = useMemo(
 		() =>
@@ -136,7 +141,7 @@ export function HomeScreen() {
 				reports: dailyReports,
 				localDate: yesterdayDate,
 			}),
-		[dailyReports, scans, yesterdayDate]
+		[dailyReports, scans, yesterdayDate],
 	);
 	useEffect(() => {
 		trackEvent("home_viewed");
@@ -180,7 +185,11 @@ export function HomeScreen() {
 	return (
 		<AppScreen
 			refreshControl={
-				<RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} tintColor={palette.textMuted} />
+				<RefreshControl
+					refreshing={refreshing}
+					onRefresh={() => void handleRefresh()}
+					tintColor={palette.textMuted}
+				/>
 			}
 		>
 			<View style={styles.headerStack}>
@@ -222,10 +231,7 @@ export function HomeScreen() {
 					{!isWaitingForInitialRemoteData && streakCount > 0 ? (
 						<View style={styles.streakRow}>
 							<Text style={styles.streakIcon}>🔥</Text>
-							<Text style={styles.streakText}>
-								{streakCount} day streak
-								<Text style={styles.streakHint}> · any scan or check-in counts</Text>
-							</Text>
+							<Text style={styles.streakText}>{streakCount} day streak</Text>
 						</View>
 					) : null}
 				</View>
@@ -416,7 +422,6 @@ function WeeklyProgressCardSkeleton() {
 	);
 }
 
-
 const styles = StyleSheet.create({
 	headerStack: {
 		gap: spacing.md,
@@ -454,11 +459,6 @@ const styles = StyleSheet.create({
 		color: palette.textMuted,
 		fontFamily: type.body.medium,
 		fontSize: 15,
-	},
-	streakHint: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 12,
 	},
 	iconButton: {
 		width: 42,

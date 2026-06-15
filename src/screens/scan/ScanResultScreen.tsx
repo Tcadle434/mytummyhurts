@@ -2,17 +2,15 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
-import { RiskBar } from '../../components/charts/RiskBar';
 import {
   IngredientsBreakdownCard,
   DietFitCard,
   ScanHeroCard,
   WhyThisScoreCard,
-  type HeroConditionChip,
 } from '../../components/scan-result/ScanResultCards';
 import { ScanResultSkeleton } from '../../components/scan-result/ScanResultSkeleton';
 import { SkeletonImage } from '../../components/common/SkeletonImage';
-import { AppScreen, PipAnalysisCard, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
+import { AppScreen, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useScanDetail } from '../../features/history/hooks';
 import { presentRisk, verdictForRisk } from '../../features/scan/riskPresentation';
@@ -51,14 +49,23 @@ export function ScanResultScreen({ navigation, route }: Props) {
     rawScan?.consumptionStatus ?? 'unknown',
   );
   const riskPresentation = useMemo(() => (scan ? presentRisk(scan) : {}), [scan]);
-  const heroConditionChips = useMemo<HeroConditionChip[]>(
+  const conditionRows = useMemo(
     () =>
-      (scan?.conditionRisks ?? [])
-        .slice()
-        .sort((left, right) => right.riskScore - left.riskScore)
-        .slice(0, 2)
-        .map((risk) => ({ name: formatConditionName(risk.conditionName), level: risk.riskLevel })),
-    [scan?.conditionRisks],
+      (scan?.conditionRisks.length
+        ? scan.conditionRisks
+        : Object.entries(scan?.conditionRiskScores ?? {}).map(([conditionName, risk], index) => ({
+            conditionName,
+            riskScore: risk.score,
+            riskLevel: risk.level,
+            reason: '',
+            displayOrder: index,
+          }))
+      ).map((risk) => ({
+        name: formatConditionName(risk.conditionName),
+        score: risk.riskScore,
+        level: risk.riskLevel,
+      })),
+    [scan?.conditionRisks, scan?.conditionRiskScores],
   );
 
   useEffect(() => {
@@ -145,7 +152,7 @@ export function ScanResultScreen({ navigation, route }: Props) {
         score={scan.overallRiskScore}
         level={scan.overallRiskLevel}
         verdict={verdictForRisk(scan.overallRiskScore, riskPresentation.cautionNote)}
-        conditionChips={heroConditionChips}
+        conditionRows={conditionRows}
         image={
           <SkeletonImage
             uri={scan.groceryProduct?.imageUrl ?? scan.imageUri}
@@ -158,39 +165,16 @@ export function ScanResultScreen({ navigation, route }: Props) {
         }
       />
 
+      <IngredientsBreakdownCard
+        ingredients={ingredientRisks.map(toScanIngredient)}
+      />
+
+      <DietFitCard evaluations={scan.dietEvaluations} />
+
       <WhyThisScoreCard
         contributors={scan.scoreContributors}
         level={scan.overallRiskLevel}
         impactSummary={scan.gutScoreImpact?.summary}
-      />
-
-      <SectionCard>
-        <Text style={shared.sectionTitle}>Conditions impact</Text>
-        <View style={styles.barList}>
-          {(scan.conditionRisks.length
-            ? scan.conditionRisks
-            : Object.entries(scan.conditionRiskScores).map(([conditionName, risk], index) => ({
-                conditionName,
-                riskScore: risk.score,
-                riskLevel: risk.level,
-                reason: '',
-                displayOrder: index,
-              }))
-          ).map((risk) => (
-            <View key={risk.conditionName} style={styles.conditionRow}>
-              <RiskBar label={formatConditionName(risk.conditionName)} score={risk.riskScore} level={risk.riskLevel} />
-              {risk.reason ? <Text style={styles.conditionReason}>{risk.reason}</Text> : null}
-            </View>
-          ))}
-        </View>
-      </SectionCard>
-
-      <DietFitCard evaluations={scan.dietEvaluations} />
-
-      <PipAnalysisCard title="Pip's take" body={scan.pipTake ?? scan.interpretation} />
-
-      <IngredientsBreakdownCard
-        ingredients={ingredientRisks.map(toScanIngredient)}
       />
 
 
@@ -236,18 +220,6 @@ export function ScanResultScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  barList: {
-    gap: spacing.md,
-  },
-  conditionRow: {
-    gap: spacing.xs,
-  },
-  conditionReason: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 12,
-    lineHeight: 17,
-  },
   consumeRow: {
     flexDirection: 'row',
     gap: spacing.sm,

@@ -2081,11 +2081,13 @@ function kindBarAnalysis(): StructuredAnalysisV2 {
   };
 }
 
-Deno.test('GOLDEN [accuracy]: speculative low-confidence inference is capped at 8 points', () => {
+Deno.test('GOLDEN [accuracy]: speculative low-confidence inference is dropped, not scored', () => {
+  // Speculative positives (low-confidence / unclear "possible trace of X") must
+  // contribute ~0 so they can't tip a gentle dish into medium.
   const result = computeScanResultFromStructured(kindBarAnalysis(), ibsGerdProfile(), []);
   const allium = result.scoreContributors?.find((entry) => entry.key === 'allium_garlic_onion');
-  if (allium && allium.points > 8) {
-    throw new Error(`Speculative allium guess charged ${allium.points} points (cap is 8).`);
+  if (allium && allium.points > 0) {
+    throw new Error(`Speculative allium guess charged ${allium.points} points (should be dropped to 0).`);
   }
 });
 
@@ -2128,16 +2130,19 @@ Deno.test('GOLDEN [accuracy]: KIND bar lands low-medium (30-58) for GERD+IBS, no
   }
 });
 
-Deno.test('GOLDEN [accuracy]: without an LLM band, condition rows cohere with their own drivers', () => {
+Deno.test('GOLDEN [accuracy]: a gentle dish with no LLM band is allowed to read low (no coherence floor)', () => {
+  // The coherence floor was removed: presence of a condition-linked ingredient
+  // must not force a gentle, no-band dish up to "medium".
   const result = computeScanResultFromStructured(
-    { ...kindBarAnalysis(), conditionSeverities: [] },
+    { ...grilledChickenRiceAnalysis(), conditionSeverities: [] },
     ibsGerdProfile(),
     [],
   );
-  const gerd = findConditionRow(result, 'gerd');
-  const fat = result.scoreContributors?.find((entry) => entry.key === 'high_fat_or_rich');
-  if (fat && fat.points >= 18 && gerd && gerd.riskScore < 37) {
-    throw new Error(`GERD reads low (${gerd.riskScore}) while high-fat contributes ${fat.points} points.`);
+  if (result.overallRiskScore > 40 || result.overallRiskLevel === 'high') {
+    throw new Error(`Gentle no-band dish should read low, got ${result.overallRiskScore} (${result.overallRiskLevel}).`);
+  }
+  if (!result.conditionRisks.some((row) => row.riskScore < 37)) {
+    throw new Error(`Expected at least one gentle condition row to read low, got ${JSON.stringify(result.conditionRisks)}`);
   }
 });
 
@@ -2159,5 +2164,37 @@ Deno.test('GOLDEN [accuracy]: wheat is fructan-moderate for IBS-only but strong 
   const gsWheat = glutenSensitive.scoreContributors?.find((entry) => entry.key === 'wheat_fructan_or_gluten');
   if (!gsWheat || gsWheat.points < 14) {
     throw new Error(`Gluten-sensitive profile should keep a strong wheat signal, got ${JSON.stringify(gsWheat)}.`);
+  }
+});
+
+Deno.test('GOLDEN [accuracy]: structured ingredient role down-weights a condiment, never inflates', () => {
+  const vinegarModifier = {
+    key: 'acidic_tomato_citrus_vinegar' as const,
+    confidence: 'medium' as const,
+    evidence: 'ingredient' as const,
+    source: 'rice vinegar',
+  };
+  const build = (role: 'main' | 'condiment', prominence: 'primary' | 'trace') =>
+    computeScanResultFromStructured(
+      {
+        ...scannedSushiAnalysis(),
+        components: [],
+        visibleIngredients: [{ ...ingredient('rice vinegar'), role, prominence }],
+        inferredIngredients: [],
+        riskModifiers: [vinegarModifier],
+        conditionSeverities: [],
+      },
+      ibsGerdProfile(),
+      [],
+    );
+
+  const acidic = (result: ReturnType<typeof computeScanResultFromStructured>) =>
+    result.scoreContributors?.find((entry) => entry.key === 'acidic_tomato_citrus_vinegar')?.points ?? 0;
+
+  const asMain = acidic(build('main', 'primary'));
+  const asCondiment = acidic(build('condiment', 'trace'));
+
+  if (!(asCondiment < asMain)) {
+    throw new Error(`Condiment/trace vinegar should weigh less than a main: main=${asMain}, condiment=${asCondiment}`);
   }
 });

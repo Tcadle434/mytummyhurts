@@ -8,6 +8,6 @@ export {
 	type ScanIngredient,
 } from "./common";
 export { ScoreDriversList, WhyThisScoreCard } from "./ScoreDrivers";
-export { RiskHeroCard, ScanHeroCard, type HeroConditionChip } from "./HeroCards";
+export { RiskHeroCard, ScanHeroCard } from "./HeroCards";
 export { DietFitCard, IngredientsBreakdownCard } from "./IngredientCards";
 export { MenuRankingCard, MenuTierCard } from "./MenuCards";

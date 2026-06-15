@@ -211,7 +211,6 @@ const styles = StyleSheet.create({
 		borderRadius: 999,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.app.default,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: 6,
 		maxWidth: "100%",

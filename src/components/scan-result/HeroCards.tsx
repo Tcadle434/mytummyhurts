@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { colorForLevel, type RiskLevel } from "./common";
 import { palette, spacing, tokens, type } from "../../theme";
+import { RiskBar } from "../charts/RiskBar";
 
 function ScoreArc({ score, level }: { score: number; level: RiskLevel }) {
 	const size = 104;
@@ -41,8 +42,6 @@ function ScoreArc({ score, level }: { score: number; level: RiskLevel }) {
 	);
 }
 
-export type HeroConditionChip = { name: string; level: RiskLevel };
-
 // Consolidated result hero shared by food, grocery, and menu results: photo +
 // identity up top, decision block below. Menu results omit the arc and lead
 // with a ranking verdict instead.
@@ -53,7 +52,7 @@ export function ScanHeroCard({
 	score,
 	level,
 	verdict,
-	conditionChips,
+	conditionRows,
 }: {
 	title: string;
 	meta?: string;
@@ -61,7 +60,7 @@ export function ScanHeroCard({
 	score?: number;
 	level?: RiskLevel;
 	verdict?: string;
-	conditionChips?: HeroConditionChip[];
+	conditionRows?: { name: string; score: number; level: RiskLevel }[];
 }) {
 	const showArc = typeof score === "number" && Boolean(level);
 	const levelLabel = level ? `${level.charAt(0).toUpperCase()}${level.slice(1)} risk` : null;
@@ -95,24 +94,15 @@ export function ScanHeroCard({
 				<Text style={styles.heroVerdict}>{verdict}</Text>
 			) : null}
 
-			{conditionChips && conditionChips.length > 0 ? (
-				<View style={styles.heroChipRow}>
-					{conditionChips.map((chip) => {
-						const tone =
-							chip.level === "high"
-								? tokens.color.status.risk.high
-								: chip.level === "medium"
-									? tokens.color.status.risk.medium
-									: tokens.color.status.risk.low;
-						return (
-							<View key={chip.name} style={[styles.heroConditionChip, { backgroundColor: tone.background }]}>
-								<Text style={[styles.heroConditionChipName, { color: tone.foreground }]} numberOfLines={1}>
-									{chip.name}
-								</Text>
-							</View>
-						);
-					})}
-				</View>
+			{conditionRows && conditionRows.length > 0 ? (
+				<>
+					<View style={styles.heroDivider} />
+					<View style={styles.heroConditionRows}>
+						{conditionRows.map((row) => (
+							<RiskBar key={row.name} label={row.name} score={row.score} level={row.level} />
+						))}
+					</View>
+				</>
 			) : null}
 		</View>
 	);
@@ -260,25 +250,8 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		lineHeight: 22,
 	},
-	heroChipRow: {
-		flexDirection: "row",
-		flexWrap: "wrap",
-		gap: spacing.xs,
-	},
-	heroConditionChip: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 6,
-		borderRadius: 999,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: 5,
-		maxWidth: "100%",
-	},
-	heroConditionChipName: {
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
-		flexShrink: 1,
+	heroConditionRows: {
+		gap: spacing.sm,
 	},
 	riskHeroCard: {
 		width: "100%",

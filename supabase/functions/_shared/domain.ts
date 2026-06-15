@@ -221,12 +221,20 @@ export interface MealComponent {
   prepStyle: string[];
 }
 
+// Structured role/prominence the LLM assigns per ingredient. The scorer reads
+// these instead of inferring "main vs side" from free-text phrasing, which used
+// to make the same ingredient swing in weight depending on wording.
+export type IngredientRole = 'main' | 'side' | 'condiment' | 'garnish' | 'base';
+export type IngredientProminence = 'primary' | 'secondary' | 'trace';
+
 export interface ExtractedIngredient {
   rawName: string;
   canonicalName: string;
   confidence: IngredientConfidence;
   component?: string;
   evidence: IngredientEvidence;
+  role?: IngredientRole;
+  prominence?: IngredientProminence;
 }
 
 export type ConditionSeverityBand = 'none' | 'mild' | 'moderate' | 'high' | 'severe';

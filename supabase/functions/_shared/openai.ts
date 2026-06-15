@@ -5,6 +5,8 @@ import {
   ExtractionImageDetail,
   ExtractedIngredient,
   IngredientConfidence,
+  IngredientProminence,
+  IngredientRole,
   IngredientEvidence,
   MenuItemAnalysis,
   MenuScanAnalysis,
@@ -42,11 +44,28 @@ import { fallbackExtractionFromImage, fallbackExtractionFromText } from './scori
 import { withRetry } from './retry.ts';
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') ?? '';
-const EXTRACTION_MODEL = Deno.env.get('OPENAI_EXTRACTION_MODEL') ?? 'gpt-4.1-mini';
-const IMAGE_EXTRACTION_MODEL = Deno.env.get('OPENAI_IMAGE_EXTRACTION_MODEL') ?? 'gpt-4.1-mini';
+const EXTRACTION_MODEL = Deno.env.get('OPENAI_EXTRACTION_MODEL') ?? 'gpt-5.4-mini';
+const IMAGE_EXTRACTION_MODEL = Deno.env.get('OPENAI_IMAGE_EXTRACTION_MODEL') ?? 'gpt-5.4-mini';
 const MENU_EXTRACTION_MODEL = Deno.env.get('OPENAI_MENU_EXTRACTION_MODEL') ?? 'gpt-5-mini';
 const NORMALIZATION_MODEL = Deno.env.get('OPENAI_NORMALIZATION_MODEL') ?? 'gpt-4.1-mini';
-const PROMPT_VERSION = Deno.env.get('OPENAI_EXTRACTION_PROMPT_VERSION') ?? 'mytummyhurts_extract_v2';
+const PROMPT_VERSION = Deno.env.get('OPENAI_EXTRACTION_PROMPT_VERSION') ?? 'mytummyhurts_extract_v3';
+// Determinism lever. GPT-5-family models often reject a non-default temperature,
+// so this is OPT-IN: only sent when OPENAI_EXTRACTION_TEMPERATURE is set to a
+// number. The hard "same input -> same score" guarantee comes from the scoring
+// cache, not temperature. Set to "0" once a model is confirmed to accept it.
+const EXTRACTION_TEMPERATURE = (() => {
+  const raw = Deno.env.get('OPENAI_EXTRACTION_TEMPERATURE');
+  if (raw === undefined || raw.trim() === '') {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+})();
+
+// Spread into food-extraction request bodies; empty unless the env var is set.
+function extractionSamplingFields(): Record<string, number> {
+  return EXTRACTION_TEMPERATURE === undefined ? {} : { temperature: EXTRACTION_TEMPERATURE };
+}
 const IMAGE_DETAIL = (Deno.env.get('OPENAI_IMAGE_DETAIL') ?? 'high') === 'low' ? 'low' : 'high';
 const MENU_IMAGE_DETAIL = (Deno.env.get('OPENAI_MENU_IMAGE_DETAIL') ?? 'high') === 'low' ? 'low' : 'high';
 const OPENAI_TIMEOUT_MS = positiveNumberEnv('OPENAI_TIMEOUT_MS', 65_000);
@@ -163,6 +182,8 @@ type RawIngredientPayload = {
   confidence?: unknown;
   component?: unknown;
   evidence?: unknown;
+  role?: unknown;
+  prominence?: unknown;
 };
 
 type RawComponentPayload = {
@@ -324,8 +345,10 @@ const extractionSchema = {
           confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
           component: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           evidence: { type: 'string', enum: ['visible'] },
+          role: { anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }] },
+          prominence: { anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }] },
         },
-        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence'],
+        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence'],
       },
     },
     inferredIngredients: {
@@ -339,8 +362,10 @@ const extractionSchema = {
           confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
           component: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           evidence: { type: 'string', enum: ['inferred'] },
+          role: { anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }] },
+          prominence: { anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }] },
         },
-        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence'],
+        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence'],
       },
     },
     prepStyle: {
@@ -701,6 +726,16 @@ function coerceComponent(value: RawComponentPayload): MealComponent | null {
   };
 }
 
+function asIngredientRole(value: unknown): IngredientRole | undefined {
+  return value === 'main' || value === 'side' || value === 'condiment' || value === 'garnish' || value === 'base'
+    ? value
+    : undefined;
+}
+
+function asIngredientProminence(value: unknown): IngredientProminence | undefined {
+  return value === 'primary' || value === 'secondary' || value === 'trace' ? value : undefined;
+}
+
 function coerceIngredient(value: RawIngredientPayload, evidence: 'visible' | 'inferred'): ExtractedIngredient | null {
   const rawName = String(value.rawName ?? '').trim();
   const canonicalName = normalizeCanonicalIngredientName(rawName, String(value.canonicalName ?? rawName));
@@ -716,6 +751,8 @@ function coerceIngredient(value: RawIngredientPayload, evidence: 'visible' | 'in
     confidence: asConfidence(value.confidence),
     component: component || undefined,
     evidence,
+    role: asIngredientRole(value.role),
+    prominence: asIngredientProminence(value.prominence),
   };
 }
 
@@ -1322,12 +1359,13 @@ function conditionPromptText(knownConditions: string[] | undefined) {
   return [
     `The person has these gut conditions: ${conditions.join(', ')}.`,
     'For EACH listed condition, add one conditionSeverities entry: condition (exactly as written above), band (none/mild/moderate/high/severe) for how risky THIS food is for THAT condition, drivers (the specific ingredients or prep that justify the band), and a one-line rationale.',
+    'Cite drivers only from the ingredients and prep you returned above — do not introduce new or speculative ingredient names. If no returned ingredient is a meaningful trigger for a condition, use band none or mild with an empty drivers array.',
     'Judge holistically and realistically: an ordinary balanced meal is usually none or mild even if it contains a small amount of a trigger; reserve high or severe for genuinely aggressive or trigger-dense dishes.',
   ].join('\n');
 }
 
 function buildImageSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. Be conservative: do not invent hidden ingredients unless strongly implied by the image. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. For each ingredient set role (main, side, condiment, garnish, or base) and prominence (primary, secondary, or trace) by how central it is and how much is present — a splash of vinegar, a sauce, or a pickled garnish is a condiment or garnish at trace or secondary prominence, not a main. Ground everything in what is actually there: report only ingredients you can see or that are defining, standard components of the identified dish (e.g. rice, rice vinegar, and nori for sushi). Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". If a dish does not contain something by definition (e.g. plain vegetable sushi has no garlic or onion), do not list it. For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
@@ -1407,7 +1445,7 @@ function buildMenuUserPrompt(context: ExtractionContext & { pageCount: number })
 }
 
 function buildTextSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. For each ingredient set role (main, side, condiment, garnish, or base) and prominence (primary, secondary, or trace) by how central it is and how much is present — a splash of vinegar, a sauce, or a pickled garnish is a condiment or garnish at trace or secondary prominence, not a main. Ground everything in what the description actually states or what is a defining, standard component of the named dish. Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
@@ -1526,6 +1564,7 @@ export async function extractMealFromTextWithAudit(
   const userPrompt = buildTextUserPrompt(text, context);
   const request = {
     model: EXTRACTION_MODEL,
+    ...extractionSamplingFields(),
     input: [
       {
         role: 'system',
@@ -1659,6 +1698,7 @@ export async function extractMealFromImageWithAudit(
   const userPrompt = buildImageUserPrompt(context);
   const request = {
     model: IMAGE_EXTRACTION_MODEL,
+    ...extractionSamplingFields(),
     max_output_tokens: OPENAI_IMAGE_MAX_OUTPUT_TOKENS,
     input: [
       {
@@ -1722,6 +1762,7 @@ export async function extractMealFromImagesWithAudit(
   const userPrompt = buildMultiImageUserPrompt({ ...context, imageCount: imageUrls.length });
   const request = {
     model: IMAGE_EXTRACTION_MODEL,
+    ...extractionSamplingFields(),
     max_output_tokens: OPENAI_IMAGE_MAX_OUTPUT_TOKENS,
     input: [
       {

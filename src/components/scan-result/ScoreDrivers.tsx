@@ -5,6 +5,25 @@ import { colorForLevel, isPersonalContributor, prioritizeScoreContributors, type
 import { palette, spacing, tokens, type } from "../../theme";
 import type { ScoreContributor } from "../../types/domain";
 
+// We show a qualitative tier instead of raw points. The internal score is an
+// LLM-anchored, multi-factor number that does NOT equal the sum of these
+// drivers, so printing "+15 / -7" reads as math that doesn't add up. A tier
+// (Major / Moderate / Minor / Eases) communicates each driver's weight and
+// direction without implying an arithmetic that isn't there.
+function driverTier(points: number): { label: string; tone: { tint: string; foreground: string } } {
+	if (points < 0) {
+		return { label: "Eases", tone: tokens.color.status.risk.low };
+	}
+	const magnitude = Math.abs(points);
+	if (magnitude >= 15) {
+		return { label: "Major", tone: tokens.color.status.risk.high };
+	}
+	if (magnitude >= 8) {
+		return { label: "Moderate", tone: tokens.color.status.risk.medium };
+	}
+	return { label: "Minor", tone: tokens.color.status.risk.low };
+}
+
 export function ScoreDriversList({
 	contributors,
 	accentColor,
@@ -22,30 +41,20 @@ export function ScoreDriversList({
 
 	if (compact) {
 		// Weight hierarchy via the app's existing meter idiom: a thin tinted
-		// track under each driver, filled by its share of the largest one.
-		// Thin bars make 100% vs 70% legible; background floods don't.
+		// track under each driver, filled by its share of the largest one. The
+		// tier word on the right names the direction/strength; the bar shows
+		// relative weight. No raw point numbers.
 		const maxMagnitude = Math.max(...contributors.map((driver) => Math.abs(driver.points)), 1);
 		return (
 			<View style={styles.driverList}>
 				{title ? <Text style={styles.insightLabel}>{title}</Text> : null}
 				{contributors.map((driver) => {
 					const magnitude = Math.abs(driver.points);
-					const tone =
-						driver.points < 0
-							? tokens.color.status.risk.low
-							: magnitude >= 15
-								? tokens.color.status.risk.high
-								: magnitude >= 8
-									? tokens.color.status.risk.medium
-									: tokens.color.status.risk.low;
+					const { label: tierLabel, tone } = driverTier(driver.points);
 					const fillPercent = Math.max(6, Math.round((magnitude / maxMagnitude) * 100));
-					const pointsLabel = `${driver.points > 0 ? "+" : ""}${driver.points}`;
 					return (
 						<View key={`${driver.key}-${driver.source}`} style={styles.driverRow}>
 							<View style={styles.scoreDriverLabelRow}>
-								<View style={[styles.driverPointsCircle, { borderColor: tone.tint }]}>
-									<Text style={[styles.driverPoints, { color: tone.tint }]}>{pointsLabel}</Text>
-								</View>
 								<Text style={styles.scoreDriverLabel} numberOfLines={1}>
 									{driver.label}
 								</Text>
@@ -57,6 +66,7 @@ export function ScoreDriversList({
 										</Text>
 									</View>
 								) : null}
+								<Text style={[styles.driverTier, { color: tone.tint }]}>{tierLabel}</Text>
 							</View>
 							{driver.source ? (
 								<Text style={styles.driverSource} numberOfLines={1}>
@@ -82,11 +92,9 @@ export function ScoreDriversList({
 		<View style={styles.scoreDrivers}>
 			{title ? <Text style={styles.insightLabel}>{title}</Text> : null}
 			{contributors.map((driver) => {
-				const driverColor = driver.points >= 0 ? accentColor : palette.primary;
-				const pointsLabel = `${driver.points > 0 ? "+" : ""}${driver.points}`;
+				const { label: tierLabel, tone } = driverTier(driver.points);
 				return (
 					<View key={`${driver.key}-${driver.source}`} style={styles.scoreDriverRow}>
-						<Text style={[styles.scoreDriverPoints, { color: driverColor }]}>{pointsLabel}</Text>
 						<View style={styles.scoreDriverBody}>
 							<View style={styles.scoreDriverLabelRow}>
 								<Text style={styles.scoreDriverLabel}>{driver.label}</Text>
@@ -98,6 +106,7 @@ export function ScoreDriversList({
 										</Text>
 									</View>
 								) : null}
+								<Text style={[styles.driverTier, { color: tone.tint }]}>{tierLabel}</Text>
 							</View>
 							<Text style={styles.scoreDriverReason}>{driver.reason}</Text>
 						</View>
@@ -163,22 +172,14 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.xs,
-		flexWrap: "wrap",
 	},
-	driverPointsCircle: {
-		width: 36,
-		height: 36,
-		borderRadius: 18,
-		borderWidth: 1.5,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	driverPoints: {
-		fontFamily: type.body.bold,
-		fontSize: 12,
-		lineHeight: 16,
+	driverTier: {
+		fontFamily: type.body.semibold,
+		fontSize: 13,
+		lineHeight: 18,
 	},
 	scoreDriverLabel: {
+		flex: 1,
 		color: palette.text,
 		fontFamily: type.body.semibold,
 		fontSize: 13,
@@ -200,14 +201,12 @@ const styles = StyleSheet.create({
 		lineHeight: 14,
 	},
 	driverSource: {
-		marginLeft: 44,
 		color: palette.textMuted,
 		fontFamily: type.body.regular,
 		fontSize: 12,
 		lineHeight: 16,
 	},
 	driverTrack: {
-		marginLeft: 44,
 		height: 4,
 		borderRadius: 2,
 		backgroundColor: tokens.color.chart.track,
@@ -228,12 +227,6 @@ const styles = StyleSheet.create({
 		backgroundColor: tokens.color.surface.card.warm,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.xs,
-	},
-	scoreDriverPoints: {
-		minWidth: 34,
-		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 18,
 	},
 	scoreDriverBody: {
 		flex: 1,
