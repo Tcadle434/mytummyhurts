@@ -24,15 +24,6 @@ export interface AnalyzeImageRequest {
   timezone?: string;
 }
 
-export interface AnalyzeTextRequest {
-  requestId: string;
-  text: string;
-  sourceType: ScanInputPayload['sourceType'];
-  scanCategory?: ScanInputPayload['scanCategory'];
-  localDate?: string;
-  timezone?: string;
-}
-
 export interface AnalyzeBarcodeRequest {
   requestId: string;
   barcode: string;

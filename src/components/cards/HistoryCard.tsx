@@ -1,5 +1,4 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SkeletonImage } from '../common/SkeletonImage';
 import { components, palette, spacing, tokens, type } from '../../theme';
@@ -10,33 +9,9 @@ type HistoryCardProps = {
   onOpen: () => void;
 };
 
-const STALE_ANALYSIS_MS = 10 * 60 * 1000;
-
-export type HistoryScanDisplayStatus = 'completed' | 'analyzing' | 'failed';
-
-// In-flight rows older than the longest possible analysis are orphans (the
-// app was killed mid-scan); treat them like failures so they are removable.
-export function historyScanDisplayStatus(scan: ScanHistorySummary, now = Date.now()): HistoryScanDisplayStatus {
-  if (scan.analysisStatus === 'completed') {
-    return 'completed';
-  }
-
-  if (scan.analysisStatus === 'failed') {
-    return 'failed';
-  }
-
-  const startedAt = new Date(scan.createdAt).getTime();
-  if (Number.isFinite(startedAt) && now - startedAt > STALE_ANALYSIS_MS) {
-    return 'failed';
-  }
-
-  return 'analyzing';
-}
-
 export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
-  const status = historyScanDisplayStatus(scan);
   const tone = scan.overallRiskLevel === 'high' ? palette.high : scan.overallRiskLevel === 'medium' ? palette.medium : palette.low;
-  const title = scan.dishName?.trim() || (status === 'completed' ? 'Meal scan' : 'Scan');
+  const title = scan.dishName?.trim() || 'Meal scan';
   const metaLine = `${categoryLabel(scan.scanCategory)} • ${sourceLabel(scan.sourceType)} • ${formatTimestamp(scan.createdAt)}`;
 
   return (
@@ -60,31 +35,14 @@ export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
         <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
-        <Text
-          style={[styles.subtitle, status === 'failed' && styles.subtitleFailed]}
-          numberOfLines={1}
-        >
-          {status === 'analyzing'
-            ? `Analyzing… • ${metaLine}`
-            : status === 'failed'
-              ? `Didn't finish — tap to remove • ${metaLine}`
-              : metaLine}
+        <Text style={styles.subtitle} numberOfLines={1}>
+          {metaLine}
         </Text>
       </View>
 
-      {status === 'analyzing' ? (
-        <View style={styles.statusSlot}>
-          <ActivityIndicator size="small" color={palette.textMuted} />
-        </View>
-      ) : status === 'failed' ? (
-        <View style={styles.statusSlot}>
-          <Ionicons name="alert-circle-outline" size={26} color={tokens.color.status.danger.foreground} />
-        </View>
-      ) : (
-        <View style={[styles.scoreRing, { borderColor: tone }]}>
-          <Text style={[styles.scoreLabel, { color: tone }]}>{scan.overallRiskScore}</Text>
-        </View>
-      )}
+      <View style={[styles.scoreRing, { borderColor: tone }]}>
+        <Text style={[styles.scoreLabel, { color: tone }]}>{scan.overallRiskScore}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -108,15 +66,6 @@ function formatTimestamp(value: string) {
 }
 
 const styles = StyleSheet.create({
-  statusSlot: {
-    width: 52,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  subtitleFailed: {
-    color: tokens.color.status.danger.foreground,
-  },
   card: {
     ...components.card.default,
     flexDirection: 'row',

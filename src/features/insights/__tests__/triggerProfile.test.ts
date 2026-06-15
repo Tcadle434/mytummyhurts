@@ -157,7 +157,7 @@ describe('evidenceDetailForInsight', () => {
   it('describes suspect progress toward a verdict', () => {
     expect(
       evidenceDetailForInsight(insight({ negativeEvidenceCount: 2, combinedRiskScore: 56 }), 'suspect'),
-    ).toBe('2 of 3 rough-day data points to confirm');
+    ).toBe('2 of 3 paired outcomes logged');
   });
 
   it('describes declared seeds with no outcomes', () => {

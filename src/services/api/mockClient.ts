@@ -4,7 +4,6 @@ import {
   AnalyzeImageRequest,
   AnalyzeBarcodeRequest,
   AnalyzeResponse,
-  AnalyzeTextRequest,
   BillingSyncRequest,
   DeleteAccountResponse,
   ExistingAccountCheckRequest,
@@ -51,28 +50,6 @@ export const mockApiClient = {
       imageUris: request.imagePaths,
       imageDataUrl: request.imageDataUrl,
       imageDataUrls: request.imageDataUrls,
-      scanCategory: request.scanCategory,
-      localDate: request.localDate,
-      timezone: request.timezone,
-    });
-    const state = useAppStore.getState();
-    const scan = state.scans.find((entry) => entry.id === result.scanId)!;
-    return {
-      scanId: result.scanId,
-      tokensRemaining: state.billing.tokensRemaining,
-      scan,
-      billing: state.billing,
-      profile: state.profile,
-      insights: state.insights,
-      conditionInsights: state.conditionInsights,
-    };
-  },
-
-  async analyzeText(request: AnalyzeTextRequest): Promise<AnalyzeResponse> {
-    const result = await useAppStore.getState().analyzeScanInput({
-      requestId: request.requestId,
-      sourceType: request.sourceType,
-      text: request.text,
       scanCategory: request.scanCategory,
       localDate: request.localDate,
       timezone: request.timezone,

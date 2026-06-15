@@ -45,7 +45,6 @@ serve(async (request) => {
     const history = await getPaginatedScanHistory(admin, user.id, {
       ...body,
       scanCategory: scanCategory(body.scanCategory),
-      includeIncomplete: true,
     });
     return jsonResponse({
       page: history.page,

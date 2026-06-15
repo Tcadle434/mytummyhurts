@@ -9,9 +9,10 @@ import { AppScreen, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } 
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { prepareCameraScanImage, prepareScanImageAsset } from '../../services/images/scanImage';
-import { components, palette, radii, shadows, spacing, tokens, type } from '../../theme';
+import { palette, radii, shadows, spacing, tokens, type } from '../../theme';
 import { createScanRequestId } from '../../utils/id';
 import { buildBarcodeScanPayload, buildImageScanPayload } from './scanPayload';
+import { ScanModeTabs, type ScanModeTab } from './ScanModeTabs';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanCapture'>;
 type ImageCaptureMode = 'food' | 'menu';
@@ -27,28 +28,26 @@ const SUPPORTED_BARCODE_TYPES = new Set<string>(BARCODE_TYPES);
 const MODE_COPY: Record<CaptureMode, {
   title: string;
   subtitle: string;
-  pillLabel: string;
-  pillIcon: keyof typeof Ionicons.glyphMap;
 }> = {
   food: {
     title: 'Scan food',
     subtitle: 'Take a photo or upload meal images for analysis.',
-    pillLabel: 'Food scan',
-    pillIcon: 'restaurant-outline',
   },
   menu: {
     title: 'Scan menu',
     subtitle: 'Take or upload menu photos to rank the best options.',
-    pillLabel: 'Menu scan',
-    pillIcon: 'reader-outline',
   },
   barcode: {
     title: 'Scan barcode',
     subtitle: 'Point the camera at a UPC or EAN barcode.',
-    pillLabel: 'Barcode scan',
-    pillIcon: 'barcode-outline',
   },
 };
+
+const MODE_TABS: ScanModeTab<CaptureMode>[] = [
+  { key: 'food', label: 'Food', icon: 'restaurant-outline' },
+  { key: 'menu', label: 'Menu', icon: 'reader-outline' },
+  { key: 'barcode', label: 'Barcode', icon: 'barcode-outline' },
+];
 
 function initialCaptureMode(routeParams: Props['route']['params']): CaptureMode {
   if (routeParams?.initialMode) {
@@ -70,6 +69,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
   const [cameraReady, setCameraReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [barcodeBusy, setBarcodeBusy] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
   const cameraRef = useRef<CameraView | null>(null);
   const modeCopy = MODE_COPY[mode];
   const imageScanCategory: ImageCaptureMode = mode === 'menu' ? 'menu' : 'food';
@@ -207,37 +207,9 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
     trackEvent('barcode_scanner_opened', { entry_point: 'scan_capture' });
   }
 
-  const subActions = [
-    {
-      key: 'food',
-      icon: 'restaurant-outline',
-      label: 'Food scan',
-      disabled: false,
-      onPress: () => void selectScanMode('food'),
-    },
-    {
-      key: 'menu',
-      icon: 'reader-outline',
-      label: 'Menu scan',
-      disabled: false,
-      onPress: () => void selectScanMode('menu'),
-    },
-    {
-      key: 'barcode',
-      icon: 'barcode-outline',
-      label: 'Barcode scan',
-      disabled: barcodeDisabled,
-      onPress: () => void selectScanMode('barcode'),
-    },
-    {
-      key: 'describe',
-      icon: 'create-outline',
-      label: 'Describe meal',
-      disabled: false,
-      onPress: () => navigation.replace('ManualMeal', {}),
-    },
-  ] as const;
-  const visibleSubActions = subActions.filter((action) => action.key !== mode);
+  const modeTabs: ScanModeTab<CaptureMode>[] = MODE_TABS.map((tab) =>
+    tab.key === 'barcode' ? { ...tab, disabled: barcodeDisabled } : tab,
+  );
 
   return (
     <AppScreen scroll={false} contentContainerStyle={styles.content}>
@@ -252,6 +224,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             facing="back"
+            enableTorch={torchOn}
             barcodeScannerSettings={mode === 'barcode' ? { barcodeTypes: [...BARCODE_TYPES] } : undefined}
             onBarcodeScanned={mode === 'barcode' ? handleBarcodeScanned : undefined}
             onCameraReady={() => setCameraReady(true)}
@@ -260,10 +233,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
           <View style={styles.cameraScrim} />
 
           <View style={styles.cameraTopBar}>
-            <View style={styles.modePill}>
-              <Ionicons name={modeCopy.pillIcon} size={16} color={palette.white} />
-              <Text style={styles.modePillLabel}>{modeCopy.pillLabel}</Text>
-            </View>
+            <ScanModeTabs tabs={modeTabs} value={mode} onChange={(next) => void selectScanMode(next)} />
           </View>
 
           {mode === 'barcode' ? (
@@ -278,9 +248,23 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
             </View>
           ) : (
             <View style={styles.previewControls}>
-              <View style={styles.previewControl}>
-                <Ionicons name="flash-outline" size={22} color={palette.white} />
-              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={torchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
+                accessibilityState={{ selected: torchOn }}
+                onPress={() => setTorchOn((current) => !current)}
+                style={({ pressed }) => [
+                  styles.previewControl,
+                  torchOn && styles.previewControlActive,
+                  pressed && { opacity: 0.82 },
+                ]}
+              >
+                <Ionicons
+                  name={torchOn ? 'flash' : 'flash-off-outline'}
+                  size={22}
+                  color={torchOn ? palette.text : palette.white}
+                />
+              </Pressable>
 
               <Pressable
                 accessibilityRole="button"
@@ -314,9 +298,12 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <SectionCard style={styles.permissionCard}>
+          <View style={styles.permissionTabs}>
+            <ScanModeTabs tabs={modeTabs} value={mode} onChange={(next) => void selectScanMode(next)} />
+          </View>
           <Text style={styles.permissionTitle}>Camera access keeps scanning instant.</Text>
           <Text style={styles.permissionBody}>
-            You can still upload photos or describe a meal without camera access.
+            You can still upload photos without camera access.
           </Text>
           <PrimaryButton label="Allow camera" onPress={() => requestPermission()} />
           <SecondaryButton label={imageScanCategory === 'menu' ? 'Upload menu photos' : 'Upload food photos'} onPress={() => void openLibrary()} />
@@ -361,56 +348,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
           <PrimaryButton label={imageScanCategory === 'menu' ? 'Analyze menu' : 'Analyze food'} onPress={analyzeUploadedImages} />
         </SectionCard>
       ) : null}
-
-      <View style={styles.subActionRow}>
-        {visibleSubActions.map((action) => (
-          <SubAction
-            key={action.key}
-            icon={action.icon}
-            label={action.label}
-            disabled={action.disabled}
-            onPress={action.onPress}
-          />
-        ))}
-      </View>
     </AppScreen>
-  );
-}
-
-function SubAction({
-  icon,
-  label,
-  selected,
-  disabled,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  selected?: boolean;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected, disabled }}
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.subAction,
-        selected && styles.subActionSelected,
-        disabled && { opacity: 0.45 },
-        pressed && !disabled && { opacity: 0.84 },
-      ]}
-    >
-      <View style={[styles.subActionIcon, selected && styles.subActionIconSelected]}>
-        <Ionicons name={icon} size={19} color={selected ? palette.white : palette.primary} />
-      </View>
-      <Text style={[styles.subActionLabel, selected && styles.subActionLabelSelected]} numberOfLines={2}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -438,23 +376,6 @@ const styles = StyleSheet.create({
     top: spacing.md,
     left: spacing.md,
     right: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  modePill: {
-    minHeight: 34,
-    borderRadius: radii.pill,
-    backgroundColor: 'rgba(14, 18, 16, 0.56)',
-    paddingHorizontal: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  modePillLabel: {
-    color: palette.white,
-    fontFamily: type.body.bold,
-    fontSize: 13,
   },
   previewControls: {
     position: 'absolute',
@@ -472,6 +393,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(14, 18, 16, 0.58)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  previewControlActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
   },
   shutterOuter: {
     width: 78,
@@ -575,6 +499,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  permissionTabs: {
+    marginBottom: spacing.md,
+  },
   permissionTitle: {
     color: palette.text,
     fontFamily: type.body.bold,
@@ -653,47 +580,5 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(14,18,16,0.72)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  subActionRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  subAction: {
-    flex: 1,
-    minHeight: 78,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: components.card.default.borderColor,
-    backgroundColor: components.card.default.backgroundColor,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.xs,
-    ...shadows.card,
-  },
-  subActionSelected: {
-    backgroundColor: palette.primary,
-    borderColor: palette.primary,
-  },
-  subActionIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: tokens.color.status.success.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  subActionIconSelected: {
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  subActionLabel: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 14,
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  subActionLabelSelected: {
-    color: palette.white,
   },
 });

@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { GutScoreInfoCards } from "../../components/gut-score/GutScoreInfoCards";
-import { Pip } from "../../components/common/Pip";
-import { components, spacing, tokens } from "../../theme";
+import { InfoModal } from "../../components/modals/InfoModal";
+import { spacing, tokens } from "../../theme";
 
 type GutScoreInfoModalProps = {
 	visible: boolean;
@@ -33,71 +33,27 @@ const gutScoreScaleSegments = [
 
 export function GutScoreInfoModal({ visible, onClose }: GutScoreInfoModalProps) {
 	return (
-		<Modal
-			animationType="fade"
-			transparent
+		<InfoModal
 			visible={visible}
-			onRequestClose={onClose}
-			statusBarTranslucent
+			onClose={onClose}
+			title="What is Gut Score?"
+			body="A simple signal of how calm and resilient your gut seems right now."
+			accessibilityLabel="Gut Score explanation"
+			ctaLabel="Got it"
 		>
-			<Pressable style={styles.overlay} onPress={onClose}>
-				<Pressable style={styles.card} onPress={(event) => event.stopPropagation()}>
-					<Pressable
-						accessibilityRole="button"
-						accessibilityLabel="Close Gut Score explanation"
-						hitSlop={10}
-						onPress={onClose}
-						style={({ pressed }) => [styles.closeButton, pressed && { opacity: 0.72 }]}
-					>
-						<Ionicons name="close" size={18} color={tokens.color.icon.primary} />
-					</Pressable>
-					<Pip state="thinking" size={86} style={styles.pip} />
-					<Text style={styles.title}>What is Gut Score?</Text>
-					<Text style={styles.body}>
-						A simple signal of how calm and resilient your gut seems right now.
-					</Text>
-					<GutScoreScale />
-					<GutScoreInfoCards />
-					<View style={styles.accuracyNote}>
-						<Ionicons
-							name="sparkles-outline"
-							size={20}
-							color={tokens.color.accent.brand}
-						/>
-						<Text style={styles.accuracyNoteText}>
-							Your score will get more accurate over time.
-						</Text>
-					</View>
-					<GutScoreModalButton
-						text="Got it"
-						color={tokens.color.accent.brand}
-						onPress={onClose}
-					/>
-				</Pressable>
-			</Pressable>
-		</Modal>
-	);
-}
-
-type GutScoreModalButtonProps = {
-	text: string;
-	color: string;
-	onPress: () => void;
-};
-
-function GutScoreModalButton({ text, color, onPress }: GutScoreModalButtonProps) {
-	return (
-		<Pressable
-			accessibilityRole="button"
-			onPress={onPress}
-			style={({ pressed }) => [
-				styles.modalButton,
-				{ backgroundColor: color },
-				pressed && { opacity: 0.86 },
-			]}
-		>
-			<Text style={styles.modalButtonText}>{text}</Text>
-		</Pressable>
+			<GutScoreScale />
+			<GutScoreInfoCards />
+			<View style={styles.accuracyNote}>
+				<Ionicons
+					name="sparkles-outline"
+					size={20}
+					color={tokens.color.accent.brand}
+				/>
+				<Text style={styles.accuracyNoteText}>
+					Your score will get more accurate over time.
+				</Text>
+			</View>
+		</InfoModal>
 	);
 }
 
@@ -158,49 +114,6 @@ function GutScoreScale() {
 }
 
 const styles = StyleSheet.create({
-	overlay: {
-		flex: 1,
-		alignItems: "center",
-		justifyContent: "center",
-		backgroundColor: tokens.color.overlay.scrim,
-		paddingHorizontal: spacing.lg,
-	},
-	card: {
-		...components.card.default,
-		width: "100%",
-		maxWidth: 360,
-		alignItems: "center",
-		paddingHorizontal: spacing.lg,
-		paddingTop: spacing.xl,
-		paddingBottom: spacing.lg,
-		gap: spacing.sm,
-	},
-	closeButton: {
-		position: "absolute",
-		right: spacing.md,
-		top: spacing.md,
-		width: 34,
-		height: 34,
-		borderRadius: 17,
-		backgroundColor: tokens.color.surface.frosted,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	pip: {
-		marginBottom: spacing.xs,
-	},
-	title: {
-		...tokens.type.title.screen,
-		color: tokens.color.text.primary,
-		textAlign: "center",
-	},
-	body: {
-		...tokens.type.body.default,
-		color: tokens.color.text.secondary,
-		textAlign: "center",
-	},
 	scaleWrap: {
 		width: "100%",
 		marginTop: spacing.sm,
@@ -265,21 +178,6 @@ const styles = StyleSheet.create({
 	accuracyNoteText: {
 		...tokens.type.body.small,
 		color: tokens.color.text.secondary,
-		textAlign: "center",
-	},
-	modalButton: {
-		width: "72%",
-		minHeight: 52,
-		alignItems: "center",
-		justifyContent: "center",
-		borderRadius: tokens.radius.pill,
-		paddingHorizontal: spacing.xl,
-		marginTop: spacing.sm,
-		...tokens.shadow.card,
-	},
-	modalButtonText: {
-		...tokens.type.label.button,
-		color: tokens.color.text.inverse,
 		textAlign: "center",
 	},
 });

@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { NavigationProp, useNavigation } from '@react-navigation/native';
-import { ComponentProps, useEffect, useState } from 'react';
+import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  LayoutChangeEvent,
   Linking,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -32,7 +34,7 @@ import {
   symptomOptions,
 } from '../../data/catalog';
 import { useInsightsData } from '../../features/insights/hooks';
-import { RootStackParamList } from '../../navigation/types';
+import { RootStackParamList, SettingsSection } from '../../navigation/types';
 import { apiClient } from '../../services/api/client';
 import { signOutSupabase } from '../../services/auth';
 import { trackEvent } from '../../services/analytics';
@@ -48,15 +50,13 @@ import { useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
-type ExpandedSection =
-  | 'account'
-  | 'conditions'
-  | 'sensitivities'
-  | 'symptoms'
-  | 'diet'
-  | 'subscription'
-  | 'notifications'
-  | null;
+type ExpandedSection = SettingsSection | null;
+const HEALTH_PROFILE_SECTIONS: SettingsSection[] = [
+  'conditions',
+  'sensitivities',
+  'symptoms',
+  'diet',
+];
 type BusySection =
   | 'account'
   | 'conditions'
@@ -98,6 +98,9 @@ const CUSTOM_CATEGORY_COPY: Record<
 
 export function SettingsScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Settings'>>();
+  const scrollRef = useRef<ScrollView>(null);
+  const healthProfileOffset = useRef(0);
   const authUser = useAppStore((state) => state.authUser);
   const fallbackProfile = useAppStore((state) => state.profile);
   const fallbackBilling = useAppStore((state) => state.billing);
@@ -179,6 +182,25 @@ export function SettingsScreen() {
         setCheckinHour(null);
       });
   }, []);
+
+  useEffect(() => {
+    const section = route.params?.section;
+    if (!section) {
+      return;
+    }
+    setExpandedSection(section);
+    if (!HEALTH_PROFILE_SECTIONS.includes(section)) {
+      return;
+    }
+    // Wait for the section to expand and lay out before scrolling it into view.
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, healthProfileOffset.current - spacing.lg),
+        animated: true,
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [route.params?.section]);
 
   function toggleValue(
     currentValues: string[],
@@ -448,7 +470,7 @@ export function SettingsScreen() {
   const notificationBadge = notificationsEnabled ? 'On' : 'Off';
 
   return (
-    <AppScreen>
+    <AppScreen scrollViewRef={scrollRef}>
       <DetailScreenHeader eyebrow="Settings" />
 
       <View style={styles.profileCard}>
@@ -553,7 +575,12 @@ export function SettingsScreen() {
         ) : null}
       </SectionGroup>
 
-      <SectionGroup label="Health profile">
+      <SectionGroup
+        label="Health profile"
+        onLayout={(event) => {
+          healthProfileOffset.current = event.nativeEvent.layout.y;
+        }}
+      >
         <SettingsRow
           icon="medkit-outline"
           label="Conditions"
@@ -843,9 +870,17 @@ export function SettingsScreen() {
   );
 }
 
-function SectionGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function SectionGroup({
+  label,
+  children,
+  onLayout,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onLayout?: (event: LayoutChangeEvent) => void;
+}) {
   return (
-    <View style={styles.groupBlock}>
+    <View style={styles.groupBlock} onLayout={onLayout}>
       <Text style={styles.groupLabel}>{label.toUpperCase()}</Text>
       <View style={styles.groupCard}>{children}</View>
     </View>

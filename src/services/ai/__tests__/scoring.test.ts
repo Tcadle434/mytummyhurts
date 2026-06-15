@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  computeProfileLearningProgress,
   computeDailyScoreForReport,
   computeGutScoreState,
   recomputeInsights,
@@ -155,6 +156,49 @@ describe('Gut Score baseline', () => {
     });
 
     expectBetween(score.currentScore, 0, 33);
+  });
+});
+
+describe('profile learning progress', () => {
+  it('keeps report-only users early', () => {
+    const progress = computeProfileLearningProgress([], [
+      report('2026-06-01', 2),
+      report('2026-06-02', 8),
+      report('2026-06-03', 4),
+      report('2026-06-04', 7),
+      report('2026-06-05', 3),
+    ]);
+
+    expect(progress.stage).toBe('early');
+    expect(progress.pairedReportDays).toBe(0);
+    expect(progress.pairedMealScans).toBe(0);
+  });
+
+  it('moves to growing only after enough meal scans are paired with symptom reports', () => {
+    const scans = Array.from({ length: 10 }, (_, index) =>
+      scan(`2026-06-${String(index + 1).padStart(2, '0')}`, ['garlic'], 68),
+    );
+    const reports = scans.map((entry) => report(entry.localDate ?? '', 8));
+
+    const progress = computeProfileLearningProgress(scans, reports);
+
+    expect(progress.stage).toBe('growing');
+    expect(progress.pairedReportDays).toBe(10);
+    expect(progress.pairedMealScans).toBe(10);
+  });
+
+  it('requires both report days and meal scans to become confident', () => {
+    const scans = Array.from({ length: 28 }, (_, index) =>
+      scan(`2026-06-${String(Math.floor(index / 2) + 1).padStart(2, '0')}`, ['dairy'], 62),
+    ).map((entry, index) => ({ ...entry, id: `${entry.id}-${index}` }));
+    const reports = Array.from({ length: 14 }, (_, index) =>
+      report(`2026-06-${String(index + 1).padStart(2, '0')}`, index % 2 === 0 ? 8 : 2),
+    );
+
+    const progress = computeProfileLearningProgress(scans, reports);
+
+    expect(progress.stage).toBe('confident');
+    expect(progress.percent).toBe(100);
   });
 });
 

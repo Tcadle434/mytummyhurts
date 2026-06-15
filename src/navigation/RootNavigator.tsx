@@ -8,7 +8,6 @@ import { AuthScreen } from '../screens/auth/AuthScreen';
 import { ExistingAccountSignInScreen } from '../screens/auth/ExistingAccountSignInScreen';
 import { FinishingSetupScreen } from '../screens/auth/FinishingSetupScreen';
 import { HistoryScreen } from '../screens/history/HistoryScreen';
-import { ManualMealScreen } from '../screens/history/ManualMealScreen';
 import { DailyGutReportScreen } from '../screens/home/DailyGutReportScreen';
 import { DailyReportPayoffScreen } from '../screens/home/DailyReportPayoffScreen';
 import { HomeScreen } from '../screens/home/HomeScreen';
@@ -143,7 +142,6 @@ export function RootNavigator() {
         <RootStack.Screen name="DailyReportPayoff" component={DailyReportPayoffScreen} />
         <RootStack.Screen name="WeeklyProgress" component={WeeklyProgressScreen} />
         <RootStack.Screen name="DailyScoreDay" component={DailyScoreDayScreen} />
-        <RootStack.Screen name="ManualMeal" component={ManualMealScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="InsightDetail" component={InsightDetailScreen} />
       </RootStack.Navigator>
     </NavigationContainer>

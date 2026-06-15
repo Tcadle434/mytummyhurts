@@ -67,14 +67,6 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 		navigation.navigate("DailyGutReport", { localDate });
 	}
 
-	function openAddMeal() {
-		trackEvent("manual_meal_opened", {
-			entry_point: "daily_score_day",
-			local_date: localDate,
-		});
-		navigation.navigate("ManualMeal", {});
-	}
-
 	function openScan(scan: ScanHistorySummary) {
 		navigation.navigate("ScanResult", { scanId: scan.id });
 	}
@@ -96,7 +88,6 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 								{day.mealCount} {day.mealCount === 1 ? "logged" : "logged"}
 							</Text>
 						</View>
-						<SectionEditButton label="Add" onPress={openAddMeal} />
 					</View>
 					{day.scans.length ? (
 						<View style={styles.mealList}>

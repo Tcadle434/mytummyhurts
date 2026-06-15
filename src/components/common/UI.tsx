@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ComponentProps, ReactElement, ReactNode, useEffect, useRef } from 'react';
+import { ComponentProps, ReactElement, ReactNode, Ref, useEffect, useRef } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -44,6 +44,7 @@ type AppScreenProps = {
   contentContainerStyle?: StyleProp<ViewStyle>;
   keyboardAvoiding?: boolean;
   refreshControl?: ReactElement<import('react-native').RefreshControlProps>;
+  scrollViewRef?: Ref<ScrollView>;
 };
 
 type ButtonProps = {
@@ -137,6 +138,7 @@ export function AppScreen({
   contentContainerStyle,
   keyboardAvoiding = true,
   refreshControl,
+  scrollViewRef,
 }: AppScreenProps) {
   const insets = useSafeAreaInsets();
 
@@ -146,6 +148,7 @@ export function AppScreen({
 
   const screenContent = scroll ? (
     <ScrollView
+      ref={scrollViewRef}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}

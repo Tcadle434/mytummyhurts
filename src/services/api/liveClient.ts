@@ -7,7 +7,6 @@ import {
   AnalyzeImageRequest,
   AnalyzeBarcodeRequest,
   AnalyzeResponse,
-  AnalyzeTextRequest,
   BillingSyncRequest,
   BillingSyncResponse,
   DailyReportUpsertRequest,
@@ -189,10 +188,6 @@ async function fetchDisplayName() {
 export const liveApiClient = {
   analyzeImage(request: AnalyzeImageRequest) {
     return invokeFunction<AnalyzeResponse>('scan-analyze-image', request, { timeoutMs: 300_000 });
-  },
-
-  analyzeText(request: AnalyzeTextRequest) {
-    return invokeFunction<AnalyzeResponse>('scan-analyze-text', request, { timeoutMs: 300_000 });
   },
 
   analyzeBarcode(request: AnalyzeBarcodeRequest) {

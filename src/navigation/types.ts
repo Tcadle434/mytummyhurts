@@ -17,11 +17,20 @@ export type MainTabParamList = {
   Symptoms: undefined;
 };
 
+export type SettingsSection =
+  | 'account'
+  | 'conditions'
+  | 'sensitivities'
+  | 'symptoms'
+  | 'diet'
+  | 'subscription'
+  | 'notifications';
+
 export type RootStackParamList = {
   OnboardingStack: NavigatorScreenParams<OnboardingStackParamList>;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   FinishingSetup: undefined;
-  Settings: undefined;
+  Settings: { section?: SettingsSection } | undefined;
   ScanCapture: {
     sourceType?: ScanInputPayload['sourceType'];
     manualMode?: boolean;
@@ -46,9 +55,6 @@ export type RootStackParamList = {
   DailyScoreDay: {
     localDate: string;
     weekStart?: string;
-  };
-  ManualMeal: {
-    scanId?: string;
   };
   LegalDocument: {
     document: 'privacy' | 'terms' | 'science';

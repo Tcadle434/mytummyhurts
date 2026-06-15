@@ -58,12 +58,10 @@ const styles = StyleSheet.create({
 		gap: spacing.md,
 	},
 	label: {
-		color: tokens.color.text.tertiary,
+		color: tokens.color.text.primary,
 		fontFamily: type.body.bold,
-		fontSize: 11,
-		lineHeight: 14,
-		letterSpacing: 0.8,
-		textTransform: "uppercase",
+		fontSize: 15,
+		lineHeight: 20,
 	},
 	editButton: {
 		flexDirection: "row",

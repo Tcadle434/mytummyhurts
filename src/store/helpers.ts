@@ -1,7 +1,7 @@
 import { apiClient } from '../services/api/client';
 import { HomeResponse, LearningRecomputeResponse, ProfileUpdateRequest } from '../services/api/contracts';
 import { ApiError } from '../services/api/errors';
-import { buildGutScoreEvent, buildUserProfile, computeGutScoreState, recomputeConditionIngredientInsights, recomputeDailyScores, recomputeInsights } from '../services/ai/scoring';
+import { buildGutScoreEvent, buildUserProfile, computeGutScoreState, computeProfileLearningProgress, recomputeConditionIngredientInsights, recomputeDailyScores, recomputeInsights } from '../services/ai/scoring';
 import { queryClient } from '../services/query/client';
 import { queryKeys } from '../services/query/keys';
 import { ConditionIngredientInsight, DailyGutReport, IngredientInsight, OnboardingAnswers, ScanInputPayload, ScanRecord, ScanCategory, SubscriptionPlan, UserProfile } from '../types/domain';
@@ -290,12 +290,19 @@ export function rebuildLocalLearningState(
   const scoredDailyReports = recomputeDailyScores(dailyReports, scans);
   const insights = recomputeInsights(scans, scoredDailyReports, scoringOptions);
   const conditionInsights = recomputeConditionIngredientInsights(scans, scoredDailyReports, scoringOptions);
-  const profile = state.profile ? buildUserProfile(state.profile.userId, state.onboardingAnswers, insights) : state.profile;
+  const learningProgress = computeProfileLearningProgress(scans, scoredDailyReports);
+  const profile = state.profile
+    ? buildUserProfile(state.profile.userId, state.onboardingAnswers, insights, {
+        learningProgress,
+        reportCount: scoredDailyReports.length,
+      })
+    : state.profile;
 
   if (profile) {
     profile.stomachProfile.metadata.reportCount = scoredDailyReports.length;
-    profile.stomachProfile.metadata.profileConfidenceLevel =
-      scoredDailyReports.length >= 8 ? 'stable' : scoredDailyReports.length >= 1 ? 'growing' : 'early';
+    profile.stomachProfile.metadata.profileConfidenceLevel = learningProgress.stage;
+    profile.stomachProfile.metadata.learningEvidenceDays = learningProgress.pairedReportDays;
+    profile.stomachProfile.metadata.learningMealScanCount = learningProgress.pairedMealScans;
     const gutScore = computeGutScoreState({
       answers: state.onboardingAnswers,
       insights,

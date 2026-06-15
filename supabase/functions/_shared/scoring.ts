@@ -22,6 +22,7 @@ import {
   MenuRiskModifier,
   MenuScanAnalysis,
   PatternStrength,
+  ProfileLearningStage,
   ProfileSeed,
   RiskLevel,
   ScanConditionRisk,
@@ -54,6 +55,26 @@ const fallbackConditions = ['IBS', 'GERD / reflux', 'Lactose intolerance', 'High
 export const GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
 
 type GutScoreMovementSource = 'scan' | 'daily_report' | 'profile' | 'backfill';
+
+export const PROFILE_LEARNING_STAGE_THRESHOLDS = {
+  growing: {
+    pairedReportDays: 5,
+    pairedMealScans: 10,
+  },
+  confident: {
+    pairedReportDays: 14,
+    pairedMealScans: 28,
+  },
+} as const;
+
+export type ProfileLearningProgress = {
+  stage: ProfileLearningStage;
+  percent: number;
+  pairedReportDays: number;
+  pairedMealScans: number;
+  confidentReportDays: number;
+  confidentMealScans: number;
+};
 
 const dishLibrary: Array<{
   dishName: string;
@@ -397,7 +418,9 @@ function baseProfileRiskBonus(profile: UserProfile | null) {
 }
 
 function insightConfidenceWeight(profile: UserProfile | null) {
-  switch (profile?.stomachProfile.metadata.profileConfidenceLevel) {
+  const stage = profile?.stomachProfile.metadata.profileConfidenceLevel as ProfileLearningStage | 'stable' | undefined;
+  switch (stage) {
+    case 'confident':
     case 'stable':
       return 1;
     case 'growing':
@@ -861,16 +884,22 @@ function insightRiskDelta(insight: IngredientInsight, learnedInsightWeight: numb
   return centeredRisk * learnedInsightWeight * insightConfidenceMultiplier(insight.confidenceLevel);
 }
 
-function profileConfidenceLevel(reportCount: number) {
-  if (reportCount >= 8) {
-    return 'stable' as const;
+function profileConfidenceLevel(pairedReportDays = 0, pairedMealScans = 0): ProfileLearningStage {
+  if (
+    pairedReportDays >= PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedReportDays &&
+    pairedMealScans >= PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedMealScans
+  ) {
+    return 'confident';
   }
 
-  if (reportCount >= 1) {
-    return 'growing' as const;
+  if (
+    pairedReportDays >= PROFILE_LEARNING_STAGE_THRESHOLDS.growing.pairedReportDays &&
+    pairedMealScans >= PROFILE_LEARNING_STAGE_THRESHOLDS.growing.pairedMealScans
+  ) {
+    return 'growing';
   }
 
-  return 'early' as const;
+  return 'early';
 }
 
 function toIngredientScores(insights: IngredientInsight[]) {
@@ -1555,6 +1584,7 @@ export function buildUserProfileFromSeed(
   options: {
     priorStomachProfile?: Partial<StomachProfile> | null;
     reportCount?: number;
+    learningProgress?: ProfileLearningProgress;
   } = {},
 ): UserProfile {
   const knownConditions = [...seed.knownConditions].filter(Boolean);
@@ -1595,8 +1625,10 @@ export function buildUserProfileFromSeed(
       conditionSensitivityWeights: derivedConditionSensitivityWeights,
       freeformCustomNotes: priorStomachProfile?.freeformCustomNotes ?? [],
       metadata: {
-        profileConfidenceLevel: profileConfidenceLevel(reportCount),
+        profileConfidenceLevel: options.learningProgress?.stage ?? profileConfidenceLevel(0, 0),
         reportCount,
+        learningEvidenceDays: options.learningProgress?.pairedReportDays ?? 0,
+        learningMealScanCount: options.learningProgress?.pairedMealScans ?? 0,
         learnedIngredientCount: priorInsights.length,
         topTriggers: topTriggerSignals(priorInsights),
         topSafeFoods: topSafeFoodSignals(priorInsights),
@@ -3496,6 +3528,55 @@ function localDateMinusDays(value: string, days: number) {
   const date = new Date(Date.UTC(year ?? new Date().getUTCFullYear(), (month ?? 1) - 1, day ?? 1));
   date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
+}
+
+export function computeProfileLearningProgress(
+  scans: ScanForInsightRecompute[],
+  dailyReports: Array<{ localDate: string }>,
+): ProfileLearningProgress {
+  const scansByDate = new Map<string, Array<{ id: string }>>();
+
+  scans.forEach((scan, index) => {
+    if ((scan.scanCategory ?? 'food') !== 'food') {
+      return;
+    }
+
+    const localDate = localDateFromScan(scan);
+    const current = scansByDate.get(localDate) ?? [];
+    current.push({ id: scan.id ?? `${localDate}:${index}` });
+    scansByDate.set(localDate, current);
+  });
+
+  const pairedReportDates = new Set<string>();
+  const pairedScanIds = new Set<string>();
+
+  for (const report of dailyReports) {
+    for (const window of DAILY_ATTRIBUTION_WINDOWS) {
+      const exposureDate = localDateMinusDays(report.localDate, window.daysPrior);
+      const scansForDate = scansByDate.get(exposureDate) ?? [];
+      if (!scansForDate.length) {
+        continue;
+      }
+
+      pairedReportDates.add(report.localDate);
+      scansForDate.forEach((scan) => pairedScanIds.add(scan.id));
+    }
+  }
+
+  const pairedReportDays = pairedReportDates.size;
+  const pairedMealScans = pairedScanIds.size;
+  const stage = profileConfidenceLevel(pairedReportDays, pairedMealScans);
+  const reportProgress = Math.min(1, pairedReportDays / PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedReportDays);
+  const mealScanProgress = Math.min(1, pairedMealScans / PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedMealScans);
+
+  return {
+    stage,
+    percent: Math.round(clamp((reportProgress * 0.55 + mealScanProgress * 0.45) * 100)),
+    pairedReportDays,
+    pairedMealScans,
+    confidentReportDays: PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedReportDays,
+    confidentMealScans: PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedMealScans,
+  };
 }
 
 function reportSeverityKind(value: number) {

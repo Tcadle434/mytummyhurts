@@ -20,6 +20,7 @@ import {
   buildGutScoreEvent,
   buildUserProfileFromSeed,
   computeGutScoreState,
+  computeProfileLearningProgress,
   flattenStructuredIngredients,
   GUT_SCORE_ALGORITHM_VERSION,
   mergeSeedAndLearnedInsights,
@@ -758,12 +759,14 @@ async function rebuildInsightsAndProfileUnlocked(
   }
 
   const reportCount = scoredDailyReports.length;
+  const learningProgress = computeProfileLearningProgress(recomputeScans, scoredDailyReports);
   const profile = buildUserProfileFromSeed(
     profileSeed,
     insights,
     {
       priorStomachProfile: profileRow.stomach_profile_blob ?? undefined,
       reportCount,
+      learningProgress,
     },
   );
   const previousGutScore = profileRow.stomach_profile_blob?.metadata?.gutScore ?? null;

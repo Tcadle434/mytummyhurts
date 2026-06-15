@@ -28,6 +28,9 @@ export function getHistoryContentState({
 
 export function filterScansByCategory(scans: ScanHistorySummary[], filter: ScanCategory) {
   return scans
+    // History only shows finished scans. Failed/in-flight rows (e.g. a non-food
+    // photo the analyzer correctly rejected) carry nothing the user can act on.
+    .filter((scan) => scan.analysisStatus === 'completed')
     .filter((scan) => (scan.scanCategory ?? 'food') === filter)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 }

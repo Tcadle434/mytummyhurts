@@ -68,7 +68,7 @@ export function evidenceDetailForInsight(insight: IngredientInsight, status: Tri
         ? 'From your profile — no outcomes logged yet'
         : 'Early signal — no outcomes logged yet';
     }
-    return `${Math.min(negative, 3)} of 3 rough-day data points to confirm`;
+    return `${Math.min(negative + positive, 3)} of 3 paired outcomes logged`;
   }
 
   if (status === 'confirmed') {

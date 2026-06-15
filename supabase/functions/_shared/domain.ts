@@ -19,7 +19,8 @@ export type DietPreferenceKey =
   | 'vegetarian'
   | 'vegan';
 export type DietFitStatus = 'fits' | 'caution' | 'does_not_fit' | 'unknown';
-export type ProfileConfidenceLevel = 'early' | 'growing' | 'stable';
+export type ProfileLearningStage = 'early' | 'growing' | 'confident';
+export type ProfileConfidenceLevel = ProfileLearningStage;
 export type InsightConfidenceLevel = 'low' | 'medium' | 'high';
 export type GutScorePhase = 'calm' | 'learn' | 'reintroduce';
 export type GutScoreConfidenceLevel = 'low' | 'medium' | 'high';
@@ -143,6 +144,8 @@ export interface StomachProfile {
   metadata: {
     profileConfidenceLevel: ProfileConfidenceLevel;
     reportCount: number;
+    learningEvidenceDays?: number;
+    learningMealScanCount?: number;
     learnedIngredientCount: number;
     topTriggers: ProfileLearningSignal[];
     topSafeFoods: ProfileLearningSignal[];

@@ -113,22 +113,13 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
                   localDate,
                   timezone,
                 })
-              : imageUris.length || imageDataUrls.length
-              ? await apiClient.analyzeImage({
+              : await apiClient.analyzeImage({
                   requestId,
                   imagePath: imagePaths[0],
                   imagePaths: imagePaths.length > 1 ? imagePaths : undefined,
                   thumbnailImagePaths: hasThumbnailImagePaths ? thumbnailImagePaths : undefined,
                   imageDataUrl: inlineImageDataUrl,
                   imageDataUrls: inlineImageDataUrls.length > 1 ? inlineImageDataUrls : undefined,
-                  sourceType: payload.sourceType,
-                  scanCategory: requestedScanCategory,
-                  localDate,
-                  timezone,
-                })
-              : await apiClient.analyzeText({
-                  requestId,
-                  text: payload.text?.trim() || 'demo meal with rice and chicken',
                   sourceType: payload.sourceType,
                   scanCategory: requestedScanCategory,
                   localDate,
