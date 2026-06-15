@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SkeletonImage } from '../common/SkeletonImage';
-import { components, palette, spacing, tokens, type } from '../../theme';
+import { SkeletonBlock } from '../common/UI';
+import { components, palette, spacing, type } from '../../theme';
 import { ScanHistorySummary } from '../../types/domain';
 
 type HistoryCardProps = {
@@ -23,11 +24,7 @@ export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
           resizeMode="cover"
           skeletonRadius={22}
           accessibilityLabel={`${title} photo`}
-          fallback={
-            <View style={styles.placeholderThumb}>
-              <Text style={styles.placeholderLabel}>{title.charAt(0).toUpperCase()}</Text>
-            </View>
-          }
+          fallback={<SkeletonBlock width={44} height={44} radius={22} />}
         />
       </View>
 
@@ -82,19 +79,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-  },
-  placeholderThumb: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: tokens.color.status.success.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderLabel: {
-    color: palette.primaryDark,
-    fontFamily: type.body.bold,
-    fontSize: 18,
   },
   content: {
     flex: 1,

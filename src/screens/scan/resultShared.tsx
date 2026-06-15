@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { palette, radii, spacing, tokens, type } from '../../theme';
+import { SkeletonBlock } from '../../components/common/UI';
 import type { ScanIngredient } from '../../components/scan-result/ScanResultCards';
 import type { ScanIngredientRisk } from '../../types/domain';
 
@@ -60,21 +61,10 @@ export function formatTimestamp(value: string) {
   });
 }
 
-export function ResultImageFallback({
-  title,
-  subtitle,
-  compact = false,
-}: {
-  title: string;
-  subtitle?: string;
-  compact?: boolean;
-}) {
-  return (
-    <View style={[styles.fallbackImage, compact && styles.fallbackImageCompact]}>
-      <Text style={[styles.fallbackTitle, compact && styles.fallbackTitleCompact]}>{title.charAt(0).toUpperCase()}</Text>
-      {subtitle ? <Text style={styles.fallbackSubtitle}>{subtitle}</Text> : null}
-    </View>
-  );
+// Placeholder shown while the result image loads (or when a scan has no image).
+// A calm skeleton fills the slot — better than a letter that flashes before the photo.
+export function ResultImageFallback() {
+  return <SkeletonBlock width="100%" height="100%" radius={18} />;
 }
 
 export const sharedResultStyles = StyleSheet.create({
@@ -140,31 +130,5 @@ const styles = StyleSheet.create({
     fontFamily: type.body.semibold,
     fontSize: 16,
     letterSpacing: 0.1,
-  },
-  fallbackImage: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 28,
-    backgroundColor: components.profileMeter.centerBackground,
-    paddingHorizontal: spacing.md,
-    gap: 6,
-  },
-  fallbackImageCompact: {
-    width: 104,
-    height: 104,
-  },
-  fallbackTitle: {
-    color: palette.primaryDark,
-    fontFamily: type.body.bold,
-    fontSize: 32,
-  },
-  fallbackTitleCompact: {
-    fontSize: 40,
-  },
-  fallbackSubtitle: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 12,
-    textAlign: 'center',
   },
 });

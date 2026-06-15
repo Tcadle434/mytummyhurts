@@ -12,6 +12,7 @@ import { isLiveBackendConfigured } from "../../config/env";
 import { useHomeData } from "../../features/home/hooks";
 import { computeEngagementStreak } from "../../features/home/streak";
 import { shouldBlockHomeForInitialRemoteData } from "../../features/home/viewState";
+import { useInsightsData } from "../../features/insights/hooks";
 import { buildTriggerProfileViewState } from "../../features/insights/triggerProfile";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
@@ -39,7 +40,7 @@ export function HomeScreen() {
 	const fallbackScans = useAppStore((state) => state.scans);
 	const fallbackReports = useAppStore((state) => state.dailyReports);
 	const fallbackProfile = useAppStore((state) => state.profile);
-	const insights = useAppStore((state) => state.insights);
+	const fallbackInsights = useAppStore((state) => state.insights);
 	const authUser = useAppStore((state) => state.authUser);
 	const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
 	const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
@@ -53,6 +54,7 @@ export function HomeScreen() {
 
 	const greeting = localDaypartGreeting(clockNow);
 	const homeQuery = useHomeData();
+	const insightsQuery = useInsightsData("");
 	const [refreshing, setRefreshing] = useState(false);
 	const handleRefresh = useCallback(async () => {
 		setRefreshing(true);
@@ -95,6 +97,10 @@ export function HomeScreen() {
 	const profile = canUseFallbackData
 		? homeQuery.data?.profile ?? fallbackProfile
 		: homeQuery.data?.profile;
+	const insights = useMemo(
+		() => (canUseFallbackData ? insightsQuery.data?.insights ?? fallbackInsights : []),
+		[canUseFallbackData, fallbackInsights, insightsQuery.data?.insights],
+	);
 	const gutScoreProfile = profile;
 	const yesterdayDate = yesterdayLocalDate(clockNow);
 	const yesterdayReport = dailyReports.find((report) => report.localDate === yesterdayDate);

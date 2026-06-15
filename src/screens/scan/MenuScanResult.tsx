@@ -86,7 +86,7 @@ export function MenuScanResult({
             resizeMode="cover"
             skeletonRadius={18}
             accessibilityLabel={`${menu.menuTitle} photo`}
-            fallback={<ResultImageFallback title="Menu" compact subtitle={undefined} />}
+            fallback={<ResultImageFallback />}
           />
         }
       />

@@ -153,13 +153,7 @@ export function ScanResultScreen({ navigation, route }: Props) {
             resizeMode="cover"
             skeletonRadius={18}
             accessibilityLabel={`${scan.dishName} photo`}
-            fallback={
-              <ResultImageFallback
-                title={scan.dishName}
-                compact
-                subtitle={undefined}
-              />
-            }
+            fallback={<ResultImageFallback />}
           />
         }
       />

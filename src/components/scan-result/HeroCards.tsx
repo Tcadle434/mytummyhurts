@@ -109,9 +109,6 @@ export function ScanHeroCard({
 								<Text style={[styles.heroConditionChipName, { color: tone.foreground }]} numberOfLines={1}>
 									{chip.name}
 								</Text>
-								<Text style={[styles.heroConditionChipLevel, { color: tone.foreground }]}>
-									{chip.level.charAt(0).toUpperCase() + chip.level.slice(1)}
-								</Text>
 							</View>
 						);
 					})}
@@ -282,11 +279,6 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 16,
 		flexShrink: 1,
-	},
-	heroConditionChipLevel: {
-		fontFamily: type.body.bold,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 	riskHeroCard: {
 		width: "100%",

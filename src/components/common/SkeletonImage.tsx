@@ -21,6 +21,13 @@ type SkeletonImageProps = {
   accessibilityLabel?: string;
 };
 
+// URIs that have decoded successfully at least once this session. React Native
+// keeps the bitmap cached, so re-rendering or remounting a card (e.g. switching
+// scan tabs) re-displays the image instantly. Without this, `loading` would flip
+// back to true on every remount and flash the grey skeleton over the photo —
+// the "images grey out when I switch tabs" bug.
+const loadedUris = new Set<string>();
+
 export function SkeletonImage({
   uri,
   style,
@@ -29,11 +36,11 @@ export function SkeletonImage({
   skeletonRadius = radii.md,
   accessibilityLabel,
 }: SkeletonImageProps) {
-  const [loading, setLoading] = useState(Boolean(uri));
+  const [loaded, setLoaded] = useState(() => (uri ? loadedUris.has(uri) : false));
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    setLoading(Boolean(uri));
+    setLoaded(uri ? loadedUris.has(uri) : false);
     setFailed(false);
   }, [uri]);
 
@@ -48,21 +55,20 @@ export function SkeletonImage({
         resizeMode={resizeMode}
         accessibilityLabel={accessibilityLabel}
         style={[StyleSheet.absoluteFill, styles.image]}
-        onLoadStart={() => setLoading(true)}
-        onLoadEnd={() => setLoading(false)}
-        onError={() => {
-          setFailed(true);
-          setLoading(false);
+        onLoad={() => {
+          loadedUris.add(uri);
+          setLoaded(true);
         }}
+        onError={() => setFailed(true)}
       />
-      {loading ? (
+      {loaded ? null : (
         <SkeletonBlock
           width="100%"
           height="100%"
           radius={skeletonRadius}
           style={StyleSheet.absoluteFill}
         />
-      ) : null}
+      )}
     </View>
   );
 }
