@@ -1,11 +1,17 @@
-import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
 import { makeRedirectUri } from 'expo-auth-session';
-import { Session } from '@supabase/supabase-js';
+import * as WebBrowser from 'expo-web-browser';
 
 import { env, isGoogleAuthConfigured } from '../../config/env';
-import { requireSupabaseClient, supabase } from '../supabase/client';
 import { useAppStore } from '../../store/useAppStore';
-import { AppUser, AuthProvider } from '../../types/domain';
+import { createId } from '../../utils/id';
+import {
+  nestEmailSignIn,
+  nestEmailSignUp,
+  nestGoogleSignIn,
+  nestRestoreSession,
+  nestSignOut,
+} from './nestSession';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -14,102 +20,34 @@ const redirectTo = makeRedirectUri({
   path: 'auth/callback',
 });
 
-function deriveProvider(session: Session): AuthProvider {
-  const provider =
-    session.user.app_metadata.provider ??
-    session.user.identities?.[0]?.provider ??
-    'email';
+const GOOGLE_DISCOVERY: AuthSession.DiscoveryDocument = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+};
 
-  if (provider === 'google' || provider === 'apple') {
-    return provider;
+async function getGoogleIdToken(): Promise<string> {
+  const clientId = env.googleWebClientId || env.googleIosClientId;
+  if (!clientId) throw new Error('Google sign-in is not configured.');
+  const request = new AuthSession.AuthRequest({
+    clientId,
+    scopes: ['openid', 'email', 'profile'],
+    redirectUri: redirectTo,
+    responseType: AuthSession.ResponseType.IdToken,
+    extraParams: { nonce: createId('google') },
+  });
+  const result = await request.promptAsync(GOOGLE_DISCOVERY);
+  if (result.type !== 'success' || !result.params.id_token) {
+    throw new Error('Google sign-in was canceled before completion.');
   }
-
-  return 'email';
-}
-
-export function syncSessionToStore(session: Session | null) {
-  if (!session?.user) {
-    return null;
-  }
-
-  const user: AppUser = {
-    id: session.user.id,
-    email: session.user.email ?? 'unknown@mytummyhurts.app',
-    provider: deriveProvider(session),
-    createdAt: session.user.created_at ?? new Date().toISOString(),
-  };
-
-  useAppStore.getState().syncAuthUser(user);
-  return user;
-}
-
-function readUrlParam(url: URL, key: string) {
-  return url.searchParams.get(key) ?? new URLSearchParams(url.hash.replace(/^#/, '')).get(key);
-}
-
-async function completeOAuthRedirect(urlValue: string) {
-  const url = new URL(urlValue);
-  const code = readUrlParam(url, 'code');
-  if (code) {
-    const { data, error } = await requireSupabaseClient().auth.exchangeCodeForSession(code);
-    if (error) {
-      throw error;
-    }
-
-    return data.session;
-  }
-
-  const accessToken = readUrlParam(url, 'access_token');
-  const refreshToken = readUrlParam(url, 'refresh_token');
-  if (accessToken && refreshToken) {
-    const { data, error } = await requireSupabaseClient().auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-    if (error) {
-      throw error;
-    }
-
-    return data.session;
-  }
-
-  const errorMessage = readUrlParam(url, 'error_description') ?? readUrlParam(url, 'error');
-  if (errorMessage) {
-    throw new Error(errorMessage);
-  }
-
-  throw new Error('The OAuth provider returned without a session.');
+  return result.params.id_token;
 }
 
 export async function signInWithGoogle() {
   if (!isGoogleAuthConfigured) {
     throw new Error('Google sign-in is not configured.');
   }
-
-  const client = requireSupabaseClient();
-  const { data, error } = await client.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo,
-      skipBrowserRedirect: true,
-    },
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data.url) {
-    throw new Error('Supabase did not return a Google authorization URL.');
-  }
-
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-  if (result.type !== 'success' || !result.url) {
-    throw new Error('Google sign-in was canceled before completion.');
-  }
-
-  const session = await completeOAuthRedirect(result.url);
-  return syncSessionToStore(session);
+  const idToken = await getGoogleIdToken();
+  return nestGoogleSignIn(idToken);
 }
 
 export async function signInWithApple() {
@@ -130,60 +68,25 @@ function normalizeEmailPassword(email: string, password: string) {
     throw new Error('Password must be at least 6 characters.');
   }
 
-  return {
-    email: resolvedEmail,
-    password,
-  };
+  return { email: resolvedEmail, password };
 }
 
 export async function signInWithEmailPassword(email: string, password: string) {
   const credentials = normalizeEmailPassword(email, password);
-  const { data, error } = await requireSupabaseClient().auth.signInWithPassword(credentials);
-
-  if (error) {
-    throw error;
-  }
-
-  return syncSessionToStore(data.session);
+  return nestEmailSignIn(credentials.email, credentials.password);
 }
 
 export async function signUpWithEmailPassword(email: string, password: string) {
   const credentials = normalizeEmailPassword(email, password);
-  const { data, error } = await requireSupabaseClient().auth.signUp(credentials);
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data.session) {
-    throw new Error('Account created, but Supabase email confirmation is still enabled. Disable Confirm email in Supabase Auth settings so signup returns a session.');
-  }
-
-  return syncSessionToStore(data.session);
+  return nestEmailSignUp(credentials.email, credentials.password);
 }
 
-export async function restoreSupabaseSession() {
-  if (!supabase) {
-    return null;
-  }
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return syncSessionToStore(session);
+export function restoreSession() {
+  return nestRestoreSession();
 }
 
-export async function signOutSupabase() {
-  if (!supabase) {
-    useAppStore.getState().signOut();
-    return;
-  }
-
-  try {
-    await supabase.auth.signOut();
-  } catch (error) {
-    console.warn('[auth] Supabase sign out failed; clearing local session anyway.', error);
-  }
+export async function signOut() {
+  await nestSignOut();
   useAppStore.getState().signOut();
 }
 

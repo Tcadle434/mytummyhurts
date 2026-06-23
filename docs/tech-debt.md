@@ -1,0 +1,22 @@
+# Tech Debt & Deliberate Deferrals
+
+Things intentionally left for incremental follow-up (with rationale), so they read as decisions, not gaps.
+
+## Resolved in the clean-slate cutover
+- **Supabase fully removed from the app.** `@supabase/supabase-js` dropped; `src/services/supabase/` deleted; transport + auth now talk only to the NestJS API. No dual-path fallback (pre-prod = clean swap, not a dual-run rollout).
+- **`supabase/` directory deleted.** The dead Deno edge functions are gone; the 39-migration schema history moved to `server/db/migrations/` (the replay source for `migrate.mjs`).
+- **Client image upload removed.** The backend persists inline images to object storage itself (`StorageService.putInlineImage`), so the app no longer uploads separately.
+
+## Type / code convergence (still open)
+- **Two scoring copies remain**: the RN client mirror (`src/services/ai/scoring.ts`, used by the offline mock path) and the authoritative engine (`server/src/scan/engine/scoring.ts`, the one with the 48-case regression gate). The legacy Deno copy is gone. **Plan**: have the RN mock path call the API or extract the engine into `packages/shared-domain`. Deferred because the mock path is only a dev/offline convenience and converging it has no user impact.
+- **`packages/shared-domain` is a staging skeleton.** Domain + contract types still live in `src/types/domain.ts` / `src/services/api/contracts.ts` and are duplicated in `server/src/scan/engine/domain.ts`. **Plan**: move contract types into the shared package and import from both. Deferred because the server is intentionally a self-contained workspace (no hoisting into the Expo tree).
+
+## Runtime / build
+- **Node 22**: the server Dockerfile and CI pin Node 22 (AWS SDK v3 wants ≥22). Local dev on Node 20 works with a deprecation warning. `.nvmrc` (20) governs the Expo app and is unchanged.
+- **Migrations**: `scripts/migrate.mjs` replays the shim → `server/db/migrations/*.sql` → self-host SQL from scratch (ideal for cutover and CI). For ongoing forward migrations, add numbered files under `server/db/`. A migrations-applied tracking table can be added when the schema stabilizes.
+
+## Observability
+- **LangSmith**: flag-gated (`LANGSMITH_TRACING`); the own-DB traces (`ai_traces`/`ai_node_traces`/`ai_cost_events`) are the source of truth and are wired. Full LangSmith span export is a small add when desired.
+
+## Frontend
+- **On-device OAuth + secure store**: the transport + auth are nest-only and typecheck, but the Apple nonce flow, the Google direct-ID-token flow, and `expo-secure-store` persistence must be verified on a device/simulator once the app points at a deployed API.

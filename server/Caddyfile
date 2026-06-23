@@ -1,0 +1,6 @@
+# Replace api.mytummyhurts.app with your real API domain. Caddy auto-provisions
+# TLS via Let's Encrypt and reverse-proxies to the NestJS api service.
+api.mytummyhurts.app {
+	encode gzip
+	reverse_proxy api:3000
+}

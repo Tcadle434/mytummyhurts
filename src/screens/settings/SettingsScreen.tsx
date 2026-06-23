@@ -36,7 +36,7 @@ import {
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList, SettingsSection } from '../../navigation/types';
 import { apiClient } from '../../services/api/client';
-import { signOutSupabase } from '../../services/auth';
+import { signOut } from '../../services/auth';
 import { trackEvent } from '../../services/analytics';
 import {
   ensureDailyCheckinScheduled,
@@ -440,7 +440,7 @@ export function SettingsScreen() {
   async function handleSignOut() {
     setStatusMessage(null);
     try {
-      await signOutSupabase();
+      await signOut();
       resetToSignIn();
     } catch (error) {
       setStatusMessage(
@@ -454,7 +454,7 @@ export function SettingsScreen() {
     setStatusMessage(null);
     try {
       await apiClient.deleteAccount();
-      await signOutSupabase();
+      await signOut();
       resetToCreateAccount();
     } catch (error) {
       setStatusMessage(

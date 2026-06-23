@@ -1,0 +1,198 @@
+import { ConfigModule } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import postgres from 'postgres';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { AccountModule } from '../src/account/account.module';
+import { AccountService } from '../src/account/account.service';
+import { CommonModule } from '../src/common/common.module';
+import { DailyReportModule } from '../src/daily-report/daily-report.module';
+import { DailyReportService } from '../src/daily-report/daily-report.service';
+import { DatabaseModule } from '../src/database/database.module';
+import { NotificationsModule } from '../src/notifications/notifications.module';
+import { NotificationsService } from '../src/notifications/notifications.service';
+import { ScanCrudService } from '../src/scan/scan-crud.service';
+import { ScanModule } from '../src/scan/scan.module';
+import { StorageModule } from '../src/storage/storage.module';
+
+const admin = postgres(process.env.DATABASE_ADMIN_URL ?? 'postgres://mth:mth@localhost:5432/mth', {
+  max: 2,
+  onnotice: () => {},
+});
+const U = '66666666-6666-6666-6666-666666666666';
+const FOOD_SCAN = '77777777-7777-7777-7777-777777777777';
+const MENU_SCAN = '77777777-7777-7777-7777-777777777778';
+const MENU_ITEM = '77777777-7777-7777-7777-777777777779';
+
+let daily: DailyReportService;
+let notifications: NotificationsService;
+let account: AccountService;
+let crud: ScanCrudService;
+
+beforeAll(async () => {
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      ConfigModule.forRoot({ isGlobal: true }),
+      DatabaseModule,
+      CommonModule,
+      StorageModule,
+      ScanModule,
+      DailyReportModule,
+      NotificationsModule,
+      AccountModule,
+    ],
+  }).compile();
+  daily = moduleRef.get(DailyReportService);
+  notifications = moduleRef.get(NotificationsService);
+  account = moduleRef.get(AccountService);
+  crud = moduleRef.get(ScanCrudService);
+
+  await admin`delete from public.users where id = ${U}`;
+  await admin`insert into public.users (id, email, subscription_status, current_token_balance)
+              values (${U}, 'endpoints@test.dev', 'active', 40)`;
+  await admin`insert into public.user_profiles (user_id) values (${U}) on conflict do nothing`;
+  // a completed scan to read/delete
+  await admin`insert into public.scans (
+                id, user_id, request_id, source_type, scan_category, analysis_status,
+                token_transaction_id, title, overall_risk_score, overall_risk_level,
+                consumption_status, local_date, timezone, created_at
+              )
+              values (
+                ${FOOD_SCAN}, ${U}, 'req-food-1', 'manual_text', 'food',
+                'completed', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'test dish',
+                42, 'medium', 'unknown', '2026-06-22', 'America/Denver',
+                '2026-06-22T12:00:00Z'
+              )`;
+  await admin`insert into public.scan_inputs (scan_id, user_id, input_kind, storage_path, page_index)
+              values (${FOOD_SCAN}, ${U}, 'image', ${`${U}/food.jpg`}, 0)`;
+  await admin`insert into public.scans (
+                id, user_id, request_id, source_type, scan_category, analysis_status,
+                token_transaction_id, title, summary, overall_risk_score, overall_risk_level,
+                consumption_status, local_date, timezone, created_at
+              )
+              values (
+                ${MENU_SCAN}, ${U}, 'req-menu-1', 'upload', 'menu',
+                'completed', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'test menu',
+                'menu summary', 35, 'low', 'unknown', '2026-06-23',
+                'America/Denver', '2026-06-23T12:00:00Z'
+              )`;
+  await admin`insert into public.scan_inputs (scan_id, user_id, input_kind, storage_path, page_index)
+              values (${MENU_SCAN}, ${U}, 'image', ${`${U}/menu.jpg`}, 0)`;
+  await admin`insert into public.menu_items (
+                id, scan_id, user_id, source_item_id, tier, tier_rank, display_order,
+                name, risk_score, risk_level, confidence, scoring_confidence,
+                score_contributors, why_this_score
+              )
+              values (
+                ${MENU_ITEM}, ${MENU_SCAN}, ${U}, 'item-1', 'best_for_you', 1, 0,
+                'Grilled salmon', 22, 'low', 'high', 'high', '[]'::jsonb,
+                'Lean protein with simple prep.'
+              )`;
+  await admin`insert into public.scan_ingredient_risks (
+                scan_id, user_id, menu_item_id, menu_item_source_id, raw_name,
+                canonical_name, risk_score, risk_level, evidence, confidence,
+                reason, display_order
+              )
+              values (
+                ${MENU_SCAN}, ${U}, ${MENU_ITEM}, 'item-1', 'salmon',
+                'salmon', 12, 'low', 'visible', 'high', 'Gentle protein.', 0
+              )`;
+  await admin`insert into public.scan_diet_evaluations (
+                scan_id, user_id, menu_item_id, menu_item_source_id, diet_key,
+                diet_label, status, confidence, reason, supporting_factors,
+                conflicts, missing_info, score_adjustment, rubric_version, display_order
+              )
+              values (
+                ${MENU_SCAN}, ${U}, ${MENU_ITEM}, 'item-1', 'low_fodmap',
+                'Low FODMAP', 'fits', 'medium', 'No high FODMAP cues.',
+                '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 0, 'test', 0
+              )`;
+});
+
+afterAll(async () => {
+  await admin`delete from public.users where id = ${U}`;
+  await admin.end();
+});
+
+describe('daily-report-upsert', () => {
+  it('upserts a report with a symptom-based daily score', async () => {
+    const r = await daily.upsert(U, { localDate: '2026-06-22', gutSeverity: 2, symptomTags: ['bloating'] });
+    expect(r.ok).toBe(true);
+    expect(r.report.dailyScore).toBe(74); // 90 - 2*8
+    // upsert again (idempotent on (user,date))
+    const r2 = await daily.upsert(U, { localDate: '2026-06-22', gutSeverity: 8 });
+    expect(r2.report.dailyScore).toBe(26); // 90 - 8*8
+  });
+});
+
+describe('notifications-register-token', () => {
+  it('registers and re-enables a device token', async () => {
+    await notifications.registerToken(U, 'expo-token-abc', 'ios');
+    await notifications.registerToken(U, 'expo-token-abc', 'ios'); // conflict -> re-enable
+    const [{ c }] = await admin`select count(*)::int as c from public.device_tokens where user_id = ${U}`;
+    expect(c).toBe(1);
+  });
+});
+
+describe('scan crud', () => {
+  it('reads, updates consumption, and lists history', async () => {
+    const got = await crud.getScan(U, FOOD_SCAN);
+    expect(got.scan.dishName).toBe('test dish');
+    expect(got.scan.overallRiskScore).toBe(42);
+    expect(got.scan.requestId).toBe('req-food-1');
+    expect(got.scan.tokenCost).toBe(1);
+    expect(got.scan.localDate).toEqual(expect.anything());
+    expect(got.scan.timezone).toBe('America/Denver');
+    expect(got.scan.imageUri).toContain('food.jpg');
+
+    const cons = await crud.updateConsumption(U, FOOD_SCAN, 'consumed');
+    expect(cons.consumptionStatus).toBe('consumed');
+
+    const hist = await crud.history(U, 1, 12);
+    expect(hist.scans.length).toBeGreaterThan(0);
+    const foodSummary = hist.scans.find((scan) => scan.id === FOOD_SCAN)!;
+    expect(foodSummary.requestId).toBe('req-food-1');
+    expect(foodSummary.analysisStatus).toBe('completed');
+    expect(foodSummary.tokenCost).toBe(1);
+    expect(foodSummary.localDate).toEqual(expect.anything());
+    expect(foodSummary.timezone).toBe('America/Denver');
+    expect(foodSummary.imageUri).toContain('food.jpg');
+  });
+
+  it('maps menu item nested ingredient risks and diet evaluations', async () => {
+    const got = await crud.getScan(U, MENU_SCAN);
+    expect(got.scan.menuResult?.inputPageCount).toBe(1);
+    expect(got.scan.menuResult?.items[0]).toMatchObject({
+      id: MENU_ITEM,
+      sourceItemId: 'item-1',
+      displayOrder: 0,
+      scoringConfidence: 'high',
+    });
+    expect(got.scan.menuResult?.items[0].ingredientRisks[0]).toMatchObject({
+      menuItemSourceId: 'item-1',
+      canonicalName: 'salmon',
+    });
+    expect(got.scan.menuResult?.items[0].dietEvaluations[0]).toMatchObject({
+      menuItemSourceId: 'item-1',
+      dietKey: 'low_fodmap',
+      status: 'fits',
+    });
+  });
+
+  it('deletes a scan', async () => {
+    const del = await crud.deleteScan(U, FOOD_SCAN);
+    expect(del.ok).toBe(true);
+    const [{ c }] = await admin`select count(*)::int as c from public.scans where id = ${FOOD_SCAN}`;
+    expect(c).toBe(0);
+  });
+});
+
+describe('account-delete', () => {
+  it('cascade-deletes the user and all owned rows', async () => {
+    await account.deleteAccount(U);
+    const [{ c }] = await admin`select count(*)::int as c from public.users where id = ${U}`;
+    expect(c).toBe(0);
+    const [{ d }] = await admin`select count(*)::int as d from public.daily_gut_reports where user_id = ${U}`;
+    expect(d).toBe(0);
+  });
+});

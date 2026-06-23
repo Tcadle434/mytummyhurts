@@ -11,7 +11,7 @@ export const remoteConfig = {
   },
   topUpOptions,
   featureFlags: {
-    liveSupabase: shouldUseLiveBackend,
+    liveBackend: shouldUseLiveBackend,
     livePostHog: shouldUsePostHog,
     liveRevenueCat: isRevenueCatConfigured,
     // Daily check-ins are local notifications; remote push is the win-back

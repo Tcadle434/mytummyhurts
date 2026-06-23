@@ -15,7 +15,7 @@ export const legalDocuments = {
       {
         heading: 'Third-party processors',
         body:
-          'Core infrastructure is provided by Supabase. AI analysis requests are sent to OpenAI. Subscription purchase and entitlement management are handled by RevenueCat. Product analytics are handled by PostHog.',
+          'Core infrastructure is self-hosted on our own servers. AI analysis requests are sent to OpenAI. Subscription purchase and entitlement management are handled by RevenueCat. Product analytics are handled by PostHog.',
       },
       {
         heading: 'Your controls',

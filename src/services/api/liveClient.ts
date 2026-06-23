@@ -1,7 +1,5 @@
-import { FunctionsHttpError } from '@supabase/supabase-js';
-
-import { requireSupabaseClient } from '../supabase/client';
-import { UserProfile } from '../../types/domain';
+import { env } from '../../config/env';
+import { getNestAccessToken } from '../auth/nestSession';
 import { ApiError, normalizeRetryableTransportError } from './errors';
 import {
   AnalyzeImageRequest,
@@ -36,153 +34,59 @@ import {
 
 export { ApiError } from './errors';
 
-function normalizeDisplayName(value: string | null | undefined) {
-  const normalized = value?.trim();
-  return normalized ? normalized : null;
-}
-
-function mergeDisplayName(profile: UserProfile | null, displayName: string | null | undefined) {
-  if (!profile || typeof displayName === 'undefined') {
-    return profile;
-  }
-
-  return {
-    ...profile,
-    displayName: displayName ?? undefined,
-  };
-}
-
 let homeGetInFlight: Promise<HomeResponse> | null = null;
 
-// Edge calls ride a raw fetch with no deadline; if the connection dies while
-// the app is backgrounded the promise never settles and anything gated on it
-// (sync flags, toasts) sticks forever. Race every invoke against a timeout.
+// A dead connection (e.g. app backgrounded mid-request) must not leave the
+// promise hanging forever — anything gated on it (sync flags, toasts) would
+// stick. Abort every request against a deadline.
 const DEFAULT_INVOKE_TIMEOUT_MS = 45_000;
 
-function invokeTimeout(name: string, timeoutMs: number) {
-  let timer: ReturnType<typeof setTimeout>;
-  const promise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(
-        new ApiError(`The ${name} request timed out. Please try again.`, {
-          code: 'request_timeout',
-          details: { functionName: name, timeoutMs },
-        }),
-      );
-    }, timeoutMs);
-  });
-  return { promise, clear: () => clearTimeout(timer) };
-}
-
+// Self-hosted NestJS transport: the endpoint name maps 1:1 to POST /v1/<name>,
+// carrying the access token (auto-refreshed by nestSession).
 async function invokeFunction<TResponse>(
   name: string,
   body: object,
   options: { timeoutMs?: number } = {},
 ): Promise<TResponse> {
-  const client = requireSupabaseClient();
   const startedAt = Date.now();
-  const timeout = invokeTimeout(name, options.timeoutMs ?? DEFAULT_INVOKE_TIMEOUT_MS);
-  let response: Awaited<ReturnType<typeof client.functions.invoke>>;
-
+  const timeoutMs = options.timeoutMs ?? DEFAULT_INVOKE_TIMEOUT_MS;
+  const token = await getNestAccessToken();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    response = await Promise.race([
-      client.functions.invoke(name, {
-        body,
-      }),
-      timeout.promise,
-    ]);
+    const res = await fetch(`${env.apiUrl.replace(/\/$/, '')}/v1/${name}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      error?: { code?: string; message?: string; details?: Record<string, unknown> };
+    };
+    if (!res.ok) {
+      throw new ApiError(json?.error?.message ?? `The ${name} request failed.`, {
+        status: res.status,
+        code: json?.error?.code,
+        details: json?.error?.details,
+      });
+    }
+    return json as TResponse;
   } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if ((error as Error)?.name === 'AbortError') {
+      throw new ApiError(`The ${name} request timed out. Please try again.`, {
+        code: 'request_timeout',
+        details: { functionName: name, timeoutMs },
+      });
+    }
     throw normalizeRetryableTransportError(error, name) ?? error;
   } finally {
-    timeout.clear();
-    if (__DEV__) {
-      console.log(`[api] ${name} ${Date.now() - startedAt}ms`);
-    }
+    clearTimeout(timer);
+    if (__DEV__) console.log(`[api] ${name} ${Date.now() - startedAt}ms`);
   }
-
-  const { data, error } = response;
-
-  if (!error) {
-    return data as TResponse;
-  }
-
-  if (error instanceof FunctionsHttpError) {
-    let payload: {
-      error?: {
-        code?: string;
-        message?: string;
-        details?: Record<string, unknown>;
-      };
-      message?: string;
-    } = {};
-
-    try {
-      payload = await error.context.json();
-    } catch {
-      payload = {};
-    }
-
-    const message =
-      payload?.error?.message ??
-      payload?.message ??
-      `The ${name} request failed.`;
-    throw new ApiError(message, {
-      status: error.context.status,
-      code: payload?.error?.code,
-      details: payload?.error?.details,
-    });
-  }
-
-  const retryableTransportError = normalizeRetryableTransportError(error, name);
-  if (retryableTransportError) {
-    throw retryableTransportError;
-  }
-
-  throw error;
-}
-
-async function fetchDisplayName() {
-  const client = requireSupabaseClient();
-  let userResponse: Awaited<ReturnType<typeof client.auth.getUser>>;
-
-  try {
-    userResponse = await client.auth.getUser();
-  } catch (error) {
-    throw normalizeRetryableTransportError(error, 'auth.getUser') ?? error;
-  }
-
-  const {
-    data: { user },
-    error: userError,
-  } = userResponse;
-
-  if (userError) {
-    throw normalizeRetryableTransportError(userError, 'auth.getUser') ?? userError;
-  }
-
-  if (!user) {
-    return undefined;
-  }
-
-  let displayNameResponse: { data: unknown; error: unknown };
-
-  try {
-    displayNameResponse = await client
-      .from('user_profiles')
-      .select('display_name')
-      .eq('user_id', user.id)
-      .maybeSingle();
-  } catch (error) {
-    throw normalizeRetryableTransportError(error, 'user_profiles.display_name') ?? error;
-  }
-
-  const { data, error } = displayNameResponse;
-
-  if (error) {
-    throw normalizeRetryableTransportError(error, 'user_profiles.display_name') ?? error;
-  }
-
-  return normalizeDisplayName((data as { display_name?: string | null } | null)?.display_name);
 }
 
 export const liveApiClient = {
@@ -208,8 +112,7 @@ export const liveApiClient = {
 
   getHome() {
     // App launch fires home-get from several places at once (query hook,
-    // bootstrap refresh, snapshot poll). Collapse concurrent callers into one
-    // request — on a cold function this turns 4 stacked calls into 1.
+    // bootstrap refresh, snapshot poll). Collapse concurrent callers into one.
     if (!homeGetInFlight) {
       homeGetInFlight = invokeFunction<HomeResponse>('home-get', {}).finally(() => {
         homeGetInFlight = null;
@@ -227,25 +130,12 @@ export const liveApiClient = {
   },
 
   async learningRecompute(request: LearningRecomputeRequest) {
-    const [response, displayName] = await Promise.all([
-      invokeFunction<LearningRecomputeResponse>('learning-recompute', request, { timeoutMs: 120_000 }),
-      fetchDisplayName(),
-    ]);
-    return {
-      ...response,
-      profile: mergeDisplayName(response.profile ?? null, displayName),
-    };
+    // The server includes profile.displayName directly in the response.
+    return invokeFunction<LearningRecomputeResponse>('learning-recompute', request, { timeoutMs: 120_000 });
   },
 
   async getInsights(request: InsightsRequest = {}) {
-    const [response, displayName] = await Promise.all([
-      invokeFunction<InsightsResponse>('insights-get', request),
-      fetchDisplayName(),
-    ]);
-    return {
-      ...response,
-      profile: mergeDisplayName(response.profile, displayName),
-    };
+    return invokeFunction<InsightsResponse>('insights-get', request);
   },
 
   async updateProfile(request: ProfileUpdateRequest) {

@@ -303,7 +303,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
           </View>
           <Text style={styles.permissionTitle}>Camera access keeps scanning instant.</Text>
           <Text style={styles.permissionBody}>
-            You can still upload photos without camera access.
+            You can still upload food or menu photos without camera access.
           </Text>
           <PrimaryButton label="Allow camera" onPress={() => requestPermission()} />
           <SecondaryButton label={imageScanCategory === 'menu' ? 'Upload menu photos' : 'Upload food photos'} onPress={() => void openLibrary()} />

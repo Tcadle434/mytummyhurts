@@ -24,8 +24,8 @@ If you want local StoreKit purchase testing in Xcode, attach [MyTummyHurts.store
 ## Current implementation state
 
 - Full product shell implemented in React Native with Expo prebuild architecture
-- Long onboarding flow, paywall orchestration, auth shell, scan flow, results, history, manual meal flows, follow-up, insights, and settings
-- Live Supabase schema, edge functions, analytics, notification registration, and scheduled maintenance worker under `supabase/`
+- Long onboarding flow, paywall orchestration, auth shell, scan flow, results, history, follow-up, insights, and settings
+- Self-hosted NestJS + Postgres/pgvector backend under `server/` (auth, scans, RAG, learning, observability, scheduled-maintenance worker); 39-migration schema history under `server/db/migrations/`
 - Real Apple, Google, and email auth wiring
 - RevenueCat subscription integration, billing sync, restore handling, and StoreKit local config
 - Patch-package guards for Expo SDK pods that require newer Xcode SDKs than the local Xcode 16.2 toolchain
@@ -34,15 +34,15 @@ If you want local StoreKit purchase testing in Xcode, attach [MyTummyHurts.store
 
 - [Product Direction](docs/product-direction.md): ICP, positioning, Gut Score role, symptom reporting cadence, feature priorities, monetization, and implementation guardrails.
 
-## Scan regression tests
+## Scan regression + evals
 
-Run the live scan E2E harness whenever the scan capture, upload, Edge Function, scoring, audit-log, or result DTO paths change:
+The deterministic scoring engine is owned by the backend and guarded by a 48-case regression suite plus golden risk-band evals. Run them whenever the scan/scoring paths change:
 
 ```bash
-npm run test:scan:e2e
+cd server
+npm test                              # unit/integration suite (incl. the 48 scoring goldens)
+node scripts/eval/run.mjs --offline   # golden risk-band evals; fails on any false-low / false-positive
 ```
-
-The harness uses `assets/tests/sushi_den_menu_1.png`, `assets/tests/sushi_den_menu_2.png`, and `assets/tests/pizza_meal.jpeg`; creates a temporary subscribed Supabase user; uploads the fixture images; invokes the deployed scan function; validates raw AI audit logs, normalized responses, and `scan-get` UI data; then deletes the test user and uploaded files.
 
 ## Still requires credentials for production wiring
 

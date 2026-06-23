@@ -176,7 +176,7 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 		type: "text_input",
 		backgroundVariant: "getStartedImage",
 		headline: "What was the last meal that wrecked you?",
-		body: "Describe it however you remember it — \"chicken alfredo and garlic bread\" works. We'll pull out the likely suspects.",
+		body: "Tell us what you remember — \"chicken alfredo and garlic bread\" works. We'll pull out the likely suspects.",
 		helper: "Optional, but it gives your profile a head start.",
 		cta: "Continue",
 		field: "lastBadMealText",

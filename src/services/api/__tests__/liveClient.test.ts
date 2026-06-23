@@ -20,7 +20,7 @@ describe('ApiError', () => {
 });
 
 describe('normalizeRetryableTransportError', () => {
-  it('turns Supabase blob resolution failures into retryable API errors', () => {
+  it('turns retryable fetch/blob resolution failures into retryable API errors', () => {
     const error = new Error('AuthRetryableFetchError: Unable to resolve data for blob: ABC-123');
     error.name = 'AuthRetryableFetchError';
 

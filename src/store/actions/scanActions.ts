@@ -5,7 +5,6 @@ import { isEntitledSubscriptionStatus } from '../../features/access/appAccess';
 import { analyzeMealInput } from '../../services/ai/scoring';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
-import { uploadMealImage } from '../../services/storage';
 import { showToast } from '../../services/toast';
 import { ScanRecord } from '../../types/domain';
 import { createId } from '../../utils/id';
@@ -79,31 +78,13 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           }
 
           try {
-            const imageUris = payload.imageUris?.length ? payload.imageUris : payload.imageUri ? [payload.imageUri] : [];
             const imageDataUrls = payload.imageDataUrls?.length
               ? payload.imageDataUrls
               : payload.imageDataUrl
                 ? [payload.imageDataUrl]
                 : [];
-            const imageUploadResults = imageUris.length
-              ? (
-                  await Promise.all(
-                    imageUris.map((imageUri, index) =>
-                      uploadMealImage(imageUri, authUser.id, imageDataUrls[index]).catch((error) => {
-                        console.warn('[scan] image upload failed; continuing with inline image data.', error);
-                        return null;
-                      }),
-                    ),
-                  )
-                )
-              : [];
-            const imagePaths = imageUploadResults
-              .map((result) => result?.storagePath)
-              .filter((path): path is string => Boolean(path));
-            const thumbnailImagePaths = imageUploadResults.map((result) => result?.thumbnailStoragePath ?? null);
-            const hasThumbnailImagePaths = thumbnailImagePaths.some((path) => Boolean(path));
-            const inlineImageDataUrls = imageDataUrls;
-            const inlineImageDataUrl = inlineImageDataUrls[0];
+            // The backend persists inline images to object storage (MinIO/S3) and
+            // returns the stored imagePath — the client no longer uploads directly.
             const response = payload.barcode?.trim()
               ? await apiClient.analyzeBarcode({
                   requestId,
@@ -113,18 +94,14 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
                   localDate,
                   timezone,
                 })
-              : await apiClient.analyzeImage({
-                  requestId,
-                  imagePath: imagePaths[0],
-                  imagePaths: imagePaths.length > 1 ? imagePaths : undefined,
-                  thumbnailImagePaths: hasThumbnailImagePaths ? thumbnailImagePaths : undefined,
-                  imageDataUrl: inlineImageDataUrl,
-                  imageDataUrls: inlineImageDataUrls.length > 1 ? inlineImageDataUrls : undefined,
-                  sourceType: payload.sourceType,
-                  scanCategory: requestedScanCategory,
-                  localDate,
-                  timezone,
-                });
+                : await apiClient.analyzeImage({
+                    requestId,
+                    imageDataUrls,
+                    sourceType: payload.sourceType,
+                    scanCategory: requestedScanCategory,
+                    localDate,
+                    timezone,
+                  });
 
             set((currentState) => ({
               scans: mergeById(currentState.scans, response.scan),

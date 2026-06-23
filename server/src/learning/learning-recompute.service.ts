@@ -1,0 +1,263 @@
+import { Injectable, Logger } from '@nestjs/common';
+import type { Sql } from 'postgres';
+
+import { DatabaseService } from '../database/database.service';
+import type {
+  ConditionIngredientInsight,
+  DailyGutReport,
+  IngredientInsight,
+  ProfileSeed,
+  StructuredIngredient,
+} from '../scan/engine/domain';
+import {
+  buildDailyConditionInsights,
+  buildDailyReportInsights,
+  structuredAnalysisFromIngredientRows,
+} from '../scan/engine/insights-learning';
+import {
+  GUT_SCORE_ALGORITHM_VERSION,
+  buildDeclaredSeedInsights,
+  buildGutScoreEvent,
+  computeGutScoreState,
+  mergeSeedAndLearnedInsights,
+  recomputeDailyScores,
+} from '../scan/engine/scoring';
+
+const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
+
+// postgres.js returns date/timestamp columns as Date objects; the engine's
+// localDateMinusDays expects a 'YYYY-MM-DD' string.
+const toLocalDate = (v: unknown): string =>
+  v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? '').slice(0, 10);
+const toIso = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v ?? ''));
+
+/**
+ * Port of rebuildInsightsAndProfile (Supabase _shared/profile.ts), re-homed onto
+ * the NestJS DB layer. Recomputes learned ingredient insights + condition
+ * insights + daily scores + the gut score from a user's scans & daily reports,
+ * and persists them. (The one-shot onboarding "last bad meal" LLM extraction is
+ * intentionally omitted here; declared seeds + report-learning carry it.)
+ */
+@Injectable()
+export class LearningRecomputeService {
+  private readonly logger = new Logger('LearningRecompute');
+
+  constructor(private readonly db: DatabaseService) {}
+
+  async rebuild(userId: string, sourceType = 'profile', sourceId?: string) {
+    return this.db.service(async (sql) => {
+      const [profileRow] = await sql`select * from public.user_profiles where user_id = ${userId}`;
+      if (!profileRow) return { insights: 0, conditionInsights: 0, dailyReports: 0 };
+
+      const scanRows = await sql`
+        select id, scan_category, local_date, title, overall_risk_score, created_at, consumption_status
+        from public.scans where user_id = ${userId} and analysis_status = 'completed'`;
+      const reportRows = await sql`select * from public.daily_gut_reports where user_id = ${userId}`;
+      const ingredientRows = await sql`
+        select scan_id, canonical_name, confidence, menu_item_source_id
+        from public.scan_ingredient_risks where user_id = ${userId}`;
+      const dietRows = await sql`
+        select diet_key, diet_label, strictness, priority, status
+        from public.user_diet_preferences where user_id = ${userId} and status = 'active'`;
+
+      // ingredients per scan (non-menu) — used as the food exposure signal.
+      const scanIngredients = new Map<string, StructuredIngredient[]>();
+      for (const r of ingredientRows) {
+        if (r.menu_item_source_id) continue;
+        const name = String(r.canonical_name ?? '').trim().toLowerCase();
+        if (!name) continue;
+        const conf = r.confidence === 'high' || r.confidence === 'low' ? r.confidence : 'medium';
+        const list = scanIngredients.get(String(r.scan_id)) ?? [];
+        list.push({ name, confidence: conf } as StructuredIngredient);
+        scanIngredients.set(String(r.scan_id), list);
+      }
+
+      const seed = {
+        userId,
+        displayName: profileRow.display_name ?? undefined,
+        knownConditions: arr(profileRow.known_conditions),
+        knownIngredientSensitivities: arr(profileRow.known_ingredient_sensitivities),
+        commonSymptoms: arr(profileRow.common_symptoms),
+        symptomFrequency: profileRow.symptom_frequency ?? undefined,
+        symptomSeverityBaseline: profileRow.symptom_severity_baseline ?? undefined,
+        mealContexts: arr(profileRow.meal_contexts),
+        motivation: profileRow.motivation ?? undefined,
+        currentEatingPatterns: arr(profileRow.current_eating_patterns),
+        lifestyleFactors: arr(profileRow.lifestyle_factors),
+        foodsToReintroduce: arr(profileRow.foods_to_reintroduce),
+        dietPreferences: dietRows.map((d) => ({
+          dietKey: d.diet_key,
+          dietLabel: d.diet_label,
+          strictness: d.strictness,
+          priority: d.priority,
+          status: d.status,
+        })),
+        suspectMealIngredients: arr(profileRow.suspect_meal_ingredients),
+      } as unknown as ProfileSeed;
+
+      // Food exposures: completed, non-skipped food scans with their ingredients.
+      const foodScans = scanRows
+        .filter((s) => (s.scan_category ?? 'food') === 'food' && s.consumption_status !== 'skipped')
+        .map((s) => {
+          const ingredients = scanIngredients.get(String(s.id)) ?? [];
+          return {
+            id: String(s.id),
+            structuredAnalysis: structuredAnalysisFromIngredientRows(s.title ?? '', ingredients),
+            ingredients,
+            overallRiskScore: s.overall_risk_score ?? undefined,
+            createdAt: toIso(s.created_at),
+            localDate: s.local_date ? toLocalDate(s.local_date) : toLocalDate(s.created_at),
+            scanCategory: 'food' as const,
+          };
+        });
+
+      const reports: DailyGutReport[] = reportRows.map(this.mapReport);
+      const scoredReports = recomputeDailyScores(reports, foodScans as never);
+
+      // Persist recomputed daily scores.
+      for (const r of scoredReports) {
+        await sql`update public.daily_gut_reports
+          set daily_score = ${r.dailyScore ?? null},
+              daily_score_components = ${sql.json((r.dailyScoreComponents ?? {}) as never)},
+              daily_score_drivers = ${sql.json((r.dailyScoreDrivers ?? []) as never)},
+              daily_score_updated_at = now()
+          where user_id = ${userId} and local_date = ${r.localDate}`;
+      }
+
+      const learned = buildDailyReportInsights({
+        scans: foodScans.map((s) => ({ id: s.id, localDate: s.localDate, createdAt: s.createdAt, ingredients: s.ingredients })),
+        reports: scoredReports,
+        declaredSensitivities: seed.knownIngredientSensitivities,
+        activeConditions: seed.knownConditions,
+      });
+      const insights = mergeSeedAndLearnedInsights(learned, buildDeclaredSeedInsights(seed));
+      const conditionInsights = buildDailyConditionInsights(insights, seed.knownConditions);
+
+      await this.persistInsights(sql, userId, insights, conditionInsights);
+
+      // Gut score.
+      const [prevSnap] = await sql`
+        select * from public.gut_score_snapshots where user_id = ${userId}
+        order by created_at desc limit 1`;
+      const previousGutScore = prevSnap ? this.mapSnapshot(prevSnap) : null;
+      const gutScore = computeGutScoreState({
+        seed,
+        insights,
+        scans: foodScans as never,
+        dailyReports: scoredReports,
+        previousGutScore,
+      });
+      const event = buildGutScoreEvent({ eventType: sourceType, score: gutScore, previousScore: previousGutScore, sourceType, sourceId });
+      await this.persistGutScore(sql, userId, gutScore, event, sourceType, sourceId);
+
+      await sql`
+        insert into public.user_app_snapshots (user_id, learning_status, last_recomputed_at, last_source_type, last_source_id)
+        values (${userId}, 'idle', now(), ${sourceType}, ${sourceId ?? null})
+        on conflict (user_id) do update set learning_status = 'idle', last_recomputed_at = now(),
+          last_source_type = ${sourceType}, last_source_id = ${sourceId ?? null}`;
+
+      this.logger.log(`recomputed user ${userId}: ${insights.length} insights, gut score ${gutScore.currentScore}`);
+      return { insights: insights.length, conditionInsights: conditionInsights.length, dailyReports: scoredReports.length };
+    });
+  }
+
+  private mapReport = (r: Record<string, unknown>): DailyGutReport =>
+    ({
+      id: r.id,
+      localDate: toLocalDate(r.local_date),
+      gutSeverity: r.gut_severity,
+      symptomTags: arr(r.symptom_tags),
+      notes: r.notes ?? undefined,
+      dailyScore: (r.daily_score as number) ?? undefined,
+      dailyScoreComponents: r.daily_score_components ?? undefined,
+      evidenceQuality: (r.evidence_quality as string) ?? undefined,
+      createdAt: toIso(r.created_at),
+      updatedAt: toIso(r.updated_at),
+    }) as unknown as DailyGutReport;
+
+  private mapSnapshot(s: Record<string, unknown>) {
+    return {
+      algorithmVersion: GUT_SCORE_ALGORITHM_VERSION,
+      currentScore: s.score,
+      baselineScore: s.baseline_score,
+      phase: s.phase,
+      confidenceLevel: s.confidence_level,
+      trendDelta7d: s.trend_delta_7d ?? 0,
+      components: s.components ?? {},
+      drivers: s.drivers ?? [],
+      updatedAt: s.created_at,
+    } as never;
+  }
+
+  private async persistInsights(
+    sql: Sql,
+    userId: string,
+    insights: IngredientInsight[],
+    conditionInsights: ConditionIngredientInsight[],
+  ) {
+    await sql`delete from public.ingredient_insights where user_id = ${userId}`;
+    await sql`delete from public.condition_ingredient_insights where user_id = ${userId}`;
+    for (const i of insights) {
+      await sql`insert into public.ingredient_insights
+        (user_id, ingredient_name, trigger_score, safe_score, combined_risk_score, confidence_level,
+         pattern_strength, linked_conditions, supporting_evidence_count, positive_evidence_count,
+         negative_evidence_count, last_seen_at, last_outcome_at, source_breakdown, last_recomputed_at)
+        values (${userId}, ${i.ingredientName}, ${i.triggerScore}, ${i.safeScore}, ${i.combinedRiskScore},
+         ${i.confidenceLevel}, ${i.patternStrength}, ${sql.json(i.linkedConditions as never)},
+         ${i.supportingEvidenceCount}, ${i.positiveEvidenceCount}, ${i.negativeEvidenceCount},
+         ${i.lastSeenAt ?? null}, ${i.lastOutcomeAt ?? null}, ${sql.json(i.sourceBreakdown as never)},
+         ${i.lastRecomputedAt})
+        on conflict (user_id, ingredient_name) do update set
+          trigger_score = excluded.trigger_score, safe_score = excluded.safe_score,
+          combined_risk_score = excluded.combined_risk_score, confidence_level = excluded.confidence_level,
+          pattern_strength = excluded.pattern_strength, linked_conditions = excluded.linked_conditions,
+          supporting_evidence_count = excluded.supporting_evidence_count,
+          positive_evidence_count = excluded.positive_evidence_count,
+          negative_evidence_count = excluded.negative_evidence_count, last_seen_at = excluded.last_seen_at,
+          last_outcome_at = excluded.last_outcome_at, source_breakdown = excluded.source_breakdown,
+          last_recomputed_at = excluded.last_recomputed_at`;
+    }
+    for (const c of conditionInsights) {
+      await sql`insert into public.condition_ingredient_insights
+        (user_id, ingredient_name, condition_name, risk_score, trigger_score, safe_score, confidence_level,
+         positive_evidence_count, negative_evidence_count, supporting_evidence_count, source_breakdown,
+         last_seen_at, last_outcome_at, last_recomputed_at)
+        values (${userId}, ${c.ingredientName}, ${c.conditionName}, ${c.riskScore}, ${c.triggerScore},
+         ${c.safeScore}, ${c.confidenceLevel}, ${c.positiveEvidenceCount}, ${c.negativeEvidenceCount},
+         ${c.supportingEvidenceCount}, ${sql.json(c.sourceBreakdown as never)}, ${c.lastSeenAt ?? null},
+         ${c.lastOutcomeAt ?? null}, ${c.lastRecomputedAt})
+        on conflict (user_id, ingredient_name, condition_name) do update set
+          risk_score = excluded.risk_score, trigger_score = excluded.trigger_score,
+          safe_score = excluded.safe_score, confidence_level = excluded.confidence_level,
+          positive_evidence_count = excluded.positive_evidence_count,
+          negative_evidence_count = excluded.negative_evidence_count,
+          supporting_evidence_count = excluded.supporting_evidence_count,
+          source_breakdown = excluded.source_breakdown, last_recomputed_at = excluded.last_recomputed_at`;
+    }
+  }
+
+  private async persistGutScore(
+    sql: Sql,
+    userId: string,
+    score: { currentScore: number; baselineScore: number; phase: string; confidenceLevel: string; trendDelta7d: number; components: unknown; drivers: unknown },
+    event: { eventType: string; scoreBefore?: number | null; scoreAfter: number; scoreDelta: number; phaseBefore?: string | null; phaseAfter?: string; summary?: string; drivers: unknown },
+    sourceType: string,
+    sourceId?: string,
+  ) {
+    const sid = sourceId ?? `recompute-${Date.now()}`;
+    await sql`insert into public.gut_score_snapshots
+      (user_id, score, baseline_score, phase, confidence_level, trend_delta_7d, components, drivers,
+       score_algorithm_version, source_type, source_id)
+      values (${userId}, ${score.currentScore}, ${score.baselineScore}, ${score.phase},
+       ${score.confidenceLevel}, ${score.trendDelta7d}, ${sql.json(score.components as never)},
+       ${sql.json(score.drivers as never)}, ${GUT_SCORE_ALGORITHM_VERSION}, ${sourceType}, ${sid})
+      on conflict (user_id, source_type, source_id) do nothing`;
+    await sql`insert into public.gut_score_events
+      (user_id, event_type, source_type, source_id, score_before, score_after, score_delta,
+       phase_before, phase_after, summary, drivers, score_algorithm_version)
+      values (${userId}, ${event.eventType}, ${sourceType}, ${sid}, ${event.scoreBefore ?? null},
+       ${event.scoreAfter}, ${event.scoreDelta}, ${event.phaseBefore ?? null}, ${event.phaseAfter ?? null},
+       ${event.summary ?? null}, ${sql.json(event.drivers as never)}, ${GUT_SCORE_ALGORITHM_VERSION})
+      on conflict (user_id, source_type, source_id) do nothing`;
+  }
+}

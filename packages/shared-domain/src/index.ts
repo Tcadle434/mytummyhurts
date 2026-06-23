@@ -1,0 +1,21 @@
+// Single source of truth for domain + API contract types shared between the
+// Expo app (src/types/domain.ts, src/services/api/contracts.ts) and the NestJS
+// server. The real type definitions are migrated here in Phase 6; this skeleton
+// exists so both projects can depend on the package from Phase 0 onward.
+export const SHARED_DOMAIN_VERSION = '0.1.0';
+
+/**
+ * Optional, additive citation surfaced on scan / condition-risk / ingredient-risk
+ * / menu-item results when RAG evidence is used. Additive => existing screens are
+ * unaffected; a later UI task renders these. Empty/absent when RAG is off.
+ */
+export interface EvidenceCitation {
+  id: string;
+  title: string;
+  source: string;
+  url?: string;
+  documentType?: string;
+  chunkId: string;
+  snippet?: string;
+  relevanceScore?: number;
+}
