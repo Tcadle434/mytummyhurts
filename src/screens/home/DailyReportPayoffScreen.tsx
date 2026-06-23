@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { Pip } from '../../components/common/Pip';
 import { AppScreen, DetailScreenHeader, PrimaryButton, SectionCard } from '../../components/common/UI';
-import { buildReportPayoff, type PayoffEvidenceChange } from '../../features/home/reportPayoff';
+import { buildReportPayoff, resolvePayoffLoading, type PayoffEvidenceChange } from '../../features/home/reportPayoff';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
@@ -16,6 +16,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'DailyReportPayoff'>;
 export function DailyReportPayoffScreen({ navigation, route }: Props) {
   const localDate = route.params.localDate;
   const learningSyncInFlight = useAppStore((state) => state.learningSyncInFlight);
+  const learningSyncSource = useAppStore((state) => state.learningSyncSource);
   const learningSyncError = useAppStore((state) => state.learningSyncError);
   const baseline = useAppStore((state) => state.reportPayoffBaseline);
   const report = useAppStore((state) => state.dailyReports.find((entry) => entry.localDate === localDate));
@@ -39,7 +40,22 @@ export function DailyReportPayoffScreen({ navigation, route }: Props) {
   }, []);
 
   const dateLabel = useMemo(() => formatLocalDate(localDate), [localDate]);
-  const connecting = learningSyncInFlight;
+
+  // Loading is a one-shot: show "connecting" only while this report's own sync
+  // is in flight, and once the score is revealed never flip back (see
+  // resolvePayoffLoading). Without this latch an ambient home refetch could
+  // bounce the screen between the score and the loading card.
+  const [revealed, setRevealed] = useState(false);
+  const { connecting, revealed: nextRevealed } = resolvePayoffLoading({
+    revealed,
+    learningSyncInFlight,
+    learningSyncSource,
+  });
+  useEffect(() => {
+    if (nextRevealed && !revealed) {
+      setRevealed(true);
+    }
+  }, [nextRevealed, revealed]);
   const scoreDelta = payoff?.gutScoreDelta;
   const deltaTone =
     typeof scoreDelta === 'number' && scoreDelta > 0

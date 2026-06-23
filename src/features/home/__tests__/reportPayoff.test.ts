@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPayoffBaseline, buildReportPayoff } from '../reportPayoff';
+import { buildPayoffBaseline, buildReportPayoff, resolvePayoffLoading } from '../reportPayoff';
 import type { DailyGutReport, GutScoreState, IngredientInsight } from '../../../types/domain';
 
 function gutScore(currentScore: number): GutScoreState {
@@ -130,5 +130,53 @@ describe('buildReportPayoff', () => {
 
     expect(payoff.evidenceChanges).toHaveLength(0);
     expect(payoff.gutScoreDelta).toBe(0);
+  });
+});
+
+describe('resolvePayoffLoading', () => {
+  it('shows the loading card while this report sync is in flight', () => {
+    const result = resolvePayoffLoading({
+      revealed: false,
+      learningSyncInFlight: true,
+      learningSyncSource: 'daily_report',
+    });
+    expect(result).toEqual({ connecting: true, revealed: false });
+  });
+
+  it('reveals the score once the sync settles', () => {
+    const result = resolvePayoffLoading({
+      revealed: false,
+      learningSyncInFlight: false,
+      learningSyncSource: 'daily_report',
+    });
+    expect(result).toEqual({ connecting: false, revealed: true });
+  });
+
+  it('never reverts to loading after the score was revealed', () => {
+    // An ambient home snapshot re-raises learningSyncInFlight after settle.
+    const result = resolvePayoffLoading({
+      revealed: true,
+      learningSyncInFlight: true,
+      learningSyncSource: 'daily_report',
+    });
+    expect(result).toEqual({ connecting: false, revealed: true });
+  });
+
+  it('ignores an unrelated background recompute sync', () => {
+    const result = resolvePayoffLoading({
+      revealed: false,
+      learningSyncInFlight: true,
+      learningSyncSource: 'recompute',
+    });
+    expect(result).toEqual({ connecting: false, revealed: true });
+  });
+
+  it('shows the score immediately when nothing is in flight at mount', () => {
+    const result = resolvePayoffLoading({
+      revealed: false,
+      learningSyncInFlight: false,
+      learningSyncSource: null,
+    });
+    expect(result).toEqual({ connecting: false, revealed: true });
   });
 });

@@ -61,10 +61,14 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
             learningSyncError: null,
             learningSyncSource: 'daily_report',
           }));
-          void Promise.all([
-            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-          ]);
+          // Do NOT invalidate the home query here. The recompute has not been
+          // enqueued yet, so a refetch would read the pre-report snapshot
+          // (learningStatus 'idle') and applyHomeResponse would flip
+          // learningSyncInFlight back to false — bouncing the payoff screen out
+          // of its loading state to a stale score and then back to loading once
+          // the upsert response lands. Home is refreshed after the response
+          // below, once the snapshot reports 'pending'.
+          void queryClient.invalidateQueries({ queryKey: queryKeys.history });
           void (async () => {
             try {
               const response = await apiClient.upsertDailyReport({

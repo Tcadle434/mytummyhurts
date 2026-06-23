@@ -26,6 +26,24 @@ export type ReportPayoff = {
   evidenceChanges: PayoffEvidenceChange[];
 };
 
+// Decides whether the payoff screen shows its "connecting" loading card.
+// Two rules keep the screen from flickering between loading and the score:
+//   1. Scope: only THIS report's learning sync (source 'daily_report') drives
+//      the loading state — an unrelated background 'recompute' must not show it.
+//   2. Latch: once the sync has settled and the score has been revealed, it
+//      stays revealed. A later ambient home snapshot that momentarily re-raises
+//      learningSyncInFlight can therefore never bounce the screen back to loading.
+export function resolvePayoffLoading(params: {
+  revealed: boolean;
+  learningSyncInFlight: boolean;
+  learningSyncSource: 'daily_report' | 'recompute' | null;
+}): { connecting: boolean; revealed: boolean } {
+  const ourSyncInFlight =
+    params.learningSyncInFlight && params.learningSyncSource === 'daily_report';
+  const revealed = params.revealed || !ourSyncInFlight;
+  return { connecting: ourSyncInFlight && !revealed, revealed };
+}
+
 export function buildPayoffBaseline(params: {
   localDate: string;
   gutScore: GutScoreState | null | undefined;
