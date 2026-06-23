@@ -32,6 +32,41 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
           }),
         }));
         const authUser = get().authUser;
+        const pollDailyReportLearning = async (reportId: string) => {
+          try {
+            const finalHome = await pollHomeSnapshotUntilIdle(get().applyHomeResponse);
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+            ]);
+
+            if (!finalHome) {
+              set({
+                learningSyncInFlight: false,
+                learningSyncRequestId: null,
+                learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+                learningSyncSource: null,
+              });
+              return;
+            }
+
+            trackEvent('learning_recompute_completed', {
+              source_type: 'daily_gut_report',
+              source_id: reportId,
+              status: finalHome.learningStatus,
+            });
+          } catch (pollError) {
+            console.warn('[learning] home snapshot polling failed', pollError);
+            set({
+              learningSyncInFlight: false,
+              learningSyncRequestId: null,
+              learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
+              learningSyncSource: null,
+            });
+          }
+        };
+
         if (isLiveBackendConfigured && authUser) {
           const state = get();
           const existing = state.dailyReports.find((report) => report.localDate === localDate);
@@ -69,107 +104,80 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
           // the upsert response lands. Home is refreshed after the response
           // below, once the snapshot reports 'pending'.
           void queryClient.invalidateQueries({ queryKey: queryKeys.history });
-          void (async () => {
-            try {
-              const response = await apiClient.upsertDailyReport({
-                localDate,
-                gutSeverity,
-                symptomTags: normalizedSymptomTags,
-                notes,
-                evidenceQuality,
-              });
-              const learningSyncError =
-                response.learningSyncStatus === 'failed'
-                  ? 'Daily report saved, but learning refresh could not be queued.'
-                  : null;
-              const learningIsQueued = response.learningSyncStatus === 'queued';
-
-              set((currentState) => ({
-                dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
-                  (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-                ),
-                learningSyncInFlight: learningIsQueued,
-                learningSyncRequestId: learningIsQueued ? response.report.id : null,
-                learningSyncError,
-                learningSyncSource: learningIsQueued ? ('daily_report' as const) : null,
-              }));
-              void Promise.all([
-                queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-                queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-              ]);
-
-              trackEvent('learning_recompute_queued', {
-                source_type: 'daily_gut_report',
-                source_id: response.report.id,
-                status: response.learningSyncStatus,
-              });
-
-              const components = response.report.dailyScoreComponents;
-              if (components && components.evidenceWeight > 0) {
-                const predictedRisk = 100 - components.foodExposure;
-                trackEvent('prediction_outcome_recorded', {
-                  local_date: localDate,
-                  reported_severity: gutSeverity,
-                  evidence_weight: components.evidenceWeight,
-                  evidence_quality: evidenceQuality ?? 'typical',
-                  predicted_risk: predictedRisk,
-                  predicted_risk_band: predictedRisk >= 64 ? 'high' : predictedRisk >= 37 ? 'medium' : 'low',
-                  false_reassurance: gutSeverity >= 7 && predictedRisk <= 36,
-                });
+          const response = await apiClient.upsertDailyReport({
+            localDate,
+            gutSeverity,
+            symptomTags: normalizedSymptomTags,
+            notes,
+            evidenceQuality,
+          }).catch((error) => {
+            set((currentState) => {
+              if (currentState.learningSyncRequestId !== optimisticReport.id) {
+                return currentState;
               }
 
-              if (learningIsQueued) {
-                try {
-                  const finalHome = await pollHomeSnapshotUntilIdle(get().applyHomeResponse);
-                  await Promise.all([
-                    queryClient.invalidateQueries({ queryKey: queryKeys.history }),
-                    queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-                    queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-                  ]);
+              const dailyReports = existing
+                ? mergeDailyReportByLocalDate(currentState.dailyReports, existing)
+                : currentState.dailyReports.filter((report) => report.localDate !== localDate);
 
-                  if (!finalHome) {
-                    set({
-                      learningSyncInFlight: false,
-                      learningSyncRequestId: null,
-                      learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
-                      learningSyncSource: null,
-                    });
-                    return;
-                  }
+              return {
+                dailyReports,
+                learningSyncInFlight: false,
+                learningSyncRequestId: null,
+                learningSyncError: error instanceof Error ? error.message : 'Daily report could not be saved.',
+                learningSyncSource: null,
+              };
+            });
+            trackEvent('daily_gut_report_save_failed', {
+              local_date: localDate,
+              error_code: apiErrorCode(error),
+            });
+            throw error;
+          });
 
-                  trackEvent('learning_recompute_completed', {
-                    source_type: 'daily_gut_report',
-                    source_id: response.report.id,
-                    status: finalHome.learningStatus,
-                  });
-                } catch (pollError) {
-                  console.warn('[learning] home snapshot polling failed', pollError);
-                  set({
-                    learningSyncInFlight: false,
-                    learningSyncRequestId: null,
-                    learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
-                    learningSyncSource: null,
-                  });
-                }
-              }
-            } catch (error) {
-              set((currentState) =>
-                currentState.learningSyncRequestId === optimisticReport.id
-                  ? {
-                      learningSyncInFlight: false,
-                      learningSyncRequestId: null,
-                      learningSyncError:
-                        error instanceof Error ? error.message : 'Daily report could not be saved.',
-                      learningSyncSource: null,
-                    }
-                  : currentState,
-              );
-              trackEvent('daily_gut_report_save_failed', {
-                local_date: localDate,
-                error_code: apiErrorCode(error),
-              });
-            }
-          })();
+          const learningSyncError =
+            response.learningSyncStatus === 'failed'
+              ? 'Daily report saved, but learning refresh could not be queued.'
+              : null;
+          const learningIsQueued = response.learningSyncStatus === 'queued';
+
+          set((currentState) => ({
+            dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(
+              (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
+            ),
+            learningSyncInFlight: learningIsQueued,
+            learningSyncRequestId: learningIsQueued ? response.report.id : null,
+            learningSyncError,
+            learningSyncSource: learningIsQueued ? ('daily_report' as const) : null,
+          }));
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          ]);
+
+          trackEvent('learning_recompute_queued', {
+            source_type: 'daily_gut_report',
+            source_id: response.report.id,
+            status: response.learningSyncStatus,
+          });
+
+          const components = response.report.dailyScoreComponents;
+          if (components && components.evidenceWeight > 0) {
+            const predictedRisk = 100 - components.foodExposure;
+            trackEvent('prediction_outcome_recorded', {
+              local_date: localDate,
+              reported_severity: gutSeverity,
+              evidence_weight: components.evidenceWeight,
+              evidence_quality: evidenceQuality ?? 'typical',
+              predicted_risk: predictedRisk,
+              predicted_risk_band: predictedRisk >= 64 ? 'high' : predictedRisk >= 37 ? 'medium' : 'low',
+              false_reassurance: gutSeverity >= 7 && predictedRisk <= 36,
+            });
+          }
+
+          if (learningIsQueued) {
+            void pollDailyReportLearning(response.report.id);
+          }
         } else {
           const existing = get().dailyReports.find((report) => report.localDate === localDate);
           const timestamp = now();

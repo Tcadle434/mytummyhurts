@@ -12,6 +12,8 @@ export interface DailyReportUpsertInput {
   evidenceQuality?: 'typical' | 'unscanned';
 }
 
+const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 @Injectable()
 export class DailyReportService {
   constructor(
@@ -20,6 +22,7 @@ export class DailyReportService {
   ) {}
 
   async upsert(userId: string, req: DailyReportUpsertInput) {
+    const localDate = normalizeLocalDate(req.localDate);
     if (req.gutSeverity < 0 || req.gutSeverity > 10) {
       throw new BadRequestException('gut_severity_out_of_range');
     }
@@ -32,7 +35,7 @@ export class DailyReportService {
         insert into public.daily_gut_reports
           (user_id, local_date, gut_severity, symptom_tags, notes, evidence_quality,
            daily_score, daily_score_updated_at)
-        values (${userId}, ${req.localDate}, ${req.gutSeverity}, ${sql.json(req.symptomTags ?? [])},
+        values (${userId}, ${localDate}::date, ${req.gutSeverity}, ${sql.json(req.symptomTags ?? [])},
                 ${req.notes ?? null}, ${req.evidenceQuality ?? 'typical'}, ${dailyScore}, now())
         on conflict (user_id, local_date) do update set
           gut_severity = excluded.gut_severity,
@@ -52,4 +55,34 @@ export class DailyReportService {
       return { ok: true as const, report: mapDailyReport(row), learningSyncStatus: 'queued' as const };
     });
   }
+}
+
+function normalizeLocalDate(value: string): string {
+  const localDate = value.trim();
+  if (!LOCAL_DATE_RE.test(localDate)) {
+    throw invalidLocalDate();
+  }
+
+  const [year, month, day] = localDate.split('-').map(Number);
+  if (!year || !month || !day || year < 1900 || year > 2100) {
+    throw invalidLocalDate();
+  }
+
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw invalidLocalDate();
+  }
+
+  return localDate;
+}
+
+function invalidLocalDate() {
+  return new BadRequestException({
+    code: 'invalid_local_date',
+    message: 'Choose a valid report date.',
+  });
 }

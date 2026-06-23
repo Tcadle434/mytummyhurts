@@ -1,4 +1,5 @@
 import { ConfigModule } from '@nestjs/config';
+import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -122,6 +123,19 @@ describe('daily-report-upsert', () => {
     // upsert again (idempotent on (user,date))
     const r2 = await daily.upsert(U, { localDate: '2026-06-22', gutSeverity: 8 });
     expect(r2.report.dailyScore).toBe(26); // 90 - 8*8
+  });
+
+  it('rejects malformed report dates before Postgres casts them', async () => {
+    try {
+      await daily.upsert(U, { localDate: '06/22/2026', gutSeverity: 2 });
+      throw new Error('expected daily.upsert to reject');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        code: 'invalid_local_date',
+        message: 'Choose a valid report date.',
+      });
+    }
   });
 });
 
