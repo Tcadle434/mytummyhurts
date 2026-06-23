@@ -5,7 +5,12 @@ import { BillingService } from '../billing/billing.service';
 import { DatabaseService } from '../database/database.service';
 import { LearningJobService } from '../learning/learning-job.service';
 import { LearningRecomputeService } from '../learning/learning-recompute.service';
-import { buildProfileFromRow, mapConditionInsight, mapInsight } from '../user-context/profile-mapper';
+import {
+  buildProfileFromRow,
+  mapConditionInsight,
+  mapGutScoreSnapshot,
+  mapInsight,
+} from '../user-context/profile-mapper';
 
 @Injectable()
 export class InsightsService {
@@ -27,9 +32,17 @@ export class InsightsService {
     const conditionInsights = await sql`select * from public.condition_ingredient_insights
       where user_id = ${userId} order by risk_score desc limit ${limit}`;
     const [profileRow] = await sql`select * from public.user_profiles where user_id = ${userId}`;
+    const gutScoreSnapshots = await sql`
+      select * from public.gut_score_snapshots
+      where user_id = ${userId}
+      order by created_at desc limit 14`;
+    const mappedInsights = insights.map(mapInsight);
     return {
-      profile: buildProfileFromRow(userId, profileRow),
-      insights: insights.map(mapInsight),
+      profile: buildProfileFromRow(userId, profileRow, {
+        insights: mappedInsights,
+        gutScore: mapGutScoreSnapshot(gutScoreSnapshots[0], gutScoreSnapshots),
+      }),
+      insights: mappedInsights,
       conditionInsights: conditionInsights.map(mapConditionInsight),
     };
   }

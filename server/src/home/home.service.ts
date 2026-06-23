@@ -3,7 +3,12 @@ import { Injectable } from '@nestjs/common';
 import { BillingService } from '../billing/billing.service';
 import { DatabaseService } from '../database/database.service';
 import { mapDailyReport } from '../scan/scan-crud.service';
-import { buildProfileFromRow, mapConditionInsight, mapInsight } from '../user-context/profile-mapper';
+import {
+  buildProfileFromRow,
+  mapConditionInsight,
+  mapGutScoreSnapshot,
+  mapInsight,
+} from '../user-context/profile-mapper';
 
 @Injectable()
 export class HomeService {
@@ -53,14 +58,24 @@ export class HomeService {
         await sql`select * from public.condition_ingredient_insights where user_id = ${userId}
                   order by risk_score desc limit 12`
       ).map(mapConditionInsight);
+      const gutScoreSnapshots = await sql`
+        select * from public.gut_score_snapshots
+        where user_id = ${userId}
+        order by created_at desc limit 14`;
 
       const [snap] = await sql`select learning_status from public.user_app_snapshots where user_id = ${userId}`;
       const now = new Date().toISOString();
+      const profileInsights = [...new Map(
+        [...triggers, ...safeFoods].map((insight) => [insight.id || insight.ingredientName, insight]),
+      ).values()];
 
       return {
         ok: true as const,
         snapshotVersion: Date.now(),
-        profile: buildProfileFromRow(userId, profileRow),
+        profile: buildProfileFromRow(userId, profileRow, {
+          insights: profileInsights,
+          gutScore: mapGutScoreSnapshot(gutScoreSnapshots[0], gutScoreSnapshots),
+        }),
         billing,
         recentScans,
         dailyReports,

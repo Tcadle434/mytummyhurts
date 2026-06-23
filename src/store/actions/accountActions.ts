@@ -145,8 +145,8 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
             const nextBilling = profileResponse.billing ?? currentState.billing;
             return {
               profile: profileResponse.profile ?? currentState.profile,
-              insights: profileResponse.insights,
-              conditionInsights: profileResponse.conditionInsights,
+              insights: profileResponse.insights ?? currentState.insights ?? [],
+              conditionInsights: profileResponse.conditionInsights ?? currentState.conditionInsights ?? [],
               billing: nextBilling,
               initialServerSyncNeeded: false,
               serverSyncInFlight: false,

@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { BillingService } from '../billing/billing.service';
 import { DatabaseService } from '../database/database.service';
 import { LearningJobService } from '../learning/learning-job.service';
-import { buildProfileFromRow } from '../user-context/profile-mapper';
+import { buildProfileFromRow, mapGutScoreSnapshot } from '../user-context/profile-mapper';
 
 export interface ProfileUpdateInput {
   onboardingAnswers?: Record<string, unknown>;
@@ -79,10 +79,16 @@ export class ProfileService {
       }
 
       const [row] = await sql`select * from public.user_profiles where user_id = ${userId}`;
+      const gutScoreSnapshots = await sql`
+        select * from public.gut_score_snapshots
+        where user_id = ${userId}
+        order by created_at desc limit 14`;
       const billing = await this.billing.getBillingState(userId, sql);
       return {
         ok: true as const,
-        profile: buildProfileFromRow(userId, row),
+        profile: buildProfileFromRow(userId, row, {
+          gutScore: mapGutScoreSnapshot(gutScoreSnapshots[0], gutScoreSnapshots),
+        }),
         billing,
         displayName: (row?.display_name as string) ?? null,
         learningSyncStatus: 'queued' as const,

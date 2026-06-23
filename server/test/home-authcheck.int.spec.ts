@@ -49,6 +49,7 @@ describe('home-get', () => {
     const h = await home.getHome(U);
     expect(h.ok).toBe(true);
     expect(h.profile?.knownConditions).toContain('IBS');
+    expect(h.profile?.stomachProfile.metadata.gutScore?.currentScore).toEqual(expect.any(Number));
     expect(h.billing.tokensRemaining).toBe(30);
     expect(h.recentScans.length).toBe(1);
     expect(h.recentScans[0].dishName).toBe('home dish');

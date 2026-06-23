@@ -206,6 +206,10 @@ export function homeResponseStatePatch(
   currentState: AppStoreState,
   response: HomeResponse,
 ): Partial<AppStoreState> {
+  const currentInsights = Array.isArray(currentState.insights) ? currentState.insights : [];
+  const currentConditionInsights = Array.isArray(currentState.conditionInsights)
+    ? currentState.conditionInsights
+    : [];
   const summaryInsights = homeSummaryInsights(response);
   const learningIsInFlight = response.learningStatus === 'pending' || response.learningStatus === 'running';
   const learningFailed = response.learningStatus === 'failed';
@@ -214,9 +218,9 @@ export function homeResponseStatePatch(
     profile: response.profile,
     billing: response.billing,
     dailyReports: sortDailyReportsByDate(response.dailyReports),
-    insights: currentState.insights.length ? currentState.insights : summaryInsights,
-    conditionInsights: currentState.conditionInsights.length
-      ? currentState.conditionInsights
+    insights: currentInsights.length ? currentInsights : summaryInsights,
+    conditionInsights: currentConditionInsights.length
+      ? currentConditionInsights
       : response.insightSummary.conditionInsights,
     initialServerSyncNeeded: response.profile ? false : currentState.initialServerSyncNeeded,
     remoteDataLoaded: true,

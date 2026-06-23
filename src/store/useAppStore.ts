@@ -13,6 +13,10 @@ import { AppStoreState, defaultBillingState } from './types';
 
 export type { AppStoreState } from './types';
 
+function arrayOrFallback<T>(value: T[] | undefined, fallback: T[]) {
+  return Array.isArray(value) ? value : fallback;
+}
+
 export const useAppStore = create<AppStoreState>()(
   persist(
     (set, get) => ({
@@ -50,6 +54,13 @@ export const useAppStore = create<AppStoreState>()(
           ...current,
           ...persistedState,
           onboardingAnswers: normalizeOnboardingAnswers(persistedState?.onboardingAnswers),
+          scans: arrayOrFallback(persistedState?.scans, current.scans),
+          dailyReports: arrayOrFallback(persistedState?.dailyReports, current.dailyReports),
+          insights: arrayOrFallback(persistedState?.insights, current.insights),
+          conditionInsights: arrayOrFallback(
+            persistedState?.conditionInsights,
+            current.conditionInsights,
+          ),
           remoteDataLoaded: false,
         };
       },

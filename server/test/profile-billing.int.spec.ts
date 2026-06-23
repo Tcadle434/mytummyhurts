@@ -57,6 +57,7 @@ describe('profile-update', () => {
     expect(r.ok).toBe(true);
     expect(r.displayName).toBe('Tester');
     expect(r.profile?.knownConditions).toContain('IBS');
+    expect(r.profile?.stomachProfile.metadata.gutScore?.currentScore).toEqual(expect.any(Number));
 
     const conds = await admin`select condition_key from public.user_conditions where user_id = ${U}`;
     expect(conds.map((c) => c.condition_key)).toContain('IBS');
@@ -69,6 +70,7 @@ describe('insights-get', () => {
   it('returns profile + (empty) insights + billing', async () => {
     const r = await insights.getInsights(U);
     expect(r.profile?.knownConditions).toContain('IBS');
+    expect(r.profile?.stomachProfile.metadata.gutScore?.currentScore).toEqual(expect.any(Number));
     expect(Array.isArray(r.insights)).toBe(true);
     expect(r.billing.tokensRemaining).toBe(40);
   });

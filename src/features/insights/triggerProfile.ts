@@ -44,9 +44,15 @@ export type TriggerCounts = {
   safe: number;
 };
 
-export function summarizeTriggerCounts(insights: IngredientInsight[]): TriggerCounts {
+type OptionalInsights = IngredientInsight[] | null | undefined;
+
+function normalizeInsights(insights: OptionalInsights): IngredientInsight[] {
+  return Array.isArray(insights) ? insights : [];
+}
+
+export function summarizeTriggerCounts(insights: OptionalInsights): TriggerCounts {
   const counts: TriggerCounts = { confirmed: 0, suspects: 0, cleared: 0, safe: 0 };
-  for (const insight of insights) {
+  for (const insight of normalizeInsights(insights)) {
     const status = statusForInsight(insight);
     if (status === 'confirmed') counts.confirmed += 1;
     else if (status === 'suspect') counts.suspects += 1;
@@ -105,13 +111,13 @@ const SECTION_META: Record<TriggerStatus, { title: string; subtitle: string }> =
 };
 
 export function buildTriggerProfileViewState(
-  insights: IngredientInsight[],
+  insights: OptionalInsights,
   filters: { search?: string; condition?: string } = {},
 ): TriggerProfileViewState {
   const search = filters.search?.trim().toLowerCase() ?? '';
   const condition = filters.condition?.trim().toLowerCase() ?? '';
 
-  const filtered = insights.filter((insight) => {
+  const filtered = normalizeInsights(insights).filter((insight) => {
     if (search && !insight.ingredientName.toLowerCase().includes(search)) {
       return false;
     }

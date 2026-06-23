@@ -85,6 +85,10 @@ describe('statusForInsight', () => {
 });
 
 describe('summarizeTriggerCounts', () => {
+  it('treats missing insights as an empty profile', () => {
+    expect(summarizeTriggerCounts(undefined)).toEqual({ confirmed: 0, suspects: 0, cleared: 0, safe: 0 });
+  });
+
   it('buckets a mixed set of insights', () => {
     const counts = summarizeTriggerCounts([
       insight({ combinedRiskScore: 70, confidenceLevel: 'high' }),
@@ -103,6 +107,14 @@ describe('buildTriggerProfileViewState', () => {
     insight({ ingredientName: 'onion', combinedRiskScore: 56, negativeEvidenceCount: 2 }),
     insight({ ingredientName: 'rice', combinedRiskScore: 36, positiveEvidenceCount: 2 }),
   ];
+
+  it('builds an empty state when insights are missing', () => {
+    const viewState = buildTriggerProfileViewState(undefined);
+
+    expect(viewState.totalTracked).toBe(0);
+    expect(viewState.sections).toEqual([]);
+    expect(viewState.counts).toEqual({ confirmed: 0, suspects: 0, cleared: 0, safe: 0 });
+  });
 
   it('groups members and orders sections confirmed -> suspect -> safe', () => {
     const viewState = buildTriggerProfileViewState(mixed);
