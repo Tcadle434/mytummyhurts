@@ -211,14 +211,15 @@ export function homeResponseStatePatch(
     ? currentState.conditionInsights
     : [];
   const summaryInsights = homeSummaryInsights(response);
+  const nextInsights = currentInsights.length ? currentInsights : summaryInsights;
   const learningIsInFlight = response.learningStatus === 'pending' || response.learningStatus === 'running';
   const learningFailed = response.learningStatus === 'failed';
 
   return {
-    profile: response.profile,
+    profile: profileWithGutScoreFallback(response.profile, currentState, nextInsights),
     billing: response.billing,
     dailyReports: sortDailyReportsByDate(response.dailyReports),
-    insights: currentInsights.length ? currentInsights : summaryInsights,
+    insights: nextInsights,
     conditionInsights: currentConditionInsights.length
       ? currentConditionInsights
       : response.insightSummary.conditionInsights,
@@ -273,6 +274,36 @@ export async function pollHomeSnapshotUntilIdle(
 
 export function createLocalProfile(userId: string, answers: OnboardingAnswers, insights: IngredientInsight[]) {
   return buildUserProfile(userId, answers, insights);
+}
+
+export function profileWithGutScoreFallback(
+  profile: UserProfile | null | undefined,
+  state: Pick<AppStoreState, 'profile' | 'onboardingAnswers' | 'insights'>,
+  insights: IngredientInsight[] = state.insights,
+): UserProfile | null {
+  if (!profile) {
+    return profile ?? null;
+  }
+
+  if (profile.stomachProfile.metadata.gutScore) {
+    return profile;
+  }
+
+  const safeInsights = Array.isArray(insights) ? insights : [];
+  const gutScore =
+    state.profile?.stomachProfile.metadata.gutScore ??
+    buildUserProfile(profile.userId, state.onboardingAnswers, safeInsights).stomachProfile.metadata.gutScore;
+
+  return {
+    ...profile,
+    stomachProfile: {
+      ...profile.stomachProfile,
+      metadata: {
+        ...profile.stomachProfile.metadata,
+        gutScore,
+      },
+    },
+  };
 }
 
 export function buildScoringOptions(state: Pick<AppStoreState, 'onboardingAnswers'>) {

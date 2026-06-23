@@ -5,7 +5,7 @@ import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { apiErrorCode, patchInsightsCacheFromLearning, patchDailyReportsInHistoryCache, sleep } from '../helpers';
+import { apiErrorCode, patchInsightsCacheFromLearning, patchDailyReportsInHistoryCache, sleep, profileWithGutScoreFallback } from '../helpers';
 
 export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -43,9 +43,10 @@ export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
                   return state;
                 }
 
+                const nextInsights = response.insights ?? state.insights;
                 return {
-                  profile: response.profile ?? state.profile,
-                  insights: response.insights ?? state.insights,
+                  profile: profileWithGutScoreFallback(response.profile ?? state.profile, state, nextInsights),
+                  insights: nextInsights,
                   conditionInsights: response.conditionInsights ?? state.conditionInsights,
                   dailyReports: response.dailyReports
                     ? response.dailyReports.sort(

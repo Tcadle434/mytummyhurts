@@ -9,7 +9,7 @@ import { getRevenueCatBillingSyncRequest } from '../../services/billing/revenueC
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, patchProfileRequestInInsightsCache, apiErrorCode } from '../helpers';
+import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, patchProfileRequestInInsightsCache, apiErrorCode, profileWithGutScoreFallback } from '../helpers';
 
 export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -143,9 +143,10 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
 
           set((currentState) => {
             const nextBilling = profileResponse.billing ?? currentState.billing;
+            const nextInsights = profileResponse.insights ?? currentState.insights ?? [];
             return {
-              profile: profileResponse.profile ?? currentState.profile,
-              insights: profileResponse.insights ?? currentState.insights ?? [],
+              profile: profileWithGutScoreFallback(profileResponse.profile ?? currentState.profile, currentState, nextInsights),
+              insights: nextInsights,
               conditionInsights: profileResponse.conditionInsights ?? currentState.conditionInsights ?? [],
               billing: nextBilling,
               initialServerSyncNeeded: false,
@@ -200,15 +201,9 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
                 : typeof request.displayName !== 'undefined'
                   ? request.displayName?.trim() || undefined
                   : undefined;
-            set((currentState) => ({
-              onboardingAnswers:
-                typeof request.displayName === 'undefined'
-                  ? currentState.onboardingAnswers
-                  : {
-                      ...currentState.onboardingAnswers,
-                      displayName: nextDisplayName ?? '',
-                    },
-              profile:
+            set((currentState) => {
+              const nextInsights = response.insights ?? currentState.insights;
+              const nextProfile =
                 response.profile ??
                 (currentState.profile
                   ? {
@@ -218,11 +213,21 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
                           ? nextDisplayName
                           : currentState.profile.displayName,
                     }
-                  : currentState.profile),
-              insights: response.insights ?? currentState.insights,
-              conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
-              billing: response.billing ?? currentState.billing,
-            }));
+                  : currentState.profile);
+              return {
+                onboardingAnswers:
+                  typeof request.displayName === 'undefined'
+                    ? currentState.onboardingAnswers
+                    : {
+                        ...currentState.onboardingAnswers,
+                        displayName: nextDisplayName ?? '',
+                      },
+                profile: profileWithGutScoreFallback(nextProfile, currentState, nextInsights),
+                insights: nextInsights,
+                conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+                billing: response.billing ?? currentState.billing,
+              };
+            });
 
             if (displayNameOnly) {
               patchDisplayNameInInsightsCache(nextDisplayName);

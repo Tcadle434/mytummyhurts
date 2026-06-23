@@ -9,7 +9,7 @@ import { showToast } from '../../services/toast';
 import { ScanRecord } from '../../types/domain';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { now, localDateString, currentTimezone, scanCategoryForPayload, removeScanFromHistoryCache, scanRequestId, apiErrorCode, mergeById, rebuildLocalLearningState } from '../helpers';
+import { now, localDateString, currentTimezone, scanCategoryForPayload, removeScanFromHistoryCache, scanRequestId, apiErrorCode, mergeById, rebuildLocalLearningState, profileWithGutScoreFallback } from '../helpers';
 
 export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -103,13 +103,16 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
                     timezone,
                   });
 
-            set((currentState) => ({
-              scans: mergeById(currentState.scans, response.scan),
-              billing: response.billing,
-              profile: response.profile ?? currentState.profile,
-              insights: response.insights ?? currentState.insights,
-              conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
-            }));
+            set((currentState) => {
+              const nextInsights = response.insights ?? currentState.insights;
+              return {
+                scans: mergeById(currentState.scans, response.scan),
+                billing: response.billing,
+                profile: profileWithGutScoreFallback(response.profile ?? currentState.profile, currentState, nextInsights),
+                insights: nextInsights,
+                conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+              };
+            });
             await Promise.all([
               queryClient.invalidateQueries({ queryKey: queryKeys.history }),
               queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
@@ -199,11 +202,14 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           void (async () => {
             try {
               const response = await apiClient.deleteScan({ scanId });
-              set((state) => ({
-                profile: response.profile ?? state.profile,
-                insights: response.insights ?? state.insights,
-                conditionInsights: response.conditionInsights ?? state.conditionInsights,
-              }));
+              set((state) => {
+                const nextInsights = response.insights ?? state.insights;
+                return {
+                  profile: profileWithGutScoreFallback(response.profile ?? state.profile, state, nextInsights),
+                  insights: nextInsights,
+                  conditionInsights: response.conditionInsights ?? state.conditionInsights,
+                };
+              });
               await Promise.all([
                 queryClient.invalidateQueries({ queryKey: queryKeys.history }),
                 queryClient.invalidateQueries({ queryKey: queryKeys.home }),
