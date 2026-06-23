@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
+import { json, urlencoded } from 'express';
 import { Logger as PinoLogger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
@@ -14,6 +15,8 @@ async function bootstrap(): Promise<void> {
   }
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(PinoLogger));
+  app.use(json({ limit: process.env.HTTP_BODY_LIMIT ?? '25mb' }));
+  app.use(urlencoded({ extended: true, limit: process.env.HTTP_BODY_LIMIT ?? '25mb' }));
 
   // Global request validation — every endpoint DTO is whitelisted, and unknown
   // properties are rejected (matches the strict edge-function body parsing).

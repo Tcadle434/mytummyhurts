@@ -298,15 +298,16 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <SectionCard style={styles.permissionCard}>
-          <View style={styles.permissionTabs}>
-            <ScanModeTabs tabs={modeTabs} value={mode} onChange={(next) => void selectScanMode(next)} />
-          </View>
           <Text style={styles.permissionTitle}>Camera access keeps scanning instant.</Text>
           <Text style={styles.permissionBody}>
-            You can still upload food or menu photos without camera access.
+            {mode === 'barcode'
+              ? 'Barcode scans need camera access.'
+              : 'You can still upload food or menu photos without camera access.'}
           </Text>
           <PrimaryButton label="Allow camera" onPress={() => requestPermission()} />
-          <SecondaryButton label={imageScanCategory === 'menu' ? 'Upload menu photos' : 'Upload food photos'} onPress={() => void openLibrary()} />
+          {mode !== 'barcode' ? (
+            <SecondaryButton label={imageScanCategory === 'menu' ? 'Upload menu photos' : 'Upload food photos'} onPress={() => void openLibrary()} />
+          ) : null}
         </SectionCard>
       )}
 
@@ -498,9 +499,6 @@ const styles = StyleSheet.create({
   permissionCard: {
     flex: 1,
     justifyContent: 'center',
-  },
-  permissionTabs: {
-    marginBottom: spacing.md,
   },
   permissionTitle: {
     color: palette.text,
