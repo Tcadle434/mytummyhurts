@@ -5,7 +5,7 @@ import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { apiErrorCode, patchInsightsCacheFromLearning, patchDailyReportsInHistoryCache, sleep, profileWithGutScoreFallback } from '../helpers';
+import { apiErrorCode, patchInsightsCacheFromLearning, patchDailyReportsInHistoryCache, sleep, profileWithGutScoreFallback, sortDailyReportsByDate } from '../helpers';
 
 export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -49,9 +49,7 @@ export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
                   insights: nextInsights,
                   conditionInsights: response.conditionInsights ?? state.conditionInsights,
                   dailyReports: response.dailyReports
-                    ? response.dailyReports.sort(
-                        (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-                      )
+                    ? sortDailyReportsByDate(response.dailyReports)
                     : state.dailyReports,
                 };
               });

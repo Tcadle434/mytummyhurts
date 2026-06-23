@@ -25,7 +25,7 @@ export class HomeService {
       const recentScans = (
         await sql`
           select id, title, scan_category, source_type, overall_risk_score, overall_risk_level,
-                 consumption_status, created_at, completed_at
+                 consumption_status, local_date, created_at, completed_at
           from public.scans
           where user_id = ${userId} and analysis_status = 'completed'
           order by created_at desc limit 50`
@@ -37,6 +37,11 @@ export class HomeService {
         overallRiskScore: s.overall_risk_score,
         overallRiskLevel: s.overall_risk_level,
         consumptionStatus: s.consumption_status,
+        localDate: s.local_date
+          ? s.local_date instanceof Date
+            ? s.local_date.toISOString().slice(0, 10)
+            : String(s.local_date).slice(0, 10)
+          : undefined,
         createdAt: s.created_at,
         completedAt: s.completed_at,
       }));

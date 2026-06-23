@@ -119,6 +119,7 @@ describe('daily-report-upsert', () => {
   it('upserts a report with a symptom-based daily score', async () => {
     const r = await daily.upsert(U, { localDate: '2026-06-22', gutSeverity: 2, symptomTags: ['bloating'] });
     expect(r.ok).toBe(true);
+    expect(r.report.localDate).toBe('2026-06-22');
     expect(r.report.dailyScore).toBe(74); // 90 - 2*8
     // upsert again (idempotent on (user,date))
     const r2 = await daily.upsert(U, { localDate: '2026-06-22', gutSeverity: 8 });

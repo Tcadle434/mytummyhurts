@@ -8,7 +8,7 @@ import { queryKeys } from '../../services/query/keys';
 import { DailyGutReport } from '../../types/domain';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { now, apiErrorCode, mergeById, mergeDailyReportByLocalDate, pollHomeSnapshotUntilIdle, rebuildLocalLearningState } from '../helpers';
+import { now, apiErrorCode, mergeById, mergeDailyReportByLocalDate, patchDailyReportInQueryCaches, pollHomeSnapshotUntilIdle, rebuildLocalLearningState } from '../helpers';
 
 export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -140,6 +140,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
               ? 'Daily report saved, but learning refresh could not be queued.'
               : null;
           const learningIsQueued = response.learningSyncStatus === 'queued';
+          patchDailyReportInQueryCaches(response.report);
 
           set((currentState) => ({
             dailyReports: mergeDailyReportByLocalDate(currentState.dailyReports, response.report).sort(

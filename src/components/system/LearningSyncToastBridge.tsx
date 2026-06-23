@@ -5,9 +5,9 @@ import { useAppStore } from '../../store/useAppStore';
 
 const LEARNING_SYNC_TOAST_ID = 'learning-sync';
 
-// One auto-dismissing toast per daily-report save. Never sticky: the toast
-// must not depend on the sync settling (a dropped connection once left the
-// "Queueing your learning update" toast on screen permanently).
+// Reserved for explicit background recompute messaging. Daily-report saves land
+// on the payoff screen, so a second toast is noisy and makes the flow feel
+// disconnected from the saved report.
 export function LearningSyncToastBridge() {
   const learningSyncInFlight = useAppStore((state) => state.learningSyncInFlight);
   const learningSyncSource = useAppStore((state) => state.learningSyncSource);
@@ -19,15 +19,15 @@ export function LearningSyncToastBridge() {
       return;
     }
 
-    if (wasInFlight.current || learningSyncSource !== 'daily_report') {
+    if (wasInFlight.current || learningSyncSource !== 'recompute') {
       return;
     }
 
     wasInFlight.current = true;
     showToast({
       id: LEARNING_SYNC_TOAST_ID,
-      message: 'Report saved',
-      detail: 'Your scores will update in the background.',
+      message: 'Learning update running',
+      detail: 'Your profile will refresh in the background.',
       tone: 'success',
     });
   }, [learningSyncInFlight, learningSyncSource]);

@@ -9,7 +9,7 @@ import { getRevenueCatBillingSyncRequest } from '../../services/billing/revenueC
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, patchProfileRequestInInsightsCache, apiErrorCode, profileWithGutScoreFallback } from '../helpers';
+import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, patchProfileRequestInInsightsCache, apiErrorCode, profileWithGutScoreFallback, normalizeHomeResponse } from '../helpers';
 
 export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -51,9 +51,10 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
         set({ billing });
       },
       applyHomeResponse: (response) => {
-        queryClient.setQueryData(queryKeys.home, response);
-        patchDailyReportsInHistoryCache(response.dailyReports);
-        set((currentState) => homeResponseStatePatch(currentState, response));
+        const normalized = normalizeHomeResponse(response);
+        queryClient.setQueryData(queryKeys.home, normalized);
+        patchDailyReportsInHistoryCache(normalized.dailyReports);
+        set((currentState) => homeResponseStatePatch(currentState, normalized));
       },
       refreshRemoteState: async () => {
         const state = get();
@@ -78,9 +79,10 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
           throw error;
         }
 
-        queryClient.setQueryData(queryKeys.home, homeResponse);
-        patchDailyReportsInHistoryCache(homeResponse.dailyReports);
-        set((currentState) => homeResponseStatePatch(currentState, homeResponse));
+        const normalizedHomeResponse = normalizeHomeResponse(homeResponse);
+        queryClient.setQueryData(queryKeys.home, normalizedHomeResponse);
+        patchDailyReportsInHistoryCache(normalizedHomeResponse.dailyReports);
+        set((currentState) => homeResponseStatePatch(currentState, normalizedHomeResponse));
       },
       syncInitialAccountState: async () => {
         const state = get();

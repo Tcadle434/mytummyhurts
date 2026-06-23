@@ -10,6 +10,7 @@ import { createOnboardingActions } from './actions/onboardingActions';
 import { createReportActions } from './actions/reportActions';
 import { createScanActions } from './actions/scanActions';
 import { AppStoreState, defaultBillingState } from './types';
+import { sortDailyReportsByDate } from '../utils/dailyReports';
 
 export type { AppStoreState } from './types';
 
@@ -55,7 +56,7 @@ export const useAppStore = create<AppStoreState>()(
           ...persistedState,
           onboardingAnswers: normalizeOnboardingAnswers(persistedState?.onboardingAnswers),
           scans: arrayOrFallback(persistedState?.scans, current.scans),
-          dailyReports: arrayOrFallback(persistedState?.dailyReports, current.dailyReports),
+          dailyReports: sortDailyReportsByDate(arrayOrFallback(persistedState?.dailyReports, current.dailyReports)),
           insights: arrayOrFallback(persistedState?.insights, current.insights),
           conditionInsights: arrayOrFallback(
             persistedState?.conditionInsights,

@@ -5,8 +5,14 @@ import { buildGutScoreEvent, buildUserProfile, computeGutScoreState, computeProf
 import { queryClient } from '../services/query/client';
 import { queryKeys } from '../services/query/keys';
 import { ConditionIngredientInsight, DailyGutReport, IngredientInsight, OnboardingAnswers, ScanInputPayload, ScanRecord, ScanCategory, SubscriptionPlan, UserProfile } from '../types/domain';
+import {
+  mergeDailyReportByLocalDate,
+  sortDailyReportsByDate,
+} from '../utils/dailyReports';
 import { createScanRequestId } from '../utils/id';
 import { AppStoreState, defaultBillingState } from './types';
+
+export { mergeDailyReportByLocalDate, sortDailyReportsByDate } from '../utils/dailyReports';
 
 export function now() {
   return new Date().toISOString();
@@ -149,9 +155,7 @@ export function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] |
     return;
   }
 
-  const orderedReports = [...dailyReports].sort(
-    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-  );
+  const orderedReports = sortDailyReportsByDate(dailyReports);
 
   queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
     if (!cached || typeof cached !== 'object') {
@@ -186,6 +190,56 @@ export function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] |
   });
 }
 
+export function patchDailyReportInQueryCaches(report: DailyGutReport) {
+  queryClient.setQueryData(queryKeys.home, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const homeCache = cached as HomeResponse;
+    if (!Array.isArray(homeCache.dailyReports)) {
+      return cached;
+    }
+
+    return {
+      ...homeCache,
+      dailyReports: mergeDailyReportByLocalDate(homeCache.dailyReports, report),
+    };
+  });
+
+  queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const historyCache = cached as {
+      pages?: { dailyReports?: DailyGutReport[]; [key: string]: unknown }[];
+      dailyReports?: DailyGutReport[];
+      [key: string]: unknown;
+    };
+
+    if (Array.isArray(historyCache.pages)) {
+      return {
+        ...historyCache,
+        pages: historyCache.pages.map((page) =>
+          Array.isArray(page.dailyReports)
+            ? { ...page, dailyReports: mergeDailyReportByLocalDate(page.dailyReports, report) }
+            : page,
+        ),
+      };
+    }
+
+    if (Array.isArray(historyCache.dailyReports)) {
+      return {
+        ...historyCache,
+        dailyReports: mergeDailyReportByLocalDate(historyCache.dailyReports, report),
+      };
+    }
+
+    return cached;
+  });
+}
+
 export function homeSummaryInsights(response: HomeResponse) {
   const byId = new Map<string, IngredientInsight>();
 
@@ -196,34 +250,36 @@ export function homeSummaryInsights(response: HomeResponse) {
   return [...byId.values()];
 }
 
-export function sortDailyReportsByDate(dailyReports: DailyGutReport[]) {
-  return [...dailyReports].sort(
-    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-  );
+export function normalizeHomeResponse(response: HomeResponse): HomeResponse {
+  return {
+    ...response,
+    dailyReports: sortDailyReportsByDate(response.dailyReports),
+  };
 }
 
 export function homeResponseStatePatch(
   currentState: AppStoreState,
   response: HomeResponse,
 ): Partial<AppStoreState> {
+  const normalizedResponse = normalizeHomeResponse(response);
   const currentInsights = Array.isArray(currentState.insights) ? currentState.insights : [];
   const currentConditionInsights = Array.isArray(currentState.conditionInsights)
     ? currentState.conditionInsights
     : [];
-  const summaryInsights = homeSummaryInsights(response);
+  const summaryInsights = homeSummaryInsights(normalizedResponse);
   const nextInsights = currentInsights.length ? currentInsights : summaryInsights;
-  const learningIsInFlight = response.learningStatus === 'pending' || response.learningStatus === 'running';
-  const learningFailed = response.learningStatus === 'failed';
+  const learningIsInFlight = normalizedResponse.learningStatus === 'pending' || normalizedResponse.learningStatus === 'running';
+  const learningFailed = normalizedResponse.learningStatus === 'failed';
 
   return {
-    profile: profileWithGutScoreFallback(response.profile, currentState, nextInsights),
-    billing: response.billing,
-    dailyReports: sortDailyReportsByDate(response.dailyReports),
+    profile: profileWithGutScoreFallback(normalizedResponse.profile, currentState, nextInsights),
+    billing: normalizedResponse.billing,
+    dailyReports: normalizedResponse.dailyReports,
     insights: nextInsights,
     conditionInsights: currentConditionInsights.length
       ? currentConditionInsights
-      : response.insightSummary.conditionInsights,
-    initialServerSyncNeeded: response.profile ? false : currentState.initialServerSyncNeeded,
+      : normalizedResponse.insightSummary.conditionInsights,
+    initialServerSyncNeeded: normalizedResponse.profile ? false : currentState.initialServerSyncNeeded,
     remoteDataLoaded: true,
     serverSyncError: null,
     learningSyncInFlight: learningIsInFlight,
@@ -236,10 +292,6 @@ export function homeResponseStatePatch(
 
 export function mergeById<T extends { id: string }>(items: T[], incoming: T) {
   return [incoming, ...items.filter((item) => item.id !== incoming.id)];
-}
-
-export function mergeDailyReportByLocalDate(items: DailyGutReport[], incoming: DailyGutReport) {
-  return [incoming, ...items.filter((item) => item.localDate !== incoming.localDate)];
 }
 
 export function sleep(ms: number) {

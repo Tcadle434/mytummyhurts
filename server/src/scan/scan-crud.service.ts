@@ -184,7 +184,7 @@ export class ScanCrudService {
         overallRiskScore: s.overall_risk_score,
         overallRiskLevel: s.overall_risk_level,
         consumptionStatus: s.consumption_status,
-        localDate: s.local_date ?? undefined,
+        localDate: s.local_date ? toLocalDate(s.local_date) : undefined,
         timezone: s.timezone ?? undefined,
         createdAt: s.created_at,
         completedAt: s.completed_at,
@@ -268,7 +268,7 @@ export class ScanCrudService {
       gutRecommendation: scan.gut_recommendation ?? undefined,
       consumptionStatus: scan.consumption_status,
       inputText: scan.input_text ?? undefined,
-      localDate: scan.local_date ?? undefined,
+      localDate: scan.local_date ? toLocalDate(scan.local_date) : undefined,
       timezone: scan.timezone ?? undefined,
       createdAt: scan.created_at,
       completedAt: scan.completed_at ?? undefined,
@@ -307,16 +307,32 @@ export function mapDailyReport(r: Record<string, unknown>) {
   return {
     id: r.id,
     userId: r.user_id,
-    localDate: r.local_date,
+    localDate: toLocalDate(r.local_date),
     gutSeverity: r.gut_severity,
     symptomTags: r.symptom_tags ?? [],
     notes: r.notes ?? undefined,
     dailyScore: r.daily_score ?? undefined,
     dailyScoreComponents: r.daily_score_components ?? undefined,
     evidenceQuality: r.evidence_quality ?? undefined,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    createdAt: toIso(r.created_at),
+    updatedAt: toIso(r.updated_at),
   };
+}
+
+function toLocalDate(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  return String(value ?? '').slice(0, 10);
+}
+
+function toIso(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return String(value ?? '');
 }
 
 function groupRowsBy(rows: Array<Record<string, unknown>>, key: string) {
