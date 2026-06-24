@@ -190,6 +190,26 @@ export function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] |
   });
 }
 
+export function patchLearningResponseInQueryCaches(response: LearningRecomputeResponse) {
+  patchInsightsCacheFromLearning(response);
+  patchDailyReportsInHistoryCache(response.dailyReports);
+}
+
+export function learningResponseStatePatch(
+  currentState: AppStoreState,
+  response: LearningRecomputeResponse,
+): Partial<AppStoreState> {
+  const nextInsights = response.insights ?? currentState.insights;
+  return {
+    profile: profileWithGutScoreFallback(response.profile ?? currentState.profile, currentState, nextInsights),
+    insights: nextInsights,
+    conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+    dailyReports: response.dailyReports
+      ? sortDailyReportsByDate(response.dailyReports)
+      : currentState.dailyReports,
+  };
+}
+
 export function patchDailyReportInQueryCaches(report: DailyGutReport) {
   queryClient.setQueryData(queryKeys.home, (cached: unknown) => {
     if (!cached || typeof cached !== 'object') {

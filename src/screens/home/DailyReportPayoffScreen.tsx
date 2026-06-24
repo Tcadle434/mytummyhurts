@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, DetailScreenHeader, PrimaryButton, SectionCard } from '../../components/common/UI';
 import { DailyScoreRing, scoreTint } from '../../components/progress/DailyScoreRing';
-import { buildReportPayoff, type PayoffEvidenceChange } from '../../features/home/reportPayoff';
+import { buildReportPayoff, resolvePayoffLoading, type PayoffEvidenceChange } from '../../features/home/reportPayoff';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
@@ -23,7 +23,13 @@ export function DailyReportPayoffScreen({ navigation, route }: Props) {
   const gutScore = useAppStore((state) => state.profile?.stomachProfile.metadata.gutScore ?? null);
   const insights = useAppStore((state) => state.insights);
   const clearReportPayoffBaseline = useAppStore((state) => state.clearReportPayoffBaseline);
-  const triggerLearningInFlight = learningSyncInFlight && learningSyncSource === 'daily_report';
+  const [payoffRevealed, setPayoffRevealed] = useState(false);
+  const payoffLoading = resolvePayoffLoading({
+    revealed: payoffRevealed,
+    learningSyncInFlight,
+    learningSyncSource,
+  });
+  const triggerLearningInFlight = payoffLoading.connecting;
 
   const payoff = useMemo(() => {
     if (!baseline || baseline.localDate !== localDate) {
@@ -31,6 +37,12 @@ export function DailyReportPayoffScreen({ navigation, route }: Props) {
     }
     return buildReportPayoff({ baseline, report, gutScore, insights });
   }, [baseline, gutScore, insights, localDate, report]);
+
+  useEffect(() => {
+    if (payoffLoading.revealed && !payoffRevealed) {
+      setPayoffRevealed(true);
+    }
+  }, [payoffLoading.revealed, payoffRevealed]);
 
   useEffect(() => {
     trackEvent('daily_report_payoff_viewed', { local_date: localDate });
@@ -49,12 +61,16 @@ export function DailyReportPayoffScreen({ navigation, route }: Props) {
     <AppScreen contentContainerStyle={styles.screenContent}>
       <DetailScreenHeader eyebrow="Check-in saved" title={dateLabel} />
 
-      {!report ? (
+      {!report || triggerLearningInFlight ? (
         <SectionCard style={styles.centerCard}>
           <ActivityIndicator color={palette.primary} />
-          <Text style={styles.connectingTitle}>Saving your report</Text>
+          <Text style={styles.connectingTitle}>
+            {report ? 'Personalizing your Daily Score' : 'Saving your report'}
+          </Text>
           <Text style={styles.connectingBody}>
-            This should only take a moment.
+            {report
+              ? 'Checking your meals and symptoms now.'
+              : 'This should only take a moment.'}
           </Text>
         </SectionCard>
       ) : (

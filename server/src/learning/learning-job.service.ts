@@ -23,6 +23,13 @@ export class LearningJobService {
           ${input.userId}, ${input.eventType}, ${input.sourceType},
           ${input.sourceId ?? null}, ${input.runAfterSeconds ?? 0},
           ${sql.json((input.metadata ?? {}) as never)})`;
+      await sql`
+        insert into public.user_app_snapshots (user_id, learning_status, last_source_type, last_source_id)
+        values (${input.userId}, 'pending', ${input.sourceType}, ${input.sourceId ?? null})
+        on conflict (user_id) do update set
+          learning_status = 'pending',
+          last_source_type = ${input.sourceType},
+          last_source_id = ${input.sourceId ?? null}`;
       return row;
     });
   }
@@ -42,9 +49,15 @@ export class LearningJobService {
 
   fail(jobId: string, error: string) {
     return this.db.service(
-      (sql) => sql`update public.learning_jobs
-        set status = 'failed', failed_at = now(), last_error = ${error.slice(0, 500)}, updated_at = now()
-        where id = ${jobId}`,
+      async (sql) => {
+        await sql`update public.learning_jobs
+          set status = 'failed', failed_at = now(), last_error = ${error.slice(0, 500)}, updated_at = now()
+          where id = ${jobId}`;
+        await sql`update public.user_app_snapshots snapshots
+          set learning_status = 'failed'
+          from public.learning_jobs jobs
+          where jobs.id = ${jobId} and snapshots.user_id = jobs.user_id`;
+      },
     );
   }
 }

@@ -8,7 +8,17 @@ import { queryKeys } from '../../services/query/keys';
 import { DailyGutReport } from '../../types/domain';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { now, apiErrorCode, mergeById, mergeDailyReportByLocalDate, patchDailyReportInQueryCaches, pollHomeSnapshotUntilIdle, rebuildLocalLearningState } from '../helpers';
+import {
+  now,
+  apiErrorCode,
+  learningResponseStatePatch,
+  mergeById,
+  mergeDailyReportByLocalDate,
+  patchDailyReportInQueryCaches,
+  patchLearningResponseInQueryCaches,
+  pollHomeSnapshotUntilIdle,
+  rebuildLocalLearningState,
+} from '../helpers';
 
 export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -32,7 +42,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
           }),
         }));
         const authUser = get().authUser;
-        const pollDailyReportLearning = async (reportId: string) => {
+        const fallbackPollDailyReportLearning = async (reportId: string) => {
           try {
             const finalHome = await pollHomeSnapshotUntilIdle(get().applyHomeResponse);
             await Promise.all([
@@ -64,6 +74,51 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
               learningSyncError: 'Daily report saved, but Gut Score refresh is still catching up.',
               learningSyncSource: null,
             });
+          }
+        };
+        const refreshDailyReportLearning = async (reportId: string) => {
+          try {
+            const learningResponse = await apiClient.learningRecompute({
+              sourceType: 'daily_gut_report',
+              sourceId: reportId,
+            });
+
+            if (learningResponse.learningSyncStatus !== 'updated') {
+              throw new Error(`learning_recompute_${learningResponse.learningSyncStatus}`);
+            }
+
+            patchLearningResponseInQueryCaches(learningResponse);
+            set((currentState) => {
+              if (currentState.learningSyncRequestId !== reportId) {
+                return currentState;
+              }
+
+              return {
+                ...learningResponseStatePatch(currentState, learningResponse),
+                learningSyncInFlight: false,
+                learningSyncRequestId: null,
+                learningSyncError: null,
+                learningSyncSource: null,
+              };
+            });
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+            ]);
+            trackEvent('learning_recompute_completed', {
+              source_type: 'daily_gut_report',
+              source_id: reportId,
+              status: learningResponse.learningSyncStatus,
+            });
+          } catch (learningError) {
+            console.warn('[learning] daily report recompute failed, falling back to queue polling', learningError);
+            trackEvent('learning_recompute_failed', {
+              source_type: 'daily_gut_report',
+              source_id: reportId,
+              error_code: apiErrorCode(learningError),
+            });
+            await fallbackPollDailyReportLearning(reportId);
           }
         };
 
@@ -177,7 +232,7 @@ export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
           }
 
           if (learningIsQueued) {
-            void pollDailyReportLearning(response.report.id);
+            void refreshDailyReportLearning(response.report.id);
           }
         } else {
           const existing = get().dailyReports.find((report) => report.localDate === localDate);

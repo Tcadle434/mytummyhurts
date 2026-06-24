@@ -74,6 +74,24 @@ describe('reserved-scan RPCs', () => {
 });
 
 describe('learning-job queue', () => {
+  it('marks the app snapshot pending when a job is enqueued and failed if the job fails', async () => {
+    await admin`delete from public.learning_jobs where user_id = ${U}`;
+    await admin`delete from public.user_app_snapshots where user_id = ${U}`;
+
+    const job = await jobs.enqueue({ userId: U, eventType: 'scan_analyzed', sourceType: 'scan', sourceId: 'job-status' });
+    const [pending] = await admin`select learning_status, last_source_type, last_source_id
+      from public.user_app_snapshots where user_id = ${U}`;
+    expect(pending).toMatchObject({
+      learning_status: 'pending',
+      last_source_type: 'scan',
+      last_source_id: 'job-status',
+    });
+
+    await jobs.fail(job.id, 'boom');
+    const [failed] = await admin`select learning_status from public.user_app_snapshots where user_id = ${U}`;
+    expect(failed.learning_status).toBe('failed');
+  });
+
   it('claims a job exactly once across concurrent workers (SKIP LOCKED)', async () => {
     await admin`delete from public.learning_jobs where user_id = ${U}`;
     await jobs.enqueue({ userId: U, eventType: 'scan_analyzed', sourceType: 'scan', sourceId: 'job-1' });

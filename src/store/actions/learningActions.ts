@@ -5,7 +5,12 @@ import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { apiErrorCode, patchInsightsCacheFromLearning, patchDailyReportsInHistoryCache, sleep, profileWithGutScoreFallback, sortDailyReportsByDate } from '../helpers';
+import {
+  apiErrorCode,
+  learningResponseStatePatch,
+  patchLearningResponseInQueryCaches,
+  sleep,
+} from '../helpers';
 
 export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -35,22 +40,15 @@ export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
             }
 
             if (response.learningSyncStatus === 'updated') {
-              patchInsightsCacheFromLearning(response);
-              patchDailyReportsInHistoryCache(response.dailyReports);
+              patchLearningResponseInQueryCaches(response);
 
               set((state) => {
                 if (state.learningSyncRequestId !== syncRequestId) {
                   return state;
                 }
 
-                const nextInsights = response.insights ?? state.insights;
                 return {
-                  profile: profileWithGutScoreFallback(response.profile ?? state.profile, state, nextInsights),
-                  insights: nextInsights,
-                  conditionInsights: response.conditionInsights ?? state.conditionInsights,
-                  dailyReports: response.dailyReports
-                    ? sortDailyReportsByDate(response.dailyReports)
-                    : state.dailyReports,
+                  ...learningResponseStatePatch(state, response),
                 };
               });
 

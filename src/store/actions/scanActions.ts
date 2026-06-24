@@ -9,12 +9,72 @@ import { showToast } from '../../services/toast';
 import { ScanRecord } from '../../types/domain';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { now, localDateString, currentTimezone, scanCategoryForPayload, removeScanFromHistoryCache, scanRequestId, apiErrorCode, mergeById, rebuildLocalLearningState, profileWithGutScoreFallback } from '../helpers';
+import {
+  now,
+  localDateString,
+  currentTimezone,
+  scanCategoryForPayload,
+  removeScanFromHistoryCache,
+  scanRequestId,
+  apiErrorCode,
+  learningResponseStatePatch,
+  mergeById,
+  patchLearningResponseInQueryCaches,
+  rebuildLocalLearningState,
+  profileWithGutScoreFallback,
+} from '../helpers';
 
 export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
   'updateScanConsumption' | 'cacheScanRecord' | 'analyzeScanInput' | 'deleteScanRecord'
 > {
+  const refreshScanLearning = (scanId: string, eventType: string) => {
+    if (!isLiveBackendConfigured || !get().authUser) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await apiClient.learningRecompute({
+          sourceType: 'scan',
+          sourceId: scanId,
+          eventType,
+        });
+
+        if (response.learningSyncStatus !== 'updated') {
+          trackEvent('learning_recompute_failed', {
+            source_type: 'scan',
+            source_id: scanId,
+            status: response.learningSyncStatus,
+            event_type: eventType,
+          });
+          return;
+        }
+
+        patchLearningResponseInQueryCaches(response);
+        set((state) => learningResponseStatePatch(state, response));
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+        ]);
+        trackEvent('learning_recompute_completed', {
+          source_type: 'scan',
+          source_id: scanId,
+          status: response.learningSyncStatus,
+          event_type: eventType,
+        });
+      } catch (error) {
+        trackEvent('learning_recompute_failed', {
+          source_type: 'scan',
+          source_id: scanId,
+          error_code: apiErrorCode(error),
+          event_type: eventType,
+        });
+      }
+    })();
+  };
+
   return {
       updateScanConsumption: async ({ scanId, consumptionStatus, consumedMenuItemSourceIds }) => {
         const nextStatus = consumptionStatus ?? (consumedMenuItemSourceIds?.length ? 'consumed' : undefined);
@@ -37,11 +97,14 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
         }
 
         try {
-          await apiClient.updateScanConsumption({
+          const response = await apiClient.updateScanConsumption({
             scanId,
             consumptionStatus,
             consumedMenuItemSourceIds,
           });
+          if (response.learningSyncStatus === 'queued') {
+            refreshScanLearning(scanId, 'scan_consumption_updated');
+          }
         } catch (error) {
           console.warn('[scan] consumption update failed', error);
           showToast({
@@ -118,6 +181,9 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
               queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
               queryClient.invalidateQueries({ queryKey: queryKeys.home }),
             ]);
+            if (response.learningSyncStatus === 'queued') {
+              refreshScanLearning(response.scanId, 'scan_analyzed');
+            }
 
             trackEvent('scan_analysis_completed', {
               request_id: requestId,
@@ -202,6 +268,9 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           void (async () => {
             try {
               const response = await apiClient.deleteScan({ scanId });
+              if (response.learningSyncStatus === 'queued') {
+                refreshScanLearning(scanId, 'scan_deleted');
+              }
               set((state) => {
                 const nextInsights = response.insights ?? state.insights;
                 return {
