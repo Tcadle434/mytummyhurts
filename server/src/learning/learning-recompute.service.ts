@@ -31,6 +31,55 @@ const toLocalDate = (v: unknown): string =>
   v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? '').slice(0, 10);
 const toIso = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v ?? ''));
 
+type GutScoreMovementSource = 'scan' | 'daily_report' | 'profile' | 'backfill';
+
+function normalizedDailyScore(score: unknown) {
+  return typeof score === 'number' && Number.isFinite(score) ? Math.round(score) : undefined;
+}
+
+function reportEventTime(report: DailyGutReport) {
+  const value = report.dailyScoreUpdatedAt ?? report.updatedAt ?? report.localDate;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mostRecentDailyReport(reports: DailyGutReport[]) {
+  return [...reports].sort((left, right) => reportEventTime(right) - reportEventTime(left))[0];
+}
+
+function normalizeMovementSource(sourceType: string): GutScoreMovementSource | undefined {
+  if (sourceType === 'daily_report' || sourceType === 'daily_gut_report') return 'daily_report';
+  if (sourceType === 'scan') return 'scan';
+  if (sourceType === 'profile') return 'profile';
+  if (sourceType === 'backfill') return 'backfill';
+  return undefined;
+}
+
+function resolveGutScoreMovement(input: {
+  sourceType: string;
+  sourceId?: string;
+  scoredReports: DailyGutReport[];
+  changedDailyReports: DailyGutReport[];
+}): { source?: GutScoreMovementSource; dailyScore?: number } {
+  const source = normalizeMovementSource(input.sourceType);
+  if (source === 'daily_report') {
+    const submittedReport = input.sourceId
+      ? input.scoredReports.find((report) => report.id === input.sourceId)
+      : undefined;
+    const report = submittedReport ?? mostRecentDailyReport(input.scoredReports);
+    return { source: 'daily_report', dailyScore: report?.dailyScore };
+  }
+
+  if (source === 'scan') {
+    const report = mostRecentDailyReport(input.changedDailyReports);
+    return report
+      ? { source: 'daily_report', dailyScore: report.dailyScore }
+      : { source: 'scan' };
+  }
+
+  return { source };
+}
+
 /**
  * Port of rebuildInsightsAndProfile (Supabase _shared/profile.ts), re-homed onto
  * the NestJS DB layer. Recomputes learned ingredient insights + condition
@@ -113,6 +162,10 @@ export class LearningRecomputeService {
 
       const reports: DailyGutReport[] = reportRows.map(this.mapReport);
       const scoredReports = recomputeDailyScores(reports, foodScans as never);
+      const changedDailyReports = scoredReports.filter((report) => {
+        const previous = reports.find((candidate) => candidate.id === report.id || candidate.localDate === report.localDate);
+        return normalizedDailyScore(previous?.dailyScore) !== normalizedDailyScore(report.dailyScore);
+      });
 
       // Persist recomputed daily scores.
       for (const r of scoredReports) {
@@ -140,12 +193,20 @@ export class LearningRecomputeService {
         select * from public.gut_score_snapshots where user_id = ${userId}
         order by created_at desc limit 1`;
       const previousGutScore = prevSnap ? this.mapSnapshot(prevSnap) : null;
+      const movement = resolveGutScoreMovement({
+        sourceType,
+        sourceId,
+        scoredReports,
+        changedDailyReports,
+      });
       const gutScore = computeGutScoreState({
         seed,
         insights,
         scans: foodScans as never,
         dailyReports: scoredReports,
         previousGutScore,
+        movementSource: movement.source,
+        movementDailyScore: movement.dailyScore,
       });
       const event = buildGutScoreEvent({ eventType: sourceType, score: gutScore, previousScore: previousGutScore, sourceType, sourceId });
       await this.persistGutScore(sql, userId, gutScore, event, sourceType, sourceId);

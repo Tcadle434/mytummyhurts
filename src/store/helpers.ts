@@ -375,6 +375,18 @@ export function rebuildLocalLearningState(
 ) {
   const scoringOptions = buildScoringOptions(state);
   const scoredDailyReports = recomputeDailyScores(dailyReports, scans);
+  const changedDailyReports = scoredDailyReports.filter((report) => {
+    const previous = dailyReports.find((candidate) => candidate.id === report.id || candidate.localDate === report.localDate);
+    return normalizedDailyScore(previous?.dailyScore) !== normalizedDailyScore(report.dailyScore);
+  });
+  const latestChangedDailyReport = mostRecentDailyReport(changedDailyReports);
+  const latestDailyReport = mostRecentDailyReport(scoredDailyReports);
+  const movementSource = eventType.includes('scan')
+    ? latestChangedDailyReport ? 'daily_report' : 'scan'
+    : eventType.includes('daily_report') ? 'daily_report' : 'profile';
+  const movementDailyScore = movementSource === 'daily_report'
+    ? (eventType.includes('scan') ? latestChangedDailyReport?.dailyScore : latestDailyReport?.dailyScore)
+    : undefined;
   const insights = recomputeInsights(scans, scoredDailyReports, scoringOptions);
   const conditionInsights = recomputeConditionIngredientInsights(scans, scoredDailyReports, scoringOptions);
   const learningProgress = computeProfileLearningProgress(scans, scoredDailyReports);
@@ -396,7 +408,8 @@ export function rebuildLocalLearningState(
       scans,
       dailyReports: scoredDailyReports,
       previousGutScore: state.profile?.stomachProfile.metadata.gutScore,
-      movementSource: eventType.includes('scan') ? 'scan' : eventType.includes('daily_report') ? 'daily_report' : 'profile',
+      movementSource,
+      movementDailyScore,
     });
     profile.stomachProfile.metadata.gutScore = {
       ...gutScore,
@@ -414,6 +427,18 @@ export function rebuildLocalLearningState(
     conditionInsights,
     dailyReports: scoredDailyReports,
   };
+}
+
+function normalizedDailyScore(score: unknown) {
+  return typeof score === 'number' && Number.isFinite(score) ? Math.round(score) : undefined;
+}
+
+function mostRecentDailyReport(reports: DailyGutReport[]) {
+  return [...reports].sort((left, right) => {
+    const leftTime = new Date(left.updatedAt ?? left.localDate).getTime();
+    const rightTime = new Date(right.updatedAt ?? right.localDate).getTime();
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+  })[0];
 }
 
 export function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<

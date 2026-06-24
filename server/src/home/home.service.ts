@@ -4,6 +4,7 @@ import { BillingService } from '../billing/billing.service';
 import { DatabaseService } from '../database/database.service';
 import { mapDailyReport } from '../scan/scan-crud.service';
 import {
+  buildLearningProgressFromRows,
   buildProfileFromRow,
   mapConditionInsight,
   mapGutScoreSnapshot,
@@ -50,6 +51,15 @@ export class HomeService {
         await sql`select * from public.daily_gut_reports where user_id = ${userId}
                   order by local_date desc limit 30`
       ).map(mapDailyReport);
+      const learningScanRows = await sql`
+        select id, title, scan_category, consumption_status, local_date, created_at
+        from public.scans
+        where user_id = ${userId} and analysis_status = 'completed'`;
+      const learningReportRows = await sql`
+        select id, local_date, created_at
+        from public.daily_gut_reports
+        where user_id = ${userId}`;
+      const learningProgress = buildLearningProgressFromRows(learningScanRows, learningReportRows);
 
       const triggers = (
         await sql`select * from public.ingredient_insights where user_id = ${userId}
@@ -80,6 +90,8 @@ export class HomeService {
         profile: buildProfileFromRow(userId, profileRow, {
           insights: profileInsights,
           gutScore: mapGutScoreSnapshot(gutScoreSnapshots[0], gutScoreSnapshots),
+          learningProgress,
+          reportCount: learningReportRows.length,
         }),
         billing,
         recentScans,

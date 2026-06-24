@@ -49,6 +49,7 @@ function sourceBreakdown(
   declaredSensitivities: string[],
   positiveEvidenceCount: number,
   negativeEvidenceCount: number,
+  hasPersonalEvidence = positiveEvidenceCount + negativeEvidenceCount > 0,
 ) {
   const ingredientToken = ingredientName.toLowerCase();
   return {
@@ -57,7 +58,7 @@ function sourceBreakdown(
       return token.length > 0 && (ingredientToken.includes(token) || token.includes(ingredientToken));
     }),
     science: false,
-    personal: positiveEvidenceCount + negativeEvidenceCount > 0,
+    personal: hasPersonalEvidence,
     positiveEvidenceCount,
     negativeEvidenceCount,
   };
@@ -184,7 +185,7 @@ export function buildDailyReportInsights(params: {
   }
 
   return [...aggregate.entries()]
-    .filter(([, current]) => current.positiveEvidence + current.negativeEvidence > 0)
+    .filter(([, current]) => current.weightedEvidence > 0)
     .map(([ingredientName, current], index): IngredientInsight => {
       const triggerScore = clampScore(current.trigger);
       const safeScore = clampScore(current.safe);
@@ -208,11 +209,19 @@ export function buildDailyReportInsights(params: {
         negativeEvidenceCount,
         lastSeenAt: current.lastSeenAt,
         lastOutcomeAt: current.lastOutcomeAt,
-        sourceBreakdown: sourceBreakdown(ingredientName, params.declaredSensitivities, positiveEvidenceCount, negativeEvidenceCount),
+        sourceBreakdown: sourceBreakdown(
+          ingredientName,
+          params.declaredSensitivities,
+          positiveEvidenceCount,
+          negativeEvidenceCount,
+          current.weightedEvidence > 0,
+        ),
         lastRecomputedAt: new Date().toISOString(),
-        summary: dominatesTrigger
-          ? `${ingredientName} is showing up more often around reactive gut-report days.`
-          : `${ingredientName} is showing up more often around calmer gut-report days.`,
+        summary: positiveEvidenceCount + negativeEvidenceCount === 0
+          ? `${ingredientName} is paired with symptom reports but has no clear calm or reactive pattern yet.`
+          : dominatesTrigger
+            ? `${ingredientName} is showing up more often around reactive gut-report days.`
+            : `${ingredientName} is showing up more often around calmer gut-report days.`,
       } as unknown as IngredientInsight;
     })
     .sort((left, right) => right.combinedRiskScore - left.combinedRiskScore || right.supportingEvidenceCount - left.supportingEvidenceCount);

@@ -83,6 +83,24 @@ describe('buildGroupSyntheticInsight', () => {
     ]);
     expect(synthetic.sourceBreakdown.declared).toBe(true);
   });
+
+  it('marks neutral grouped supporting evidence as personal', () => {
+    const group = groupByKey('wheat_gluten')!;
+    const synthetic = buildGroupSyntheticInsight(group, [
+      insight('bread', {
+        combinedRiskScore: 50,
+        supportingEvidenceCount: 1,
+        positiveEvidenceCount: 0,
+        negativeEvidenceCount: 0,
+        sourceBreakdown: { declared: false, science: false, personal: true, positiveEvidenceCount: 0, negativeEvidenceCount: 0 },
+      }),
+    ]);
+
+    expect(synthetic.combinedRiskScore).toBe(50);
+    expect(synthetic.positiveEvidenceCount).toBe(0);
+    expect(synthetic.negativeEvidenceCount).toBe(0);
+    expect(synthetic.sourceBreakdown.personal).toBe(true);
+  });
 });
 
 describe('buildGroupedTriggerEntries', () => {

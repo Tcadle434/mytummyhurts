@@ -10,12 +10,11 @@ import { AppScreen, SectionCard, SkeletonBlock, TabScreenHeader } from "../../co
 import { InfoModal } from "../../components/modals/InfoModal";
 import { isLiveBackendConfigured } from "../../config/env";
 import { useInsightsData } from "../../features/insights/hooks";
+import { resolveTriggerProfileLearningProgress } from "../../features/insights/learningProgress";
 import { buildTriggerProfileViewState } from "../../features/insights/triggerProfile";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import {
-	computeProfileLearningProgress,
-	profileLearningProgressFromCounts,
 	type ProfileLearningProgress,
 } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
@@ -63,22 +62,16 @@ export function InsightsScreen() {
 
 	const viewState = useMemo(() => buildTriggerProfileViewState(insights), [insights]);
 	const conditions = profile?.knownConditions ?? [];
-	const learningProgress = useMemo(() => {
-		if (fallbackScans.length > 0) {
-			return computeProfileLearningProgress(fallbackScans, fallbackDailyReports);
-		}
-
-		const metadata = profile?.stomachProfile.metadata;
-		return profileLearningProgressFromCounts(
-			metadata?.learningEvidenceDays ?? 0,
-			metadata?.learningMealScanCount ?? 0,
-		);
-	}, [
-		fallbackDailyReports,
-		fallbackScans,
-		profile?.stomachProfile.metadata.learningEvidenceDays,
-		profile?.stomachProfile.metadata.learningMealScanCount,
-	]);
+	const learningProgress = useMemo(
+		() =>
+			resolveTriggerProfileLearningProgress({
+				liveBackendConfigured: isLiveBackendConfigured,
+				profile,
+				fallbackScans,
+				fallbackDailyReports,
+			}),
+		[fallbackDailyReports, fallbackScans, profile],
+	);
 
 	useEffect(() => {
 		trackEvent("trigger_profile_viewed", {
@@ -253,15 +246,7 @@ export function InsightsScreen() {
 											{insight.ingredientName}
 										</Text>
 										<Text style={styles.earlyRowMeta}>
-											{insight.positiveEvidenceCount +
-												insight.negativeEvidenceCount}{" "}
-											outcome
-											{insight.positiveEvidenceCount +
-												insight.negativeEvidenceCount ===
-											1
-												? ""
-												: "s"}{" "}
-											so far
+											{earlySignalMeta(insight)}
 										</Text>
 									</Pressable>
 								))}
@@ -277,6 +262,15 @@ export function InsightsScreen() {
 			/>
 		</>
 	);
+}
+
+function earlySignalMeta(insight: { positiveEvidenceCount: number; negativeEvidenceCount: number; supportingEvidenceCount: number }) {
+	const outcomes = insight.positiveEvidenceCount + insight.negativeEvidenceCount;
+	if (outcomes > 0) {
+		return `${outcomes} outcome${outcomes === 1 ? "" : "s"} so far`;
+	}
+	const pairedDays = Math.max(1, insight.supportingEvidenceCount);
+	return `${pairedDays} paired day${pairedDays === 1 ? "" : "s"} — no clear reaction yet`;
 }
 
 function HeroSummaryCard({

@@ -1218,25 +1218,21 @@ function dataConfidenceComponent(reportCount: number, recentReports: DailyGutRep
   return clamp(100 - clamp(90 - reportCount * 7 - recentReports.length * 5));
 }
 
-function dailyReportMovementDelta(latestDailyScore?: number) {
-  if (typeof latestDailyScore !== 'number') return 0;
-  if (latestDailyScore <= 10) return -4;
-  if (latestDailyScore <= 25) return -3;
-  if (latestDailyScore <= 33) return -2;
-  if (latestDailyScore <= 49) return -1;
-  if (latestDailyScore <= 66) return 0;
-  if (latestDailyScore <= 79) return 1;
-  if (latestDailyScore <= 89) return 2;
-  if (latestDailyScore <= 94) return 3;
-  return 4;
+function dailyScoreMovementLimit(dailyScore?: number) {
+  if (typeof dailyScore !== 'number' || !Number.isFinite(dailyScore)) return 0;
+  const score = clamp(dailyScore);
+  if (score <= 10 || score >= 95) return 4;
+  if (score <= 25 || score >= 90) return 3;
+  if (score <= 33 || score >= 80) return 2;
+  return 1;
 }
 
-function movementLimitForSource(source?: GutScoreMovementSource, latestDailyScore?: number) {
+function movementLimitForSource(source?: GutScoreMovementSource, movementDailyScore?: number) {
   switch (source) {
     case 'scan':
       return 0;
     case 'daily_report':
-      return Math.abs(dailyReportMovementDelta(latestDailyScore));
+      return dailyScoreMovementLimit(movementDailyScore);
     case 'profile':
       return 8;
     case 'backfill':
@@ -1250,15 +1246,22 @@ function applyMovementLimit(
   rawScore: number,
   previousScore: GutScoreState | null | undefined,
   source?: GutScoreMovementSource,
-  latestDailyScore?: number,
+  movementDailyScore?: number,
 ) {
-  const limit = movementLimitForSource(source, latestDailyScore);
+  const limit = movementLimitForSource(source, movementDailyScore);
   if (typeof limit !== 'number' || typeof previousScore?.currentScore !== 'number') {
     return rawScore;
   }
 
   if (source === 'daily_report') {
-    return clamp(previousScore.currentScore + dailyReportMovementDelta(latestDailyScore));
+    if (typeof movementDailyScore !== 'number' || !Number.isFinite(movementDailyScore)) {
+      return previousScore.currentScore;
+    }
+    const targetDelta = clamp(movementDailyScore) - previousScore.currentScore;
+    if (Math.abs(targetDelta) < 1) {
+      return previousScore.currentScore;
+    }
+    return clamp(previousScore.currentScore + clampNumber(targetDelta, -limit, limit));
   }
 
   const delta = clampNumber(rawScore - previousScore.currentScore, -limit, limit);
@@ -1444,16 +1447,15 @@ export function computeGutScoreState(params: {
   previousGutScore?: GutScoreState | null;
   history?: GutScoreHistoryPoint[];
   movementSource?: GutScoreMovementSource;
+  movementDailyScore?: number;
   now?: string;
 }): GutScoreState {
   const updatedAt = params.now ?? new Date().toISOString();
   const nowMs = scoreEventTime(updatedAt);
   const baselineScore = baselineGutScore(params.seed);
   const reportCount = params.dailyReports.length;
-  const foodScanCount = params.scans.filter((scan) => (scan.scanCategory ?? 'food') === 'food').length;
   const recentReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 7, nowMs));
   const monthReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 30, nowMs));
-  const latestReport = [...recentReports].sort((left, right) => scoreEventTime(right.updatedAt) - scoreEventTime(left.updatedAt))[0];
   const recentDailyOutcome = clamp(averageScore(
     (recentReports.length ? recentReports : monthReports).map((report) => report.dailyScore ?? symptomDailyScore(report.gutSeverity)),
     baselineScore,
@@ -1471,7 +1473,7 @@ export function computeGutScoreState(params: {
       dataConfidence * 0.05,
   );
 
-  if (reportCount === 0 && foodScanCount === 0) {
+  if (reportCount === 0) {
     currentScore = baselineScore;
   } else if (!recentReports.length) {
     currentScore = Math.min(currentScore, Math.max(28, baselineScore + 4));
@@ -1480,7 +1482,7 @@ export function computeGutScoreState(params: {
     currentScore,
     params.previousGutScore,
     params.movementSource,
-    latestReport?.dailyScore ?? (latestReport ? symptomDailyScore(latestReport.gutSeverity) : undefined),
+    params.movementDailyScore,
   );
 
   const phase = gutScorePhase(currentScore, reportCount, recentReports);

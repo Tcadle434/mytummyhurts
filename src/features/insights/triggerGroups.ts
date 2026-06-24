@@ -212,7 +212,7 @@ export function buildGroupSyntheticInsight(
     sourceBreakdown: {
       declared,
       science: true,
-      personal: positive + negative > 0,
+      personal: supporting > 0,
       positiveEvidenceCount: positive,
       negativeEvidenceCount: negative,
     },

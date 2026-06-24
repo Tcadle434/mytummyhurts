@@ -82,6 +82,26 @@ describe('statusForInsight', () => {
       statusForInsight(insight({ combinedRiskScore: 38, positiveEvidenceCount: 2, triggerScore: 2, safeScore: 14 })),
     ).toBe('safe');
   });
+
+  it('keeps neutral paired personal evidence under review', () => {
+    expect(
+      statusForInsight(
+        insight({
+          combinedRiskScore: 50,
+          supportingEvidenceCount: 1,
+          positiveEvidenceCount: 0,
+          negativeEvidenceCount: 0,
+          sourceBreakdown: {
+            declared: false,
+            science: false,
+            personal: true,
+            positiveEvidenceCount: 0,
+            negativeEvidenceCount: 0,
+          },
+        }),
+      ),
+    ).toBe('suspect');
+  });
 });
 
 describe('summarizeTriggerCounts', () => {
@@ -151,6 +171,45 @@ describe('buildTriggerProfileViewState', () => {
     expect(suspects.entries.some((entry) => entry.insight.ingredientName === 'parsley')).toBe(false);
   });
 
+  it('shows neutral grouped evidence under review and keeps neutral singleton evidence accumulating', () => {
+    const viewState = buildTriggerProfileViewState([
+      insight({
+        ingredientName: 'bread',
+        combinedRiskScore: 50,
+        supportingEvidenceCount: 1,
+        positiveEvidenceCount: 0,
+        negativeEvidenceCount: 0,
+        sourceBreakdown: {
+          declared: false,
+          science: false,
+          personal: true,
+          positiveEvidenceCount: 0,
+          negativeEvidenceCount: 0,
+        },
+      }),
+      insight({
+        ingredientName: 'parsley',
+        combinedRiskScore: 50,
+        supportingEvidenceCount: 1,
+        positiveEvidenceCount: 0,
+        negativeEvidenceCount: 0,
+        sourceBreakdown: {
+          declared: false,
+          science: false,
+          personal: true,
+          positiveEvidenceCount: 0,
+          negativeEvidenceCount: 0,
+        },
+      }),
+    ]);
+
+    expect(viewState.counts).toEqual({ confirmed: 0, suspects: 1, cleared: 0, safe: 0 });
+    expect(viewState.sections.map((section) => section.status)).toEqual(['suspect']);
+    expect(viewState.sections[0]!.entries[0]!.insight.ingredientName).toBe('Wheat & gluten');
+    expect(viewState.earlySignals.map((entry) => entry.ingredientName)).toEqual(['parsley']);
+    expect(viewState.allSeeded).toBe(false);
+  });
+
   it('filters by search and condition', () => {
     expect(buildTriggerProfileViewState(mixed, { search: 'gar' }).totalTracked).toBe(1);
     expect(buildTriggerProfileViewState(mixed, { condition: 'ibs' }).totalTracked).toBe(1);
@@ -182,6 +241,19 @@ describe('evidenceDetailForInsight', () => {
         'suspect',
       ),
     ).toBe('From your profile — no outcomes logged yet');
+  });
+
+  it('describes neutral personal evidence as paired without a clear reaction', () => {
+    expect(
+      evidenceDetailForInsight(
+        insight({
+          combinedRiskScore: 50,
+          supportingEvidenceCount: 1,
+          sourceBreakdown: { declared: false, science: false, personal: true, positiveEvidenceCount: 0, negativeEvidenceCount: 0 },
+        }),
+        'suspect',
+      ),
+    ).toBe('1 paired day logged — no clear reaction yet');
   });
 });
 

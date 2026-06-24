@@ -4,10 +4,15 @@ import { buildGroupedTriggerEntries, type GroupedTriggerEntry } from './triggerG
 export type TriggerStatus = 'confirmed' | 'suspect' | 'cleared' | 'safe';
 
 // Core taxonomy for the Trigger Profile: every insight is bucketed by how much
-// outcome evidence backs it. "Suspect" covers both declared/seeded entries and
-// early elevated patterns; neutral mid-zone insights return null and stay out
-// of the headline buckets.
+// outcome evidence backs it. "Suspect" covers declared/seeded entries, early
+// elevated patterns, and neutral paired evidence that is still under review.
 export function statusForInsight(insight: IngredientInsight): TriggerStatus | null {
+  const outcomeEvidence = insight.positiveEvidenceCount + insight.negativeEvidenceCount;
+  const neutralPersonalEvidence =
+    insight.sourceBreakdown.personal &&
+    insight.supportingEvidenceCount > 0 &&
+    outcomeEvidence === 0;
+
   if (
     insight.combinedRiskScore >= 60 &&
     (insight.confidenceLevel === 'high' || insight.negativeEvidenceCount >= 3)
@@ -21,6 +26,10 @@ export function statusForInsight(insight: IngredientInsight): TriggerStatus | nu
     insight.negativeEvidenceCount === 0
   ) {
     return 'cleared';
+  }
+
+  if (neutralPersonalEvidence) {
+    return 'suspect';
   }
 
   if (
@@ -67,14 +76,19 @@ export function summarizeTriggerCounts(insights: OptionalInsights): TriggerCount
 export function evidenceDetailForInsight(insight: IngredientInsight, status: TriggerStatus): string {
   const negative = insight.negativeEvidenceCount;
   const positive = insight.positiveEvidenceCount;
+  const outcomes = negative + positive;
 
   if (status === 'suspect') {
-    if (negative + positive === 0) {
+    if (outcomes === 0 && insight.sourceBreakdown.personal && insight.supportingEvidenceCount > 0) {
+      const pairedDays = Math.max(1, insight.supportingEvidenceCount);
+      return `${pairedDays} paired day${pairedDays === 1 ? '' : 's'} logged — no clear reaction yet`;
+    }
+    if (outcomes === 0) {
       return insight.sourceBreakdown.declared
         ? 'From your profile — no outcomes logged yet'
         : 'Early signal — no outcomes logged yet';
     }
-    return `${Math.min(negative + positive, 3)} of 3 paired outcomes logged`;
+    return `${Math.min(outcomes, 3)} of 3 paired outcomes logged`;
   }
 
   if (status === 'confirmed') {
@@ -174,7 +188,9 @@ export function buildTriggerProfileViewState(
     allSeeded:
       filtered.length > 0 &&
       filtered.every(
-        (insight) => insight.positiveEvidenceCount + insight.negativeEvidenceCount === 0,
+        (insight) =>
+          !insight.sourceBreakdown.personal &&
+          insight.positiveEvidenceCount + insight.negativeEvidenceCount === 0,
       ),
     earlySignals,
   };

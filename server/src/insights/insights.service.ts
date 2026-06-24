@@ -6,6 +6,7 @@ import { DatabaseService } from '../database/database.service';
 import { LearningJobService } from '../learning/learning-job.service';
 import { LearningRecomputeService } from '../learning/learning-recompute.service';
 import {
+  buildLearningProgressFromRows,
   buildProfileFromRow,
   mapConditionInsight,
   mapGutScoreSnapshot,
@@ -36,11 +37,22 @@ export class InsightsService {
       select * from public.gut_score_snapshots
       where user_id = ${userId}
       order by created_at desc limit 14`;
+    const learningScanRows = await sql`
+      select id, title, scan_category, consumption_status, local_date, created_at
+      from public.scans
+      where user_id = ${userId} and analysis_status = 'completed'`;
+    const learningReportRows = await sql`
+      select id, local_date, created_at
+      from public.daily_gut_reports
+      where user_id = ${userId}`;
+    const learningProgress = buildLearningProgressFromRows(learningScanRows, learningReportRows);
     const mappedInsights = insights.map(mapInsight);
     return {
       profile: buildProfileFromRow(userId, profileRow, {
         insights: mappedInsights,
         gutScore: mapGutScoreSnapshot(gutScoreSnapshots[0], gutScoreSnapshots),
+        learningProgress,
+        reportCount: learningReportRows.length,
       }),
       insights: mappedInsights,
       conditionInsights: conditionInsights.map(mapConditionInsight),

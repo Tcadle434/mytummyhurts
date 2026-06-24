@@ -1,7 +1,9 @@
 import {
   buildUserProfileFromSeed,
+  computeProfileLearningProgress,
   computeGutScoreState,
   GUT_SCORE_ALGORITHM_VERSION,
+  type ProfileLearningProgress,
 } from '../scan/engine/scoring';
 import type {
   GutScoreComponents,
@@ -13,6 +15,7 @@ import type {
   ConditionIngredientInsight,
   IngredientInsight,
   ProfileSeed,
+  ScanForInsightRecompute,
   StomachProfile,
 } from '../scan/engine/domain';
 
@@ -20,7 +23,12 @@ import type {
 export function buildProfileFromRow(
   userId: string,
   row: Record<string, unknown> | undefined,
-  options: { insights?: IngredientInsight[]; gutScore?: GutScoreState | null } = {},
+  options: {
+    insights?: IngredientInsight[];
+    gutScore?: GutScoreState | null;
+    learningProgress?: ProfileLearningProgress;
+    reportCount?: number;
+  } = {},
 ) {
   if (!row) return null;
   const seed = profileSeedFromRow(userId, row);
@@ -33,7 +41,39 @@ export function buildProfileFromRow(
   });
   return buildUserProfileFromSeed(seed, insights, {
     priorStomachProfile: { metadata: { gutScore } } as Partial<StomachProfile>,
+    learningProgress: options.learningProgress,
+    reportCount: options.reportCount,
   });
+}
+
+export function buildLearningProgressFromRows(
+  scanRows: Record<string, unknown>[],
+  reportRows: Record<string, unknown>[],
+) {
+  const scans = scanRows
+    .filter((row) => (row.scan_category ?? 'food') === 'food' && row.consumption_status !== 'skipped')
+    .map((row, index) => ({
+      id: String(row.id ?? `scan-${index}`),
+      structuredAnalysis: {
+        dishName: String(row.title ?? 'Meal'),
+        dishConfidence: 'medium',
+        clarity: 'unclear',
+        components: [],
+        visibleIngredients: [],
+        inferredIngredients: [],
+        prepStyle: [],
+        notes: [],
+        model: 'learning-progress',
+        promptVersion: 'learning-progress',
+        imageDetail: 'not_applicable',
+      },
+      createdAt: toIso(row.created_at),
+      localDate: toLocalDate(row.local_date ?? row.created_at),
+      scanCategory: 'food',
+    })) as ScanForInsightRecompute[];
+
+  const reports = reportRows.map((row) => ({ localDate: toLocalDate(row.local_date ?? row.created_at) }));
+  return computeProfileLearningProgress(scans, reports);
 }
 
 export function profileSeedFromRow(userId: string, row: Record<string, unknown>): ProfileSeed {
@@ -84,6 +124,11 @@ export function mapGutScoreSnapshot(
 function toIso(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
   return typeof value === 'string' && value ? value : new Date().toISOString();
+}
+
+function toLocalDate(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value ?? '').slice(0, 10);
 }
 
 function numberOr(value: unknown, fallback: number) {
