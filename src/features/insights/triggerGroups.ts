@@ -1,153 +1,96 @@
-import type { IngredientInsight, InsightConfidenceLevel } from '../../types/domain';
+import type {
+  DigestivePatternKey,
+  IngredientInsight,
+  InsightConfidenceLevel,
+  TrackedFoodFamilyKey,
+} from '../../types/domain';
 
-// Clinically-grounded trigger groups. Grouping follows the Monash FODMAP
-// taxonomy (fructans, GOS, lactose, polyols) and the ACG GERD trigger
-// categories (fatty/fried, spicy, acidic, caffeine, alcohol, chocolate,
-// carbonated). Display-layer only: learning stays ingredient-level.
-// Deferred v1.5 groups: excess fructose (honey/apple/HFCS), fermented & aged
-// (histamine). "Red meat" is intentionally not a group (no clinical backing).
-// Sources: monashfodmap.com (FODMAP food list, fructans), gi.org/topics/acid-reflux,
-// ACG Clinical Guideline GERD 2022.
 export type TriggerGroup = {
-  key: string;
+  key: DigestivePatternKey;
   label: string;
   subtitle: string;
   emoji: string;
   aliases: string[];
 };
 
+export type TrackedFoodFamily = {
+  key: TrackedFoodFamilyKey;
+  label: string;
+  emoji: string;
+  aliases: string[];
+};
+
 export const TRIGGER_GROUPS: TriggerGroup[] = [
-  {
-    key: 'dairy',
-    label: 'Dairy & lactose',
-    subtitle: 'Lactose',
-    emoji: '🥛',
-    aliases: [
-      'dairy', 'lactose', 'milk', 'cheese', 'yogurt', 'yoghurt', 'cream', 'butter', 'parmesan',
-      'mozzarella', 'cheddar', 'ricotta', 'whey', 'casein', 'ice cream', 'gelato', 'alfredo',
-    ],
-  },
-  {
-    key: 'garlic_onion',
-    label: 'Garlic & onion',
-    subtitle: 'Fructans',
-    emoji: '🧄',
-    aliases: [
-      'garlic', 'onion', 'shallot', 'scallion', 'green onion', 'leek', 'garlic powder',
-      'garlic oil', 'garlic sauce', 'garlic bread', 'pickled onion', 'chive',
-    ],
-  },
-  {
-    key: 'wheat_gluten',
-    label: 'Wheat & gluten',
-    subtitle: 'Fructans + gluten',
-    emoji: '🍞',
-    aliases: [
-      'gluten', 'wheat', 'bread', 'pasta', 'flour', 'noodle', 'breadcrumbs', 'cracker', 'bun',
-      'rye', 'granola', 'tortilla', 'dough', 'croissant', 'bagel',
-    ],
-  },
-  {
-    key: 'legumes',
-    label: 'Beans & legumes',
-    subtitle: 'GOS',
-    emoji: '🫘',
-    aliases: [
-      'beans', 'bean', 'lentil', 'chickpea', 'black bean', 'kidney bean', 'hummus', 'edamame',
-      'soy bean', 'pinto', 'falafel',
-    ],
-  },
-  {
-    key: 'fried_fatty',
-    label: 'Fried & fatty foods',
-    subtitle: 'High fat',
-    emoji: '🍟',
-    aliases: [
-      'fried', 'fries', 'tempura', 'katsu', 'crispy', 'breaded', 'bacon', 'sausage', 'mayo',
-      'aioli', 'creamy sauce', 'fried chicken', 'fried fish', 'onion rings', 'deep-fried',
-    ],
-  },
-  {
-    key: 'spicy',
-    label: 'Spicy foods',
-    subtitle: 'Capsaicin',
-    emoji: '🌶️',
-    aliases: [
-      'spicy', 'hot sauce', 'jalapeno', 'jalapeño', 'chili', 'chilli', 'sriracha', 'buffalo',
-      'curry', 'pepper flakes', 'gochujang', 'cayenne', 'habanero', 'wasabi',
-    ],
-  },
-  {
-    key: 'acidic',
-    label: 'Tomato & citrus',
-    subtitle: 'Acidic',
-    emoji: '🍅',
-    aliases: [
-      'tomato', 'marinara', 'salsa', 'ketchup', 'pizza sauce', 'lemon', 'lime', 'orange',
-      'grapefruit', 'citrus', 'vinegar', 'tamarind',
-    ],
-  },
-  {
-    key: 'caffeine',
-    label: 'Caffeine',
-    subtitle: 'Coffee, tea & energy drinks',
-    emoji: '☕',
-    aliases: ['caffeine', 'coffee', 'espresso', 'latte', 'tea', 'matcha', 'energy drink', 'cold brew'],
-  },
-  {
-    key: 'alcohol',
-    label: 'Alcohol',
-    subtitle: 'Beer, wine & spirits',
-    emoji: '🍺',
-    aliases: ['alcohol', 'beer', 'wine', 'cocktail', 'sake', 'whiskey', 'vodka', 'tequila', 'rum', 'cider'],
-  },
-  {
-    key: 'chocolate',
-    label: 'Chocolate',
-    subtitle: 'Cocoa',
-    emoji: '🍫',
-    aliases: ['chocolate', 'cocoa', 'mocha', 'nutella', 'brownie', 'fudge'],
-  },
-  {
-    key: 'carbonated',
-    label: 'Carbonated drinks',
-    subtitle: 'Fizz & bloating',
-    emoji: '🥤',
-    aliases: ['carbonated', 'soda', 'sparkling water', 'seltzer', 'cola', 'tonic', 'fizzy'],
-  },
-  {
-    key: 'sweeteners',
-    label: 'Sugar-free sweeteners',
-    subtitle: 'Polyols',
-    emoji: '🧃',
-    aliases: [
-      'sweetener', 'artificial sweetener', 'sorbitol', 'mannitol', 'xylitol', 'erythritol',
-      'aspartame', 'sucralose', 'saccharin', 'sugar-free', 'diet soda',
-    ],
-  },
+  { key: 'lactose_dairy', label: 'Dairy & lactose', subtitle: 'Lactose/dairy load', emoji: '🥛', aliases: ['dairy', 'lactose', 'milk', 'cheese', 'yogurt', 'yoghurt', 'cream', 'ice cream', 'butter'] },
+  { key: 'allium_fructans', label: 'Garlic & onion', subtitle: 'Fructans/alliums', emoji: '🧄', aliases: ['garlic', 'onion', 'shallot', 'leek', 'scallion', 'green onion', 'chive'] },
+  { key: 'wheat_fructan_gluten', label: 'Wheat & gluten', subtitle: 'Wheat fructans/gluten', emoji: '🍞', aliases: ['wheat', 'gluten', 'bread', 'pasta', 'flour', 'bun', 'ramen', 'rye', 'tortilla', 'cracker', 'noodle'] },
+  { key: 'legume_gos', label: 'Beans & legumes', subtitle: 'GOS/legume fermentation', emoji: '🫘', aliases: ['beans', 'bean', 'lentil', 'chickpea', 'edamame', 'hummus', 'falafel', 'tofu'] },
+  { key: 'excess_fructose', label: 'High-fructose foods', subtitle: 'Excess fructose', emoji: '🍎', aliases: ['apple', 'pear', 'mango', 'honey', 'agave', 'fruit juice'] },
+  { key: 'polyol_sweeteners', label: 'Sugar alcohols & polyols', subtitle: 'Polyols', emoji: '🧃', aliases: ['sorbitol', 'mannitol', 'xylitol', 'maltitol', 'erythritol', 'sugar-free', 'sugar free', 'diet soda'] },
+  { key: 'gassy_high_fiber_plants', label: 'Gassy high-fiber plants', subtitle: 'Fiber/fermentation load', emoji: '🥦', aliases: ['broccoli', 'cabbage', 'cauliflower', 'mushroom', 'mushrooms', 'bran'] },
+  { key: 'high_fat_rich', label: 'Rich & high-fat foods', subtitle: 'Fat load', emoji: '🥑', aliases: ['mayo', 'mayonnaise', 'aioli', 'butter', 'avocado', 'olive oil', 'pesto', 'loaded toppings', 'burger', 'ribs', 'pork belly'] },
+  { key: 'fried_crispy', label: 'Fried & crispy foods', subtitle: 'Fried prep/fat load', emoji: '🍟', aliases: ['fried', 'fries', 'tempura', 'battered', 'breaded', 'crispy', 'deep-fried'] },
+  { key: 'acidic_pickled', label: 'Acidic & pickled foods', subtitle: 'Acid load', emoji: '🍅', aliases: ['tomato', 'citrus', 'lemon', 'lime', 'orange', 'vinegar', 'pickle', 'pickled', 'mustard', 'salsa', 'ketchup'] },
+  { key: 'spicy_heat', label: 'Spicy heat', subtitle: 'Capsaicin/pepper heat', emoji: '🌶️', aliases: ['spicy', 'chili', 'chilli', 'hot sauce', 'jalapeno', 'sriracha', 'gochujang', 'cayenne'] },
+  { key: 'caffeine_stimulants', label: 'Caffeine', subtitle: 'Stimulants', emoji: '☕', aliases: ['coffee', 'espresso', 'latte', 'tea', 'matcha', 'energy drink'] },
+  { key: 'carbonation', label: 'Carbonation', subtitle: 'Gas/reflux/bloating', emoji: '🥤', aliases: ['soda', 'sparkling water', 'seltzer', 'tonic', 'cola', 'fizzy'] },
+  { key: 'alcohol', label: 'Alcohol', subtitle: 'Reflux/irritation', emoji: '🍺', aliases: ['beer', 'wine', 'cocktail', 'liquor', 'vodka', 'whiskey', 'tequila', 'rum', 'sake'] },
+  { key: 'chocolate_cocoa', label: 'Chocolate & cocoa', subtitle: 'Cocoa/chocolate', emoji: '🍫', aliases: ['chocolate', 'cocoa', 'mocha', 'brownie', 'fudge'] },
+  { key: 'mint', label: 'Mint', subtitle: 'Peppermint/spearmint', emoji: '🌿', aliases: ['mint', 'peppermint', 'spearmint', 'mint tea'] },
+  { key: 'fermented_aged_histamine', label: 'Fermented & aged foods', subtitle: 'Histamine/fermentation', emoji: '🥬', aliases: ['kimchi', 'sauerkraut', 'miso', 'soy sauce', 'kombucha', 'aged cheese', 'gochujang'] },
+  { key: 'ultra_processed_additives', label: 'Processed/additive-heavy foods', subtitle: 'Additives/processing', emoji: '🥨', aliases: ['emulsifier', 'emulsifiers', 'gums', 'preservatives', 'ultra-processed'] },
+];
+
+export const TRACKED_FOOD_FAMILIES: TrackedFoodFamily[] = [
+  { key: 'lean_poultry_meat', label: 'Lean poultry & meats', emoji: '🍗', aliases: ['turkey', 'chicken', 'lean beef'] },
+  { key: 'fatty_rich_meat', label: 'Fatty/rich meats', emoji: '🍖', aliases: ['burger', 'ribs', 'pork belly', 'duck'] },
+  { key: 'processed_cured_meat', label: 'Processed & cured meats', emoji: '🥓', aliases: ['bacon', 'sausage', 'salami', 'ham', 'pepperoni'] },
+  { key: 'lean_seafood', label: 'Lean seafood', emoji: '🦐', aliases: ['cod', 'tuna', 'shrimp', 'crab'] },
+  { key: 'fatty_seafood', label: 'Rich seafood', emoji: '🐟', aliases: ['salmon', 'mackerel', 'eel', 'sardine'] },
+  { key: 'eggs', label: 'Eggs', emoji: '🥚', aliases: ['egg', 'eggs', 'omelet', 'omelette', 'tamago', 'quiche'] },
+  { key: 'dairy_foods', label: 'Dairy foods', emoji: '🥛', aliases: ['milk', 'cheese', 'yogurt', 'cream', 'butter'] },
+  { key: 'wheat_grains', label: 'Wheat grains', emoji: '🍞', aliases: ['bread', 'pasta', 'tortilla', 'ramen', 'wheat', 'flour'] },
+  { key: 'non_wheat_grains', label: 'Rice & non-wheat grains', emoji: '🍚', aliases: ['rice', 'oats', 'corn', 'quinoa'] },
+  { key: 'root_tuber_starches', label: 'Potatoes & root starches', emoji: '🥔', aliases: ['potato', 'sweet potato', 'taro', 'cassava'] },
+  { key: 'legumes_soy_pulses', label: 'Legumes, soy & pulses', emoji: '🫘', aliases: ['beans', 'lentils', 'edamame', 'tofu', 'chickpeas'] },
+  { key: 'gentle_vegetables_seaweed', label: 'Gentle vegetables & seaweed', emoji: '🥒', aliases: ['lettuce', 'cucumber', 'carrot', 'nori', 'seaweed', 'spinach', 'zucchini'] },
+  { key: 'gassy_vegetables', label: 'Gassy vegetables', emoji: '🥦', aliases: ['broccoli', 'cabbage', 'cauliflower', 'mushrooms'] },
+  { key: 'allium_vegetables', label: 'Allium vegetables', emoji: '🧄', aliases: ['garlic', 'onion', 'leek', 'scallion'] },
+  { key: 'tomato_citrus_fruit', label: 'Tomato & citrus', emoji: '🍅', aliases: ['tomato', 'lemon', 'lime', 'orange', 'citrus'] },
+  { key: 'other_fruits', label: 'Fruits', emoji: '🍌', aliases: ['banana', 'berries', 'apple', 'pear', 'mango'] },
+  { key: 'nuts_seeds', label: 'Nuts & seeds', emoji: '🌰', aliases: ['sesame', 'sesame seed', 'chia', 'almond', 'walnut', 'peanut'] },
+  { key: 'plant_fats_spreads', label: 'Fats, oils & spreads', emoji: '🥑', aliases: ['avocado', 'olive oil', 'mayo', 'mayonnaise', 'pesto', 'aioli'] },
+  { key: 'sauces_condiments', label: 'Sauces & condiments', emoji: '🥫', aliases: ['ketchup', 'mustard', 'dressing', 'soy sauce', 'sauce', 'gochujang', 'vinegar'] },
+  { key: 'pickled_fermented', label: 'Pickled & fermented foods', emoji: '🥬', aliases: ['pickle', 'pickled ginger', 'takuan', 'kimchi', 'miso'] },
+  { key: 'desserts_sweets', label: 'Desserts & sweets', emoji: '🍪', aliases: ['cake', 'cookie', 'candy', 'syrup', 'brownie'] },
+  { key: 'sugar_free_diet', label: 'Sugar-free & diet products', emoji: '🧃', aliases: ['diet soda', 'sugar-free', 'sorbitol', 'xylitol'] },
+  { key: 'non_alcoholic_drinks', label: 'Non-alcoholic drinks', emoji: '🥤', aliases: ['juice', 'tea', 'coffee', 'soda', 'smoothie'] },
+  { key: 'alcoholic_drinks', label: 'Alcoholic drinks', emoji: '🍺', aliases: ['beer', 'wine', 'cocktail', 'liquor'] },
+  { key: 'soups_stews_broths', label: 'Soups, stews & broths', emoji: '🍲', aliases: ['soup', 'stew', 'broth', 'curry'] },
+  { key: 'mixed_dishes', label: 'Mixed dishes', emoji: '🍽️', aliases: ['sandwich', 'bowl', 'roll', 'taco', 'pizza', 'sushi'] },
+  { key: 'unknown_unclassified', label: 'Unclassified foods', emoji: '•', aliases: [] },
 ];
 
 function normalizeKey(value: string) {
-  return value.trim().toLowerCase();
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// Whole-word matching only: substring matching would file "steak" under
-// Caffeine (tea) or plain "sauce" under Garlic & onion (garlic sauce).
 function containsWord(haystack: string, needle: string) {
-  if (!needle) {
-    return false;
-  }
+  if (!needle) return false;
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(haystack);
 }
 
-function ingredientMatchesGroup(ingredientName: string, group: TriggerGroup) {
+function ingredientMatchesAliases(ingredientName: string, aliases: string[]) {
   const normalized = normalizeKey(ingredientName);
-  if (!normalized) {
-    return false;
-  }
-
-  return group.aliases.some((alias) => {
+  if (!normalized) return false;
+  return aliases.some((alias) => {
     const normalizedAlias = normalizeKey(alias);
     return normalized === normalizedAlias || containsWord(normalized, normalizedAlias);
   });
@@ -155,15 +98,44 @@ function ingredientMatchesGroup(ingredientName: string, group: TriggerGroup) {
 
 export function groupForIngredient(ingredientName: string): TriggerGroup | null {
   for (const group of TRIGGER_GROUPS) {
-    if (ingredientMatchesGroup(ingredientName, group)) {
-      return group;
-    }
+    if (ingredientMatchesAliases(ingredientName, group.aliases)) return group;
   }
   return null;
 }
 
 export function groupByKey(key: string): TriggerGroup | null {
   return TRIGGER_GROUPS.find((group) => group.key === key) ?? null;
+}
+
+export function familyForIngredient(ingredientName: string): TrackedFoodFamily {
+  for (const family of TRACKED_FOOD_FAMILIES) {
+    if (family.key !== 'unknown_unclassified' && ingredientMatchesAliases(ingredientName, family.aliases)) {
+      return family;
+    }
+  }
+  return familyByKey('unknown_unclassified')!;
+}
+
+export function familyByKey(key: string): TrackedFoodFamily | null {
+  return TRACKED_FOOD_FAMILIES.find((family) => family.key === key) ?? null;
+}
+
+export function groupsForInsight(insight: IngredientInsight): TriggerGroup[] {
+  const taxonomyGroups = insight.taxonomy?.digestivePatternKeys
+    ?.map((key) => groupByKey(key))
+    .filter((group): group is TriggerGroup => Boolean(group));
+  if (taxonomyGroups?.length) {
+    return taxonomyGroups;
+  }
+  const fallback = groupForIngredient(insight.ingredientName);
+  return fallback ? [fallback] : [];
+}
+
+export function familyForInsight(insight: IngredientInsight): TrackedFoodFamily {
+  const taxonomyKey = insight.taxonomy?.primaryFoodFamilyKey;
+  const taxonomyFamily = taxonomyKey ? familyByKey(taxonomyKey) : null;
+  if (taxonomyFamily) return taxonomyFamily;
+  return familyForIngredient(insight.ingredientName);
 }
 
 function confidenceFromOutcomes(totalOutcomes: number): InsightConfidenceLevel {
@@ -176,10 +148,6 @@ function outcomeCount(insight: IngredientInsight) {
   return insight.positiveEvidenceCount + insight.negativeEvidenceCount;
 }
 
-// Pools member-ingredient evidence into one group-level verdict. Risk score
-// follows the strongest member with real outcomes (a confirmed cheese makes
-// the Dairy group confirmed); confidence follows the pooled outcome count, so
-// related ingredients build certainty together instead of separately.
 export function buildGroupSyntheticInsight(
   group: TriggerGroup,
   members: IngredientInsight[],
@@ -225,43 +193,50 @@ export function buildMemberSummary(members: IngredientInsight[], limit = 3): str
   const sorted = [...members].sort((left, right) => outcomeCount(right) - outcomeCount(left));
   const parts = sorted.slice(0, limit).map((member) => {
     const count = outcomeCount(member);
-    return count >= 2 ? `${member.ingredientName} ×${count}` : member.ingredientName;
+    return count >= 2 ? `${member.ingredientName} x${count}` : member.ingredientName;
   });
   const remainder = sorted.length - limit;
-  if (remainder > 0) {
-    parts.push(`+${remainder} more`);
-  }
+  if (remainder > 0) parts.push(`+${remainder} more`);
   return parts.join(', ');
 }
 
-export type GroupedTriggerEntry =
-  | {
-      kind: 'group';
-      group: TriggerGroup;
-      insight: IngredientInsight;
-      members: IngredientInsight[];
-      memberSummary: string;
-    }
-  | {
-      kind: 'single';
-      insight: IngredientInsight;
-    };
+export type GroupedTriggerEntry = {
+  kind: 'group';
+  group: TriggerGroup;
+  insight: IngredientInsight;
+  members: IngredientInsight[];
+  memberSummary: string;
+};
+
+export type TrackedFoodFamilyEntry = {
+  family: TrackedFoodFamily;
+  members: IngredientInsight[];
+  memberSummary: string;
+  evidenceCount: number;
+};
+
+const PATTERN_DUPLICATE_FAMILIES = new Set<TrackedFoodFamilyKey>([
+  'dairy_foods',
+  'wheat_grains',
+  'legumes_soy_pulses',
+  'gassy_vegetables',
+  'allium_vegetables',
+  'tomato_citrus_fruit',
+  'sugar_free_diet',
+  'alcoholic_drinks',
+]);
 
 export function buildGroupedTriggerEntries(insights: IngredientInsight[]): {
   entries: GroupedTriggerEntry[];
   earlySignals: IngredientInsight[];
 } {
   const membersByGroup = new Map<string, IngredientInsight[]>();
-  const singles: IngredientInsight[] = [];
 
   for (const insight of insights) {
-    const group = groupForIngredient(insight.ingredientName);
-    if (group) {
+    for (const group of groupsForInsight(insight)) {
       const members = membersByGroup.get(group.key) ?? [];
       members.push(insight);
       membersByGroup.set(group.key, members);
-    } else {
-      singles.push(insight);
     }
   }
 
@@ -277,26 +252,50 @@ export function buildGroupedTriggerEntries(insights: IngredientInsight[]): {
     });
   }
 
-  // Ungrouped ingredients need real signal to earn a row: the user declared
-  // them, or at least two outcome data points exist. The rest accumulate
-  // quietly in the early-signals tail so one rough day after a 10-ingredient
-  // meal doesn't flood the page.
-  const earlySignals: IngredientInsight[] = [];
-  for (const insight of singles) {
-    if (insight.sourceBreakdown.declared || outcomeCount(insight) >= 2) {
-      entries.push({ kind: 'single', insight });
-    } else {
-      earlySignals.push(insight);
+  return { entries, earlySignals: [] };
+}
+
+export function buildTrackedFoodFamilyEntries(insights: IngredientInsight[]): TrackedFoodFamilyEntry[] {
+  const membersByFamily = new Map<string, IngredientInsight[]>();
+  const firstSeenOrder = new Map<string, number>();
+  for (const insight of insights) {
+    const family = familyForInsight(insight);
+    if (family.key === 'unknown_unclassified') continue;
+    if (!firstSeenOrder.has(family.key)) {
+      firstSeenOrder.set(family.key, firstSeenOrder.size);
     }
+    const members = membersByFamily.get(family.key) ?? [];
+    members.push(insight);
+    membersByFamily.set(family.key, members);
   }
 
-  return { entries, earlySignals };
+  return [...membersByFamily.entries()]
+    .map(([key, members]) => {
+      const family = familyByKey(key)!;
+      const evidenceCount = members.reduce(
+        (total, member) => total + Math.max(member.supportingEvidenceCount, outcomeCount(member)),
+        0,
+      );
+      return {
+        family,
+        members,
+        memberSummary: buildMemberSummary(members, 4),
+        evidenceCount,
+      };
+    })
+    .filter((entry) => {
+      if (!PATTERN_DUPLICATE_FAMILIES.has(entry.family.key)) return true;
+      return entry.members.some((member) => groupsForInsight(member).length === 0);
+    })
+    .sort(
+      (left, right) =>
+        right.evidenceCount - left.evidenceCount ||
+        (firstSeenOrder.get(left.family.key) ?? 0) - (firstSeenOrder.get(right.family.key) ?? 0),
+    );
 }
 
 function latestDate(values: (string | undefined)[]): string | undefined {
   const valid = values.filter((value): value is string => Boolean(value));
-  if (!valid.length) {
-    return undefined;
-  }
+  if (!valid.length) return undefined;
   return valid.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0];
 }

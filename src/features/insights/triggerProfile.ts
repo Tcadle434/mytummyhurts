@@ -1,5 +1,10 @@
 import type { IngredientInsight } from '../../types/domain';
-import { buildGroupedTriggerEntries, type GroupedTriggerEntry } from './triggerGroups';
+import {
+  buildGroupedTriggerEntries,
+  buildTrackedFoodFamilyEntries,
+  type GroupedTriggerEntry,
+  type TrackedFoodFamilyEntry,
+} from './triggerGroups';
 
 export type TriggerStatus = 'confirmed' | 'suspect' | 'cleared' | 'safe';
 
@@ -114,6 +119,7 @@ export type TriggerProfileViewState = {
   sections: TriggerProfileSection[];
   totalTracked: number;
   allSeeded: boolean;
+  trackedFamilies: TrackedFoodFamilyEntry[];
   earlySignals: IngredientInsight[];
 };
 
@@ -145,6 +151,7 @@ export function buildTriggerProfileViewState(
   });
 
   const { entries, earlySignals } = buildGroupedTriggerEntries(filtered);
+  const trackedFamilies = buildTrackedFoodFamilyEntries(filtered);
 
   const byStatus: Record<TriggerStatus, GroupedTriggerEntry[]> = {
     confirmed: [],
@@ -192,14 +199,13 @@ export function buildTriggerProfileViewState(
           !insight.sourceBreakdown.personal &&
           insight.positiveEvidenceCount + insight.negativeEvidenceCount === 0,
       ),
+    trackedFamilies,
     earlySignals,
   };
 }
 
 export function entryDisplayName(entry: GroupedTriggerEntry): string {
-  return entry.kind === 'group'
-    ? entry.group.label
-    : entry.insight.ingredientName.charAt(0).toUpperCase() + entry.insight.ingredientName.slice(1);
+  return entry.group.label;
 }
 
 export function buildTriggerProfileShareText(viewState: TriggerProfileViewState): string {

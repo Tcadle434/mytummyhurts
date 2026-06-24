@@ -139,7 +139,7 @@ describe('buildTriggerProfileViewState', () => {
   it('groups members and orders sections confirmed -> suspect -> safe', () => {
     const viewState = buildTriggerProfileViewState(mixed);
 
-    expect(viewState.sections.map((section) => section.status)).toEqual(['confirmed', 'suspect', 'safe']);
+    expect(viewState.sections.map((section) => section.status)).toEqual(['confirmed', 'suspect']);
 
     // garlic + onion pool into one fructan group; 6 shared outcomes confirm it.
     const confirmed = viewState.sections.find((section) => section.status === 'confirmed')!;
@@ -153,25 +153,23 @@ describe('buildTriggerProfileViewState', () => {
     const suspects = viewState.sections.find((section) => section.status === 'suspect')!;
     expect(suspects.entries.map((entry) => entry.insight.ingredientName)).toEqual(['Dairy & lactose']);
 
-    const safe = viewState.sections.find((section) => section.status === 'safe')!;
-    expect(safe.entries[0]!.kind).toBe('single');
-    expect(safe.entries[0]!.insight.ingredientName).toBe('rice');
+    expect(viewState.trackedFamilies.some((entry) => entry.family.key === 'non_wheat_grains')).toBe(true);
     expect(viewState.allSeeded).toBe(false);
     expect(viewState.earlySignals).toHaveLength(0);
   });
 
-  it('gates ungrouped one-outcome ingredients into earlySignals', () => {
+  it('does not dump ungrouped one-outcome ingredients into profile rows', () => {
     const viewState = buildTriggerProfileViewState([
       ...mixed,
       insight({ ingredientName: 'parsley', combinedRiskScore: 55, negativeEvidenceCount: 1 }),
     ]);
 
-    expect(viewState.earlySignals.map((entry) => entry.ingredientName)).toEqual(['parsley']);
+    expect(viewState.earlySignals).toEqual([]);
     const suspects = viewState.sections.find((section) => section.status === 'suspect')!;
     expect(suspects.entries.some((entry) => entry.insight.ingredientName === 'parsley')).toBe(false);
   });
 
-  it('shows neutral grouped evidence under review and keeps neutral singleton evidence accumulating', () => {
+  it('shows neutral pattern evidence under review and neutral non-pattern evidence as food families', () => {
     const viewState = buildTriggerProfileViewState([
       insight({
         ingredientName: 'bread',
@@ -206,7 +204,8 @@ describe('buildTriggerProfileViewState', () => {
     expect(viewState.counts).toEqual({ confirmed: 0, suspects: 1, cleared: 0, safe: 0 });
     expect(viewState.sections.map((section) => section.status)).toEqual(['suspect']);
     expect(viewState.sections[0]!.entries[0]!.insight.ingredientName).toBe('Wheat & gluten');
-    expect(viewState.earlySignals.map((entry) => entry.ingredientName)).toEqual(['parsley']);
+    expect(viewState.trackedFamilies.some((entry) => entry.family.key === 'wheat_grains')).toBe(false);
+    expect(viewState.earlySignals).toEqual([]);
     expect(viewState.allSeeded).toBe(false);
   });
 
@@ -268,6 +267,6 @@ describe('buildTriggerProfileShareText', () => {
 
     expect(text).toContain('My Trigger Profile — MyTummyHurts');
     expect(text).toContain('Confirmed triggers: Garlic & onion');
-    expect(text).toContain('Safe foods: Rice');
+    expect(text).not.toContain('Safe foods: Rice');
   });
 });

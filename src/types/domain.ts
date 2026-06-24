@@ -630,6 +630,70 @@ export interface IngredientInsight {
   sourceBreakdown: InsightSourceBreakdown;
   lastRecomputedAt: string;
   summary: string;
+  taxonomy?: IngredientTaxonomyClassification;
+}
+
+export type DigestivePatternKey =
+  | 'lactose_dairy'
+  | 'allium_fructans'
+  | 'wheat_fructan_gluten'
+  | 'legume_gos'
+  | 'excess_fructose'
+  | 'polyol_sweeteners'
+  | 'gassy_high_fiber_plants'
+  | 'high_fat_rich'
+  | 'fried_crispy'
+  | 'acidic_pickled'
+  | 'spicy_heat'
+  | 'caffeine_stimulants'
+  | 'carbonation'
+  | 'alcohol'
+  | 'chocolate_cocoa'
+  | 'mint'
+  | 'fermented_aged_histamine'
+  | 'ultra_processed_additives';
+
+export type TrackedFoodFamilyKey =
+  | 'lean_poultry_meat'
+  | 'fatty_rich_meat'
+  | 'processed_cured_meat'
+  | 'lean_seafood'
+  | 'fatty_seafood'
+  | 'eggs'
+  | 'dairy_foods'
+  | 'wheat_grains'
+  | 'non_wheat_grains'
+  | 'root_tuber_starches'
+  | 'legumes_soy_pulses'
+  | 'gentle_vegetables_seaweed'
+  | 'gassy_vegetables'
+  | 'allium_vegetables'
+  | 'tomato_citrus_fruit'
+  | 'other_fruits'
+  | 'nuts_seeds'
+  | 'plant_fats_spreads'
+  | 'sauces_condiments'
+  | 'pickled_fermented'
+  | 'desserts_sweets'
+  | 'sugar_free_diet'
+  | 'non_alcoholic_drinks'
+  | 'alcoholic_drinks'
+  | 'soups_stews_broths'
+  | 'mixed_dishes'
+  | 'unknown_unclassified';
+
+export type IngredientTaxonomyConfidence = 'high' | 'medium' | 'low';
+export type IngredientTaxonomySource = 'llm' | 'deterministic' | 'manual';
+
+export interface IngredientTaxonomyClassification {
+  primaryFoodFamilyKey: TrackedFoodFamilyKey;
+  digestivePatternKeys: DigestivePatternKey[];
+  confidence: IngredientTaxonomyConfidence;
+  reason: string;
+  taxonomyVersion: string;
+  model?: string;
+  promptVersion?: string;
+  source: IngredientTaxonomySource;
 }
 
 export interface ConditionIngredientInsight {

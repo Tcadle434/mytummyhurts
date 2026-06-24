@@ -115,6 +115,21 @@ describe('learning recompute (the trigger-learning loop)', () => {
     // Daily scores recomputed.
     const reports = await admin`select daily_score from public.daily_gut_reports where user_id = ${U} and daily_score is not null`;
     expect(reports.length).toBeGreaterThan(0);
+
+    // Ingredient taxonomy classifications are cached globally for display grouping.
+    const taxonomyRows = await admin`
+      select normalized_ingredient_name, primary_food_family_key, digestive_pattern_keys
+      from public.ingredient_taxonomy_classifications
+      where normalized_ingredient_name in ('garlic', 'rice')`;
+    const taxonomyByName = Object.fromEntries(taxonomyRows.map((row) => [row.normalized_ingredient_name, row]));
+    expect(taxonomyByName.garlic).toMatchObject({
+      primary_food_family_key: 'allium_vegetables',
+      digestive_pattern_keys: ['allium_fructans'],
+    });
+    expect(taxonomyByName.rice).toMatchObject({
+      primary_food_family_key: 'non_wheat_grains',
+      digestive_pattern_keys: [],
+    });
   });
 
   it('keeps scan-only recompute from moving Gut Score', async () => {

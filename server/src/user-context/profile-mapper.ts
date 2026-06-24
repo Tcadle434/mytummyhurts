@@ -13,10 +13,14 @@ import type {
   GutScoreState,
   GutScoreTrendDirection,
   ConditionIngredientInsight,
+  DigestivePatternKey,
   IngredientInsight,
+  IngredientTaxonomyConfidence,
+  IngredientTaxonomySource,
   ProfileSeed,
   ScanForInsightRecompute,
   StomachProfile,
+  TrackedFoodFamilyKey,
 } from '../scan/engine/domain';
 
 /** Reconstruct a UserProfile from a user_profiles row (JSONB seed fields). */
@@ -176,6 +180,7 @@ function buildGutScoreHistory(
 }
 
 export function mapInsight(r: Record<string, unknown>): IngredientInsight {
+  const taxonomy = mapInsightTaxonomy(r);
   return {
     id: r.id,
     ingredientName: r.ingredient_name,
@@ -199,7 +204,33 @@ export function mapInsight(r: Record<string, unknown>): IngredientInsight {
     },
     lastRecomputedAt: r.last_recomputed_at,
     summary: r.summary ?? '',
+    taxonomy,
   } as IngredientInsight;
+}
+
+function mapInsightTaxonomy(r: Record<string, unknown>): IngredientInsight['taxonomy'] | undefined {
+  if (!r.taxonomy_primary_food_family_key) return undefined;
+  const confidence =
+    r.taxonomy_confidence === 'high' || r.taxonomy_confidence === 'medium' || r.taxonomy_confidence === 'low'
+      ? (r.taxonomy_confidence as IngredientTaxonomyConfidence)
+      : 'low';
+  const source =
+    r.taxonomy_source === 'llm' || r.taxonomy_source === 'manual' || r.taxonomy_source === 'deterministic'
+      ? (r.taxonomy_source as IngredientTaxonomySource)
+      : 'deterministic';
+
+  return {
+    primaryFoodFamilyKey: r.taxonomy_primary_food_family_key as TrackedFoodFamilyKey,
+    digestivePatternKeys: Array.isArray(r.taxonomy_digestive_pattern_keys)
+      ? (r.taxonomy_digestive_pattern_keys.map(String) as DigestivePatternKey[])
+      : [],
+    confidence,
+    reason: String(r.taxonomy_reason ?? ''),
+    taxonomyVersion: String(r.taxonomy_version ?? ''),
+    model: r.taxonomy_model ? String(r.taxonomy_model) : undefined,
+    promptVersion: r.taxonomy_prompt_version ? String(r.taxonomy_prompt_version) : undefined,
+    source,
+  };
 }
 
 export function mapConditionInsight(r: Record<string, unknown>): ConditionIngredientInsight {

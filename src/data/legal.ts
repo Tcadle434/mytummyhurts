@@ -63,9 +63,9 @@ export const legalDocuments = {
           'Your conditions, declared sensitivities, and calibration answers seed the model on day one. After that, evidence from your own days does the work: daily check-ins are matched against meals across same-day and multi-day windows, because gut symptoms often lag 6-48 hours. We never ask you to judge a single meal an hour after eating - that produces bias, not evidence.',
       },
       {
-        heading: 'How triggers are grouped',
+        heading: 'How patterns are grouped',
         body:
-          'Trigger groups follow the clinical taxonomies dietitians use: the Monash University FODMAP types (fructans like garlic and onion, GOS in legumes, lactose in dairy, polyols in sugar-free sweeteners) and the American College of Gastroenterology reflux trigger categories (fried and fatty foods, spicy foods, tomato and citrus, caffeine, alcohol, chocolate, carbonated drinks). Related ingredients share one verdict because they share one mechanism - and because the ACG notes trigger impact "varies significantly among individuals," your groups are confirmed or cleared by your own evidence, not a generic list.',
+          'Digestive Patterns follow the clinical taxonomies dietitians use: FODMAP mechanisms such as fructans, GOS, lactose, excess fructose, and polyols, plus common reflux/irritation patterns such as high-fat meals, fried foods, acid, spice, caffeine, alcohol, carbonation, chocolate, mint, and fermented or aged foods. Tracked Food Families organize the rest of your logged foods for visibility. Related ingredients can share a pattern because they share one mechanism - and because the ACG notes trigger impact "varies significantly among individuals," patterns are confirmed or cleared by your own evidence, not a generic list.',
       },
       {
         heading: 'Confidence, not certainty',

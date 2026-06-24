@@ -22,6 +22,7 @@ import {
   mergeSeedAndLearnedInsights,
   recomputeDailyScores,
 } from '../scan/engine/scoring';
+import { TaxonomyClassifierService } from '../taxonomy/taxonomy-classifier.service';
 
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
 
@@ -91,7 +92,10 @@ function resolveGutScoreMovement(input: {
 export class LearningRecomputeService {
   private readonly logger = new Logger('LearningRecompute');
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly taxonomy: TaxonomyClassifierService,
+  ) {}
 
   async rebuild(userId: string, sourceType = 'profile', sourceId?: string) {
     return this.db.service(async (sql) => {
@@ -187,6 +191,11 @@ export class LearningRecomputeService {
       const conditionInsights = buildDailyConditionInsights(insights, seed.knownConditions);
 
       await this.persistInsights(sql, userId, insights, conditionInsights);
+      try {
+        await this.taxonomy.ensureClassifications(sql, insights);
+      } catch (error) {
+        this.logger.warn(`taxonomy classification skipped for user ${userId}: ${(error as Error).message}`);
+      }
 
       // Gut score.
       const [prevSnap] = await sql`

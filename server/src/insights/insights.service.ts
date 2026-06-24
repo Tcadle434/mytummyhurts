@@ -24,12 +24,34 @@ export class InsightsService {
 
   private async read(userId: string, sql: Sql, search?: string, limit = 200) {
     const insights = search
-      ? await sql`select * from public.ingredient_insights
-          where user_id = ${userId} and ingredient_name ilike ${`%${search}%`}
-          order by combined_risk_score desc nulls last limit ${limit}`
-      : await sql`select * from public.ingredient_insights
-          where user_id = ${userId}
-          order by combined_risk_score desc nulls last limit ${limit}`;
+      ? await sql`select i.*,
+            c.primary_food_family_key as taxonomy_primary_food_family_key,
+            c.digestive_pattern_keys as taxonomy_digestive_pattern_keys,
+            c.confidence as taxonomy_confidence,
+            c.reason as taxonomy_reason,
+            c.taxonomy_version as taxonomy_version,
+            c.model as taxonomy_model,
+            c.prompt_version as taxonomy_prompt_version,
+            c.source as taxonomy_source
+          from public.ingredient_insights i
+          left join public.ingredient_taxonomy_classifications c
+            on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
+          where i.user_id = ${userId} and i.ingredient_name ilike ${`%${search}%`}
+          order by i.combined_risk_score desc nulls last limit ${limit}`
+      : await sql`select i.*,
+            c.primary_food_family_key as taxonomy_primary_food_family_key,
+            c.digestive_pattern_keys as taxonomy_digestive_pattern_keys,
+            c.confidence as taxonomy_confidence,
+            c.reason as taxonomy_reason,
+            c.taxonomy_version as taxonomy_version,
+            c.model as taxonomy_model,
+            c.prompt_version as taxonomy_prompt_version,
+            c.source as taxonomy_source
+          from public.ingredient_insights i
+          left join public.ingredient_taxonomy_classifications c
+            on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
+          where i.user_id = ${userId}
+          order by i.combined_risk_score desc nulls last limit ${limit}`;
     const conditionInsights = await sql`select * from public.condition_ingredient_insights
       where user_id = ${userId} order by risk_score desc limit ${limit}`;
     const [profileRow] = await sql`select * from public.user_profiles where user_id = ${userId}`;

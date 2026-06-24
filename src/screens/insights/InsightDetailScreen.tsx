@@ -15,7 +15,7 @@ import {
 import {
   buildGroupSyntheticInsight,
   groupByKey,
-  groupForIngredient,
+  groupsForInsight,
 } from '../../features/insights/triggerGroups';
 import {
   evidenceDetailForInsight,
@@ -52,7 +52,7 @@ export function InsightDetailScreen({ route, navigation }: Props) {
   const members = useMemo(
     () =>
       group
-        ? allInsights.filter((entry) => groupForIngredient(entry.ingredientName)?.key === group.key)
+        ? allInsights.filter((entry) => groupsForInsight(entry).some((candidate) => candidate.key === group.key))
         : [],
     [allInsights, group],
   );
