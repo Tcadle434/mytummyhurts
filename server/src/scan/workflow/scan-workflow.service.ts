@@ -11,15 +11,23 @@ import type {
 } from '../engine/domain';
 import type { ExtractionContext, OpenAiAuditLog } from '../engine/openai';
 import {
+  buildRiskAdjudicationRequest,
+  evidenceCitationsFromChunks,
+  validateRiskAdjudication,
+  type EvidenceCitation,
+  type RiskAdjudicationEvidenceChunk,
+} from '../engine/riskAdjudication';
+import {
   computeMenuScanResultFromExtraction,
   computeScanResultFromStructured,
 } from '../engine/scoring';
 import { LLM_PROVIDER, LlmProvider } from '../../llm/llm-provider.interface';
-import { computeRagAdjustment, RagSignal } from '../../rag/rag-influence';
+import type { RankedCandidate } from '../../rag/reranker';
 import { RagRetrievalService } from '../../rag/retrieval.service';
 
 export interface ScanWorkflowInput {
   userId: string;
+  scanId?: string | null;
   kind: 'text' | 'image' | 'menu' | 'barcode';
   text?: string;
   imageUrls?: string[];
@@ -58,10 +66,6 @@ export class ScanWorkflowService {
     this.graph = this.buildGraph();
   }
 
-  private bandLevel(score: number): 'low' | 'medium' | 'high' {
-    return score < 37 ? 'low' : score < 64 ? 'medium' : 'high';
-  }
-
   private deriveContext(input: ScanWorkflowInput): ExtractionContext {
     if (input.context) return input.context;
     const profile = input.profile;
@@ -72,6 +76,71 @@ export class ScanWorkflowService {
     };
   }
 
+  private flag(name: string, fallback = false) {
+    const raw = this.config.get<string>(name);
+    if (raw === undefined) return fallback;
+    return raw === 'true' || raw === '1' || raw === 'on';
+  }
+
+  private supportsRiskAdjudication(scanCategory: 'food' | 'menu' | 'grocery' | undefined) {
+    return scanCategory === 'food' || scanCategory === 'grocery';
+  }
+
+  private normalizeTerm(value: string | undefined | null) {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private extractedIngredientTerms(extraction: StructuredAnalysisV2) {
+    return Array.from(
+      new Set(
+        [...extraction.visibleIngredients, ...extraction.inferredIngredients]
+          .flatMap((ingredient) => [ingredient.canonicalName, ingredient.rawName])
+          .map((value) => this.normalizeTerm(value))
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private conceptTerms(extraction: StructuredAnalysisV2, insights: IngredientInsight[]) {
+    const ingredientTerms = this.extractedIngredientTerms(extraction);
+    const terms = new Set<string>();
+    if (extraction.baseFoodCategory?.key) terms.add(extraction.baseFoodCategory.key);
+    if (extraction.baseFoodCategory?.source) terms.add(extraction.baseFoodCategory.source);
+    for (const modifier of extraction.riskModifiers ?? []) {
+      terms.add(modifier.key);
+      terms.add(modifier.source);
+    }
+    for (const insight of insights) {
+      const insightName = this.normalizeTerm(insight.ingredientName);
+      const relevant = ingredientTerms.some(
+        (term) => term === insightName || term.includes(insightName) || insightName.includes(term),
+      );
+      if (!relevant) continue;
+      if (insight.taxonomy?.primaryFoodFamilyKey) terms.add(insight.taxonomy.primaryFoodFamilyKey);
+      for (const pattern of insight.taxonomy?.digestivePatternKeys ?? []) terms.add(pattern);
+    }
+    return Array.from(terms).map((term) => this.normalizeTerm(term)).filter(Boolean);
+  }
+
+  private toRagEvidence(chunks: RankedCandidate[]): RiskAdjudicationEvidenceChunk[] {
+    return chunks.slice(0, 5).map((chunk) => ({
+      chunkId: chunk.chunkId,
+      title: chunk.title ?? 'Reference',
+      source: chunk.source ?? 'reference',
+      url: chunk.url,
+      content: chunk.content,
+      conditionTags: chunk.conditionTags ?? [],
+      ingredientTags: chunk.ingredientTags ?? [],
+      direction: chunk.direction,
+      relevanceScore: chunk.rerankScore,
+    }));
+  }
+
   private buildGraph() {
     const State = Annotation.Root({
       input: Annotation<ScanWorkflowInput>(),
@@ -80,6 +149,15 @@ export class ScanWorkflowService {
       extraction: Annotation<StructuredAnalysisV2 | MenuScanAnalysis | null>(),
       baseResult: Annotation<ScanResult | null>(),
       finalResult: Annotation<ScanResult | null>(),
+      ragRetrievalRunId: Annotation<string | null>(),
+      ragEvidence: Annotation<RiskAdjudicationEvidenceChunk[]>({
+        reducer: (_a, b) => b,
+        default: () => [],
+      }),
+      evidenceCitations: Annotation<EvidenceCitation[]>({
+        reducer: (_a, b) => b,
+        default: () => [],
+      }),
       audits: Annotation<OpenAiAuditLog[]>({
         reducer: (a, b) => a.concat(b),
         default: () => [],
@@ -125,6 +203,70 @@ export class ScanWorkflowService {
           audits: r.audits,
         };
       })
+      .addNode('retrieveEvidence', async (s: S) => {
+        const { input, extraction, scanCategory } = s;
+        const retrievalEnabled = this.flag('RAG_RETRIEVAL_ENABLED', false);
+        if (!retrievalEnabled || !extraction || !this.supportsRiskAdjudication(scanCategory)) {
+          return {};
+        }
+        const structured = extraction as StructuredAnalysisV2;
+        try {
+          const ingredients = this.extractedIngredientTerms(structured);
+          const concepts = this.conceptTerms(structured, input.insights);
+          const conditions = input.profile?.knownConditions ?? [];
+          const { runId, chunks } = await this.retrieval.retrieve({
+            ingredients,
+            concepts,
+            conditions,
+            userId: input.userId,
+            scanId: input.scanId ?? null,
+          }, 5);
+          return {
+            ragRetrievalRunId: runId,
+            ragEvidence: this.toRagEvidence(chunks),
+          };
+        } catch {
+          return { ragRetrievalRunId: null, ragEvidence: [] };
+        }
+      })
+      .addNode('adjudicateRisk', async (s: S) => {
+        const { input, extraction, scanCategory } = s;
+        const enabled = this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false);
+        if (!enabled || !extraction || !this.supportsRiskAdjudication(scanCategory)) {
+          return {};
+        }
+        const structured = extraction as StructuredAnalysisV2;
+        const request = buildRiskAdjudicationRequest({
+          structuredAnalysis: structured,
+          profile: input.profile,
+          insights: input.insights,
+          ragEvidence: s.ragEvidence ?? [],
+        });
+        try {
+          const adjudication = await llm.adjudicateScanRisk(request);
+          const validated = validateRiskAdjudication(adjudication.result, request, {
+            source: adjudication.audits.length ? 'llm' : 'fallback',
+            ragRetrievalRunId: s.ragRetrievalRunId ?? null,
+          });
+          if (!validated) {
+            return { audits: adjudication.audits };
+          }
+          return {
+            extraction: {
+              ...structured,
+              conditionSeverities: validated.conditionSeverities,
+              riskAdjudication: validated.metadata,
+              ragRetrievalRunId: s.ragRetrievalRunId ?? null,
+              evidenceCitations: validated.evidenceCitations,
+            },
+            evidenceCitations: validated.evidenceCitations,
+            audits: adjudication.audits,
+          };
+        } catch (err) {
+          const audit = err && typeof err === 'object' && 'audit' in err ? (err as { audit?: OpenAiAuditLog }).audit : null;
+          return audit ? { audits: [audit] } : {};
+        }
+      })
       .addNode('score', (s: S) => {
         const { input, extraction, scanCategory } = s;
         if (!extraction) throw new Error('no_extraction');
@@ -144,83 +286,35 @@ export class ScanWorkflowService {
               );
         return { baseResult };
       })
-      .addNode('ragAdjust', async (s: S) => {
-        // Bounded within-band nudge. With influence disabled (default), the final
-        // result is the engine result unchanged. Menus stay deterministic
-        // pass-through in phase 1.
-        const influenceEnabled = (config.get<string>('RAG_INFLUENCE_ENABLED') ?? 'false') === 'true';
-        const retrievalEnabled = (config.get<string>('RAG_RETRIEVAL_ENABLED') ?? 'false') === 'true';
+      .addNode('finalize', (s: S) => {
         const base = s.baseResult;
-        if ((!influenceEnabled && !retrievalEnabled) || !base || s.scanCategory === 'menu') {
-          return { finalResult: base };
-        }
-        const maxDelta = Number(config.get('RAG_INFLUENCE_MAX_DELTA') ?? 5);
-
-        try {
-          const ingredientNames = (base.ingredientRisks ?? []).map((i) => i.canonicalName);
-          const conditions = s.input.profile?.knownConditions ?? [];
-          const { chunks } = await this.retrieval.retrieve({
-            ingredients: ingredientNames,
-            conditions,
-            userId: s.input.userId,
-          });
-          if (!chunks.length) return { finalResult: base };
-
-          // Citations surfaced to the UI (additive EvidenceCitation[]).
-          const evidenceCitations = chunks.slice(0, 5).map((c, i) => ({
-            id: `cite-${i}`,
-            title: c.title ?? 'Reference',
-            source: c.source ?? 'reference',
-            url: c.url ?? undefined,
-            chunkId: c.chunkId,
-            snippet: (c.content ?? '').replace(/\s+/g, ' ').slice(0, 180),
-            relevanceScore: c.rerankScore,
-          }));
-          const sources = [...new Set(evidenceCitations.map((c) => c.source))].slice(0, 2).join(', ');
-          const interpretation = sources
-            ? `${base.interpretation ?? ''} Evidence drawn from ${sources}.`.trim()
-            : base.interpretation;
-
-          // Bounded within-band nudge — only when influence is enabled; otherwise
-          // citations are attached without changing the score.
-          let overallRiskScore = base.overallRiskScore;
-          let overallRiskLevel = base.overallRiskLevel;
-          if (influenceEnabled) {
-            const signals: RagSignal[] = chunks
-              .map((c): RagSignal | null => {
-                const matched = c.ingredientTags.find((t) =>
-                  ingredientNames.some((n) => n.toLowerCase().includes(t.toLowerCase())),
-                );
-                if (!matched || !c.direction) return null;
-                return {
-                  chunkId: c.chunkId,
-                  source: c.source ?? 'reference',
-                  title: c.title ?? '',
-                  direction: c.direction,
-                  relevance: c.rerankScore,
-                  confidence: 'medium' as const,
-                  matchedIngredient: matched,
-                };
-              })
-              .filter((x): x is RagSignal => x !== null);
-            const adj = computeRagAdjustment(base.overallRiskScore, signals, { enabled: true, maxDelta });
-            overallRiskScore = adj.finalScore;
-            overallRiskLevel = this.bandLevel(adj.finalScore);
-          }
-
-          return {
-            finalResult: { ...base, overallRiskScore, overallRiskLevel, interpretation, evidenceCitations },
-          };
-        } catch {
-          // Retrieval/influence is best-effort — never fail or alter a scan on error.
-          return { finalResult: base };
-        }
+        if (!base) return { finalResult: base };
+        const citations =
+          s.evidenceCitations?.length
+            ? s.evidenceCitations
+            : this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false)
+              ? evidenceCitationsFromChunks(s.ragEvidence ?? [])
+              : [];
+        const structuredAnalysis = {
+          ...base.structuredAnalysis,
+          ragRetrievalRunId: s.ragRetrievalRunId ?? base.structuredAnalysis.ragRetrievalRunId ?? null,
+          evidenceCitations: citations,
+        };
+        return {
+          finalResult: {
+            ...base,
+            evidenceCitations: citations,
+            structuredAnalysis,
+          },
+        };
       })
       .addEdge(START, 'loadUserContext')
       .addEdge('loadUserContext', 'generate')
-      .addEdge('generate', 'score')
-      .addEdge('score', 'ragAdjust')
-      .addEdge('ragAdjust', END)
+      .addEdge('generate', 'retrieveEvidence')
+      .addEdge('retrieveEvidence', 'adjudicateRisk')
+      .addEdge('adjudicateRisk', 'score')
+      .addEdge('score', 'finalize')
+      .addEdge('finalize', END)
       .compile();
   }
 

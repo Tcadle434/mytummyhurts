@@ -14,7 +14,6 @@
 // keep this dependency-light it fetches with global fetch and does a simple
 // HTML-to-text extraction; swap in @mozilla/readability for production quality.
 import { createHash } from 'node:crypto';
-import postgres from 'postgres';
 
 const UA = 'MyTummyHurtsResearchBot/1.0 (+mailto:support@mytummyhurts.app)';
 const PER_HOST_DELAY_MS = 5000;
@@ -26,7 +25,19 @@ const SOURCES = [
     seedUrls: [
       'https://www.niddk.nih.gov/health-information/digestive-diseases/irritable-bowel-syndrome/eating-diet-nutrition',
       'https://www.niddk.nih.gov/health-information/digestive-diseases/acid-reflux-ger-gerd-adults/eating-diet-nutrition',
+      'https://www.niddk.nih.gov/health-information/digestive-diseases/lactose-intolerance',
     ] },
+  { name: 'MedlinePlus (NLM)', host: 'medlineplus.gov', tier: 1, enabled: true, conditionTags: ['IBS', 'GERD'],
+    seedUrls: [
+      'https://medlineplus.gov/irritablebowelsyndrome.html',
+      'https://medlineplus.gov/gerd.html',
+    ] },
+  { name: 'Monash FODMAP', host: 'monashfodmap.com', tier: 2, enabled: true, conditionTags: ['IBS', 'high_fodmap'],
+    seedUrls: ['https://www.monashfodmap.com/blog/what-is-a-low-fodmap-diet/'] },
+  { name: 'IFFGD', host: 'iffgd.org', tier: 2, enabled: true, conditionTags: ['IBS', 'GERD'],
+    seedUrls: ['https://iffgd.org/gi-disorders/irritable-bowel-syndrome/diet-and-ibs/'] },
+  { name: 'GI Society (badgut.org)', host: 'badgut.org', tier: 2, enabled: true, conditionTags: ['GERD', 'IBS'],
+    seedUrls: ['https://badgut.org/information-centre/a-z-digestive-topics/gerd-diet/'] },
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -57,14 +68,27 @@ function htmlToText(html) {
     .trim();
 }
 
-const targetUrl = process.env.DATABASE_ADMIN_URL ?? 'postgres://mth:mth@localhost:5432/mth';
-const sql = commit ? postgres(targetUrl, { max: 1, onnotice: () => {} }) : null;
 const manifest = [];
+let app = null;
+let ingestion = null;
+
+if (commit) {
+  const { NestFactory } = await import('@nestjs/core');
+  const { AppModule } = await import('../../dist/app.module.js');
+  const { RagIngestionService } = await import('../../dist/rag/ingestion.service.js');
+  app = await NestFactory.createApplicationContext(AppModule, { logger: false });
+  ingestion = app.get(RagIngestionService);
+}
 
 try {
   for (const source of SOURCES) {
     if (!source.enabled) continue;
     for (const url of source.seedUrls) {
+      const urlHost = new URL(url).host;
+      if (urlHost !== source.host && urlHost !== `www.${source.host}`) {
+        console.log(`  skip (host mismatch): ${url}`);
+        continue;
+      }
       if (!(await robotsAllows(url))) {
         console.log(`  skip (robots): ${url}`);
         continue;
@@ -79,18 +103,19 @@ try {
       const hash = createHash('sha256').update(text).digest('hex');
       manifest.push({ source: source.name, url, chars: text.length, excerpt: text.slice(0, 160) });
 
-      if (commit && sql) {
-        const [existing] = await sql`select id from public.rag_documents where content_hash = ${hash} and version = 1`;
-        if (!existing) {
-          await sql`
-            insert into public.rag_documents
-              (title, source_type, source_url, source_name, doc_type, license, condition_tags, content_hash, status)
-            values (${url}, 'web_scrape', ${url}, ${source.name}, 'patient_education',
-                    'fair-use-snippet', ${source.conditionTags}, ${hash}, 'draft')`;
-          // NOTE: chunking + embedding for committed rows is run by the ingestion
-          // service / admin endpoint; this script only records the draft document
-          // for human review. (Run the ingestion job to chunk + embed.)
-        }
+      if (commit && ingestion) {
+        const { chunks, deduped } = await ingestion.ingest({
+          title: url,
+          sourceType: 'web_scrape',
+          content: text,
+          sourceUrl: url,
+          sourceName: source.name,
+          docType: 'patient_education',
+          license: 'excerpt-attribution-review',
+          conditionTags: source.conditionTags,
+          ingredientTags: [],
+        });
+        console.log(`  recorded draft: ${url} — ${deduped ? 'deduped' : `${chunks} chunks embedded`} (${hash.slice(0, 8)})`);
       }
       await sleep(PER_HOST_DELAY_MS);
     }
@@ -106,5 +131,5 @@ try {
   console.error('seed error:', err.message);
   process.exitCode = 1;
 } finally {
-  if (sql) await sql.end();
+  if (app) await app.close();
 }

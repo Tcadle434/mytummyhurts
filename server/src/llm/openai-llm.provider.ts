@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import {
   classifyScanImagesWithAudit,
+  adjudicateScanRiskWithAudit,
   extractMealFromImagesWithAudit,
   extractMealFromTextWithAudit,
   extractMenuFromImagesWithAudit,
@@ -19,6 +20,7 @@ export class OpenAiLlmProvider implements LlmProvider {
   extractImages = extractMealFromImagesWithAudit;
   classifyImages = classifyScanImagesWithAudit;
   extractMenu = extractMenuFromImagesWithAudit;
+  adjudicateScanRisk = adjudicateScanRiskWithAudit;
 
   async embed(texts: string[]): Promise<number[][]> {
     const apiKey = process.env.OPENAI_API_KEY;

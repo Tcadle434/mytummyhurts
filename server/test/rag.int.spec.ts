@@ -12,6 +12,7 @@ import { RagRetrievalService } from '../src/rag/retrieval.service';
 const adminUrl = process.env.DATABASE_ADMIN_URL ?? 'postgres://mth:mth@localhost:5432/mth';
 const admin = postgres(adminUrl, { max: 2, onnotice: () => {} });
 const TITLE = 'rag-int-test-doc';
+const GERD_TITLE = 'rag-int-gerd-test-doc';
 
 // Deterministic fake embedder: garlic->basis 0, rice->basis 1, else basis 2.
 function oneHot(idx: number): number[] {
@@ -24,7 +25,13 @@ const fakeEmbedder: Embedder = {
   model: 'fake-embed',
   async embed(texts) {
     return texts.map((t) =>
-      /garlic|fructan|allium/i.test(t) ? oneHot(0) : /rice/i.test(t) ? oneHot(1) : oneHot(2),
+      /garlic|fructan|allium|wheat/i.test(t)
+        ? oneHot(0)
+        : /rice/i.test(t)
+          ? oneHot(1)
+          : /gerd|reflux|cheese|fat/i.test(t)
+            ? oneHot(3)
+            : oneHot(2),
     );
   },
 };
@@ -42,10 +49,12 @@ beforeAll(async () => {
   ingestion = moduleRef.get(RagIngestionService);
   retrieval = moduleRef.get(RagRetrievalService);
   await admin`delete from public.rag_documents where title = ${TITLE}`;
+  await admin`delete from public.rag_documents where title = ${GERD_TITLE}`;
 });
 
 afterAll(async () => {
   await admin`delete from public.rag_documents where title = ${TITLE}`;
+  await admin`delete from public.rag_documents where title = ${GERD_TITLE}`;
   await admin.end();
 });
 
@@ -55,6 +64,8 @@ describe('RAG ingestion + hybrid retrieval', () => {
       '# IBS Trigger Foods',
       '## Garlic',
       'Garlic is high in fructans and a common FODMAP trigger for IBS.',
+      '## Wheat',
+      'Wheat bread contributes fructans and can matter for IBS symptoms.',
       '## Rice',
       'Plain white rice is gentle and low FODMAP.',
     ].join('\n');
@@ -78,7 +89,39 @@ describe('RAG ingestion + hybrid retrieval', () => {
     const after = await retrieval.retrieve({ ingredients: ['garlic'], conditions: ['IBS'] });
     expect(after.chunks.length).toBeGreaterThan(0);
     expect(after.chunks[0].content.toLowerCase()).toContain('fructans');
+
+    const wheat = await retrieval.retrieve({ ingredients: ['bread'], concepts: ['wheat_fructan_or_gluten'], conditions: ['IBS'] });
+    expect(wheat.chunks.length).toBeGreaterThan(0);
+    expect(wheat.chunks[0].content.toLowerCase()).toContain('wheat');
     // a retrieval run was persisted
     expect(after.runId).toBeTruthy();
+  });
+
+  it('retrieves reflux-relevant evidence for GERD cheese/fat queries', async () => {
+    const md = [
+      '# GERD Reflux Triggers',
+      '## Fat and Dairy',
+      'High-fat meals and cheese can worsen reflux by delaying gastric emptying and increasing reflux pressure.',
+      '## Gentler Choices',
+      'Lean proteins and rice are often gentler for reflux.',
+    ].join('\n');
+
+    const { documentId } = await ingestion.ingest({
+      title: GERD_TITLE,
+      sourceType: 'markdown',
+      content: md,
+      sourceName: 'Test',
+      conditionTags: ['GERD'],
+      ingredientTags: ['cheese', 'fat'],
+    });
+    await ingestion.publish(documentId);
+
+    const after = await retrieval.retrieve({
+      ingredients: ['cheese'],
+      concepts: ['high_fat_or_rich', 'creamy_or_lactose'],
+      conditions: ['GERD / Acid reflux'],
+    });
+    expect(after.chunks.length).toBeGreaterThan(0);
+    expect(after.chunks[0].content.toLowerCase()).toContain('reflux');
   });
 });

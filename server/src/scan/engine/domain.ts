@@ -249,6 +249,34 @@ export interface ConditionSeverity {
   rationale?: string;
 }
 
+export interface EvidenceCitation {
+  id: string;
+  title: string;
+  source: string;
+  url?: string;
+  chunkId?: string;
+  snippet?: string;
+  relevanceScore?: number;
+}
+
+export interface RiskAdjudicationMetadata {
+  promptVersion: string;
+  source: 'llm' | 'fallback';
+  ragRetrievalRunId?: string | null;
+  conditionSeverities: Array<{
+    condition: string;
+    genericBand: ConditionSeverityBand;
+    personalizedBand: ConditionSeverityBand;
+    finalBand: ConditionSeverityBand;
+    drivers: string[];
+    protectiveEvidence: string[];
+    citationChunkIds: string[];
+    personalEvidenceUsed: string[];
+    confidence: IngredientConfidence;
+    rationale: string;
+  }>;
+}
+
 export interface StructuredAnalysisV2 {
   dishName: string;
   dishConfidence: IngredientConfidence;
@@ -267,6 +295,9 @@ export interface StructuredAnalysisV2 {
   scoringConfidence?: IngredientConfidence;
   gutRecommendation?: string;
   rubricVersion?: string;
+  riskAdjudication?: RiskAdjudicationMetadata;
+  ragRetrievalRunId?: string | null;
+  evidenceCitations?: EvidenceCitation[];
   model: string;
   promptVersion: string;
   imageDetail: ExtractionImageDetail;
@@ -512,6 +543,7 @@ export interface ScanResult {
   menuResult?: MenuScanResult;
   groceryProduct?: GroceryProductSummary;
   structuredAnalysis: StructuredAnalysisV2;
+  evidenceCitations?: EvidenceCitation[];
   gutScoreImpact?: GutScoreImpact;
   imageUri?: string;
 }

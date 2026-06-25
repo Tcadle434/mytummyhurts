@@ -14,6 +14,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/db ./db
 COPY --from=build /app/scripts ./scripts
+COPY --from=build /app/data ./data
 EXPOSE 3000
 # Liveness handled by the orchestrator hitting /healthz.
 CMD ["node", "dist/main.js"]

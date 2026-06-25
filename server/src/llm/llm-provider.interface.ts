@@ -14,6 +14,7 @@ export interface LlmProvider {
   extractImages: typeof engine.extractMealFromImagesWithAudit;
   classifyImages: typeof engine.classifyScanImagesWithAudit;
   extractMenu: typeof engine.extractMenuFromImagesWithAudit;
+  adjudicateScanRisk: typeof engine.adjudicateScanRiskWithAudit;
   /** Embeddings for RAG retrieval (Phase 7). */
   embed(texts: string[]): Promise<number[][]>;
 }

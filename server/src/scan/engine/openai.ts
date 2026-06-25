@@ -40,6 +40,13 @@ import {
   extractOpenAiUsage,
   type OpenAiCostSnapshot,
 } from './openaiPricing';
+import {
+  CONDITION_SEVERITY_BANDS,
+  fallbackRiskAdjudicationPayload,
+  RISK_ADJUDICATION_PROMPT_VERSION,
+  type RiskAdjudicationPayload,
+  type RiskAdjudicationRequest,
+} from './riskAdjudication';
 import { fallbackExtractionFromImage, fallbackExtractionFromText } from './scoring';
 import { withRetry } from './retry';
 
@@ -48,6 +55,7 @@ const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
 const IMAGE_EXTRACTION_MODEL = process.env.OPENAI_IMAGE_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
 const MENU_EXTRACTION_MODEL = process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini';
 const NORMALIZATION_MODEL = process.env.OPENAI_NORMALIZATION_MODEL ?? 'gpt-4.1-mini';
+const RISK_ADJUDICATION_MODEL = process.env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-4.1-mini';
 const PROMPT_VERSION = process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3';
 // Determinism lever. GPT-5-family models often reject a non-default temperature,
 // so this is OPT-IN: only sent when OPENAI_EXTRACTION_TEMPERATURE is set to a
@@ -73,6 +81,8 @@ const OPENAI_MENU_TIMEOUT_MS = positiveNumberEnv('OPENAI_MENU_TIMEOUT_MS', 115_0
 const OPENAI_MENU_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_MENU_MAX_OUTPUT_TOKENS', 12_000);
 const OPENAI_TEXT_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_TEXT_MAX_OUTPUT_TOKENS', 4_000);
 const OPENAI_IMAGE_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_IMAGE_MAX_OUTPUT_TOKENS', 4_000);
+const OPENAI_RISK_ADJUDICATION_TIMEOUT_MS = positiveNumberEnv('OPENAI_RISK_ADJUDICATION_TIMEOUT_MS', 30_000);
+const OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS', 3_000);
 const MENU_ITEM_LIMIT = 100;
 // When off, menu extraction skips per-condition LLM bands and the engine falls
 // back to mechanism-only scoring for menus (revert lever for cost/latency).
@@ -122,6 +132,7 @@ export type ExtractionContext = {
 type ResponseAuditDescriptor = {
   stage: string;
   model: string;
+  promptVersion?: string;
   systemPrompt: string;
   userPrompt: string;
   jsonSchema: unknown;
@@ -431,6 +442,46 @@ const scanCategoryClassificationSchema = {
     reason: { type: 'string' },
   },
   required: ['category', 'confidence', 'reason'],
+} as const;
+
+const riskAdjudicationSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    conditionSeverities: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          condition: { type: 'string' },
+          genericBand: { type: 'string', enum: CONDITION_SEVERITY_BANDS },
+          personalizedBand: { type: 'string', enum: CONDITION_SEVERITY_BANDS },
+          finalBand: { type: 'string', enum: CONDITION_SEVERITY_BANDS },
+          drivers: { type: 'array', maxItems: 6, items: { type: 'string' } },
+          protectiveEvidence: { type: 'array', maxItems: 6, items: { type: 'string' } },
+          citationChunkIds: { type: 'array', maxItems: 8, items: { type: 'string' } },
+          personalEvidenceUsed: { type: 'array', maxItems: 6, items: { type: 'string' } },
+          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+          rationale: { type: 'string' },
+        },
+        required: [
+          'condition',
+          'genericBand',
+          'personalizedBand',
+          'finalBand',
+          'drivers',
+          'protectiveEvidence',
+          'citationChunkIds',
+          'personalEvidenceUsed',
+          'confidence',
+          'rationale',
+        ],
+      },
+    },
+  },
+  required: ['conditionSeverities'],
 } as const;
 
 const menuExtractionSchema = {
@@ -1157,7 +1208,7 @@ async function runResponsesRequest(input: unknown) {
   return JSON.parse(outputText) as RawExtractionPayload;
 }
 
-async function runResponsesRequestWithAudit<TPayload extends Record<string, unknown>>(
+async function runResponsesRequestWithAudit<TPayload extends object>(
   input: unknown,
   audit: ResponseAuditDescriptor,
   options: { timeoutMs?: number } = {},
@@ -1194,7 +1245,7 @@ async function runResponsesRequestWithAudit<TPayload extends Record<string, unkn
       audit: {
         ...completeAudit,
         provider: 'openai' as const,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
         rawResponseText: null,
         rawResponseJson: null,
         parsedResponseJson: null,
@@ -1223,7 +1274,7 @@ async function runResponsesRequestWithAudit<TPayload extends Record<string, unkn
       audit: {
         ...completeAudit,
         provider: 'openai' as const,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
         rawResponseText,
         rawResponseJson,
         parsedResponseJson: null,
@@ -1244,7 +1295,7 @@ async function runResponsesRequestWithAudit<TPayload extends Record<string, unkn
       audit: {
         ...completeAudit,
         provider: 'openai' as const,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
         rawResponseText,
         rawResponseJson,
         parsedResponseJson: null,
@@ -1265,7 +1316,7 @@ async function runResponsesRequestWithAudit<TPayload extends Record<string, unkn
       audit: {
         ...completeAudit,
         provider: 'openai' as const,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
         rawResponseText: outputText,
         rawResponseJson,
         parsedResponseJson: null,
@@ -1286,7 +1337,7 @@ async function runResponsesRequestWithAudit<TPayload extends Record<string, unkn
       audit: {
         ...completeAudit,
         provider: 'openai' as const,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
         rawResponseText: outputText,
         rawResponseJson,
         parsedResponseJson: null,
@@ -1304,7 +1355,7 @@ async function runResponsesRequestWithAudit<TPayload extends Record<string, unkn
     audit: {
       ...completeAudit,
       provider: 'openai',
-      promptVersion: PROMPT_VERSION,
+      promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
       rawResponseText: outputText,
       rawResponseJson,
       parsedResponseJson: parsed,
@@ -1338,7 +1389,7 @@ async function runResponsesRequestWithRetry(input: unknown) {
   });
 }
 
-async function runResponsesRequestWithAuditRetry<TPayload extends Record<string, unknown>>(
+async function runResponsesRequestWithAuditRetry<TPayload extends object>(
   input: unknown,
   audit: ResponseAuditDescriptor,
   options: { timeoutMs?: number } = {},
@@ -1473,6 +1524,75 @@ function buildNormalizationPrompt(extraction: RawExtractionPayload) {
   ].join('\n');
 }
 
+function buildRiskAdjudicationSystemPrompt() {
+  return [
+    `You are ${RISK_ADJUDICATION_PROMPT_VERSION}.`,
+    'You adjudicate digestive risk severity bands for a single already-extracted food scan.',
+    'Use only the extracted food facts, user conditions, personal learned evidence, and cited RAG evidence supplied in the user message.',
+    'Return only JSON matching the provided schema.',
+    'Do not output a numeric score.',
+    'Do not invent ingredients, conditions, citations, diagnoses, or medical advice.',
+    'genericBand is the condition risk from food facts plus cited general nutrition evidence.',
+    'personalizedBand is the condition risk after considering the user-specific learned calm/reactive evidence.',
+    'finalBand is the band the deterministic scorer should use.',
+    'If personal evidence is absent or weak, finalBand must equal genericBand.',
+    'Use citationChunkIds only from the supplied RAG evidence IDs.',
+  ].join(' ');
+}
+
+function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
+  const foodFacts = {
+    dishName: input.structuredAnalysis.dishName,
+    dishConfidence: input.structuredAnalysis.dishConfidence,
+    visibleIngredients: input.structuredAnalysis.visibleIngredients.map((ingredient) => ({
+      rawName: ingredient.rawName,
+      canonicalName: ingredient.canonicalName,
+      role: ingredient.role,
+      prominence: ingredient.prominence,
+      confidence: ingredient.confidence,
+    })),
+    inferredIngredients: input.structuredAnalysis.inferredIngredients.map((ingredient) => ({
+      rawName: ingredient.rawName,
+      canonicalName: ingredient.canonicalName,
+      role: ingredient.role,
+      prominence: ingredient.prominence,
+      confidence: ingredient.confidence,
+    })),
+    prepStyle: input.structuredAnalysis.prepStyle,
+    baseFoodCategory: input.structuredAnalysis.baseFoodCategory,
+    riskModifiers: input.structuredAnalysis.riskModifiers,
+    extractionConditionSeverities: input.structuredAnalysis.conditionSeverities ?? [],
+  };
+  const ragEvidence = input.ragEvidence.slice(0, 5).map((chunk) => ({
+    chunkId: chunk.chunkId,
+    title: chunk.title,
+    source: chunk.source,
+    url: chunk.url,
+    conditionTags: chunk.conditionTags,
+    ingredientTags: chunk.ingredientTags,
+    direction: chunk.direction,
+    relevanceScore: chunk.relevanceScore,
+    content: chunk.content.replace(/\s+/g, ' ').slice(0, 900),
+  }));
+
+  return [
+    'Adjudicate digestive condition severity bands for this food scan.',
+    'Return one conditionSeverities entry for every condition in userContext.knownConditions.',
+    'Drivers must be extracted ingredients or preparation facts from extractedFoodFacts.',
+    'protectiveEvidence and personalEvidenceUsed should summarize only supplied personal evidence.',
+    'If RAG evidence is relevant, cite it by chunkId. If it is not relevant, leave citationChunkIds empty.',
+    'Input JSON:',
+    JSON.stringify({
+      extractedFoodFacts: foodFacts,
+      userContext: { knownConditions: input.knownConditions },
+      personalEvidence: input.personalEvidence,
+      ragEvidence,
+    }),
+    'Return JSON matching this exact schema.',
+    JSON.stringify(riskAdjudicationSchema),
+  ].join('\n');
+}
+
 async function normalizeExtraction(payload: RawExtractionPayload, imageDetail: ExtractionImageDetail) {
   const normalized = await runResponsesRequestWithRetry({
     model: NORMALIZATION_MODEL,
@@ -1545,6 +1665,74 @@ async function normalizeExtractionWithAudit(
       ...audit,
       normalizedResponseJson: result,
     },
+  };
+}
+
+export async function adjudicateScanRiskWithAudit(
+  input: RiskAdjudicationRequest,
+): Promise<ExtractionWithAudit<RiskAdjudicationPayload>> {
+  if (!OPENAI_API_KEY) {
+    return { result: fallbackRiskAdjudicationPayload(input), audits: [] };
+  }
+
+  const systemPrompt = buildRiskAdjudicationSystemPrompt();
+  const userPrompt = buildRiskAdjudicationUserPrompt(input);
+  const request = {
+    model: RISK_ADJUDICATION_MODEL,
+    max_output_tokens: OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS,
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: systemPrompt }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: userPrompt }],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'risk_adjudication',
+        schema: riskAdjudicationSchema,
+        strict: true,
+      },
+    },
+  };
+
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RiskAdjudicationPayload>(
+    request,
+    {
+      stage: 'risk_adjudication',
+      model: RISK_ADJUDICATION_MODEL,
+      promptVersion: RISK_ADJUDICATION_PROMPT_VERSION,
+      systemPrompt,
+      userPrompt,
+      jsonSchema: riskAdjudicationSchema,
+      schemaVersion: 'risk_adjudication_v1',
+      requestMetadata: {
+        conditionCount: input.knownConditions.length,
+        ragChunkCount: input.ragEvidence.length,
+        personalEvidenceCount: input.personalEvidence.length,
+      },
+      inputRefs: input.ragEvidence.map((chunk, index) => ({
+        inputKind: 'rag_chunk',
+        index,
+        chunkId: chunk.chunkId,
+        source: chunk.source,
+      })),
+    },
+    { timeoutMs: OPENAI_RISK_ADJUDICATION_TIMEOUT_MS },
+  );
+
+  return {
+    result: parsed,
+    audits: [
+      {
+        ...audit,
+        normalizedResponseJson: parsed,
+      },
+    ],
   };
 }
 

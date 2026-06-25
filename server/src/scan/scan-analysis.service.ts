@@ -126,6 +126,7 @@ export class ScanAnalysisService {
       const imageUrls = await Promise.all(keys.map((k) => this.storage.signUrl(k)));
       const wf = await this.workflow.run({
         userId: req.userId,
+        scanId,
         kind: req.scanCategory === 'menu' ? 'menu' : 'image',
         imageUrls,
         imageUri: imageUrls[0],
@@ -186,6 +187,7 @@ export class ScanAnalysisService {
       const { profile, insights } = await this.loadContext(req.userId);
       const wf = await this.workflow.run({
         userId: req.userId,
+        scanId,
         kind: 'text',
         text: productText,
         scanCategory: 'grocery',

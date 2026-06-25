@@ -20,6 +20,7 @@ const SYNONYMS: Record<string, string[]> = {
 export interface RetrievalQuery {
   ingredients: string[];
   conditions: string[];
+  concepts?: string[];
   scanId?: string | null;
   userId?: string | null;
   evalCaseId?: string | null;
@@ -37,6 +38,11 @@ export class RagRetrievalService {
     const expanded = new Set<string>();
     for (const ing of q.ingredients) {
       const key = ing.toLowerCase();
+      expanded.add(key);
+      for (const syn of SYNONYMS[key] ?? []) expanded.add(syn);
+    }
+    for (const concept of q.concepts ?? []) {
+      const key = concept.toLowerCase();
       expanded.add(key);
       for (const syn of SYNONYMS[key] ?? []) expanded.add(syn);
     }
