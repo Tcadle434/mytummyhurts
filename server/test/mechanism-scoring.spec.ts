@@ -254,6 +254,45 @@ describe('mechanism-first scan scoring', () => {
     expect(result.structuredAnalysis.mechanismExposures?.some((entry) => entry.mechanismKey === 'simple_prep')).toBe(false);
   });
 
+  it('treats sauce spread across a meal as meaningful exposure even when labeled as a base', () => {
+    const result = score(analysis({
+      dishName: 'pepperoni pizza',
+      visibleIngredients: [
+        ing('pizza crust', {
+          role: 'base',
+          prominence: 'primary',
+          amountEstimate: 'dominant',
+        }),
+        ing('tomato sauce', {
+          role: 'base',
+          prominence: 'secondary',
+          amountEstimate: 'standard',
+          amountBasis: 'red sauce layer visible across the slices',
+        }),
+        ing('cheese', {
+          role: 'main',
+          prominence: 'secondary',
+          amountEstimate: 'standard',
+          amountBasis: 'melted white cheese covers much of the surface',
+        }),
+        ing('pepperoni', {
+          role: 'main',
+          prominence: 'secondary',
+          amountEstimate: 'small',
+        }),
+      ],
+      prepStyle: ['baked'],
+    }));
+
+    const acid = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'acidic_tomato_citrus_vinegar' &&
+      entry.ingredient === 'tomato sauce'
+    ));
+    expect(acid?.points).toBeGreaterThanOrEqual(14);
+    expect(result.overallRiskLevel).toBe('high');
+  });
+
   it('personal evidence changes mechanisms only after enough paired evidence', () => {
     const wheatMeal = analysis({
       dishName: 'wheat bread',

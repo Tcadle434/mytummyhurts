@@ -269,6 +269,8 @@ function hasCoverageBasis(ingredient: ExtractedIngredient) {
     'spread across',
     'spread over',
     'across the surface',
+    'across the slices',
+    'visible across',
     'covering much',
     'covering most',
     'covering the',
@@ -276,6 +278,7 @@ function hasCoverageBasis(ingredient: ExtractedIngredient) {
     'covers the',
     'layer covering',
     'layer spread',
+    'layer visible',
     'spread throughout',
     'throughout the',
     'coating the',
@@ -287,10 +290,22 @@ function effectiveExposureContext(ingredient: ExtractedIngredient) {
   const coverage = hasCoverageBasis(ingredient);
   const amount = inferAmount(ingredient);
   const coverageMinorRole = coverage && (ingredient.role === 'condiment' || ingredient.role === 'garnish');
+  const coverageSauce = coverage && textHasTerm(ingredientText(ingredient), [
+    'sauce',
+    'dressing',
+    'gravy',
+    'salsa',
+    'marinara',
+    'ketchup',
+    'mustard',
+    'mayo',
+    'mayonnaise',
+    'aioli',
+  ]);
   return {
     amount: coverage && (amount === 'small' || amount === 'standard') ? 'large' as const : amount,
-    role: coverageMinorRole ? 'main' as const : ingredient.role,
-    prominence: coverageMinorRole && ingredient.prominence === 'secondary' ? 'primary' as const : ingredient.prominence,
+    role: coverageMinorRole || coverageSauce ? 'main' as const : ingredient.role,
+    prominence: (coverageMinorRole || coverageSauce) && ingredient.prominence === 'secondary' ? 'primary' as const : ingredient.prominence,
   };
 }
 
