@@ -226,6 +226,7 @@ export interface MealComponent {
 // to make the same ingredient swing in weight depending on wording.
 export type IngredientRole = 'main' | 'side' | 'condiment' | 'garnish' | 'base';
 export type IngredientProminence = 'primary' | 'secondary' | 'trace';
+export type IngredientAmountEstimate = 'trace' | 'small' | 'standard' | 'large' | 'dominant';
 
 export interface ExtractedIngredient {
   rawName: string;
@@ -235,6 +236,8 @@ export interface ExtractedIngredient {
   evidence: IngredientEvidence;
   role?: IngredientRole;
   prominence?: IngredientProminence;
+  amountEstimate?: IngredientAmountEstimate;
+  amountBasis?: string;
 }
 
 export type ConditionSeverityBand = 'none' | 'mild' | 'moderate' | 'high' | 'severe';
@@ -278,6 +281,28 @@ export interface RiskAdjudicationMetadata {
   }>;
 }
 
+export interface MechanismExposure {
+  mechanismKey: string;
+  condition: string;
+  ingredient: string;
+  basePoints: number;
+  amount: IngredientAmountEstimate;
+  role?: IngredientRole;
+  prominence?: IngredientProminence;
+  confidence: IngredientConfidence;
+  points: number;
+  reason: string;
+}
+
+export interface PersonalMechanismAdjustment {
+  mechanismKey: string;
+  condition: string;
+  ingredient: string;
+  points: number;
+  evidenceCount: number;
+  reason: string;
+}
+
 export interface StructuredAnalysisV2 {
   dishName: string;
   dishConfidence: IngredientConfidence;
@@ -299,6 +324,9 @@ export interface StructuredAnalysisV2 {
   riskAdjudication?: RiskAdjudicationMetadata;
   ragRetrievalRunId?: string | null;
   evidenceCitations?: EvidenceCitation[];
+  mechanismExposures?: MechanismExposure[];
+  personalMechanismAdjustments?: PersonalMechanismAdjustment[];
+  scoringModelVersion?: 'mechanism_v1';
   model: string;
   promptVersion: string;
   imageDetail: ExtractionImageDetail;

@@ -4,6 +4,7 @@ import {
   DietPreference,
   ExtractionImageDetail,
   ExtractedIngredient,
+  IngredientAmountEstimate,
   IngredientConfidence,
   IngredientProminence,
   IngredientRole,
@@ -195,6 +196,8 @@ type RawIngredientPayload = {
   evidence?: unknown;
   role?: unknown;
   prominence?: unknown;
+  amountEstimate?: unknown;
+  amountBasis?: unknown;
 };
 
 type RawComponentPayload = {
@@ -358,8 +361,10 @@ const extractionSchema = {
           evidence: { type: 'string', enum: ['visible'] },
           role: { anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }] },
           prominence: { anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }] },
+          amountEstimate: { anyOf: [{ type: 'string', enum: ['trace', 'small', 'standard', 'large', 'dominant'] }, { type: 'null' }] },
+          amountBasis: { anyOf: [{ type: 'string' }, { type: 'null' }] },
         },
-        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence'],
+        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence', 'amountEstimate', 'amountBasis'],
       },
     },
     inferredIngredients: {
@@ -375,8 +380,10 @@ const extractionSchema = {
           evidence: { type: 'string', enum: ['inferred'] },
           role: { anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }] },
           prominence: { anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }] },
+          amountEstimate: { anyOf: [{ type: 'string', enum: ['trace', 'small', 'standard', 'large', 'dominant'] }, { type: 'null' }] },
+          amountBasis: { anyOf: [{ type: 'string' }, { type: 'null' }] },
         },
-        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence'],
+        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence', 'amountEstimate', 'amountBasis'],
       },
     },
     prepStyle: {
@@ -787,6 +794,20 @@ function asIngredientProminence(value: unknown): IngredientProminence | undefine
   return value === 'primary' || value === 'secondary' || value === 'trace' ? value : undefined;
 }
 
+function asIngredientAmountEstimate(value: unknown): IngredientAmountEstimate | undefined {
+  return value === 'trace' || value === 'small' || value === 'standard' || value === 'large' || value === 'dominant'
+    ? value
+    : undefined;
+}
+
+function defaultAmountEstimate(role: IngredientRole | undefined, prominence: IngredientProminence | undefined): IngredientAmountEstimate {
+  if (prominence === 'trace') return 'trace';
+  if (role === 'garnish' || role === 'condiment') return prominence === 'primary' ? 'standard' : 'small';
+  if (role === 'base' && prominence === 'primary') return 'dominant';
+  if (role === 'main' && prominence === 'primary') return 'standard';
+  return prominence === 'secondary' ? 'small' : 'standard';
+}
+
 function coerceIngredient(value: RawIngredientPayload, evidence: 'visible' | 'inferred'): ExtractedIngredient | null {
   const rawName = String(value.rawName ?? '').trim();
   const canonicalName = normalizeCanonicalIngredientName(rawName, String(value.canonicalName ?? rawName));
@@ -796,14 +817,19 @@ function coerceIngredient(value: RawIngredientPayload, evidence: 'visible' | 'in
   }
 
   const component = String(value.component ?? '').trim();
+  const role = asIngredientRole(value.role);
+  const prominence = asIngredientProminence(value.prominence);
+  const amountBasis = String(value.amountBasis ?? '').trim();
   return {
     rawName,
     canonicalName,
     confidence: asConfidence(value.confidence),
     component: component || undefined,
     evidence,
-    role: asIngredientRole(value.role),
-    prominence: asIngredientProminence(value.prominence),
+    role,
+    prominence,
+    amountEstimate: asIngredientAmountEstimate(value.amountEstimate) ?? defaultAmountEstimate(role, prominence),
+    amountBasis: amountBasis || undefined,
   };
 }
 
@@ -1416,7 +1442,7 @@ function conditionPromptText(knownConditions: string[] | undefined) {
 }
 
 function buildImageSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. For each ingredient set role (main, side, condiment, garnish, or base) and prominence (primary, secondary, or trace) by how central it is and how much is present — a splash of vinegar, a sauce, or a pickled garnish is a condiment or garnish at trace or secondary prominence, not a main. Ground everything in what is actually there: report only ingredients you can see or that are defining, standard components of the identified dish (e.g. rice, rice vinegar, and nori for sushi). Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". If a dish does not contain something by definition (e.g. plain vegetable sushi has no garlic or onion), do not list it. For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what is actually there: report only ingredients you can see or that are defining, standard components of the identified dish (e.g. rice, rice vinegar, and nori for sushi). Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". If a dish does not contain something by definition (e.g. plain vegetable sushi has no garlic or onion), do not list it. For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
@@ -1496,7 +1522,7 @@ function buildMenuUserPrompt(context: ExtractionContext & { pageCount: number })
 }
 
 function buildTextSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. For each ingredient set role (main, side, condiment, garnish, or base) and prominence (primary, secondary, or trace) by how central it is and how much is present — a splash of vinegar, a sauce, or a pickled garnish is a condiment or garnish at trace or secondary prominence, not a main. Ground everything in what the description actually states or what is a defining, standard component of the named dish. Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what the description actually states or what is a defining, standard component of the named dish. Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
@@ -1516,7 +1542,7 @@ function buildTextUserPrompt(text: string, context: ExtractionContext) {
 function buildNormalizationPrompt(extraction: RawExtractionPayload) {
   return [
     'Normalize this meal extraction JSON for storage.',
-    'Merge duplicates, canonicalize ingredient names, keep visible and inferred ingredients separate, preserve conservative uncertainty, and preserve or correct the controlled baseFoodCategory/riskModifiers.',
+    'Merge duplicates, canonicalize ingredient names, keep visible and inferred ingredients separate, preserve conservative uncertainty, preserve ingredient role/prominence/amountEstimate/amountBasis, and preserve or correct the controlled baseFoodCategory/riskModifiers.',
     'Preserve the conditionSeverities array exactly as provided; do not re-judge, drop, or add any severity band.',
     'Return JSON matching the exact same schema.',
     JSON.stringify(extractionSchema),

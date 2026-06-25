@@ -239,6 +239,9 @@ export class ScanWorkflowService {
       })
       .addNode('adjudicateRisk', async (s: S) => {
         const { input, extraction, scanCategory } = s;
+        if (this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false)) {
+          return {};
+        }
         const enabled = this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false);
         if (!enabled || !extraction || !this.supportsRiskAdjudication(scanCategory)) {
           return {};
@@ -291,6 +294,7 @@ export class ScanWorkflowService {
                 input.profile,
                 input.insights,
                 input.imageUri,
+                { mechanismScoringEnabled: this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false) },
               );
         return { baseResult };
       })
@@ -300,7 +304,7 @@ export class ScanWorkflowService {
         const citations =
           s.evidenceCitations?.length
             ? s.evidenceCitations
-            : this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false)
+            : this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false) || this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false)
               ? evidenceCitationsFromChunks(s.ragEvidence ?? [])
               : [];
         const structuredAnalysis = {
