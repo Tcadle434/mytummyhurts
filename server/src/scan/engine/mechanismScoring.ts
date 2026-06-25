@@ -263,6 +263,36 @@ function inferAmount(ingredient: ExtractedIngredient): IngredientAmountEstimate 
   return ingredient.prominence === 'secondary' ? 'small' : 'standard';
 }
 
+function hasCoverageBasis(ingredient: ExtractedIngredient) {
+  const basis = normalize(ingredient.amountBasis);
+  return textHasTerm(basis, [
+    'spread across',
+    'spread over',
+    'across the surface',
+    'covering much',
+    'covering most',
+    'covering the',
+    'covers most',
+    'covers the',
+    'layer covering',
+    'layer spread',
+    'spread throughout',
+    'throughout the',
+    'coating the',
+    'blanketing',
+  ]);
+}
+
+function effectiveExposureContext(ingredient: ExtractedIngredient) {
+  const coverage = hasCoverageBasis(ingredient);
+  const amount = inferAmount(ingredient);
+  return {
+    amount: coverage && (amount === 'small' || amount === 'standard') ? 'large' as const : amount,
+    role: coverage && (ingredient.role === 'condiment' || ingredient.role === 'garnish') ? 'main' as const : ingredient.role,
+    prominence: coverage && ingredient.prominence === 'secondary' ? 'primary' as const : ingredient.prominence,
+  };
+}
+
 function ingredientText(ingredient: ExtractedIngredient) {
   return normalize([ingredient.rawName, ingredient.canonicalName].filter(Boolean).join(' '));
 }
@@ -283,15 +313,15 @@ function confidenceMultiplier(confidence: IngredientConfidence, protective: bool
 }
 
 function exposureMultiplier(ingredient: ExtractedIngredient, protective: boolean) {
-  const amount = inferAmount(ingredient);
+  const { amount, role, prominence } = effectiveExposureContext(ingredient);
   const confidence = confidenceMultiplier(ingredient.confidence, protective);
   if (!protective && ingredient.evidence === 'inferred' && (ingredient.confidence === 'low' || amount === 'trace')) {
     return 0;
   }
   return (
     AMOUNT_MULTIPLIER[amount] *
-    ROLE_MULTIPLIER[ingredient.role ?? 'main'] *
-    PROMINENCE_MULTIPLIER[ingredient.prominence ?? 'primary'] *
+    ROLE_MULTIPLIER[role ?? 'main'] *
+    PROMINENCE_MULTIPLIER[prominence ?? 'primary'] *
     confidence
   );
 }
@@ -341,7 +371,7 @@ function buildIngredientExposures(
       const multiplier = exposureMultiplier(ingredient, Boolean(def.protective));
       const points = Math.round(basePoints * multiplier);
       if (points === 0) continue;
-      const amount = inferAmount(ingredient);
+      const { amount, role, prominence } = effectiveExposureContext(ingredient);
       const source = normalize(ingredient.canonicalName || ingredient.rawName) || term;
       out.push({
         mechanismKey: def.key,
@@ -349,11 +379,11 @@ function buildIngredientExposures(
         ingredient: source,
         basePoints,
         amount,
-        role: ingredient.role,
-        prominence: ingredient.prominence,
+        role,
+        prominence,
         confidence: ingredient.confidence,
         points,
-        reason: `${def.label} from ${source} (${amount}${ingredient.role ? ` ${ingredient.role}` : ''}).`,
+        reason: `${def.label} from ${source} (${amount}${role ? ` ${role}` : ''}).`,
       });
     }
   }
@@ -430,12 +460,12 @@ function buildStackExposures(
         mechanismKey: 'reflux_mechanism_stack',
         condition,
         ingredient: 'acid + rich/fat stack',
-        basePoints: 22,
+        basePoints: 16,
         amount: hasLargePortionSignal(structured) ? 'large' : 'standard',
         role: 'main',
         prominence: 'primary',
         confidence: 'high',
-        points: processed >= 2 ? 22 : 16,
+        points: processed >= 2 ? 16 : 12,
         reason: 'Acidic sauce plus rich/fat components creates a stronger reflux stack than either signal alone.',
       });
     }
