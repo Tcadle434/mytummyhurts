@@ -288,11 +288,13 @@ export function validateRiskAdjudication(
       .filter((driver) => allowedIngredients.some((name) => namesMatch(name, driver)))
       .slice(0, 6);
 
+    const clampedFinalBand = clampFinalBand(raw, input.personalEvidence);
+
     const row: RawRiskAdjudicationCondition = {
       condition: raw.condition,
       genericBand: raw.genericBand,
       personalizedBand: raw.personalizedBand,
-      finalBand: clampFinalBand(raw, input.personalEvidence),
+      finalBand: clampedFinalBand,
       drivers,
       protectiveEvidence: (Array.isArray(raw.protectiveEvidence) ? raw.protectiveEvidence : []).map(String).slice(0, 6),
       citationChunkIds,

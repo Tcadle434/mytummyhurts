@@ -12,6 +12,7 @@ import type { IngredientInsight, MenuScanAnalysis, StructuredAnalysisV2 } from '
 import { buildUserProfileFromSeed } from '../src/scan/engine/scoring';
 import { fallbackExtractionFromText } from '../src/scan/engine/scoring';
 import { computeScanResultFromStructured } from '../src/scan/engine/scoring';
+import { normalizeStructuredFoodFacts } from '../src/scan/engine/foodFactNormalization';
 import { ScanModule } from '../src/scan/scan.module';
 import { ScanWorkflowService } from '../src/scan/workflow/scan-workflow.service';
 
@@ -46,8 +47,8 @@ describe('scan workflow (deterministic graph)', () => {
       insights: [],
     });
 
-    // Engine computed independently on the identical fallback extraction.
-    const expected = computeScanResultFromStructured(fallbackExtractionFromText(text), profile, []);
+    // Engine computed independently on the identical normalized fallback extraction.
+    const expected = computeScanResultFromStructured(normalizeStructuredFoodFacts(fallbackExtractionFromText(text)), profile, []);
 
     expect(result.finalResult.overallRiskScore).toBe(expected.overallRiskScore);
     expect(result.finalResult.overallRiskLevel).toBe(expected.overallRiskLevel);

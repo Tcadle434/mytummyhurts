@@ -191,7 +191,16 @@ describe('risk adjudication validation', () => {
 
   it('clamps weak personal evidence back to the generic band', () => {
     const input = buildRiskAdjudicationRequest({
-      structuredAnalysis: structured(),
+      structuredAnalysis: {
+        ...structured(),
+        dishName: 'wheat pasta',
+        baseFoodCategory: {
+          key: 'wheat_grain_based',
+          confidence: 'high',
+          evidence: 'ingredient',
+          source: 'wheat pasta',
+        },
+      },
       profile: ibsProfile(),
       insights: [insight({ confidenceLevel: 'low', supportingEvidenceCount: 1, positiveEvidenceCount: 1, safeScore: 10 })],
       ragEvidence: [{ chunkId: 'chunk-1', title: 'x', source: 'x', content: 'x', conditionTags: [], ingredientTags: [], direction: 'neutral', relevanceScore: 0.3 }],

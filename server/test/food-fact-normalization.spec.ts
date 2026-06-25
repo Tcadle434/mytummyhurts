@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import type { StructuredAnalysisV2 } from '../src/scan/engine/domain';
+import type { MenuRiskModifierKey, StructuredAnalysisV2 } from '../src/scan/engine/domain';
 import { normalizeStructuredFoodFacts } from '../src/scan/engine/foodFactNormalization';
 
 function baseAnalysis(overrides: Partial<StructuredAnalysisV2> = {}): StructuredAnalysisV2 {
   return {
-    dishName: 'deli sandwich',
+    dishName: 'prepared lunch',
     dishConfidence: 'high',
     clarity: 'clear',
-    components: [{ name: 'deli sandwich', confidence: 'high', prepStyle: ['assembled'] }],
+    components: [{ name: 'prepared lunch', confidence: 'high', prepStyle: ['assembled'] }],
     visibleIngredients: [
       {
         rawName: 'sub roll',
@@ -38,10 +38,10 @@ function baseAnalysis(overrides: Partial<StructuredAnalysisV2> = {}): Structured
         prominence: 'secondary',
       },
       {
-        rawName: 'lettuce',
-        canonicalName: 'lettuce',
-        confidence: 'medium',
-        component: 'lettuce',
+        rawName: 'tomato',
+        canonicalName: 'tomato',
+        confidence: 'high',
+        component: 'tomato',
         evidence: 'visible',
         role: 'garnish',
         prominence: 'secondary',
@@ -52,42 +52,23 @@ function baseAnalysis(overrides: Partial<StructuredAnalysisV2> = {}): Structured
         rawName: 'mayonnaise',
         canonicalName: 'mayonnaise',
         confidence: 'low',
-        component: 'deli sandwich',
+        component: 'prepared lunch',
         evidence: 'inferred',
         role: 'condiment',
         prominence: 'trace',
       },
     ],
-    prepStyle: ['sandwiched', 'assembled', 'cold'],
+    prepStyle: ['assembled', 'cold'],
     notes: [],
     baseFoodCategory: {
       key: 'wheat_grain_based',
       confidence: 'high',
       evidence: 'common_dish_knowledge',
-      source: 'sub sandwich on a wheat-based roll',
+      source: 'wheat-based roll',
     },
-    riskModifiers: [
-      {
-        key: 'wheat_fructan_or_gluten',
-        confidence: 'high',
-        evidence: 'common_dish_knowledge',
-        source: 'sub roll',
-      },
-      {
-        key: 'creamy_or_lactose',
-        confidence: 'medium',
-        evidence: 'ingredient',
-        source: 'cheese',
-      },
-      {
-        key: 'lean_protein',
-        confidence: 'medium',
-        evidence: 'ingredient',
-        source: 'deli meat',
-      },
-    ],
+    riskModifiers: [],
     conditionSeverities: [
-      { condition: 'IBS', band: 'moderate', drivers: ['sub roll', 'cheese'], rationale: 'Wheat and cheese watch-outs.' },
+      { condition: 'IBS', band: 'moderate', drivers: ['bread'], rationale: 'Generic wheat watch-out.' },
     ],
     dietFitHypotheses: [],
     model: 'test',
@@ -97,21 +78,17 @@ function baseAnalysis(overrides: Partial<StructuredAnalysisV2> = {}): Structured
   };
 }
 
+function modifierKeys(analysis: StructuredAnalysisV2): MenuRiskModifierKey[] {
+  return normalizeStructuredFoodFacts(analysis)
+    .riskModifiers
+    ?.map((modifier) => modifier.key)
+    .sort() ?? [];
+}
+
 describe('food fact normalization', () => {
-  it('normalizes sandwich scans to mixed dishes so bread is a modifier, not the whole base category', () => {
-    const normalized = normalizeStructuredFoodFacts(baseAnalysis());
-
-    expect(normalized.baseFoodCategory?.key).toBe('mixed_dish_or_entree');
-    expect(normalized.visibleIngredients[0]).toMatchObject({ rawName: 'sub roll', canonicalName: 'bread' });
-    expect(normalized.riskModifiers?.some((modifier) => modifier.key === 'wheat_fructan_or_gluten')).toBe(true);
-    expect(normalized.riskModifiers?.some((modifier) => modifier.key === 'simple_prep')).toBe(true);
-    expect(normalized.riskModifiers?.some((modifier) => modifier.key === 'low_fat')).toBe(true);
-  });
-
   it('sanitizes rubric-key ingredient names before retrieval, adjudication, and scoring', () => {
     const normalized = normalizeStructuredFoodFacts(
       baseAnalysis({
-        dishName: 'turkey sandwich',
         visibleIngredients: [
           {
             rawName: 'toasted bread',
@@ -130,6 +107,7 @@ describe('food fact normalization', () => {
             prominence: 'primary',
           },
         ],
+        inferredIngredients: [],
       }),
     );
 
@@ -138,5 +116,76 @@ describe('food fact normalization', () => {
       confidence: 'high',
       source: 'turkey',
     });
+  });
+
+  it('keeps concrete ingredient modifiers and drops speculative or unbacked modifier guesses', () => {
+    const normalized = normalizeStructuredFoodFacts(
+      baseAnalysis({
+        riskModifiers: [
+          {
+            key: 'wheat_fructan_or_gluten',
+            confidence: 'high',
+            evidence: 'ingredient',
+            source: 'bread roll',
+          },
+          {
+            key: 'creamy_or_lactose',
+            confidence: 'medium',
+            evidence: 'ingredient',
+            source: 'cheese',
+          },
+          {
+            key: 'allium_garlic_onion',
+            confidence: 'low',
+            evidence: 'common_dish_knowledge',
+            source: 'filling may include onion seasoning',
+          },
+          {
+            key: 'high_fat_or_rich',
+            confidence: 'medium',
+            evidence: 'ingredient',
+            source: 'cheese and deli meat',
+          },
+        ],
+      }),
+    );
+
+    const keys = normalized.riskModifiers?.map((modifier) => modifier.key) ?? [];
+    expect(keys).toEqual(expect.arrayContaining([
+      'acidic_tomato_citrus_vinegar',
+      'creamy_or_lactose',
+      'wheat_fructan_or_gluten',
+    ]));
+    expect(keys).not.toContain('allium_garlic_onion');
+    expect(keys).not.toContain('high_fat_or_rich');
+  });
+
+  it('normalizes mixed prepared meals by ingredient families rather than trusting a single raw base label', () => {
+    const normalized = normalizeStructuredFoodFacts(baseAnalysis());
+
+    expect(normalized.baseFoodCategory).toMatchObject({
+      key: 'mixed_dish_or_entree',
+      source: 'wheat-based roll',
+    });
+    expect(normalized.visibleIngredients[0]).toMatchObject({ rawName: 'sub roll', canonicalName: 'bread' });
+  });
+
+  it('produces stable modifiers for equivalent food facts even when raw LLM modifier guesses drift', () => {
+    const conservative = baseAnalysis({
+      riskModifiers: [
+        { key: 'wheat_fructan_or_gluten', confidence: 'high', evidence: 'ingredient', source: 'bread' },
+        { key: 'creamy_or_lactose', confidence: 'medium', evidence: 'ingredient', source: 'cheese' },
+      ],
+    });
+    const speculative = baseAnalysis({
+      riskModifiers: [
+        { key: 'wheat_fructan_or_gluten', confidence: 'high', evidence: 'ingredient', source: 'bread' },
+        { key: 'creamy_or_lactose', confidence: 'medium', evidence: 'ingredient', source: 'cheese' },
+        { key: 'allium_garlic_onion', confidence: 'low', evidence: 'common_dish_knowledge', source: 'sauce might include garlic' },
+        { key: 'high_fat_or_rich', confidence: 'medium', evidence: 'ingredient', source: 'cheese and deli meat' },
+      ],
+    });
+
+    expect(modifierKeys(speculative)).toEqual(modifierKeys(conservative));
   });
 });

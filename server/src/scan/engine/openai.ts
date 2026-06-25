@@ -1561,7 +1561,6 @@ function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
     prepStyle: input.structuredAnalysis.prepStyle,
     baseFoodCategory: input.structuredAnalysis.baseFoodCategory,
     riskModifiers: input.structuredAnalysis.riskModifiers,
-    extractionConditionSeverities: input.structuredAnalysis.conditionSeverities ?? [],
   };
   const ragEvidence = input.ragEvidence.slice(0, 5).map((chunk, index) => ({
     chunkId: `cite-${index}`,
