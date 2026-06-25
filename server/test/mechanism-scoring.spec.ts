@@ -194,6 +194,64 @@ describe('mechanism-first scan scoring', () => {
 
     expect(result.overallRiskLevel).toBe('high');
     expect(result.conditionRisks.find((entry) => entry.conditionName === 'GERD / Acid reflux')?.riskLevel).toBe('high');
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
+      entry.mechanismKey === 'wheat_fructan_or_gluten' &&
+      (entry.ingredient === 'tomato sauce' || entry.ingredient === 'mozzarella cheese')
+    ))).toBe(false);
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => entry.mechanismKey === 'simple_prep')).toBe(false);
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => entry.mechanismKey === 'reflux_mechanism_stack')).toBe(true);
+  });
+
+  it('handles pizza-like extracted exposure without relying on dominant sauce or cheese labels', () => {
+    const result = score(analysis({
+      dishName: 'pepperoni pizza',
+      visibleIngredients: [
+        ing('pizza crust', {
+          canonicalName: 'pizza dough',
+          role: 'base',
+          prominence: 'primary',
+          amountEstimate: 'dominant',
+          amountBasis: 'forms the full slice base and outer crust',
+        }),
+        ing('tomato sauce', {
+          role: 'base',
+          prominence: 'secondary',
+          amountEstimate: 'standard',
+          amountBasis: 'red sauce layer spread across the pizza surface',
+        }),
+        ing('cheese', {
+          role: 'base',
+          prominence: 'secondary',
+          amountEstimate: 'standard',
+          amountBasis: 'melted white cheese covering most of each slice',
+        }),
+        ing('pepperoni', {
+          role: 'main',
+          prominence: 'secondary',
+          amountEstimate: 'small',
+          amountBasis: 'several visible rounds on each slice',
+        }),
+      ],
+      inferredIngredients: [
+        ing('wheat flour in dough', {
+          canonicalName: 'wheat flour',
+          evidence: 'inferred',
+          confidence: 'medium',
+          role: 'base',
+          prominence: 'primary',
+          amountEstimate: 'dominant',
+        }),
+      ],
+      prepStyle: ['baked'],
+    }));
+
+    expect(result.overallRiskLevel).toBe('high');
+    expect(result.conditionRisks.find((entry) => entry.conditionName === 'GERD / Acid reflux')?.riskLevel).toBe('high');
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
+      entry.mechanismKey === 'wheat_fructan_or_gluten' &&
+      (entry.ingredient === 'tomato sauce' || entry.ingredient === 'cheese')
+    ))).toBe(false);
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => entry.mechanismKey === 'simple_prep')).toBe(false);
   });
 
   it('personal evidence changes mechanisms only after enough paired evidence', () => {

@@ -264,7 +264,7 @@ function inferAmount(ingredient: ExtractedIngredient): IngredientAmountEstimate 
 }
 
 function ingredientText(ingredient: ExtractedIngredient) {
-  return normalize([ingredient.rawName, ingredient.canonicalName, ingredient.component].filter(Boolean).join(' '));
+  return normalize([ingredient.rawName, ingredient.canonicalName].filter(Boolean).join(' '));
 }
 
 function textHasTerm(text: string, terms: readonly string[]) {
@@ -334,7 +334,9 @@ function buildIngredientExposures(
     for (const def of MECHANISMS) {
       const basePoints = def.basePoints[group];
       if (basePoints === undefined) continue;
-      const term = firstTerm(`${text} ${prepText}`, def.terms);
+      const term = def.key === 'raw_or_undercooked'
+        ? firstTerm(`${text} ${prepText}`, def.terms)
+        : firstTerm(text, def.terms);
       if (!term || !isRawAnimalRisk(def, ingredient, prepText)) continue;
       const multiplier = exposureMultiplier(ingredient, Boolean(def.protective));
       const points = Math.round(basePoints * multiplier);
@@ -374,6 +376,7 @@ function buildPrepExposures(
 
   for (const def of MECHANISMS) {
     if (!def.prepTerms?.length || def.key === 'raw_or_undercooked') continue;
+    if (def.key === 'simple_prep' && structured.baseFoodCategory?.key === 'mixed_dish_or_entree') continue;
     const basePoints = def.basePoints[group];
     if (basePoints === undefined) continue;
     const term = firstTerm(prepText, def.prepTerms);
@@ -401,6 +404,42 @@ function buildPrepExposures(
     });
   }
 
+  return out;
+}
+
+function positivePointsFor(exposures: MechanismExposure[], key: string) {
+  return exposures
+    .filter((entry) => entry.mechanismKey === key)
+    .reduce((total, entry) => total + Math.max(0, entry.points), 0);
+}
+
+function buildStackExposures(
+  structured: StructuredAnalysisV2,
+  condition: string,
+  group: ConditionGroup,
+  exposures: MechanismExposure[],
+): MechanismExposure[] {
+  const out: MechanismExposure[] = [];
+  if (group === 'GERD') {
+    const acid = positivePointsFor(exposures, 'acidic_tomato_citrus_vinegar');
+    const fat = positivePointsFor(exposures, 'high_fat_or_rich');
+    const processed = positivePointsFor(exposures, 'processed_meat');
+    const dairy = positivePointsFor(exposures, 'creamy_or_lactose');
+    if (acid >= 6 && fat >= 10 && (processed >= 2 || dairy >= 4)) {
+      out.push({
+        mechanismKey: 'reflux_mechanism_stack',
+        condition,
+        ingredient: 'acid + rich/fat stack',
+        basePoints: 22,
+        amount: hasLargePortionSignal(structured) ? 'large' : 'standard',
+        role: 'main',
+        prominence: 'primary',
+        confidence: 'high',
+        points: processed >= 2 ? 22 : 16,
+        reason: 'Acidic sauce plus rich/fat components creates a stronger reflux stack than either signal alone.',
+      });
+    }
+  }
   return out;
 }
 
@@ -550,6 +589,7 @@ function highRiskGate(condition: string, exposures: MechanismExposure[], adjustm
       pointsFor('alcohol') >= 8 ||
       pointsFor('caffeine') >= 8 ||
       pointsFor('carbonation') >= 8 ||
+      pointsFor('reflux_mechanism_stack') >= 16 ||
       (acid >= 12 && fat >= 20 && pointsFor('processed_meat') >= 6) ||
       (acid >= 8 && fat >= 8 && (hasLargePortionSignal(structured) || pointsFor('processed_meat') >= 8))
     );
@@ -617,9 +657,13 @@ export function computeMechanismScoring(
   const conditionScores: Record<string, ConditionRisk> = {};
 
   for (const { condition, group } of supported) {
-    const exposures = dedupeExposures([
+    const baseExposures = dedupeExposures([
       ...buildIngredientExposures(structured, condition, group),
       ...buildPrepExposures(structured, condition, group),
+    ]);
+    const exposures = dedupeExposures([
+      ...baseExposures,
+      ...buildStackExposures(structured, condition, group, baseExposures),
     ]);
     allExposures.push(...exposures);
   }
