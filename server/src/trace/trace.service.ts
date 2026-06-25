@@ -14,6 +14,7 @@ const GRAPH_NODES = [
 export interface ScanTraceInput {
   userId: string;
   scanId: string;
+  requestId?: string | null;
   operation: string;
   promptVersion: string;
   scanCategory: string;
@@ -55,10 +56,42 @@ export class TraceService {
 
         let seq = 0;
         for (const a of input.audits) {
+          const jsonSchema = a.jsonSchema == null ? null : sql.json(a.jsonSchema as never);
+          const rawResponseJson = a.rawResponseJson == null ? null : sql.json(a.rawResponseJson as never);
+          const parsedResponseJson =
+            a.parsedResponseJson == null ? null : sql.json(a.parsedResponseJson as never);
+          const normalizedResponseJson =
+            a.normalizedResponseJson == null ? null : sql.json(a.normalizedResponseJson as never);
+          const [audit] = await sql`
+            insert into public.scan_ai_audit_logs
+              (scan_id, user_id, request_id, stage, provider, model, prompt_version, schema_version,
+               system_prompt, user_prompt, json_schema, request_metadata, input_refs,
+               raw_response_text, raw_response_json, parsed_response_json, normalized_response_json,
+               status, error_code, error_message, latency_ms, openai_response_id, input_tokens,
+               cached_input_tokens, output_tokens, reasoning_tokens, total_tokens,
+               estimated_cost_usd_micros, pricing_snapshot, billable)
+            values (${input.scanId}, ${input.userId}, ${input.requestId ?? null}, ${a.stage}, ${a.provider ?? 'openai'},
+                    ${a.model ?? null}, ${a.promptVersion ?? input.promptVersion}, ${a.schemaVersion ?? null},
+                    ${a.systemPrompt ?? null}, ${a.userPrompt ?? null},
+                    ${jsonSchema},
+                    ${sql.json((a.requestMetadata ?? {}) as never)},
+                    ${sql.json((a.inputRefs ?? []) as never)},
+                    ${a.rawResponseText ?? null},
+                    ${rawResponseJson},
+                    ${parsedResponseJson},
+                    ${normalizedResponseJson},
+                    ${a.status}, ${a.errorCode ?? null}, ${a.errorMessage ?? null},
+                    ${a.latencyMs ?? null}, ${a.openaiResponseId ?? null}, ${a.inputTokens ?? null},
+                    ${a.cachedInputTokens ?? null}, ${a.outputTokens ?? null},
+                    ${a.reasoningTokens ?? null}, ${a.totalTokens ?? null},
+                    ${a.estimatedCostUsdMicros ?? 0}, ${sql.json((a.pricingSnapshot ?? {}) as never)},
+                    ${a.billable ?? true})
+            returning id`;
           const [node] = await sql`
-            insert into public.ai_node_traces (trace_id, node_name, seq, status, latency_ms, output_snapshot)
+            insert into public.ai_node_traces (trace_id, node_name, seq, status, latency_ms, output_snapshot, audit_log_id)
             values (${trace.id}, ${a.stage}, ${seq++}, ${a.status}, ${a.latencyMs ?? null},
-                    ${sql.json({ model: a.model, totalTokens: a.totalTokens ?? null } as never)})
+                    ${sql.json({ model: a.model, totalTokens: a.totalTokens ?? null } as never)},
+                    ${audit.id})
             returning id`;
           if (a.billable !== false && (a.totalTokens ?? 0) > 0) {
             await sql`

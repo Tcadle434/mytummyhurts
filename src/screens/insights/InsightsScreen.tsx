@@ -89,6 +89,11 @@ export function InsightsScreen() {
 		navigation.navigate("InsightDetail", { groupKey });
 	}
 
+	function openFamily(familyKey: string, label: string) {
+		trackEvent("tracked_food_family_detail_viewed", { family_key: familyKey, label });
+		navigation.navigate("InsightDetail", { familyKey });
+	}
+
 	let rowIndex = 0;
 
 	return (
@@ -208,14 +213,26 @@ export function InsightsScreen() {
 								color={palette.textMuted}
 							/>
 							<Text style={styles.familyToggleText}>
-								Tracked Food Families
+								Foods we are tracking
 							</Text>
 							<Text style={styles.familyToggleCount}>{viewState.trackedFamilies.length}</Text>
 						</Pressable>
+						<Text style={styles.familyIntro}>
+							Food coverage from your scans. These are not trigger verdicts yet.
+						</Text>
 						{familiesExpanded ? (
 							<View style={styles.familyList}>
 								{viewState.trackedFamilies.map((entry) => (
-									<View key={entry.family.key} style={styles.familyRow}>
+									<Pressable
+										key={entry.family.key}
+										accessibilityRole="button"
+										accessibilityLabel={`${entry.family.label}, ${familyMeta(entry.members.length, entry.evidenceCount)}`}
+										onPress={() => openFamily(entry.family.key, entry.family.label)}
+										style={({ pressed }) => [
+											styles.familyRow,
+											pressed && { opacity: 0.88 },
+										]}
+									>
 										<View style={styles.familyGlyph}>
 											<Text style={styles.familyGlyphEmoji}>{entry.family.emoji}</Text>
 										</View>
@@ -228,7 +245,8 @@ export function InsightsScreen() {
 												{entry.memberSummary ? ` · ${entry.memberSummary}` : ""}
 											</Text>
 										</View>
-									</View>
+										<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
+									</Pressable>
 								))}
 							</View>
 						) : null}
@@ -801,6 +819,14 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.bold,
 		fontSize: 13,
 		lineHeight: 18,
+	},
+	familyIntro: {
+		color: palette.textMuted,
+		fontFamily: type.body.regular,
+		fontSize: 12,
+		lineHeight: 16,
+		paddingHorizontal: spacing.sm,
+		marginTop: -spacing.xs,
 	},
 	familyList: {
 		gap: spacing.xs,

@@ -150,6 +150,7 @@ export class ScanAnalysisService {
       await this.trace.recordScanTrace({
         userId: req.userId,
         scanId,
+        requestId: req.requestId,
         operation: 'scan_extract',
         scanCategory: wf.scanCategory,
         promptVersion: process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3',
@@ -196,6 +197,7 @@ export class ScanAnalysisService {
       await this.trace.recordScanTrace({
         userId: req.userId,
         scanId,
+        requestId: req.requestId,
         operation: 'scan_extract',
         scanCategory: wf.scanCategory,
         promptVersion: process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3',

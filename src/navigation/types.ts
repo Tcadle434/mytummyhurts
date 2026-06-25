@@ -63,5 +63,6 @@ export type RootStackParamList = {
   InsightDetail: {
     ingredientName?: string;
     groupKey?: string;
+    familyKey?: string;
   };
 };
