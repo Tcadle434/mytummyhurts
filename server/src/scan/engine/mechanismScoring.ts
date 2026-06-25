@@ -286,10 +286,11 @@ function hasCoverageBasis(ingredient: ExtractedIngredient) {
 function effectiveExposureContext(ingredient: ExtractedIngredient) {
   const coverage = hasCoverageBasis(ingredient);
   const amount = inferAmount(ingredient);
+  const coverageMinorRole = coverage && (ingredient.role === 'condiment' || ingredient.role === 'garnish');
   return {
     amount: coverage && (amount === 'small' || amount === 'standard') ? 'large' as const : amount,
-    role: coverage && (ingredient.role === 'condiment' || ingredient.role === 'garnish') ? 'main' as const : ingredient.role,
-    prominence: coverage && ingredient.prominence === 'secondary' ? 'primary' as const : ingredient.prominence,
+    role: coverageMinorRole ? 'main' as const : ingredient.role,
+    prominence: coverageMinorRole && ingredient.prominence === 'secondary' ? 'primary' as const : ingredient.prominence,
   };
 }
 
