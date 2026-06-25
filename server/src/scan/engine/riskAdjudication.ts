@@ -70,6 +70,7 @@ export interface RiskAdjudicationMetadata {
   promptVersion: string;
   source: 'llm' | 'fallback';
   ragRetrievalRunId?: string | null;
+  warnings?: string[];
   conditionSeverities: RawRiskAdjudicationCondition[];
 }
 
@@ -238,6 +239,15 @@ function clampFinalBand(row: RawRiskAdjudicationCondition, personalEvidence: Per
   return bandAt(generic + Math.sign(final - generic) * allowedMove);
 }
 
+function citationIdMap(chunks: RiskAdjudicationEvidenceChunk[]) {
+  const map = new Map<string, string>();
+  chunks.forEach((chunk, index) => {
+    map.set(chunk.chunkId, chunk.chunkId);
+    map.set(`cite-${index}`, chunk.chunkId);
+  });
+  return map;
+}
+
 export function validateRiskAdjudication(
   payload: RiskAdjudicationPayload,
   input: RiskAdjudicationRequest,
@@ -246,8 +256,9 @@ export function validateRiskAdjudication(
   if (!Array.isArray(payload.conditionSeverities)) return null;
 
   const allowedConditions = new Set(input.knownConditions.map(conditionKey));
-  const allowedCitationIds = new Set(input.ragEvidence.map((chunk) => chunk.chunkId));
+  const allowedCitationIds = citationIdMap(input.ragEvidence);
   const allowedIngredients = extractedIngredientNames(input.structuredAnalysis);
+  const warnings = new Set<string>();
   const metadataRows: RawRiskAdjudicationCondition[] = [];
   const conditionSeverities: ConditionSeverity[] = [];
 
@@ -263,10 +274,14 @@ export function validateRiskAdjudication(
       return null;
     }
 
-    const citationChunkIds = (Array.isArray(raw.citationChunkIds) ? raw.citationChunkIds : [])
-      .map(String)
-      .filter((id) => allowedCitationIds.has(id));
-    if ((raw.citationChunkIds ?? []).length !== citationChunkIds.length) return null;
+    const rawCitationIds = (Array.isArray(raw.citationChunkIds) ? raw.citationChunkIds : []).map(String);
+    const invalidCitationIds = rawCitationIds.filter((id) => !allowedCitationIds.has(id));
+    if (invalidCitationIds.length) {
+      warnings.add(`invalidCitationIdsDropped:${invalidCitationIds.join(',')}`);
+    }
+    const citationChunkIds = Array.from(
+      new Set(rawCitationIds.flatMap((id) => allowedCitationIds.get(id) ?? [])),
+    );
 
     const drivers = (Array.isArray(raw.drivers) ? raw.drivers : [])
       .map(String)
@@ -301,6 +316,7 @@ export function validateRiskAdjudication(
       promptVersion: RISK_ADJUDICATION_PROMPT_VERSION,
       source: options.source,
       ragRetrievalRunId: options.ragRetrievalRunId ?? null,
+      warnings: warnings.size ? [...warnings] : undefined,
       conditionSeverities: metadataRows,
     },
     evidenceCitations: evidenceCitationsFromChunks(

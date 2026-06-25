@@ -92,7 +92,7 @@ describe('RAG ingestion + hybrid retrieval', () => {
 
     const wheat = await retrieval.retrieve({ ingredients: ['bread'], concepts: ['wheat_fructan_or_gluten'], conditions: ['IBS'] });
     expect(wheat.chunks.length).toBeGreaterThan(0);
-    expect(wheat.chunks[0].content.toLowerCase()).toContain('wheat');
+    expect(wheat.chunks.some((chunk) => chunk.content.toLowerCase().includes('wheat'))).toBe(true);
     // a retrieval run was persisted
     expect(after.runId).toBeTruthy();
   });

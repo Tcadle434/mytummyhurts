@@ -94,7 +94,10 @@ function ibsProfile() {
   } as const;
 }
 
-function payload(finalBand: 'none' | 'mild' | 'moderate' | 'high' | 'severe'): RiskAdjudicationPayload {
+function payload(
+  finalBand: 'none' | 'mild' | 'moderate' | 'high' | 'severe',
+  citationChunkIds = ['chunk-1'],
+): RiskAdjudicationPayload {
   return {
     conditionSeverities: [
       {
@@ -104,7 +107,7 @@ function payload(finalBand: 'none' | 'mild' | 'moderate' | 'high' | 'severe'): R
         finalBand,
         drivers: ['bread'],
         protectiveEvidence: ['repeated calm wheat days'],
-        citationChunkIds: ['chunk-1'],
+        citationChunkIds,
         personalEvidenceUsed: ['10 calm wheat days'],
         confidence: 'high',
         rationale: 'Generic wheat risk is moderated by this user’s repeated calm evidence.',
@@ -139,14 +142,51 @@ describe('risk adjudication validation', () => {
     expect(out?.evidenceCitations[0].chunkId).toBe('chunk-1');
   });
 
-  it('rejects invented citation ids', () => {
+  it('drops invented citation ids without rejecting otherwise valid adjudication', () => {
     const input = buildRiskAdjudicationRequest({
       structuredAnalysis: structured(),
       profile: ibsProfile(),
       insights: [insight()],
-      ragEvidence: [],
+      ragEvidence: [
+        {
+          chunkId: 'chunk-1',
+          title: 'IBS wheat evidence',
+          source: 'Curated reference',
+          content: 'Wheat can contribute fructans for IBS.',
+          conditionTags: ['IBS'],
+          ingredientTags: ['wheat'],
+          direction: 'raises',
+          relevanceScore: 0.8,
+        },
+      ],
     });
-    expect(validateRiskAdjudication(payload('mild'), input)).toBeNull();
+    const out = validateRiskAdjudication(payload('mild', ['chunk-1', 'bad-citation-id']), input);
+    expect(out?.conditionSeverities[0]).toMatchObject({ condition: 'IBS', band: 'mild' });
+    expect(out?.metadata.conditionSeverities[0].citationChunkIds).toEqual(['chunk-1']);
+    expect(out?.metadata.warnings?.[0]).toContain('invalidCitationIdsDropped:bad-citation-id');
+  });
+
+  it('maps short prompt citation ids back to durable chunk ids', () => {
+    const input = buildRiskAdjudicationRequest({
+      structuredAnalysis: structured(),
+      profile: ibsProfile(),
+      insights: [insight()],
+      ragEvidence: [
+        {
+          chunkId: 'durable-chunk-id',
+          title: 'IBS wheat evidence',
+          source: 'Curated reference',
+          content: 'Wheat can contribute fructans for IBS.',
+          conditionTags: ['IBS'],
+          ingredientTags: ['wheat'],
+          direction: 'raises',
+          relevanceScore: 0.8,
+        },
+      ],
+    });
+    const out = validateRiskAdjudication(payload('mild', ['cite-0']), input);
+    expect(out?.metadata.conditionSeverities[0].citationChunkIds).toEqual(['durable-chunk-id']);
+    expect(out?.evidenceCitations[0]).toMatchObject({ id: 'cite-0', chunkId: 'durable-chunk-id' });
   });
 
   it('clamps weak personal evidence back to the generic band', () => {

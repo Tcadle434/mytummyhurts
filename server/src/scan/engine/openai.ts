@@ -1536,7 +1536,7 @@ function buildRiskAdjudicationSystemPrompt() {
     'personalizedBand is the condition risk after considering the user-specific learned calm/reactive evidence.',
     'finalBand is the band the deterministic scorer should use.',
     'If personal evidence is absent or weak, finalBand must equal genericBand.',
-    'Use citationChunkIds only from the supplied RAG evidence IDs.',
+    'Use citationChunkIds only from the short supplied RAG evidence IDs such as cite-0.',
   ].join(' ');
 }
 
@@ -1563,8 +1563,8 @@ function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
     riskModifiers: input.structuredAnalysis.riskModifiers,
     extractionConditionSeverities: input.structuredAnalysis.conditionSeverities ?? [],
   };
-  const ragEvidence = input.ragEvidence.slice(0, 5).map((chunk) => ({
-    chunkId: chunk.chunkId,
+  const ragEvidence = input.ragEvidence.slice(0, 5).map((chunk, index) => ({
+    chunkId: `cite-${index}`,
     title: chunk.title,
     source: chunk.source,
     url: chunk.url,

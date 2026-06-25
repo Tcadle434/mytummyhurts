@@ -313,6 +313,7 @@ export interface RiskAdjudicationMetadata {
   promptVersion: string;
   source: 'llm' | 'fallback';
   ragRetrievalRunId?: string | null;
+  warnings?: string[];
   conditionSeverities: Array<{
     condition: string;
     genericBand: ConditionSeverityBand;

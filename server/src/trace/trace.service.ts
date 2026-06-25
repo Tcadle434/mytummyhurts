@@ -7,6 +7,7 @@ export const WORKFLOW_VERSION = 'scan_workflow_v1';
 const GRAPH_NODES = [
   'loadUserContext',
   'generate',
+  'normalizeFoodFacts',
   'retrieveEvidence',
   'adjudicateRisk',
   'score',

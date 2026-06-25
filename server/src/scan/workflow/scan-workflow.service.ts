@@ -10,6 +10,7 @@ import type {
   UserProfile,
 } from '../engine/domain';
 import type { ExtractionContext, OpenAiAuditLog } from '../engine/openai';
+import { normalizeStructuredFoodFacts } from '../engine/foodFactNormalization';
 import {
   buildRiskAdjudicationRequest,
   evidenceCitationsFromChunks,
@@ -203,6 +204,13 @@ export class ScanWorkflowService {
           audits: r.audits,
         };
       })
+      .addNode('normalizeFoodFacts', (s: S) => {
+        const { extraction, scanCategory } = s;
+        if (!extraction || !this.supportsRiskAdjudication(scanCategory)) {
+          return {};
+        }
+        return { extraction: normalizeStructuredFoodFacts(extraction as StructuredAnalysisV2) };
+      })
       .addNode('retrieveEvidence', async (s: S) => {
         const { input, extraction, scanCategory } = s;
         const retrievalEnabled = this.flag('RAG_RETRIEVAL_ENABLED', false);
@@ -310,7 +318,8 @@ export class ScanWorkflowService {
       })
       .addEdge(START, 'loadUserContext')
       .addEdge('loadUserContext', 'generate')
-      .addEdge('generate', 'retrieveEvidence')
+      .addEdge('generate', 'normalizeFoodFacts')
+      .addEdge('normalizeFoodFacts', 'retrieveEvidence')
       .addEdge('retrieveEvidence', 'adjudicateRisk')
       .addEdge('adjudicateRisk', 'score')
       .addEdge('score', 'finalize')
