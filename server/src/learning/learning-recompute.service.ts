@@ -23,8 +23,21 @@ import {
   recomputeDailyScores,
 } from '../scan/engine/scoring';
 import { TaxonomyClassifierService } from '../taxonomy/taxonomy-classifier.service';
+import { LastBadMealExtractionService } from './last-bad-meal-extraction.service';
 
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
+const calibrationRatings = (v: unknown): Record<string, 'fine' | 'unsure' | 'bad'> => {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  return Object.entries(v as Record<string, unknown>).reduce<Record<string, 'fine' | 'unsure' | 'bad'>>(
+    (accumulator, [food, rating]) => {
+      if (rating === 'fine' || rating === 'unsure' || rating === 'bad') {
+        accumulator[food] = rating;
+      }
+      return accumulator;
+    },
+    {},
+  );
+};
 
 // postgres.js returns date/timestamp columns as Date objects; the engine's
 // localDateMinusDays expects a 'YYYY-MM-DD' string.
@@ -85,8 +98,8 @@ function resolveGutScoreMovement(input: {
  * Port of rebuildInsightsAndProfile (Supabase _shared/profile.ts), re-homed onto
  * the NestJS DB layer. Recomputes learned ingredient insights + condition
  * insights + daily scores + the gut score from a user's scans & daily reports,
- * and persists them. (The one-shot onboarding "last bad meal" LLM extraction is
- * intentionally omitted here; declared seeds + report-learning carry it.)
+ * and persists them. The one-shot onboarding "last bad meal" LLM extraction is
+ * best-effort and runs before the seed insights are rebuilt.
  */
 @Injectable()
 export class LearningRecomputeService {
@@ -95,9 +108,16 @@ export class LearningRecomputeService {
   constructor(
     private readonly db: DatabaseService,
     private readonly taxonomy: TaxonomyClassifierService,
+    private readonly lastBadMeal: LastBadMealExtractionService,
   ) {}
 
   async rebuild(userId: string, sourceType = 'profile', sourceId?: string) {
+    try {
+      await this.lastBadMeal.extractAndPersistIfNeeded(userId);
+    } catch (error) {
+      this.logger.warn(`last bad meal extraction skipped for user ${userId}: ${(error as Error).message}`);
+    }
+
     return this.db.service(async (sql) => {
       const [profileRow] = await sql`select * from public.user_profiles where user_id = ${userId}`;
       if (!profileRow) return { insights: 0, conditionInsights: 0, dailyReports: 0 };
@@ -110,7 +130,7 @@ export class LearningRecomputeService {
         select scan_id, canonical_name, confidence, menu_item_source_id
         from public.scan_ingredient_risks where user_id = ${userId}`;
       const dietRows = await sql`
-        select diet_key, diet_label, strictness, priority, status
+        select diet_key, diet_label, strictness, source, priority, status
         from public.user_diet_preferences where user_id = ${userId} and status = 'active'`;
 
       // ingredients per scan (non-menu) — used as the food exposure signal.
@@ -138,15 +158,15 @@ export class LearningRecomputeService {
         currentEatingPatterns: arr(profileRow.current_eating_patterns),
         lifestyleFactors: arr(profileRow.lifestyle_factors),
         foodsToReintroduce: arr(profileRow.foods_to_reintroduce),
+        calibrationRatings: calibrationRatings(profileRow.calibration_ratings),
         dietPreferences: dietRows.map((d) => ({
-          dietKey: d.diet_key,
-          dietLabel: d.diet_label,
+          key: d.diet_key,
+          label: d.diet_label,
           strictness: d.strictness,
-          priority: d.priority,
-          status: d.status,
+          source: d.source === 'settings' ? 'settings' : 'onboarding',
         })),
         suspectMealIngredients: arr(profileRow.suspect_meal_ingredients),
-      } as unknown as ProfileSeed;
+      } as ProfileSeed;
 
       // Food exposures: completed, non-skipped food scans with their ingredients.
       const foodScans = scanRows

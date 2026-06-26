@@ -24,6 +24,8 @@ const U = '66666666-6666-6666-6666-666666666666';
 const FOOD_SCAN = '77777777-7777-7777-7777-777777777777';
 const MENU_SCAN = '77777777-7777-7777-7777-777777777778';
 const MENU_ITEM = '77777777-7777-7777-7777-777777777779';
+const PRIOR_BREAD_SCAN = '77777777-7777-7777-7777-777777777780';
+const PRIOR_PASTA_SCAN = '77777777-7777-7777-7777-777777777781';
 
 let daily: DailyReportService;
 let notifications: NotificationsService;
@@ -66,6 +68,65 @@ beforeAll(async () => {
               )`;
   await admin`insert into public.scan_inputs (scan_id, user_id, input_kind, storage_path, page_index)
               values (${FOOD_SCAN}, ${U}, 'image', ${`${U}/food.jpg`}, 0)`;
+  await admin`insert into public.scan_ingredient_risks (
+                scan_id, user_id, raw_name, canonical_name, risk_score, risk_level,
+                evidence, confidence, reason, display_order
+              )
+              values
+                (${FOOD_SCAN}, ${U}, 'bread', 'bread', 42, 'medium', 'visible', 'high', 'Wheat bread.', 0),
+                (${FOOD_SCAN}, ${U}, 'turkey', 'turkey', 14, 'low', 'visible', 'high', 'Lean protein.', 1),
+                (${FOOD_SCAN}, ${U}, 'rye', 'rye', 38, 'medium', 'visible', 'high', 'Wheat-family grain.', 2)`;
+  await admin`insert into public.scans (
+                id, user_id, request_id, source_type, scan_category, analysis_status,
+                title, overall_risk_score, overall_risk_level, consumption_status,
+                local_date, timezone, created_at
+              )
+              values
+                (${PRIOR_BREAD_SCAN}, ${U}, 'req-bread-prior', 'manual_text', 'food',
+                 'completed', 'prior bread', 44, 'medium', 'consumed',
+                 '2026-06-20', 'America/Denver', '2026-06-20T12:00:00Z'),
+                (${PRIOR_PASTA_SCAN}, ${U}, 'req-pasta-prior', 'manual_text', 'food',
+                 'completed', 'prior pasta', 48, 'medium', 'consumed',
+                 '2026-06-21', 'America/Denver', '2026-06-21T12:00:00Z')`;
+  await admin`insert into public.scan_ingredient_risks (
+                scan_id, user_id, raw_name, canonical_name, risk_score, risk_level,
+                evidence, confidence, reason, display_order
+              )
+              values
+                (${PRIOR_BREAD_SCAN}, ${U}, 'bread', 'bread', 42, 'medium', 'visible', 'high', 'Wheat bread.', 0),
+                (${PRIOR_PASTA_SCAN}, ${U}, 'pasta', 'pasta', 46, 'medium', 'visible', 'high', 'Wheat pasta.', 0)`;
+  await admin`insert into public.ingredient_insights (
+                user_id, ingredient_name, trigger_score, safe_score, combined_risk_score,
+                confidence_level, pattern_strength, linked_conditions,
+                supporting_evidence_count, positive_evidence_count, negative_evidence_count,
+                last_seen_at, last_outcome_at, source_breakdown
+              )
+              values
+                (${U}, 'bread', 24, 2, 72, 'high', 'strong', '["IBS"]'::jsonb,
+                 3, 0, 3, '2026-06-20T12:00:00Z', '2026-06-20T12:00:00Z',
+                 '{"personal":true,"positiveEvidenceCount":0,"negativeEvidenceCount":3}'::jsonb),
+                (${U}, 'pasta', 18, 2, 66, 'medium', 'moderate', '["IBS"]'::jsonb,
+                 2, 0, 2, '2026-06-21T12:00:00Z', '2026-06-21T12:00:00Z',
+                 '{"personal":true,"positiveEvidenceCount":0,"negativeEvidenceCount":2}'::jsonb)`;
+  await admin`insert into public.ingredient_taxonomy_classifications (
+                normalized_ingredient_name, display_name, primary_food_family_key,
+                digestive_pattern_keys, confidence, reason, taxonomy_version, source
+              )
+              values
+                ('bread', 'bread', 'wheat_grains', '["wheat_fructan_gluten"]'::jsonb,
+                 'high', 'test wheat family', 'taxonomy_v1', 'deterministic'),
+                ('pasta', 'pasta', 'wheat_grains', '["wheat_fructan_gluten"]'::jsonb,
+                 'high', 'test wheat family', 'taxonomy_v1', 'deterministic'),
+                ('rye', 'rye', 'wheat_grains', '["wheat_fructan_gluten"]'::jsonb,
+                 'high', 'test wheat family', 'taxonomy_v1', 'deterministic')
+              on conflict (normalized_ingredient_name) do update set
+                display_name = excluded.display_name,
+                primary_food_family_key = excluded.primary_food_family_key,
+                digestive_pattern_keys = excluded.digestive_pattern_keys,
+                confidence = excluded.confidence,
+                reason = excluded.reason,
+                taxonomy_version = excluded.taxonomy_version,
+                source = excluded.source`;
   await admin`insert into public.scans (
                 id, user_id, request_id, source_type, scan_category, analysis_status,
                 token_transaction_id, title, summary, overall_risk_score, overall_risk_level,
@@ -172,6 +233,35 @@ describe('scan crud', () => {
     expect(foodSummary.localDate).toEqual(expect.anything());
     expect(foodSummary.timezone).toBe('America/Denver');
     expect(foodSummary.imageUri).toContain('food.jpg');
+  });
+
+  it('enriches ingredient risks with exact and related personal history', async () => {
+    const got = await crud.getScan(U, FOOD_SCAN);
+    const bread = got.scan.ingredientRisks.find((ingredient) => ingredient.canonicalName === 'bread');
+    const turkey = got.scan.ingredientRisks.find((ingredient) => ingredient.canonicalName === 'turkey');
+    const rye = got.scan.ingredientRisks.find((ingredient) => ingredient.canonicalName === 'rye');
+
+    expect(bread?.personalHistory).toMatchObject({
+      exactScanCount: 1,
+      matchType: 'exact',
+      riskLevel: 'high',
+      supportingEvidenceCount: 3,
+      negativeEvidenceCount: 3,
+      summary: 'Seen 1 time · usually rough for you',
+    });
+    expect(turkey?.personalHistory).toMatchObject({
+      exactScanCount: 0,
+      matchType: 'none',
+      riskLevel: 'unknown',
+      summary: 'New for your history',
+    });
+    expect(rye?.personalHistory).toMatchObject({
+      exactScanCount: 0,
+      familyScanCount: 2,
+      matchType: 'family',
+      matchedLabel: 'bread',
+      riskLevel: 'high',
+    });
   });
 
   it('maps menu item nested ingredient risks and diet evaluations', async () => {

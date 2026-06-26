@@ -13,6 +13,7 @@ import type {
   GutScoreState,
   GutScoreTrendDirection,
   ConditionIngredientInsight,
+  DietPreference,
   DigestivePatternKey,
   IngredientInsight,
   IngredientTaxonomyConfidence,
@@ -32,10 +33,14 @@ export function buildProfileFromRow(
     gutScore?: GutScoreState | null;
     learningProgress?: ProfileLearningProgress;
     reportCount?: number;
+    dietPreferences?: DietPreference[];
   } = {},
 ) {
   if (!row) return null;
-  const seed = profileSeedFromRow(userId, row);
+  const seed = {
+    ...profileSeedFromRow(userId, row),
+    dietPreferences: options.dietPreferences ?? [],
+  };
   const insights = options.insights ?? [];
   const gutScore = options.gutScore ?? computeGutScoreState({
     seed,
@@ -94,7 +99,32 @@ export function profileSeedFromRow(userId: string, row: Record<string, unknown>)
     currentEatingPatterns: (row.current_eating_patterns as string[]) ?? [],
     lifestyleFactors: (row.lifestyle_factors as string[]) ?? [],
     foodsToReintroduce: (row.foods_to_reintroduce as string[]) ?? [],
+    dietPreferences: [],
+    calibrationRatings: asCalibrationRatings(row.calibration_ratings),
+    suspectMealIngredients: Array.isArray(row.suspect_meal_ingredients) ? row.suspect_meal_ingredients as string[] : [],
   };
+}
+
+export function mapDietPreferenceRows(rows: Record<string, unknown>[]): DietPreference[] {
+  return rows.map((row) => ({
+    key: String(row.diet_key) as DietPreference['key'],
+    label: String(row.diet_label ?? row.diet_key),
+    strictness: row.strictness === 'strict' ? 'strict' : 'standard',
+    source: row.source === 'settings' ? 'settings' : 'onboarding',
+  }));
+}
+
+function asCalibrationRatings(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, 'fine' | 'unsure' | 'bad'>>(
+    (accumulator, [food, rating]) => {
+      if (rating === 'fine' || rating === 'unsure' || rating === 'bad') {
+        accumulator[food] = rating;
+      }
+      return accumulator;
+    },
+    {},
+  );
 }
 
 export function mapGutScoreSnapshot(

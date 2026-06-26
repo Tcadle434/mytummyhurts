@@ -8,6 +8,7 @@ import { LearningRecomputeService } from '../learning/learning-recompute.service
 import {
   buildLearningProgressFromRows,
   buildProfileFromRow,
+  mapDietPreferenceRows,
   mapConditionInsight,
   mapGutScoreSnapshot,
   mapInsight,
@@ -55,6 +56,11 @@ export class InsightsService {
     const conditionInsights = await sql`select * from public.condition_ingredient_insights
       where user_id = ${userId} order by risk_score desc limit ${limit}`;
     const [profileRow] = await sql`select * from public.user_profiles where user_id = ${userId}`;
+    const dietRows = await sql`
+      select diet_key, diet_label, strictness, source, priority, status
+      from public.user_diet_preferences
+      where user_id = ${userId} and status = 'active'
+      order by priority asc, created_at asc`;
     const gutScoreSnapshots = await sql`
       select * from public.gut_score_snapshots
       where user_id = ${userId}
@@ -75,6 +81,7 @@ export class InsightsService {
         gutScore: mapGutScoreSnapshot(gutScoreSnapshots[0], gutScoreSnapshots),
         learningProgress,
         reportCount: learningReportRows.length,
+        dietPreferences: mapDietPreferenceRows(dietRows),
       }),
       insights: mappedInsights,
       conditionInsights: conditionInsights.map(mapConditionInsight),

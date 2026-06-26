@@ -534,6 +534,25 @@ export interface ScanIngredientRisk {
   componentName?: string;
   reason: string;
   displayOrder: number;
+  personalHistory?: ScanIngredientPersonalHistory;
+}
+
+export type ScanIngredientPersonalHistoryMatchType = 'exact' | 'family' | 'none';
+export type ScanIngredientPersonalHistoryRiskLevel = RiskLevel | 'unknown';
+
+export interface ScanIngredientPersonalHistory {
+  exactScanCount: number;
+  familyScanCount: number;
+  lastSeenAt?: string;
+  matchType: ScanIngredientPersonalHistoryMatchType;
+  matchedLabel?: string;
+  riskLevel: ScanIngredientPersonalHistoryRiskLevel;
+  riskScore?: number;
+  confidenceLevel?: InsightConfidenceLevel;
+  supportingEvidenceCount: number;
+  positiveEvidenceCount: number;
+  negativeEvidenceCount: number;
+  summary: string;
 }
 
 export type MenuRecommendationTier = 'best_for_you' | 'eat_with_caution' | 'try_to_avoid';

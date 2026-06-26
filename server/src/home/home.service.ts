@@ -6,6 +6,7 @@ import { mapDailyReport } from '../scan/scan-crud.service';
 import {
   buildLearningProgressFromRows,
   buildProfileFromRow,
+  mapDietPreferenceRows,
   mapConditionInsight,
   mapGutScoreSnapshot,
   mapInsight,
@@ -101,6 +102,11 @@ export class HomeService {
         select * from public.gut_score_snapshots
         where user_id = ${userId}
         order by created_at desc limit 14`;
+      const dietRows = await sql`
+        select diet_key, diet_label, strictness, source, priority, status
+        from public.user_diet_preferences
+        where user_id = ${userId} and status = 'active'
+        order by priority asc, created_at asc`;
 
       const [snap] = await sql`select learning_status from public.user_app_snapshots where user_id = ${userId}`;
       const now = new Date().toISOString();
@@ -116,6 +122,7 @@ export class HomeService {
           gutScore: mapGutScoreSnapshot(gutScoreSnapshots[0], gutScoreSnapshots),
           learningProgress,
           reportCount: learningReportRows.length,
+          dietPreferences: mapDietPreferenceRows(dietRows),
         }),
         billing,
         recentScans,

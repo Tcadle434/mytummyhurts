@@ -187,6 +187,8 @@ export interface ProfileUpdateRequest {
   currentEatingPatterns?: string[];
   lifestyleFactors?: string[];
   foodsToReintroduce?: string[];
+  calibrationRatings?: Record<string, 'fine' | 'unsure' | 'bad'>;
+  lastBadMealText?: string;
   dietPreferences?: DietPreference[];
 }
 
@@ -197,7 +199,7 @@ export interface ProfileUpdateResponse {
   conditionInsights?: ConditionIngredientInsight[];
   billing?: BillingState;
   displayName?: string | null;
-  learningSyncStatus?: 'queued' | 'failed' | 'skipped';
+  learningSyncStatus?: 'updated' | 'queued' | 'failed' | 'skipped';
 }
 
 export interface BillingSyncRequest {

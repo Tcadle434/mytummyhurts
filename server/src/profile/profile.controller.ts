@@ -17,6 +17,8 @@ class ProfileUpdateDto {
   @IsOptional() @IsArray() currentEatingPatterns?: string[];
   @IsOptional() @IsArray() lifestyleFactors?: string[];
   @IsOptional() @IsArray() foodsToReintroduce?: string[];
+  @IsOptional() @IsObject() calibrationRatings?: Record<string, unknown>;
+  @IsOptional() @IsString() lastBadMealText?: string;
   @IsOptional() @IsArray() dietPreferences?: unknown[];
 }
 

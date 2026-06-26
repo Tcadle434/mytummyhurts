@@ -236,6 +236,7 @@ function toMenuTierItem(item: NonNullable<ScanRecord['menuResult']>['items'][num
     scoreContributors: item.scoreContributors,
     scoringConfidence: item.scoringConfidence,
     dietEvaluations: item.dietEvaluations,
+    ingredientRisks: item.ingredientRisks,
     saferSwap: item.gutRecommendation,
   };
 }

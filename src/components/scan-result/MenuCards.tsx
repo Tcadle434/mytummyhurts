@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colorForDietStatus, colorForLevel, dietStatusLabel, prioritizeScoreContributors, type MenuTierItem, type RiskLevel } from "./common";
+import { colorForLevel, prioritizeScoreContributors, type MenuTierItem, type RiskLevel } from "./common";
+import { selectIngredientHistoryRows } from "./PersonalizedScanCard.helpers";
+import { DietEvaluationRows, IngredientHistoryRows } from "./PersonalizedScanCard";
 import { ScoreDriversList } from "./ScoreDrivers";
 import { InfoPill } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
@@ -96,11 +98,13 @@ function MenuRow({
 }) {
 	const riskColor = colorForLevel(item.level);
 	const scoreDrivers = prioritizeScoreContributors(item.scoreContributors, 4);
+	const ingredientHistoryRows = selectIngredientHistoryRows(item.ingredientRisks, 3);
 	const hasExpandedContent =
 		Boolean(item.insight) ||
 		scoreDrivers.length > 0 ||
 		Boolean(item.triggers?.length) ||
 		Boolean(item.dietEvaluations?.length) ||
+		ingredientHistoryRows.length > 0 ||
 		Boolean(item.saferSwap);
 	return (
 		<Pressable
@@ -154,22 +158,13 @@ function MenuRow({
 					{item.dietEvaluations && item.dietEvaluations.length > 0 ? (
 						<View style={styles.scoreDrivers}>
 							<Text style={styles.insightLabel}>Diet fit</Text>
-							{item.dietEvaluations.map((evaluation) => (
-								<View key={evaluation.dietKey} style={styles.dietChipRow}>
-									<View
-										style={[
-											styles.dietStatusDot,
-											{ backgroundColor: colorForDietStatus(evaluation.status) },
-										]}
-									/>
-									<View style={styles.scoreDriverBody}>
-										<Text style={styles.scoreDriverLabel}>
-											{dietStatusLabel(evaluation.status)} {evaluation.dietLabel}
-										</Text>
-										<Text style={styles.scoreDriverReason}>{evaluation.reason}</Text>
-									</View>
-								</View>
-							))}
+							<DietEvaluationRows evaluations={item.dietEvaluations} />
+						</View>
+					) : null}
+					{ingredientHistoryRows.length > 0 ? (
+						<View style={styles.scoreDrivers}>
+							<Text style={styles.insightLabel}>Ingredient history</Text>
+							<IngredientHistoryRows rows={ingredientHistoryRows} />
 						</View>
 					) : null}
 					{item.saferSwap ? (
@@ -347,37 +342,6 @@ const styles = StyleSheet.create({
 	},
 	scoreDrivers: {
 		gap: spacing.xs,
-	},
-	dietChipRow: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		gap: spacing.sm,
-		borderRadius: 14,
-		backgroundColor: tokens.color.surface.card.warm,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.xs,
-	},
-	dietStatusDot: {
-		width: 10,
-		height: 10,
-		borderRadius: 5,
-		marginTop: 5,
-	},
-	scoreDriverBody: {
-		flex: 1,
-		gap: 1,
-	},
-	scoreDriverLabel: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 18,
-	},
-	scoreDriverReason: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 	saferSwapRow: {
 		flexDirection: "row",
