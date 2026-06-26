@@ -81,11 +81,16 @@ const HIGH_FODMAP_KEYS = new Set([
   'creamy_or_lactose',
 ]);
 
+const MEAL_WIDE_PREP_MECHANISMS = new Set<MenuRiskModifierKey | 'processed_meat'>([
+  'fried_or_crispy',
+  'raw_or_undercooked',
+]);
+
 const MECHANISMS: readonly MechanismDefinition[] = [
   {
     key: 'wheat_fructan_or_gluten',
     label: 'Wheat/fructan',
-    terms: ['wheat', 'bread', 'bun', 'roll', 'sub roll', 'pasta', 'ramen', 'udon', 'noodle', 'flour tortilla', 'pizza crust', 'pizza', 'pastry', 'batter', 'breadcrumbs', 'gluten'],
+    terms: ['wheat', 'bread', 'bun', 'roll', 'sub roll', 'pasta', 'ramen', 'udon', 'noodle', 'flour tortilla', 'tortilla', 'naan', 'pita', 'flatbread', 'pizza crust', 'pizza', 'pastry', 'pancake', 'waffle', 'dough', 'crust', 'breadcrumbs', 'gluten'],
     basePoints: { IBS: 7, GLUTEN: 24 },
   },
   {
@@ -135,6 +140,12 @@ const MECHANISMS: readonly MechanismDefinition[] = [
     label: 'Spicy heat',
     terms: ['spicy', 'hot sauce', 'buffalo', 'jalapeno', 'habanero', 'chili', 'chilli', 'sriracha', 'wasabi', 'gochujang', 'harissa', 'pepper heat'],
     basePoints: { GERD: 18, IBS: 8 },
+  },
+  {
+    key: 'unknown_sauce_or_marinade',
+    label: 'Compound sauce/marinade',
+    terms: ['sauce', 'gravy', 'curry', 'masala', 'marinade', 'dressing', 'glaze', 'stew sauce', 'simmer sauce'],
+    basePoints: { GERD: 44, IBS: 18 },
   },
   {
     key: 'fried_or_crispy',
@@ -282,30 +293,42 @@ function hasCoverageBasis(ingredient: ExtractedIngredient) {
     'spread throughout',
     'throughout the',
     'coating the',
+    'coated in',
+    'coated with',
+    'coats the',
+    'coats most',
+    'generous layer',
+    'generously',
+    'heavy layer',
+    'heavily covering',
+    'thick sauce',
+    'saucy',
     'blanketing',
   ]);
 }
 
+const SAUCE_LIKE_TERMS = ['sauce', 'gravy', 'curry', 'masala', 'marinade', 'dressing', 'glaze', 'simmer sauce', 'stew sauce'];
+const LOOSE_TOPPING_TERMS = ['sprinkled', 'shredded', 'crumbled', 'scattered', 'diced', 'chopped', 'small pieces', 'few pieces', 'visible pieces', 'topping layer', 'over the top', 'on top', 'garnish'];
+const COATING_OR_SPREAD_TERMS = ['melted', 'spread', 'sauce', 'sauced', 'coating', 'coated', 'coats', 'smothered', 'blanketing', 'glaze', 'gravy', 'thick sauce', 'creamy', 'smeared'];
+
+function isLooseToppingBasis(ingredient: ExtractedIngredient) {
+  const basis = normalize(ingredient.amountBasis);
+  if (!basis || !textHasTerm(basis, LOOSE_TOPPING_TERMS)) return false;
+  if (textHasTerm(ingredientText(ingredient), SAUCE_LIKE_TERMS)) return false;
+  return !textHasTerm(basis, COATING_OR_SPREAD_TERMS);
+}
+
 function effectiveExposureContext(ingredient: ExtractedIngredient) {
-  const coverage = hasCoverageBasis(ingredient);
+  const coverage = hasCoverageBasis(ingredient) && !isLooseToppingBasis(ingredient);
   const amount = inferAmount(ingredient);
   const coverageMinorRole = coverage && (ingredient.role === 'condiment' || ingredient.role === 'garnish');
-  const coverageSauce = coverage && textHasTerm(ingredientText(ingredient), [
-    'sauce',
-    'dressing',
-    'gravy',
-    'salsa',
-    'marinara',
-    'ketchup',
-    'mustard',
-    'mayo',
-    'mayonnaise',
-    'aioli',
-  ]);
+  const isSauceLike = textHasTerm(ingredientText(ingredient), SAUCE_LIKE_TERMS);
+  const coverageSauce = coverage && isSauceLike;
+  const substantialSauce = isSauceLike && ingredient.role === 'condiment' && ingredient.prominence === 'primary' && (amount === 'large' || amount === 'dominant');
   return {
     amount: coverage && (amount === 'small' || amount === 'standard') ? 'large' as const : amount,
-    role: coverageMinorRole || coverageSauce ? 'main' as const : ingredient.role,
-    prominence: (coverageMinorRole || coverageSauce) && ingredient.prominence === 'secondary' ? 'primary' as const : ingredient.prominence,
+    role: coverageMinorRole || coverageSauce || substantialSauce ? 'main' as const : ingredient.role,
+    prominence: (coverageMinorRole || coverageSauce || substantialSauce) && ingredient.prominence === 'secondary' ? 'primary' as const : ingredient.prominence,
   };
 }
 
@@ -349,6 +372,16 @@ function isRawAnimalRisk(def: MechanismDefinition, ingredient: ExtractedIngredie
   return textHasTerm(foodText, animalTerms) && textHasTerm(`${foodText} ${componentPrepText}`, def.terms);
 }
 
+function isSubstantialUnclassifiedSauce(def: MechanismDefinition, ingredient: ExtractedIngredient) {
+  if (def.key !== 'unknown_sauce_or_marinade') return true;
+  const text = ingredientText(ingredient);
+  if (!textHasTerm(text, SAUCE_LIKE_TERMS)) return false;
+  const { amount, role, prominence } = effectiveExposureContext(ingredient);
+  if (amount === 'trace' || prominence === 'trace') return false;
+  if (ingredient.evidence === 'inferred' && ingredient.confidence !== 'high') return false;
+  return amount === 'large' || amount === 'dominant' || role === 'main' || role === 'base' || (role === 'condiment' && amount === 'standard');
+}
+
 function componentPrepText(structured: StructuredAnalysisV2, ingredient: ExtractedIngredient) {
   const component = normalize(ingredient.component);
   if (!component) return '';
@@ -383,7 +416,7 @@ function buildIngredientExposures(
       const term = def.key === 'raw_or_undercooked'
         ? firstTerm(`${text} ${prepText}`, def.terms)
         : firstTerm(text, def.terms);
-      if (!term || !isRawAnimalRisk(def, ingredient, prepText)) continue;
+      if (!term || !isRawAnimalRisk(def, ingredient, prepText) || !isSubstantialUnclassifiedSauce(def, ingredient)) continue;
       const multiplier = exposureMultiplier(ingredient, Boolean(def.protective));
       const points = Math.round(basePoints * multiplier);
       if (points === 0) continue;
@@ -492,7 +525,9 @@ function buildStackExposures(
 function dedupeExposures(exposures: MechanismExposure[]) {
   const byKey = new Map<string, MechanismExposure>();
   for (const exposure of exposures) {
-    const key = `${exposure.condition}:${exposure.mechanismKey}:${exposure.ingredient}`;
+    const key = MEAL_WIDE_PREP_MECHANISMS.has(exposure.mechanismKey as MenuRiskModifierKey | 'processed_meat')
+      ? `${exposure.condition}:${exposure.mechanismKey}`
+      : `${exposure.condition}:${exposure.mechanismKey}:${exposure.ingredient}`;
     const existing = byKey.get(key);
     if (!existing || Math.abs(exposure.points) > Math.abs(existing.points)) {
       byKey.set(key, exposure);

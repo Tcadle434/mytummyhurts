@@ -12,6 +12,9 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:isolation-check": "node scripts/isolation-check.mjs",
     "eval": "node scripts/eval/run.mjs",
+    "eval:scans": "node scripts/eval/run-scan-evals.mjs",
+    "eval:retrieval": "node scripts/eval/run-retrieval-evals.mjs",
+    "eval:all": "npm run build && npm run eval && npm run eval:retrieval && npm run eval:scans",
     "rag:seed": "node scripts/rag/seed-corpus.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

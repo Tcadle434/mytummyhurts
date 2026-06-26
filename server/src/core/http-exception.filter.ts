@@ -16,6 +16,24 @@ import * as Sentry from '@sentry/node';
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('Http');
 
+  private knownError(error: Error): { status: number; code: string; message: string } | null {
+    if (error.message === 'openai_timeout') {
+      return {
+        status: 504,
+        code: 'request_timeout',
+        message: 'The AI scan timed out. Please try again.',
+      };
+    }
+    if (error.message === 'openai_request_failed') {
+      return {
+        status: 502,
+        code: 'ai_request_failed',
+        message: 'The AI service could not complete the request. Please try again.',
+      };
+    }
+    return null;
+  }
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse();
     let status = 500;
@@ -41,6 +59,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
         details = b.details;
       }
     } else if (exception instanceof Error) {
+      const mapped = this.knownError(exception);
+      if (mapped) {
+        status = mapped.status;
+        code = mapped.code;
+        message = mapped.message;
+      }
       this.logger.error(exception.message, exception.stack);
     }
 

@@ -166,6 +166,201 @@ describe('mechanism-first scan scoring', () => {
     expect(result.scoreContributors?.some((entry) => entry.key === 'high_fat_or_rich' && entry.source === 'mayonnaise')).toBe(false);
   });
 
+  it('treats a substantial visible compound sauce as a bounded watch-out signal', () => {
+    const result = score(analysis({
+      dishName: 'chicken curry with rice and naan',
+      visibleIngredients: [
+        ing('rice', { role: 'base', prominence: 'primary', amountEstimate: 'dominant' }),
+        ing('chicken', { role: 'main', prominence: 'primary', amountEstimate: 'standard' }),
+        ing('curry sauce', { role: 'condiment', prominence: 'primary', amountEstimate: 'large' }),
+        ing('naan', { role: 'side', prominence: 'secondary', amountEstimate: 'small' }),
+      ],
+      prepStyle: ['sauced'],
+    }));
+
+    const sauceExposure = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'unknown_sauce_or_marinade' &&
+      entry.ingredient === 'curry sauce'
+    ));
+    expect(sauceExposure?.points).toBeGreaterThanOrEqual(40);
+    expect(result.overallRiskLevel).toBe('medium');
+    expect(result.overallRiskScore).toBeGreaterThanOrEqual(55);
+    expect(result.overallRiskScore).toBeLessThanOrEqual(63);
+  });
+
+  it('promotes generous sauce-coating language into substantial coverage', () => {
+    const result = score(analysis({
+      dishName: 'chicken curry with rice and naan',
+      visibleIngredients: [
+        ing('rice', { role: 'base', prominence: 'primary', amountEstimate: 'dominant' }),
+        ing('chicken', { role: 'main', prominence: 'primary', amountEstimate: 'standard' }),
+        ing('curry sauce', {
+          role: 'condiment',
+          prominence: 'primary',
+          amountEstimate: 'standard',
+          amountBasis: 'coats the chicken and rice generously',
+        }),
+      ],
+      prepStyle: ['sauced'],
+    }));
+
+    const sauceExposure = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'unknown_sauce_or_marinade' &&
+      entry.ingredient === 'curry sauce'
+    ));
+    expect(sauceExposure?.points).toBeGreaterThanOrEqual(40);
+    expect(result.overallRiskLevel).toBe('medium');
+  });
+
+  it('keeps compound sauce load even when the sauce has a concrete acid/rich signal', () => {
+    const result = score(analysis({
+      dishName: 'butter chicken with rice and naan',
+      visibleIngredients: [
+        ing('rice', { role: 'base', prominence: 'primary', amountEstimate: 'dominant' }),
+        ing('chicken', { role: 'main', prominence: 'primary', amountEstimate: 'standard' }),
+        ing('tomato curry sauce', {
+          canonicalName: 'curry sauce',
+          role: 'condiment',
+          prominence: 'primary',
+          amountEstimate: 'large',
+          amountBasis: 'thick sauce covers most of the chicken and rice',
+        }),
+      ],
+      inferredIngredients: [
+        ing('cream', { role: 'condiment', prominence: 'secondary', amountEstimate: 'small', evidence: 'inferred', confidence: 'medium' }),
+      ],
+      prepStyle: ['sauced'],
+    }));
+
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'acidic_tomato_citrus_vinegar' &&
+      entry.ingredient === 'curry sauce'
+    ))).toBe(true);
+    const sauceExposure = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'unknown_sauce_or_marinade' &&
+      entry.ingredient === 'curry sauce'
+    ));
+    expect(sauceExposure?.points).toBeGreaterThanOrEqual(40);
+    expect(result.overallRiskScore).toBeGreaterThanOrEqual(60);
+  });
+
+  it('keeps small generic condiments bounded', () => {
+    const result = score(analysis({
+      dishName: 'turkey sandwich with sauce',
+      visibleIngredients: [
+        ing('bread', { role: 'base', prominence: 'primary', amountEstimate: 'dominant' }),
+        ing('turkey', { role: 'main', prominence: 'primary', amountEstimate: 'standard' }),
+        ing('sandwich sauce', { role: 'condiment', prominence: 'secondary', amountEstimate: 'small' }),
+      ],
+      prepStyle: ['assembled'],
+    }));
+
+    const sauceExposure = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.mechanismKey === 'unknown_sauce_or_marinade' &&
+      entry.ingredient === 'sandwich sauce'
+    ));
+    expect(sauceExposure?.points ?? 0).toBeLessThanOrEqual(8);
+    expect(result.overallRiskLevel).not.toBe('high');
+  });
+
+  it('does not promote loose shredded toppings as sauce-like coverage', () => {
+    const result = score(analysis({
+      dishName: 'ground beef tacos',
+      visibleIngredients: [
+        ing('corn tortilla', { role: 'base', prominence: 'primary', amountEstimate: 'dominant' }),
+        ing('ground beef', { role: 'main', prominence: 'primary', amountEstimate: 'standard' }),
+        ing('cheddar cheese', {
+          role: 'garnish',
+          prominence: 'secondary',
+          amountEstimate: 'small',
+          amountBasis: 'A noticeable topping layer of shredded cheese covers the tacos.',
+        }),
+        ing('lettuce', { role: 'garnish', prominence: 'secondary', amountEstimate: 'small' }),
+      ],
+      prepStyle: ['assembled'],
+    }));
+
+    const cheeseFat = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'high_fat_or_rich' &&
+      entry.ingredient === 'cheddar cheese'
+    ));
+    const cheeseDairy = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'creamy_or_lactose' &&
+      entry.ingredient === 'cheddar cheese'
+    ));
+
+    expect(cheeseFat?.points).toBeLessThanOrEqual(2);
+    expect(cheeseDairy?.points).toBeLessThanOrEqual(1);
+    expect(result.overallRiskLevel).toBe('low');
+  });
+
+  it('does not double count the same fried prep from ingredient name and prep text', () => {
+    const result = score(analysis({
+      dishName: 'fried eggs with bacon',
+      visibleIngredients: [
+        ing('fried egg', {
+          canonicalName: 'egg',
+          role: 'main',
+          prominence: 'primary',
+          amountEstimate: 'standard',
+        }),
+        ing('bacon', { role: 'main', prominence: 'primary', amountEstimate: 'standard' }),
+      ],
+      prepStyle: ['fried'],
+    }));
+
+    const friedExposures = result.structuredAnalysis.mechanismExposures?.filter((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'fried_or_crispy'
+    )) ?? [];
+
+    expect(friedExposures).toHaveLength(1);
+    expect(friedExposures[0]?.points).toBeLessThanOrEqual(14);
+    expect(result.overallRiskLevel).toBe('medium');
+  });
+
+  it('does not classify incidental batter context as wheat for non-wheat ingredients', () => {
+    const result = score(analysis({
+      dishName: 'pancakes with eggs',
+      visibleIngredients: [
+        ing('pancake', { role: 'base', prominence: 'primary', amountEstimate: 'dominant' }),
+      ],
+      inferredIngredients: [
+        ing('egg in batter', {
+          canonicalName: 'egg',
+          evidence: 'inferred',
+          confidence: 'medium',
+          role: 'base',
+          prominence: 'secondary',
+          amountEstimate: 'small',
+        }),
+        ing('milk in batter', {
+          canonicalName: 'milk',
+          evidence: 'inferred',
+          confidence: 'medium',
+          role: 'base',
+          prominence: 'secondary',
+          amountEstimate: 'small',
+        }),
+      ],
+    }));
+
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
+      entry.mechanismKey === 'wheat_fructan_or_gluten' &&
+      (entry.ingredient === 'egg' || entry.ingredient === 'milk')
+    ))).toBe(false);
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
+      entry.mechanismKey === 'wheat_fructan_or_gluten' &&
+      entry.ingredient === 'pancake'
+    ))).toBe(true);
+  });
+
   it('does not match oil inside boiled or broiled prep words', () => {
     const result = score(analysis({
       dishName: 'boiled rice and broiled chicken',
