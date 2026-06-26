@@ -3,17 +3,15 @@ import { StyleSheet, Text, View } from "react-native";
 
 import {
 	colorForDietStatus,
-	colorForLevel,
-	prioritizeScoreContributors,
 	type RiskLevel,
 } from "./common";
 import {
 	dietEvaluationTitle,
 	displayIngredientName,
+	selectMainSignalLabels,
 	selectIngredientHistoryRows,
 	type IngredientHistoryRow,
 } from "./PersonalizedScanCard.helpers";
-import { ScoreDriversList } from "./ScoreDrivers";
 import { palette, spacing, tokens, type } from "../../theme";
 import type { DietEvaluation, ScanIngredientRisk, ScoreContributor } from "../../types/domain";
 
@@ -21,8 +19,6 @@ export function PersonalizedScanCard({
 	dietEvaluations,
 	ingredientRisks,
 	contributors,
-	level,
-	impactSummary,
 }: {
 	dietEvaluations?: DietEvaluation[];
 	ingredientRisks?: ScanIngredientRisk[];
@@ -32,10 +28,9 @@ export function PersonalizedScanCard({
 }) {
 	const safeDietEvaluations = dietEvaluations ?? [];
 	const historyRows = selectIngredientHistoryRows(ingredientRisks, 4);
-	const scoreDrivers = prioritizeScoreContributors(contributors, 3);
-	const accentColor = colorForLevel(level);
+	const mainSignalLabels = selectMainSignalLabels(contributors, 4);
 
-	if (!safeDietEvaluations.length && !historyRows.length && !scoreDrivers.length && !impactSummary) {
+	if (!safeDietEvaluations.length && !historyRows.length && !mainSignalLabels.length) {
 		return null;
 	}
 
@@ -57,18 +52,12 @@ export function PersonalizedScanCard({
 				</View>
 			) : null}
 
-			{scoreDrivers.length ? (
+			{mainSignalLabels.length ? (
 				<View style={styles.sectionBlock}>
-					<ScoreDriversList
-						contributors={scoreDrivers}
-						accentColor={accentColor}
-						title="Top reasons"
-						compact
-					/>
+					<Text style={styles.sectionLabel}>Main signals</Text>
+					<MainSignalLabels labels={mainSignalLabels} />
 				</View>
 			) : null}
-
-			{impactSummary ? <Text style={styles.impactSummary}>{impactSummary}</Text> : null}
 		</View>
 	);
 }
@@ -124,12 +113,28 @@ export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryRow[] }
 	);
 }
 
+function MainSignalLabels({ labels }: { labels: string[] }) {
+	if (!labels.length) return null;
+
+	return (
+		<View style={styles.signalWrap}>
+			{labels.map((label) => (
+				<View key={label} style={styles.signalChip}>
+					<Text style={styles.signalChipText} numberOfLines={1}>
+						{label}
+					</Text>
+				</View>
+			))}
+		</View>
+	);
+}
+
 function historyTone(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"]>["riskLevel"]) {
 	if (riskLevel === "high") return tokens.color.status.risk.high;
 	if (riskLevel === "low") return tokens.color.status.risk.low;
 	if (riskLevel === "medium") return tokens.color.status.risk.medium;
 	return {
-		background: tokens.color.surface.card.warm,
+		background: tokens.color.surface.card.info,
 		foreground: palette.textMuted,
 		tint: palette.textMuted,
 	};
@@ -178,7 +183,9 @@ const styles = StyleSheet.create({
 		alignItems: "flex-start",
 		gap: spacing.sm,
 		borderRadius: 16,
-		backgroundColor: tokens.color.surface.card.warm,
+		backgroundColor: tokens.color.surface.card.default,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.sm,
 	},
@@ -193,7 +200,9 @@ const styles = StyleSheet.create({
 		alignItems: "flex-start",
 		gap: spacing.sm,
 		borderRadius: 16,
-		backgroundColor: tokens.color.surface.card.warm,
+		backgroundColor: tokens.color.surface.card.default,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.sm,
 	},
@@ -223,10 +232,24 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 17,
 	},
-	impactSummary: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 12,
+	signalWrap: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: spacing.xs,
+	},
+	signalChip: {
+		borderRadius: 999,
+		backgroundColor: tokens.color.surface.card.default,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 6,
+		maxWidth: "100%",
+	},
+	signalChipText: {
+		color: palette.text,
+		fontFamily: type.body.semibold,
+		fontSize: 13,
 		lineHeight: 17,
 	},
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { dietEvaluationTitle, selectIngredientHistoryRows } from "../PersonalizedScanCard.helpers";
-import type { DietEvaluation, ScanIngredientRisk } from "../../../types/domain";
+import { dietEvaluationTitle, selectIngredientHistoryRows, selectMainSignalLabels } from "../PersonalizedScanCard.helpers";
+import type { DietEvaluation, ScanIngredientRisk, ScoreContributor } from "../../../types/domain";
 
 function ingredient(
 	canonicalName: string,
@@ -87,5 +87,48 @@ describe("PersonalizedScanCard helpers", () => {
 		};
 
 		expect(dietEvaluationTitle(evaluation)).toBe("Use caution · Low FODMAP");
+	});
+
+	it("turns machine-style score contributors into readable main signals", () => {
+		const contributors: ScoreContributor[] = [
+			{
+				key: "unknown_sauce_or_marinade",
+				label: "Unknown Sauce Or Marinade",
+				points: 44,
+				evidence: "ingredient",
+				source: "tomato sauce",
+				reason: "Stored old label.",
+			},
+			{
+				key: "wheat_fructan_or_gluten",
+				label: "Wheat Fructan Or Gluten",
+				points: 8,
+				evidence: "ingredient",
+				source: "pizza dough",
+				reason: "Stored old label.",
+			},
+			{
+				key: "high_fat_or_rich",
+				label: "High Fat Or Rich",
+				points: 11,
+				evidence: "ingredient",
+				source: "cheese",
+				reason: "Stored old label.",
+			},
+			{
+				key: "fried_or_crispy",
+				label: "Fried Or Crispy",
+				points: 9,
+				evidence: "prep",
+				source: "fried",
+				reason: "Stored old label.",
+			},
+		];
+
+		const labels = selectMainSignalLabels(contributors, 4);
+		expect(labels).toEqual(["Tomato sauce", "Cheese richness", "Fried prep", "Wheat crust"]);
+		expect(labels).not.toContain("Unknown Sauce Or Marinade");
+		expect(labels).not.toContain("Wheat Fructan Or Gluten");
+		expect(labels).not.toContain("Fried Or Crispy");
 	});
 });

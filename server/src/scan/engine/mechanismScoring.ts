@@ -145,7 +145,7 @@ const MECHANISMS: readonly MechanismDefinition[] = [
     key: 'unknown_sauce_or_marinade',
     label: 'Compound sauce/marinade',
     terms: ['sauce', 'gravy', 'curry', 'masala', 'marinade', 'dressing', 'glaze', 'stew sauce', 'simmer sauce'],
-    basePoints: { GERD: 44, IBS: 18 },
+    basePoints: { GERD: 24, IBS: 10 },
   },
   {
     key: 'fried_or_crispy',
@@ -372,10 +372,18 @@ function isRawAnimalRisk(def: MechanismDefinition, ingredient: ExtractedIngredie
   return textHasTerm(foodText, animalTerms) && textHasTerm(`${foodText} ${componentPrepText}`, def.terms);
 }
 
+function hasSpecificKnownSauceMechanism(text: string) {
+  return MECHANISMS.some((candidate) => {
+    if (candidate.key === 'unknown_sauce_or_marinade' || candidate.protective) return false;
+    return textHasTerm(text, candidate.terms);
+  });
+}
+
 function isSubstantialUnclassifiedSauce(def: MechanismDefinition, ingredient: ExtractedIngredient) {
   if (def.key !== 'unknown_sauce_or_marinade') return true;
   const text = ingredientText(ingredient);
   if (!textHasTerm(text, SAUCE_LIKE_TERMS)) return false;
+  if (hasSpecificKnownSauceMechanism(text)) return false;
   const { amount, role, prominence } = effectiveExposureContext(ingredient);
   if (amount === 'trace' || prominence === 'trace') return false;
   if (ingredient.evidence === 'inferred' && ingredient.confidence !== 'high') return false;
@@ -682,14 +690,56 @@ function highRiskGate(condition: string, exposures: MechanismExposure[], adjustm
 function scoreContributorFromExposure(exposure: MechanismExposure): ScoreContributor {
   return {
     key: exposure.mechanismKey,
-    label: exposure.mechanismKey
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase()),
+    label: displayLabelForExposure(exposure),
     points: exposure.points,
     evidence: exposure.points < 0 ? 'protective' : exposure.mechanismKey === 'fried_or_crispy' || exposure.mechanismKey === 'raw_or_undercooked' ? 'prep' : 'ingredient',
     source: exposure.ingredient,
     reason: exposure.reason,
   };
+}
+
+function titleCaseFood(value: string) {
+  const text = normalize(value);
+  if (!text) return 'Food signal';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function displayLabelForExposure(exposure: MechanismExposure) {
+  const source = titleCaseFood(exposure.ingredient);
+  const sourceText = normalize(exposure.ingredient);
+
+  switch (exposure.mechanismKey) {
+    case 'wheat_fructan_or_gluten':
+      if (textHasTerm(sourceText, ['crust', 'dough', 'flour'])) return 'Wheat crust';
+      if (textHasTerm(sourceText, ['bread', 'bun', 'roll'])) return 'Wheat bread';
+      if (textHasTerm(sourceText, ['pasta', 'noodle', 'ramen', 'udon'])) return 'Wheat pasta';
+      return source;
+    case 'creamy_or_lactose':
+      return `${source} dairy`;
+    case 'high_fat_or_rich':
+      return `${source} richness`;
+    case 'acidic_tomato_citrus_vinegar':
+    case 'processed_meat':
+    case 'spicy_heat':
+    case 'alcohol':
+    case 'carbonation':
+    case 'caffeine':
+      return source;
+    case 'fried_or_crispy':
+      return 'Fried prep';
+    case 'unknown_sauce_or_marinade':
+      return sourceText === 'sauce' || sourceText === 'marinade' || sourceText === 'dressing' ? 'Unclear sauce' : source;
+    case 'reflux_mechanism_stack':
+      return 'Acid + richness';
+    case 'rice_or_simple_starch':
+      return source === 'Food signal' ? 'Simple starch' : source;
+    case 'lean_protein':
+      return source === 'Food signal' ? 'Lean protein' : source;
+    case 'simple_prep':
+      return 'Simple prep';
+    default:
+      return source;
+  }
 }
 
 function scoreContributorFromAdjustment(adjustment: PersonalMechanismAdjustment): ScoreContributor {

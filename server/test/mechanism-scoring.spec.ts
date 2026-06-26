@@ -166,7 +166,7 @@ describe('mechanism-first scan scoring', () => {
     expect(result.scoreContributors?.some((entry) => entry.key === 'high_fat_or_rich' && entry.source === 'mayonnaise')).toBe(false);
   });
 
-  it('treats a substantial visible compound sauce as a bounded watch-out signal', () => {
+  it('treats a substantial visible generic sauce as a bounded watch-out signal', () => {
     const result = score(analysis({
       dishName: 'chicken curry with rice and naan',
       visibleIngredients: [
@@ -183,9 +183,10 @@ describe('mechanism-first scan scoring', () => {
       entry.mechanismKey === 'unknown_sauce_or_marinade' &&
       entry.ingredient === 'curry sauce'
     ));
-    expect(sauceExposure?.points).toBeGreaterThanOrEqual(40);
+    expect(sauceExposure?.points).toBeGreaterThan(0);
+    expect(sauceExposure?.points).toBeLessThanOrEqual(24);
     expect(result.overallRiskLevel).toBe('medium');
-    expect(result.overallRiskScore).toBeGreaterThanOrEqual(55);
+    expect(result.overallRiskScore).toBeGreaterThanOrEqual(37);
     expect(result.overallRiskScore).toBeLessThanOrEqual(63);
   });
 
@@ -210,11 +211,12 @@ describe('mechanism-first scan scoring', () => {
       entry.mechanismKey === 'unknown_sauce_or_marinade' &&
       entry.ingredient === 'curry sauce'
     ));
-    expect(sauceExposure?.points).toBeGreaterThanOrEqual(40);
+    expect(sauceExposure?.points).toBeGreaterThan(0);
+    expect(sauceExposure?.points).toBeLessThanOrEqual(24);
     expect(result.overallRiskLevel).toBe('medium');
   });
 
-  it('keeps compound sauce load even when the sauce has a concrete acid/rich signal', () => {
+  it('does not add unknown sauce load when the sauce has a concrete acid signal', () => {
     const result = score(analysis({
       dishName: 'butter chicken with rice and naan',
       visibleIngredients: [
@@ -239,13 +241,11 @@ describe('mechanism-first scan scoring', () => {
       entry.mechanismKey === 'acidic_tomato_citrus_vinegar' &&
       entry.ingredient === 'curry sauce'
     ))).toBe(true);
-    const sauceExposure = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
       entry.condition === 'GERD / Acid reflux' &&
       entry.mechanismKey === 'unknown_sauce_or_marinade' &&
       entry.ingredient === 'curry sauce'
-    ));
-    expect(sauceExposure?.points).toBeGreaterThanOrEqual(40);
-    expect(result.overallRiskScore).toBeGreaterThanOrEqual(60);
+    ))).toBe(false);
   });
 
   it('keeps small generic condiments bounded', () => {
@@ -264,6 +264,25 @@ describe('mechanism-first scan scoring', () => {
       entry.ingredient === 'sandwich sauce'
     ));
     expect(sauceExposure?.points ?? 0).toBeLessThanOrEqual(8);
+    expect(result.overallRiskLevel).not.toBe('high');
+  });
+
+  it('does not let generic sauce alone create high risk', () => {
+    const result = score(analysis({
+      dishName: 'grilled chicken with sauce',
+      visibleIngredients: [
+        ing('chicken', { role: 'main', prominence: 'primary', amountEstimate: 'standard' }),
+        ing('sauce', { role: 'condiment', prominence: 'primary', amountEstimate: 'large' }),
+      ],
+      prepStyle: ['grilled'],
+    }));
+
+    const sauceExposure = result.structuredAnalysis.mechanismExposures?.find((entry) => (
+      entry.condition === 'GERD / Acid reflux' &&
+      entry.mechanismKey === 'unknown_sauce_or_marinade'
+    ));
+    expect(sauceExposure?.points).toBeGreaterThan(0);
+    expect(result.overallRiskScore).toBeLessThan(64);
     expect(result.overallRiskLevel).not.toBe('high');
   });
 
@@ -447,6 +466,91 @@ describe('mechanism-first scan scoring', () => {
       (entry.ingredient === 'tomato sauce' || entry.ingredient === 'cheese')
     ))).toBe(false);
     expect(result.structuredAnalysis.mechanismExposures?.some((entry) => entry.mechanismKey === 'simple_prep')).toBe(false);
+  });
+
+  it('keeps the live-shape pepperoni pizza high but not maxed out', () => {
+    const result = score(analysis({
+      dishName: 'pepperoni pizza',
+      visibleIngredients: [
+        ing('pizza crust', {
+          canonicalName: 'pizza dough',
+          role: 'base',
+          prominence: 'primary',
+          amountEstimate: 'dominant',
+          amountBasis: 'forms the main structure and bulk of the pizza',
+        }),
+        ing('tomato sauce', {
+          role: 'condiment',
+          prominence: 'secondary',
+          amountEstimate: 'standard',
+          amountBasis: 'spread across the surface between cheese and toppings',
+        }),
+        ing('cheese', {
+          role: 'main',
+          prominence: 'secondary',
+          amountEstimate: 'standard',
+          amountBasis: 'covers most of the pizza surface',
+        }),
+        ing('pepperoni', {
+          role: 'main',
+          prominence: 'secondary',
+          amountEstimate: 'small',
+          amountBasis: 'several sliced rounds scattered over the pizza',
+        }),
+      ],
+      inferredIngredients: [
+        ing('wheat flour', {
+          evidence: 'inferred',
+          confidence: 'high',
+          role: 'base',
+          prominence: 'primary',
+          amountEstimate: 'dominant',
+          amountBasis: 'typical ingredient of pizza dough',
+        }),
+        ing('tomato', {
+          evidence: 'inferred',
+          confidence: 'high',
+          role: 'condiment',
+          prominence: 'secondary',
+          amountEstimate: 'standard',
+          amountBasis: 'sauce appearance consistent with tomato base',
+        }),
+        ing('milk', {
+          evidence: 'inferred',
+          confidence: 'medium',
+          role: 'main',
+          prominence: 'secondary',
+          amountEstimate: 'small',
+          amountBasis: 'mozzarella is a dairy cheese',
+        }),
+      ],
+      prepStyle: ['baked'],
+    }));
+
+    expect(result.scoreContributors?.some((entry) => entry.key === 'unknown_sauce_or_marinade')).toBe(false);
+    expect(result.overallRiskLevel).toBe('high');
+    expect(result.overallRiskScore).toBeGreaterThanOrEqual(65);
+    expect(result.overallRiskScore).toBeLessThanOrEqual(80);
+  });
+
+  it('maps tomato sauce to acid only, not unknown sauce', () => {
+    const result = score(analysis({
+      dishName: 'pasta with tomato sauce',
+      visibleIngredients: [
+        ing('pasta', { role: 'base', prominence: 'primary', amountEstimate: 'dominant' }),
+        ing('tomato sauce', { role: 'main', prominence: 'primary', amountEstimate: 'large' }),
+      ],
+      prepStyle: ['sauced'],
+    }));
+
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
+      entry.mechanismKey === 'acidic_tomato_citrus_vinegar' &&
+      entry.ingredient === 'tomato sauce'
+    ))).toBe(true);
+    expect(result.structuredAnalysis.mechanismExposures?.some((entry) => (
+      entry.mechanismKey === 'unknown_sauce_or_marinade' &&
+      entry.ingredient === 'tomato sauce'
+    ))).toBe(false);
   });
 
   it('treats sauce spread across a meal as meaningful exposure even when labeled as a base', () => {
