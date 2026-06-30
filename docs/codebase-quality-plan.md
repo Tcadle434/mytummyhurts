@@ -105,11 +105,16 @@ helpers, `CustomEntryModal`, `scan-result/styles.ts`, one Settings save helper; 
 
 **Phase 3 safe scope complete.** Remaining: **Phase 4** (shared scoring/domain package + scoring.ts split).
 
-### Phase 4 — Shared scoring-core + domain package · L · ~1,500 lines (strategic)
-- [ ] New `packages/` workspace pkg (pure TS, no platform deps) imported by Expo app + NestJS server
-- [ ] Move in order: (1) 3 data tables, (2) ~20 pure utils + shared constants, (3) shared domain types,
-      (4) large state-computation functions once shared `ProfileSeed` agreed
-- [ ] CI test asserting FE/BE export identical members for shared primitives (drift guard)
+### Phase 4 — Shared scoring-core + domain package · L · IN PROGRESS (branch `refactor/phase4-shared-scoring`)
+- [x] **4a — Foundation wired & proven (846bc8d, pushed).** `@mth/shared-domain` consumable by BOTH Expo (Metro) and
+      NestJS: builds to dist + `prepare` self-build; `file:` deps linked in both node_modules; resolution via Metro
+      extraNodeModules, both tsconfig paths, both vitest aliases, node runtime. First dedup: RiskLevel + PatternStrength
+      (both domain.ts re-export). Verified: FE tsc, server tsc, FE 147, server 167, nest build, runtime resolution.
+      ⚠️ **Live Metro bundle + server boot NOT smoke-tested yet** — confirm before migrating the bulk onto the package.
+- [ ] 4b — migrate the rest of the mirrored domain type graph (~600 lines) → re-export from both domain.ts
+- [ ] 4c — move the ~20 pure scoring utilities + shared constants; fold in the B2 combinedRiskScore decision
+- [ ] 4d — move the 3 data tables + large state-computation functions (needs a shared ProfileSeed type)
+- [ ] split server scoring.ts (~3,760) as the core moves out; CI test asserting FE/BE export identical shared members
 
 ### Phase 5 — God-file splits · DONE (2 commits: 028049b, c271ee7)
 - [x] `UI.tsx` (1,093) → 4-line barrel + `ui/{Screen,Buttons,Forms,Cards,shared}` (all <800). 22-export parity verified (028049b).
