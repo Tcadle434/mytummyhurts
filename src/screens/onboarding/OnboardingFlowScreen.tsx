@@ -5,8 +5,6 @@ import * as StoreReview from "expo-store-review";
 import { ComponentProps, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Image,
-	KeyboardAvoidingView,
-	Modal,
 	Platform,
 	Pressable,
 	ScrollView,
@@ -33,6 +31,7 @@ import {
 	ScreenHeader,
 	SectionCard,
 } from "../../components/common/UI";
+import { CustomEntryModal } from "../../components/modals/CustomEntryModal";
 import {
 	calibrationFoodOptions,
 	dietPreferenceKeyFromLabel,
@@ -995,90 +994,18 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				)}
 			</StepTransition>
 
-			<Modal
-				animationType="fade"
-				transparent
+			<CustomEntryModal
 				visible={customOptionModalVisible}
-				onRequestClose={closeCustomOptionModal}
-			>
-				<View style={styles.customModalRoot}>
-					<Pressable
-						accessibilityRole="button"
-						accessibilityLabel="Close custom entry"
-						style={styles.customModalBackdrop}
-						onPress={closeCustomOptionModal}
-					/>
-					<KeyboardAvoidingView
-						behavior={Platform.OS === "ios" ? "padding" : undefined}
-						pointerEvents="box-none"
-						style={styles.customModalKeyboard}
-					>
-						<View style={styles.customModalCard}>
-							<View style={styles.customModalHeader}>
-								<View style={styles.customModalTitleWrap}>
-									<Text style={styles.customModalTitle}>
-										{customOptionCopy.title}
-									</Text>
-									<Text style={styles.customModalSubtitle}>
-										{customOptionCopy.subtitle}
-									</Text>
-								</View>
-								<Pressable
-									accessibilityRole="button"
-									accessibilityLabel="Close"
-									onPress={closeCustomOptionModal}
-									style={({ pressed }) => [
-										styles.customModalClose,
-										pressed && { opacity: 0.7 },
-									]}
-								>
-									<Ionicons
-										name="close"
-										size={20}
-										color={tokens.color.icon.primary}
-									/>
-								</Pressable>
-							</View>
-							<InputField
-								value={customEntry}
-								placeholder={customOptionCopy.placeholder}
-								onChangeText={setCustomEntry}
-								autoFocus
-							/>
-							<PrimaryButton
-								label="Add"
-								onPress={submitCustomOption}
-								disabled={!customEntry.trim()}
-							/>
-							{customOptionValues.length > 0 ? (
-								<View style={styles.customOptionStack}>
-									{customOptionValues.map((value) => (
-										<View key={value} style={styles.customValuePill}>
-											<Text style={styles.customValueText}>{value}</Text>
-											<Pressable
-												accessibilityRole="button"
-												accessibilityLabel={`Remove ${value}`}
-												onPress={() => removeCustomOption(value)}
-												hitSlop={8}
-												style={({ pressed }) => [
-													styles.customValueRemove,
-													pressed && { opacity: 0.7 },
-												]}
-											>
-												<Ionicons
-													name="close"
-													size={13}
-													color={tokens.color.text.inverse}
-												/>
-											</Pressable>
-										</View>
-									))}
-								</View>
-							) : null}
-						</View>
-					</KeyboardAvoidingView>
-				</View>
-			</Modal>
+				title={customOptionCopy.title}
+				subtitle={customOptionCopy.subtitle}
+				placeholder={customOptionCopy.placeholder}
+				value={customEntry}
+				onChangeText={setCustomEntry}
+				onSubmit={submitCustomOption}
+				onClose={closeCustomOptionModal}
+				values={customOptionValues}
+				onRemove={removeCustomOption}
+			/>
 		</AppScreen>
 	);
 }
@@ -1267,91 +1194,6 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		justifyContent: "center",
 		paddingVertical: spacing.lg,
-	},
-	customModalRoot: {
-		flex: 1,
-		backgroundColor: "rgba(22, 29, 33, 0.44)",
-	},
-	customModalBackdrop: {
-		...StyleSheet.absoluteFillObject,
-		zIndex: 0,
-	},
-	customModalKeyboard: {
-		flex: 1,
-		width: "100%",
-		alignItems: "center",
-		justifyContent: "center",
-		padding: spacing.lg,
-		zIndex: 1,
-	},
-	customModalCard: {
-		width: "100%",
-		maxWidth: 380,
-		zIndex: 2,
-		borderRadius: 24,
-		backgroundColor: tokens.color.surface.sheet,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.modal,
-	},
-	customModalHeader: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		gap: spacing.md,
-	},
-	customModalTitleWrap: {
-		flex: 1,
-		gap: spacing.xs,
-	},
-	customModalTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 20,
-		lineHeight: 25,
-	},
-	customModalSubtitle: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 14,
-		lineHeight: 20,
-	},
-	customModalClose: {
-		width: 34,
-		height: 34,
-		borderRadius: 17,
-		backgroundColor: tokens.color.surface.card.warm,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	customOptionStack: {
-		gap: spacing.sm,
-	},
-	customValuePill: {
-		minHeight: 50,
-		borderRadius: 18,
-		backgroundColor: palette.primary,
-		paddingHorizontal: spacing.md,
-		paddingVertical: 13,
-		paddingRight: 42,
-		justifyContent: "center",
-		position: "relative",
-	},
-	customValueText: {
-		color: tokens.color.text.inverse,
-		fontFamily: type.body.semibold,
-		fontSize: 15,
-		lineHeight: 20,
-	},
-	customValueRemove: {
-		position: "absolute",
-		top: 8,
-		right: 8,
-		width: 22,
-		height: 22,
-		borderRadius: 11,
-		backgroundColor: "rgba(255,255,255,0.18)",
-		alignItems: "center",
-		justifyContent: "center",
 	},
 	previewStack: {
 		gap: spacing.md,

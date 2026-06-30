@@ -3,11 +3,8 @@ import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navig
 import { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
   LayoutChangeEvent,
   Linking,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +22,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '../../components/common/UI';
+import { CustomEntryModal } from '../../components/modals/CustomEntryModal';
 import { env } from '../../config/env';
 import {
   conditionOptions,
@@ -756,89 +754,20 @@ export function SettingsScreen() {
 
       <Text style={styles.versionLabel}>App version 1.2.0</Text>
 
-      <Modal
-        animationType="fade"
-        transparent
+      <CustomEntryModal
         visible={customModalCategory !== null}
-        onRequestClose={closeCustomModal}
-      >
-        <View style={styles.customModalRoot}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close custom entry"
-            style={styles.customModalBackdrop}
-            onPress={closeCustomModal}
-          />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            pointerEvents="box-none"
-            style={styles.customModalKeyboard}
-          >
-            {customModalCategory ? (
-              <View style={styles.customModalCard}>
-                <View style={styles.customModalHeader}>
-                  <View style={styles.customModalTitleWrap}>
-                    <Text style={styles.customModalTitle}>
-                      {CUSTOM_CATEGORY_COPY[customModalCategory].title}
-                    </Text>
-                    <Text style={styles.customModalSubtitle}>
-                      {CUSTOM_CATEGORY_COPY[customModalCategory].subtitle}
-                    </Text>
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Close"
-                    onPress={closeCustomModal}
-                    hitSlop={8}
-                    style={({ pressed }) => [
-                      styles.customModalClose,
-                      pressed && { opacity: 0.7 },
-                    ]}
-                  >
-                    <Ionicons name="close" size={20} color={tokens.color.icon.primary} />
-                  </Pressable>
-                </View>
-                <InputField
-                  value={customEntry}
-                  placeholder={CUSTOM_CATEGORY_COPY[customModalCategory].placeholder}
-                  onChangeText={setCustomEntry}
-                  autoFocus
-                />
-                <PrimaryButton
-                  label="Add"
-                  onPress={addCustomEntry}
-                  disabled={!customEntry.trim()}
-                />
-                {getCustomValuesForModal(customModalCategory).length > 0 ? (
-                  <View style={styles.customValuesStack}>
-                    {getCustomValuesForModal(customModalCategory).map((value) => (
-                      <View key={value} style={styles.customValuePill}>
-                        <Text style={styles.customValueText}>{value}</Text>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Remove ${value}`}
-                          onPress={() => removeCustomEntry(customModalCategory, value)}
-                          hitSlop={8}
-                          style={({ pressed }) => [
-                            styles.customValueRemove,
-                            pressed && { opacity: 0.7 },
-                          ]}
-                        >
-                          <Ionicons
-                            name="close"
-                            size={13}
-                            color={tokens.color.text.inverse}
-                          />
-                        </Pressable>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+        title={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].title : ''}
+        subtitle={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].subtitle : undefined}
+        placeholder={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].placeholder : ''}
+        value={customEntry}
+        onChangeText={setCustomEntry}
+        onSubmit={addCustomEntry}
+        onClose={closeCustomModal}
+        values={customModalCategory ? getCustomValuesForModal(customModalCategory) : []}
+        onRemove={(value) => {
+          if (customModalCategory) removeCustomEntry(customModalCategory, value);
+        }}
+      />
     </AppScreen>
   );
 }
@@ -1169,90 +1098,5 @@ const styles = StyleSheet.create({
     fontFamily: type.body.medium,
     fontSize: 12,
     marginTop: spacing.sm,
-  },
-  customModalRoot: {
-    flex: 1,
-    backgroundColor: 'rgba(22, 29, 33, 0.44)',
-  },
-  customModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
-  customModalKeyboard: {
-    flex: 1,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
-    zIndex: 1,
-  },
-  customModalCard: {
-    width: '100%',
-    maxWidth: 380,
-    zIndex: 2,
-    borderRadius: 24,
-    backgroundColor: tokens.color.surface.sheet,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...tokens.shadow.modal,
-  },
-  customModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  customModalTitleWrap: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  customModalTitle: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 20,
-    lineHeight: 25,
-  },
-  customModalSubtitle: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.regular,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  customModalClose: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: tokens.color.surface.card.warm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  customValuesStack: {
-    gap: spacing.sm,
-  },
-  customValuePill: {
-    minHeight: 50,
-    borderRadius: 18,
-    backgroundColor: palette.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 13,
-    paddingRight: 42,
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  customValueText: {
-    color: tokens.color.text.inverse,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  customValueRemove: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
