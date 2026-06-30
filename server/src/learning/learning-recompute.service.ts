@@ -191,15 +191,16 @@ export class LearningRecomputeService {
         return normalizedDailyScore(previous?.dailyScore) !== normalizedDailyScore(report.dailyScore);
       });
 
-      // Persist recomputed daily scores.
-      for (const r of scoredReports) {
-        await sql`update public.daily_gut_reports
+      // Persist recomputed daily scores. Each report targets a distinct local_date,
+      // so the updates are independent and can run in parallel within the transaction.
+      await Promise.all(
+        scoredReports.map((r) => sql`update public.daily_gut_reports
           set daily_score = ${r.dailyScore ?? null},
               daily_score_components = ${sql.json((r.dailyScoreComponents ?? {}) as never)},
               daily_score_drivers = ${sql.json((r.dailyScoreDrivers ?? []) as never)},
               daily_score_updated_at = now()
-          where user_id = ${userId} and local_date = ${r.localDate}`;
-      }
+          where user_id = ${userId} and local_date = ${r.localDate}`),
+      );
 
       const learned = buildDailyReportInsights({
         scans: foodScans.map((s) => ({ id: s.id, localDate: s.localDate, createdAt: s.createdAt, ingredients: s.ingredients })),
@@ -287,16 +288,31 @@ export class LearningRecomputeService {
   ) {
     await sql`delete from public.ingredient_insights where user_id = ${userId}`;
     await sql`delete from public.condition_ingredient_insights where user_id = ${userId}`;
-    for (const i of insights) {
-      await sql`insert into public.ingredient_insights
-        (user_id, ingredient_name, trigger_score, safe_score, combined_risk_score, confidence_level,
-         pattern_strength, linked_conditions, supporting_evidence_count, positive_evidence_count,
-         negative_evidence_count, last_seen_at, last_outcome_at, source_breakdown, last_recomputed_at)
-        values (${userId}, ${i.ingredientName}, ${i.triggerScore}, ${i.safeScore}, ${i.combinedRiskScore},
-         ${i.confidenceLevel}, ${i.patternStrength}, ${sql.json(i.linkedConditions as never)},
-         ${i.supportingEvidenceCount}, ${i.positiveEvidenceCount}, ${i.negativeEvidenceCount},
-         ${i.lastSeenAt ?? null}, ${i.lastOutcomeAt ?? null}, ${sql.json(i.sourceBreakdown as never)},
-         ${i.lastRecomputedAt})
+    if (insights.length) {
+      const insightRows = insights.map((i) => ({
+        user_id: userId,
+        ingredient_name: i.ingredientName,
+        trigger_score: i.triggerScore,
+        safe_score: i.safeScore,
+        combined_risk_score: i.combinedRiskScore,
+        confidence_level: i.confidenceLevel,
+        pattern_strength: i.patternStrength,
+        linked_conditions: sql.json(i.linkedConditions as never),
+        supporting_evidence_count: i.supportingEvidenceCount,
+        positive_evidence_count: i.positiveEvidenceCount,
+        negative_evidence_count: i.negativeEvidenceCount,
+        last_seen_at: i.lastSeenAt ?? null,
+        last_outcome_at: i.lastOutcomeAt ?? null,
+        source_breakdown: sql.json(i.sourceBreakdown as never),
+        last_recomputed_at: i.lastRecomputedAt,
+      }));
+      await sql`insert into public.ingredient_insights ${sql(
+        insightRows,
+        'user_id', 'ingredient_name', 'trigger_score', 'safe_score', 'combined_risk_score',
+        'confidence_level', 'pattern_strength', 'linked_conditions', 'supporting_evidence_count',
+        'positive_evidence_count', 'negative_evidence_count', 'last_seen_at', 'last_outcome_at',
+        'source_breakdown', 'last_recomputed_at',
+      )}
         on conflict (user_id, ingredient_name) do update set
           trigger_score = excluded.trigger_score, safe_score = excluded.safe_score,
           combined_risk_score = excluded.combined_risk_score, confidence_level = excluded.confidence_level,
@@ -307,15 +323,30 @@ export class LearningRecomputeService {
           last_outcome_at = excluded.last_outcome_at, source_breakdown = excluded.source_breakdown,
           last_recomputed_at = excluded.last_recomputed_at`;
     }
-    for (const c of conditionInsights) {
-      await sql`insert into public.condition_ingredient_insights
-        (user_id, ingredient_name, condition_name, risk_score, trigger_score, safe_score, confidence_level,
-         positive_evidence_count, negative_evidence_count, supporting_evidence_count, source_breakdown,
-         last_seen_at, last_outcome_at, last_recomputed_at)
-        values (${userId}, ${c.ingredientName}, ${c.conditionName}, ${c.riskScore}, ${c.triggerScore},
-         ${c.safeScore}, ${c.confidenceLevel}, ${c.positiveEvidenceCount}, ${c.negativeEvidenceCount},
-         ${c.supportingEvidenceCount}, ${sql.json(c.sourceBreakdown as never)}, ${c.lastSeenAt ?? null},
-         ${c.lastOutcomeAt ?? null}, ${c.lastRecomputedAt})
+    if (conditionInsights.length) {
+      const conditionRows = conditionInsights.map((c) => ({
+        user_id: userId,
+        ingredient_name: c.ingredientName,
+        condition_name: c.conditionName,
+        risk_score: c.riskScore,
+        trigger_score: c.triggerScore,
+        safe_score: c.safeScore,
+        confidence_level: c.confidenceLevel,
+        positive_evidence_count: c.positiveEvidenceCount,
+        negative_evidence_count: c.negativeEvidenceCount,
+        supporting_evidence_count: c.supportingEvidenceCount,
+        source_breakdown: sql.json(c.sourceBreakdown as never),
+        last_seen_at: c.lastSeenAt ?? null,
+        last_outcome_at: c.lastOutcomeAt ?? null,
+        last_recomputed_at: c.lastRecomputedAt,
+      }));
+      await sql`insert into public.condition_ingredient_insights ${sql(
+        conditionRows,
+        'user_id', 'ingredient_name', 'condition_name', 'risk_score', 'trigger_score', 'safe_score',
+        'confidence_level', 'positive_evidence_count', 'negative_evidence_count',
+        'supporting_evidence_count', 'source_breakdown', 'last_seen_at', 'last_outcome_at',
+        'last_recomputed_at',
+      )}
         on conflict (user_id, ingredient_name, condition_name) do update set
           risk_score = excluded.risk_score, trigger_score = excluded.trigger_score,
           safe_score = excluded.safe_score, confidence_level = excluded.confidence_level,

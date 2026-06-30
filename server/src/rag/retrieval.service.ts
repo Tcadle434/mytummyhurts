@@ -146,14 +146,24 @@ export class RagRetrievalService {
                   ${queryText}, ${this.embedder.model}, ${candidateCount}, ${ranked.length},
                   ${this.reranker.name})
           returning id`;
-        for (let i = 0; i < ranked.length; i++) {
-          const c = ranked[i];
+        if (ranked.length) {
+          const chunkRows = ranked.map((c, i) => ({
+            retrieval_run_id: run.id,
+            chunk_id: c.chunkId,
+            document_id: c.documentId,
+            rank: i,
+            vector_score: c.vectorScore,
+            keyword_score: c.keywordScore,
+            hybrid_score: c.hybridScore,
+            reranker_score: c.rerankScore,
+            selected: true,
+          }));
           await sql`
-            insert into public.rag_retrieved_chunks
-              (retrieval_run_id, chunk_id, document_id, rank, vector_score, keyword_score,
-               hybrid_score, reranker_score, selected)
-            values (${run.id}, ${c.chunkId}, ${c.documentId}, ${i}, ${c.vectorScore},
-                    ${c.keywordScore}, ${c.hybridScore}, ${c.rerankScore}, true)`;
+            insert into public.rag_retrieved_chunks ${sql(
+              chunkRows,
+              'retrieval_run_id', 'chunk_id', 'document_id', 'rank', 'vector_score',
+              'keyword_score', 'hybrid_score', 'reranker_score', 'selected',
+            )}`;
         }
         return run.id as string;
       });

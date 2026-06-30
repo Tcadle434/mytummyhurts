@@ -150,25 +150,42 @@ export class ProfileService {
       // Sync denormalized read-models (JSONB stays source of truth).
       if (conditions) {
         await sql`delete from public.user_conditions where user_id = ${userId}`;
-        for (const c of conditions) {
-          await sql`insert into public.user_conditions (user_id, condition_key) values (${userId}, ${c})
+        if (conditions.length) {
+          const conditionRows = conditions.map((c) => ({ user_id: userId, condition_key: c }));
+          await sql`insert into public.user_conditions ${sql(conditionRows, 'user_id', 'condition_key')}
                     on conflict do nothing`;
         }
       }
       if (sensitivities) {
         await sql`delete from public.user_sensitivities where user_id = ${userId}`;
-        for (const s of sensitivities) {
-          await sql`insert into public.user_sensitivities (user_id, ingredient_key) values (${userId}, ${s})
+        if (sensitivities.length) {
+          const sensitivityRows = sensitivities.map((s) => ({ user_id: userId, ingredient_key: s }));
+          await sql`insert into public.user_sensitivities ${sql(sensitivityRows, 'user_id', 'ingredient_key')}
                     on conflict do nothing`;
         }
       }
       if (dietPreferences) {
         await sql`delete from public.user_diet_preferences where user_id = ${userId}`;
-        for (const [priority, preference] of dietPreferences.entries()) {
-          await sql`insert into public.user_diet_preferences
-              (user_id, diet_key, diet_label, strictness, source, priority, status)
-            values (${userId}, ${preference.key}, ${dietPreferenceLabels[preference.key]},
-              ${preference.strictness}, ${preference.source}, ${priority}, 'active')`;
+        if (dietPreferences.length) {
+          const dietRows = dietPreferences.map((preference, priority) => ({
+            user_id: userId,
+            diet_key: preference.key,
+            diet_label: dietPreferenceLabels[preference.key],
+            strictness: preference.strictness,
+            source: preference.source,
+            priority,
+            status: 'active',
+          }));
+          await sql`insert into public.user_diet_preferences ${sql(
+            dietRows,
+            'user_id',
+            'diet_key',
+            'diet_label',
+            'strictness',
+            'source',
+            'priority',
+            'status',
+          )}`;
         }
       }
     });

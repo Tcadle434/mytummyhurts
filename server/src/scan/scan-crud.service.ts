@@ -32,50 +32,56 @@ export class ScanCrudService {
         select * from public.scans where id = ${scanId} and user_id = ${userId}`;
       if (!scan) throw new NotFoundException('scan_not_found');
 
-      const conditionRisks = await sql`
-        select condition_name, risk_score, risk_level, reason, display_order
-        from public.scan_condition_risks
-        where scan_id = ${scanId} and user_id = ${userId}
-        order by display_order`;
-      const ingredientRisks = await sql`
-        select id, menu_item_id, menu_item_source_id, raw_name, canonical_name, risk_score,
-               risk_level, evidence, confidence, component_name, reason, display_order
-        from public.scan_ingredient_risks
-        where scan_id = ${scanId} and user_id = ${userId}
-        order by display_order`;
+      // Child-table reads are independent of one another; run them in parallel.
+      const [conditionRisks, ingredientRisks, inputs, dietEvaluations, menuItems, groceryRows] =
+        await Promise.all([
+          sql`
+            select condition_name, risk_score, risk_level, reason, display_order
+            from public.scan_condition_risks
+            where scan_id = ${scanId} and user_id = ${userId}
+            order by display_order`,
+          sql`
+            select id, menu_item_id, menu_item_source_id, raw_name, canonical_name, risk_score,
+                   risk_level, evidence, confidence, component_name, reason, display_order
+            from public.scan_ingredient_risks
+            where scan_id = ${scanId} and user_id = ${userId}
+            order by display_order`,
+          sql`
+            select storage_path, thumbnail_storage_path, input_kind, page_index
+            from public.scan_inputs
+            where scan_id = ${scanId} and user_id = ${userId}
+            order by page_index`,
+          sql`
+            select id, menu_item_id, menu_item_source_id, diet_key, diet_label, status, confidence,
+                   reason, supporting_factors, conflicts, missing_info, score_adjustment,
+                   model_status, model_confidence, model_reason, accepted_model_status,
+                   rubric_version, display_order
+            from public.scan_diet_evaluations
+            where scan_id = ${scanId} and user_id = ${userId}
+            order by display_order`,
+          sql`
+            select id, source_item_id, consumed_at, tier, tier_rank, display_order, name,
+                   description, section, price, risk_score, risk_level, confidence,
+                   scoring_confidence, base_food_category, risk_modifiers, score_contributors,
+                   why_this_score, gut_recommendation
+            from public.menu_items
+            where scan_id = ${scanId} and user_id = ${userId}
+            order by display_order`,
+          scan.grocery_product_id
+            ? sql`
+                select id, barcode, brand, name, ingredient_text, nutrition, allergens,
+                       image_url, data_source, source_confidence
+                from public.grocery_products where id = ${scan.grocery_product_id}`
+            : Promise.resolve([]),
+        ]);
+
+      // Personal-history enrichment depends on the ingredient risks above.
       const enrichedIngredientRisks = await this.enrichIngredientRisksWithPersonalHistory(
         sql,
         userId,
         scanId,
         ingredientRisks,
       );
-      const inputs = await sql`
-        select storage_path, thumbnail_storage_path, input_kind, page_index
-        from public.scan_inputs
-        where scan_id = ${scanId} and user_id = ${userId}
-        order by page_index`;
-      const dietEvaluations = await sql`
-        select id, menu_item_id, menu_item_source_id, diet_key, diet_label, status, confidence,
-               reason, supporting_factors, conflicts, missing_info, score_adjustment,
-               model_status, model_confidence, model_reason, accepted_model_status,
-               rubric_version, display_order
-        from public.scan_diet_evaluations
-        where scan_id = ${scanId} and user_id = ${userId}
-        order by display_order`;
-      const menuItems = await sql`
-        select id, source_item_id, consumed_at, tier, tier_rank, display_order, name,
-               description, section, price, risk_score, risk_level, confidence,
-               scoring_confidence, base_food_category, risk_modifiers, score_contributors,
-               why_this_score, gut_recommendation
-        from public.menu_items
-        where scan_id = ${scanId} and user_id = ${userId}
-        order by display_order`;
-      const groceryRows = scan.grocery_product_id
-        ? await sql`
-            select id, barcode, brand, name, ingredient_text, nutrition, allergens,
-                   image_url, data_source, source_confidence
-            from public.grocery_products where id = ${scan.grocery_product_id}`
-        : [];
 
       const primary = inputs.find((i) => i.storage_path) ?? inputs[0];
       const imageUri = primary?.storage_path ? await this.storage.signUrl(primary.storage_path) : undefined;

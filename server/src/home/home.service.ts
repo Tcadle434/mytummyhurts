@@ -31,16 +31,36 @@ export class HomeService {
         learningScanRows,
         learningReportRows,
       } = await getUserContext(sql, userId, { insightsLimit: 8, conditionInsightsLimit: 12 });
-      const billing = await this.billing.getBillingState(userId, sql);
-
-      const recentScans = (
-        await sql`
+      // These reads are independent of one another and of getUserContext's rows;
+      // run them in parallel.
+      const [billing, recentScanRows, dailyReportRows, safeFoodRows, snapRows] = await Promise.all([
+        this.billing.getBillingState(userId, sql),
+        sql`
           select id, title, scan_category, source_type, overall_risk_score, overall_risk_level,
                  consumption_status, local_date, created_at, completed_at
           from public.scans
           where user_id = ${userId} and analysis_status = 'completed'
-          order by created_at desc limit 50`
-      ).map((s) => ({
+          order by created_at desc limit 50`,
+        sql`select * from public.daily_gut_reports where user_id = ${userId}
+                  order by local_date desc limit 30`,
+        sql`select i.*,
+                    c.primary_food_family_key as taxonomy_primary_food_family_key,
+                    c.digestive_pattern_keys as taxonomy_digestive_pattern_keys,
+                    c.confidence as taxonomy_confidence,
+                    c.reason as taxonomy_reason,
+                    c.taxonomy_version as taxonomy_version,
+                    c.model as taxonomy_model,
+                    c.prompt_version as taxonomy_prompt_version,
+                    c.source as taxonomy_source
+                  from public.ingredient_insights i
+                  left join public.ingredient_taxonomy_classifications c
+                    on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
+                  where i.user_id = ${userId}
+                  order by i.combined_risk_score asc nulls last limit 8`,
+        sql`select learning_status from public.user_app_snapshots where user_id = ${userId}`,
+      ]);
+
+      const recentScans = recentScanRows.map((s) => ({
         id: s.id,
         dishName: s.title,
         scanCategory: s.scan_category,
@@ -57,32 +77,14 @@ export class HomeService {
         completedAt: s.completed_at,
       }));
 
-      const dailyReports = (
-        await sql`select * from public.daily_gut_reports where user_id = ${userId}
-                  order by local_date desc limit 30`
-      ).map(mapDailyReport);
+      const dailyReports = dailyReportRows.map(mapDailyReport);
       const learningProgress = buildLearningProgressFromRows(learningScanRows, learningReportRows);
 
       const triggers = insightRows.map(mapInsight);
-      const safeFoods = (
-        await sql`select i.*,
-                    c.primary_food_family_key as taxonomy_primary_food_family_key,
-                    c.digestive_pattern_keys as taxonomy_digestive_pattern_keys,
-                    c.confidence as taxonomy_confidence,
-                    c.reason as taxonomy_reason,
-                    c.taxonomy_version as taxonomy_version,
-                    c.model as taxonomy_model,
-                    c.prompt_version as taxonomy_prompt_version,
-                    c.source as taxonomy_source
-                  from public.ingredient_insights i
-                  left join public.ingredient_taxonomy_classifications c
-                    on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
-                  where i.user_id = ${userId}
-                  order by i.combined_risk_score asc nulls last limit 8`
-      ).map(mapInsight);
+      const safeFoods = safeFoodRows.map(mapInsight);
       const conditionInsights = conditionInsightRows.map(mapConditionInsight);
 
-      const [snap] = await sql`select learning_status from public.user_app_snapshots where user_id = ${userId}`;
+      const [snap] = snapRows;
       const now = new Date().toISOString();
       const profileInsights = [...new Map(
         [...triggers, ...safeFoods].map((insight) => [insight.id || insight.ingredientName, insight]),

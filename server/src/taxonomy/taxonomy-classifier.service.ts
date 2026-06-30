@@ -163,61 +163,78 @@ export class TaxonomyClassifierService {
       return false;
     });
 
+    // Classifications are per-ingredient external calls (LLM or deterministic);
+    // gather them first, then persist in a single bulk upsert. namesToClassify is
+    // derived from a Map keyset, so normalized names are unique — safe for ON CONFLICT.
+    const classificationRows = [];
     for (const normalizedName of namesToClassify) {
       const displayName = displayNameByNormalized.get(normalizedName) ?? normalizedName;
       const classification = await this.classifyIngredient(displayName);
-      await sql`
-        insert into public.ingredient_taxonomy_classifications
-          (normalized_ingredient_name, display_name, primary_food_family_key, digestive_pattern_keys,
-           confidence, reason, taxonomy_version, model, prompt_version, source)
-        values (${normalizedName}, ${displayName}, ${classification.primaryFoodFamilyKey},
-          ${sql.json(classification.digestivePatternKeys as never)}, ${classification.confidence},
-          ${classification.reason}, ${classification.taxonomyVersion}, ${classification.model ?? null},
-          ${classification.promptVersion ?? null}, ${classification.source})
-        on conflict (normalized_ingredient_name) do update set
-          display_name = excluded.display_name,
-          primary_food_family_key = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.primary_food_family_key
-            else excluded.primary_food_family_key
-          end,
-          digestive_pattern_keys = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.digestive_pattern_keys
-            else excluded.digestive_pattern_keys
-          end,
-          confidence = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.confidence
-            else excluded.confidence
-          end,
-          reason = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.reason
-            else excluded.reason
-          end,
-          taxonomy_version = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.taxonomy_version
-            else excluded.taxonomy_version
-          end,
-          model = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.model
-            else excluded.model
-          end,
-          prompt_version = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.prompt_version
-            else excluded.prompt_version
-          end,
-          source = case
-            when ingredient_taxonomy_classifications.source = 'manual'
-              then ingredient_taxonomy_classifications.source
-            else excluded.source
-          end,
-          updated_at = now()`;
+      classificationRows.push({
+        normalized_ingredient_name: normalizedName,
+        display_name: displayName,
+        primary_food_family_key: classification.primaryFoodFamilyKey,
+        digestive_pattern_keys: sql.json(classification.digestivePatternKeys as never),
+        confidence: classification.confidence,
+        reason: classification.reason,
+        taxonomy_version: classification.taxonomyVersion,
+        model: classification.model ?? null,
+        prompt_version: classification.promptVersion ?? null,
+        source: classification.source,
+      });
     }
+    if (!classificationRows.length) return;
+
+    await sql`
+      insert into public.ingredient_taxonomy_classifications ${sql(
+        classificationRows,
+        'normalized_ingredient_name', 'display_name', 'primary_food_family_key',
+        'digestive_pattern_keys', 'confidence', 'reason', 'taxonomy_version', 'model',
+        'prompt_version', 'source',
+      )}
+      on conflict (normalized_ingredient_name) do update set
+        display_name = excluded.display_name,
+        primary_food_family_key = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.primary_food_family_key
+          else excluded.primary_food_family_key
+        end,
+        digestive_pattern_keys = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.digestive_pattern_keys
+          else excluded.digestive_pattern_keys
+        end,
+        confidence = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.confidence
+          else excluded.confidence
+        end,
+        reason = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.reason
+          else excluded.reason
+        end,
+        taxonomy_version = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.taxonomy_version
+          else excluded.taxonomy_version
+        end,
+        model = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.model
+          else excluded.model
+        end,
+        prompt_version = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.prompt_version
+          else excluded.prompt_version
+        end,
+        source = case
+          when ingredient_taxonomy_classifications.source = 'manual'
+            then ingredient_taxonomy_classifications.source
+          else excluded.source
+        end,
+        updated_at = now()`;
   }
 
   private async classifyWithOpenAi(input: {
