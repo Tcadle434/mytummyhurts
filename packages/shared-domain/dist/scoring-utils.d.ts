@@ -1,0 +1,15 @@
+import type { IngredientConfidence, ProfileLearningStage } from './profile';
+export declare function normalizeKey(value: string): string;
+export declare function clamp(value: number): number;
+export declare function clampNumber(value: number, minimum: number, maximum: number): number;
+export declare function roundWeight(value: number): number;
+export declare function confidenceRank(confidence: IngredientConfidence): 1 | 2 | 3;
+export declare function strongerConfidence(left: IngredientConfidence, right: IngredientConfidence): IngredientConfidence;
+export declare function frequencyRiskIndex(symptomFrequency?: string): 0 | 1 | 2 | 3 | 4;
+export declare function severityRiskIndex(symptomSeverityBaseline?: string): 0 | 1 | 2 | 3 | 4;
+export declare function baselineFrequencyPenalty(symptomFrequency?: string): 0 | 4 | 25 | 16 | 8;
+export declare function baselineSeverityPenalty(symptomSeverityBaseline?: string): 0 | 26 | 18 | 12 | 6;
+export declare function scoreEventTime(value?: string): number;
+export declare function withinDays(value: string | undefined, days: number, nowMs: number): boolean;
+export declare function combinedRiskScore(triggerScore: number, safeScore: number): number;
+export declare function profileConfidenceLevel(pairedReportDays?: number, pairedMealScans?: number): ProfileLearningStage;
