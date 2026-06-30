@@ -11,6 +11,7 @@ import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { components, radii, shadows, spacing, tokens, type } from '../../theme';
 import { DailyGutReport } from '../../types/domain';
+import { parseLocalDate, toLocalDate } from '../../utils/weeklyProgress';
 
 type MonthCursor = {
   year: number;
@@ -275,18 +276,6 @@ function buildCalendarCells(cursor: MonthCursor): CalendarCell[] {
   }
 
   return cells;
-}
-
-function toLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function parseLocalDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year ?? new Date().getFullYear(), (month ?? 1) - 1, day ?? 1);
 }
 
 function formatMonthTitle(cursor: MonthCursor) {

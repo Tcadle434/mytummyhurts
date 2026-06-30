@@ -218,70 +218,43 @@ export function SettingsScreen() {
     setExpandedSection((current) => (current === next ? null : next));
   }
 
-  async function handleSaveConditions() {
-    setBusySection('conditions');
+  // Shared flow for the predefined+custom health-profile lists (conditions,
+  // sensitivities, symptoms). Each only differs by section key, profile field,
+  // merged values, analytics count key, and the noun used in status messages.
+  async function saveHealthProfileSection(
+    section: NonNullable<BusySection>,
+    noun: string,
+    update: Parameters<typeof updateProfileSettings>[0],
+    countKey: string,
+    count: number,
+  ) {
+    setBusySection(section);
     setStatusMessage(null);
-    const mergedConditions = [...selectedConditions, ...customConditions];
     try {
-      await updateProfileSettings({
-        knownConditions: mergedConditions,
-      });
-      trackEvent('profile_saved', {
-        conditions_count: mergedConditions.length,
-      });
-      setStatusMessage('Conditions saved.');
+      await updateProfileSettings(update);
+      trackEvent('profile_saved', { [countKey]: count });
+      setStatusMessage(`${noun} saved.`);
       setExpandedSection(null);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Conditions could not be saved.',
-      );
+      setStatusMessage(error instanceof Error ? error.message : `${noun} could not be saved.`);
     } finally {
       setBusySection(null);
     }
   }
 
-  async function handleSaveSensitivities() {
-    setBusySection('sensitivities');
-    setStatusMessage(null);
-    const mergedSensitivities = [...selectedSensitivities, ...customSensitivities];
-    try {
-      await updateProfileSettings({
-        knownIngredientSensitivities: mergedSensitivities,
-      });
-      trackEvent('profile_saved', {
-        sensitivities_count: mergedSensitivities.length,
-      });
-      setStatusMessage('Sensitivities saved.');
-      setExpandedSection(null);
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Sensitivities could not be saved.',
-      );
-    } finally {
-      setBusySection(null);
-    }
+  function handleSaveConditions() {
+    const merged = [...selectedConditions, ...customConditions];
+    return saveHealthProfileSection('conditions', 'Conditions', { knownConditions: merged }, 'conditions_count', merged.length);
   }
 
-  async function handleSaveSymptoms() {
-    setBusySection('symptoms');
-    setStatusMessage(null);
-    const mergedSymptoms = [...selectedSymptoms, ...customSymptoms];
-    try {
-      await updateProfileSettings({
-        commonSymptoms: mergedSymptoms,
-      });
-      trackEvent('profile_saved', {
-        symptoms_count: mergedSymptoms.length,
-      });
-      setStatusMessage('Symptoms saved.');
-      setExpandedSection(null);
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Symptoms could not be saved.',
-      );
-    } finally {
-      setBusySection(null);
-    }
+  function handleSaveSensitivities() {
+    const merged = [...selectedSensitivities, ...customSensitivities];
+    return saveHealthProfileSection('sensitivities', 'Sensitivities', { knownIngredientSensitivities: merged }, 'sensitivities_count', merged.length);
+  }
+
+  function handleSaveSymptoms() {
+    const merged = [...selectedSymptoms, ...customSymptoms];
+    return saveHealthProfileSection('symptoms', 'Symptoms', { commonSymptoms: merged }, 'symptoms_count', merged.length);
   }
 
   async function handleSaveDiet() {

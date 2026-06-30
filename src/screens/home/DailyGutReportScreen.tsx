@@ -10,6 +10,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { yesterdayLocalDate } from '../../utils/weeklyProgress';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DailyGutReport'>;
 
@@ -315,12 +316,6 @@ function OtherSymptomChip({ count, onPress }: { count: number; onPress: () => vo
   );
 }
 
-function yesterdayLocalDate() {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  return toLocalDate(date);
-}
-
 function normalizeLocalDate(value?: string) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return null;
@@ -333,13 +328,6 @@ function normalizeLocalDate(value?: string) {
   }
 
   return value;
-}
-
-function toLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }
 
 function formatLocalDate(value: string) {
