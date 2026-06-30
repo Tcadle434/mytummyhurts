@@ -201,6 +201,7 @@ export function InsightsScreen() {
 					<View style={styles.familyBlock}>
 						<Pressable
 							accessibilityRole="button"
+							accessibilityState={{ expanded: familiesExpanded }}
 							onPress={() => setFamiliesExpanded((current) => !current)}
 							style={({ pressed }) => [
 								styles.familyToggle,

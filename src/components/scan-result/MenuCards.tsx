@@ -109,6 +109,8 @@ function MenuRow({
 		Boolean(item.saferSwap);
 	return (
 		<Pressable
+			accessibilityRole={hasExpandedContent ? "button" : undefined}
+			accessibilityState={hasExpandedContent ? { expanded } : undefined}
 			onPress={hasExpandedContent ? onToggle : undefined}
 			style={({ pressed }) => [styles.menuRow, pressed && hasExpandedContent && styles.menuRowPressed]}
 		>

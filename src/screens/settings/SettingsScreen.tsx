@@ -810,8 +810,12 @@ function SettingsRow({
   expanded?: boolean;
   danger?: boolean;
 }) {
+  const accessibilityLabel = [label, value ?? badge].filter(Boolean).join(', ');
+
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && { opacity: 0.78 }]}
     >

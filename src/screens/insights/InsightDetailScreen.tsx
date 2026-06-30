@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RiskBar } from '../../components/charts/RiskBar';
 import {
@@ -245,24 +245,19 @@ export function InsightDetailScreen({ route, navigation }: Props) {
               )
               .map((member) => {
                 const outcomes = member.positiveEvidenceCount + member.negativeEvidenceCount;
+                const meta =
+                  outcomes > 0
+                    ? `${member.negativeEvidenceCount} rough · ${member.positiveEvidenceCount} calm`
+                    : member.sourceBreakdown.declared
+                      ? 'from your profile'
+                      : 'no outcomes yet';
                 return (
-                  <Text
+                  <MemberRow
                     key={member.id}
-                    accessibilityRole="button"
+                    name={capitalize(member.ingredientName)}
+                    meta={meta}
                     onPress={() => navigation.push('InsightDetail', { ingredientName: member.ingredientName })}
-                    style={styles.memberRow}
-                    suppressHighlighting
-                  >
-                    <Text style={styles.memberName}>{capitalize(member.ingredientName)}</Text>
-                    <Text style={styles.memberMeta}>
-                      {'  '}
-                      {outcomes > 0
-                        ? `${member.negativeEvidenceCount} rough · ${member.positiveEvidenceCount} calm`
-                        : member.sourceBreakdown.declared
-                          ? 'from your profile'
-                          : 'no outcomes yet'}
-                    </Text>
-                  </Text>
+                  />
                 );
               })}
           </View>
@@ -387,24 +382,19 @@ function FamilyDetail({
               .sort((left, right) => left.ingredientName.localeCompare(right.ingredientName))
               .map((member) => {
                 const outcomes = member.positiveEvidenceCount + member.negativeEvidenceCount;
+                const meta =
+                  outcomes > 0
+                    ? `${member.negativeEvidenceCount} rough - ${member.positiveEvidenceCount} calm`
+                    : member.supportingEvidenceCount > 0
+                      ? `${member.supportingEvidenceCount} paired day${member.supportingEvidenceCount === 1 ? '' : 's'}`
+                      : 'seen in scans';
                 return (
-                  <Text
+                  <MemberRow
                     key={member.id}
-                    accessibilityRole="button"
+                    name={capitalize(member.ingredientName)}
+                    meta={meta}
                     onPress={() => onOpenIngredient(member.ingredientName)}
-                    style={styles.memberRow}
-                    suppressHighlighting
-                  >
-                    <Text style={styles.memberName}>{capitalize(member.ingredientName)}</Text>
-                    <Text style={styles.memberMeta}>
-                      {'  '}
-                      {outcomes > 0
-                        ? `${member.negativeEvidenceCount} rough - ${member.positiveEvidenceCount} calm`
-                        : member.supportingEvidenceCount > 0
-                          ? `${member.supportingEvidenceCount} paired day${member.supportingEvidenceCount === 1 ? '' : 's'}`
-                          : 'seen in scans'}
-                    </Text>
-                  </Text>
+                  />
                 );
               })}
           </View>
@@ -449,6 +439,32 @@ function FamilyDetail({
         body="Food families show what your history covers. Digestive Patterns decide whether that evidence becomes under review, confirmed, or cleared."
       />
     </AppScreen>
+  );
+}
+
+function MemberRow({
+  name,
+  meta,
+  onPress,
+}: {
+  name: string;
+  meta: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${name}, ${meta}`}
+      onPress={onPress}
+    >
+      <Text style={styles.memberRow} suppressHighlighting>
+        <Text style={styles.memberName}>{name}</Text>
+        <Text style={styles.memberMeta}>
+          {'  '}
+          {meta}
+        </Text>
+      </Text>
+    </Pressable>
   );
 }
 

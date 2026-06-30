@@ -16,7 +16,12 @@ export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
   const metaLine = `${categoryLabel(scan.scanCategory)} • ${sourceLabel(scan.sourceType)} • ${formatTimestamp(scan.createdAt)}`;
 
   return (
-    <Pressable onPress={onOpen} style={({ pressed }) => [styles.card, pressed && { opacity: 0.84 }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${metaLine}, risk score ${scan.overallRiskScore}`}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.card, pressed && { opacity: 0.84 }]}
+    >
       <View style={styles.leadingWrap}>
         <SkeletonImage
           uri={scan.imageUri}

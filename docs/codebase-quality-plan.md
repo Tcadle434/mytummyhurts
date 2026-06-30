@@ -70,7 +70,13 @@ Realistic net removable after de-dup: **~2,000–2,800 lines**, plus ~1,500 reor
 - [x] `src/components/scan-result/styles.ts` — extracted resultCardStyle/cardTitleStyle/sectionLabelStyle; adopted in
       HeroCards/MenuCards/ScoreDrivers/IngredientCards (~−70 lines dup). common.ts had no StyleSheet. Kept radius 28
       (pixel-preserving; 28-vs-token a separate design call). tsc clean, 31 tests pass.
-- [ ] Add `accessibilityRole`/`Label`/`State` on interactive Pressables app-wide
+- [x] Added `accessibilityRole`/`accessibilityLabel`/`accessibilityState` across 8 components (ScreenHeader, HomeScreen
+      banner+CTA, SymptomLog month-nav/CalendarDay/ReportRow, InsightsScreen expander, SettingsRow, HistoryCard, MenuRow),
+      and extracted `MemberRow` in InsightDetailScreen (replacing `<Text>`-as-button). tsc clean, 147 tests pass.
+
+**Phase 1 complete.** 6 commits (b287af8 → a11y). Net effect: shared `utils/risk.ts` color API, `weeklyProgress` date
+helpers, `CustomEntryModal`, `scan-result/styles.ts`, one Settings save helper; ~−330 lines of FE duplication removed
+(a11y adds ~+50 for accessibility coverage). All behavior/pixel-preserving; FE tsc clean, 147 tests green throughout.
 
 ### Phase 2 — Backend shared utils & query consolidation · M · ~300 lines
 - [ ] `server/src/scan/engine/text-utils.ts` — unify 5-7 text-normalization fns (also fixes match bugs)

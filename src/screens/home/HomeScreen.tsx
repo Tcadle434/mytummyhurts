@@ -239,6 +239,8 @@ export function HomeScreen() {
 
 			{shouldShowDailyReportBanner ? (
 				<Pressable
+					accessibilityRole="button"
+					accessibilityLabel="How did your gut feel yesterday? Add a symptom report to personalize your scores."
 					onPress={() =>
 						navigation.navigate("DailyGutReport", { localDate: yesterdayDate })
 					}
@@ -297,6 +299,8 @@ export function HomeScreen() {
 			) : null}
 
 			<Pressable
+				accessibilityRole="button"
+				accessibilityLabel="Scan food"
 				onPress={() => {
 					trackEvent("scan_camera_opened", { entry_point: "home_scan_cta" });
 					navigation.navigate("ScanCapture", {

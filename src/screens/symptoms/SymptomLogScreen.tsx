@@ -68,6 +68,8 @@ export function SymptomLogScreen() {
       <SectionCard style={styles.calendarCard}>
         <View style={styles.monthHeader}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous month"
             onPress={() => setVisibleMonth(addMonths(visibleMonth, -1))}
             style={({ pressed }) => [styles.monthButton, pressed && { opacity: 0.7 }]}
           >
@@ -75,8 +77,13 @@ export function SymptomLogScreen() {
           </Pressable>
           <Text style={styles.monthTitle}>{formatMonthTitle(visibleMonth)}</Text>
           <Pressable
-            disabled={isCurrentMonth}
-            onPress={() => setVisibleMonth(addMonths(visibleMonth, 1))}
+            accessibilityRole="button"
+            accessibilityLabel="Next month"
+            accessibilityState={{ disabled: isCurrentMonth }}
+            onPress={() => {
+              if (isCurrentMonth) return;
+              setVisibleMonth(addMonths(visibleMonth, 1));
+            }}
             style={({ pressed }) => [
               styles.monthButton,
               isCurrentMonth && styles.monthButtonDisabled,
@@ -156,6 +163,8 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
   return (
     <View style={styles.calendarCell}>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Day ${cell.day}, ${filled ? 'report logged' : 'no report'}`}
         disabled={!onPress}
         onPress={onPress}
         style={({ pressed }) => [
@@ -180,7 +189,12 @@ function ReportRow({ report, onPress }: { report: DailyGutReport; onPress: () =>
   const remainingCount = Math.max(report.symptomTags.length - 3, 0);
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.reportRow, pressed && { opacity: 0.9 }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${formatReportDate(report.localDate)}, gut severity ${report.gutSeverity} out of 10, ${symptomSummary}`}
+      onPress={onPress}
+      style={({ pressed }) => [styles.reportRow, pressed && { opacity: 0.9 }]}
+    >
       <View style={[styles.reportDateBadge, { backgroundColor: tone }]}>
         <Text style={styles.reportMonth}>{formatShortMonth(report.localDate)}</Text>
         <Text style={styles.reportDay}>{formatDayNumber(report.localDate)}</Text>

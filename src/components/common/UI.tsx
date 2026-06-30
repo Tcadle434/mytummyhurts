@@ -211,7 +211,12 @@ export function ScreenHeader({
       <View style={styles.headerTopRow}>
         <View style={styles.headerSide}>
           {canGoBack ? (
-            <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.iconCircle, pressed && { opacity: 0.72 }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              onPress={() => navigation.goBack()}
+              style={({ pressed }) => [styles.iconCircle, pressed && { opacity: 0.72 }]}
+            >
               <Ionicons name="chevron-back" size={22} color={tokens.color.icon.primary} />
             </Pressable>
           ) : (
