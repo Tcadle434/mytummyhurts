@@ -8,187 +8,52 @@ import {
   GutScoreHistoryPoint,
   GutScorePhase,
   GutScoreState,
-  IngredientConfidence,
   InsightConfidenceLevel,
   InsightSourceBreakdown,
   IngredientInsight,
   OnboardingAnswers,
   PatternStrength,
-  ProfileLearningStage,
   ScanRecord,
   StructuredAnalysisV2,
   StructuredIngredient,
   UserProfile,
 } from '../../types/domain';
+import {
+  DAILY_ATTRIBUTION_WINDOWS,
+  GUT_SCORE_ALGORITHM_VERSION,
+  PROFILE_LEARNING_STAGE_THRESHOLDS,
+  RISK_LEVEL_HIGH_MIN,
+  RISK_LEVEL_MEDIUM_MIN,
+  baselineFrequencyPenalty,
+  baselineSeverityPenalty,
+  clamp,
+  clampNumber,
+  combinedRiskScore,
+  confidenceRank,
+  declaredSensitivityProfiles,
+  frequencyRiskIndex,
+  ingredientConditionImpacts,
+  normalizeKey,
+  profileConfidenceLevel,
+  roundWeight,
+  scoreEventTime,
+  severityRiskIndex,
+  strongerConfidence,
+  symptomToCondition,
+  withinDays,
+  type ProfileLearningProgress,
+  type ScoringIngredient,
+} from '@mth/shared-domain';
 
-export const GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
+// Re-exported so existing call sites (`import { ... } from '.../services/ai/scoring'`)
+// keep working now that these live in @mth/shared-domain.
+export {
+  GUT_SCORE_ALGORITHM_VERSION,
+  PROFILE_LEARNING_STAGE_THRESHOLDS,
+  type ProfileLearningProgress,
+};
 
 type GutScoreMovementSource = 'scan' | 'daily_report' | 'profile' | 'backfill';
-
-export const PROFILE_LEARNING_STAGE_THRESHOLDS = {
-  growing: {
-    pairedReportDays: 5,
-    pairedMealScans: 10,
-  },
-  confident: {
-    pairedReportDays: 14,
-    pairedMealScans: 28,
-  },
-} as const;
-
-export type ProfileLearningProgress = {
-  stage: ProfileLearningStage;
-  percent: number;
-  pairedReportDays: number;
-  pairedMealScans: number;
-  confidentReportDays: number;
-  confidentMealScans: number;
-};
-
-const ingredientConditionImpacts: Record<string, Record<string, number>> = {
-  tomato: { 'GERD / reflux': 24, IBS: 8 },
-  garlic: { IBS: 20, 'High FODMAP sensitivity': 22 },
-  onion: { IBS: 18, 'High FODMAP sensitivity': 22 },
-  dairy: { 'Lactose intolerance': 26, IBS: 10 },
-  cheese: { 'Lactose intolerance': 24, 'GERD / reflux': 10 },
-  yogurt: { 'Lactose intolerance': 18, IBS: 8 },
-  bun: { 'Gluten sensitivity': 20, Celiac: 30 },
-  pasta: { 'Gluten sensitivity': 18, Celiac: 30 },
-  fries: { 'GERD / reflux': 16, IBS: 8 },
-  'hot sauce': { 'GERD / reflux': 24, IBS: 10 },
-  avocado: { IBS: 8 },
-  beans: { IBS: 18, 'High FODMAP sensitivity': 18 },
-  rice: { IBS: -8, 'Sensitive stomach': -8 },
-  salmon: { 'Sensitive stomach': -10 },
-  chicken: { 'Sensitive stomach': -8 },
-  cucumber: { 'Sensitive stomach': -6 },
-  berries: { 'Sensitive stomach': -4 },
-};
-
-const symptomToCondition: Record<string, string[]> = {
-  'reflux / heartburn': ['GERD / reflux'],
-  bloating: ['IBS', 'High FODMAP sensitivity'],
-  'stomach pain': ['IBS', 'Sensitive stomach'],
-  nausea: ['Sensitive stomach'],
-  urgency: ['IBS'],
-  diarrhea: ['IBS'],
-  constipation: ['IBS'],
-  fatigue: ['Sensitive stomach'],
-  'brain fog': ['Sensitive stomach'],
-  other: ['Sensitive stomach'],
-};
-
-type DeclaredSensitivityProfile = {
-  aliases?: string[];
-  ingredientAliases?: string[];
-  prepStyles?: string[];
-  noteKeywords?: string[];
-  dishKeywords?: string[];
-  conditionImpacts: Record<string, number>;
-};
-
-const declaredSensitivityProfiles: Record<string, DeclaredSensitivityProfile> = {
-  dairy: {
-    aliases: ['lactose', 'milk'],
-    ingredientAliases: ['dairy', 'milk', 'cheese', 'yogurt', 'parmesan', 'cream', 'butter', 'whey', 'casein'],
-    prepStyles: ['creamy'],
-    noteKeywords: ['dairy'],
-    conditionImpacts: { 'Lactose intolerance': 20, IBS: 8, 'Sensitive stomach': 6 },
-  },
-  tomato: {
-    ingredientAliases: ['tomato', 'marinara', 'salsa', 'pizza sauce', 'ketchup'],
-    noteKeywords: ['tomato'],
-    conditionImpacts: { 'GERD / reflux': 16, IBS: 6, 'Histamine sensitivity': 14 },
-  },
-  garlic: {
-    ingredientAliases: ['garlic', 'garlic powder', 'garlic sauce', 'garlic oil'],
-    conditionImpacts: { IBS: 20, 'High FODMAP sensitivity': 20, 'Sensitive stomach': 6 },
-  },
-  onion: {
-    ingredientAliases: ['onion', 'pickled onion', 'shallot', 'scallion', 'green onion'],
-    conditionImpacts: { IBS: 18, 'High FODMAP sensitivity': 20, 'Sensitive stomach': 6 },
-  },
-  gluten: {
-    ingredientAliases: ['gluten', 'pasta', 'bun', 'bread', 'flour', 'noodle', 'breadcrumbs', 'cracker', 'granola'],
-    noteKeywords: ['breaded'],
-    conditionImpacts: { 'Gluten sensitivity': 20, Celiac: 30, IBS: 8 },
-  },
-  beans: {
-    ingredientAliases: ['beans', 'bean', 'lentil', 'chickpea', 'black bean', 'kidney bean'],
-    conditionImpacts: { IBS: 16, 'High FODMAP sensitivity': 18 },
-  },
-  'spicy foods': {
-    aliases: ['spicy'],
-    ingredientAliases: ['hot sauce', 'jalapeno', 'chili', 'chilli', 'sriracha', 'buffalo sauce', 'pepper flakes', 'curry'],
-    prepStyles: ['spicy'],
-    noteKeywords: ['spicy'],
-    conditionImpacts: { 'GERD / reflux': 18, IBS: 10, 'Sensitive stomach': 8, 'Histamine sensitivity': 8 },
-  },
-  'fried foods': {
-    aliases: ['fried'],
-    ingredientAliases: ['fries', 'tempura', 'fried chicken', 'fried fish', 'onion rings'],
-    prepStyles: ['fried', 'crispy', 'breaded'],
-    noteKeywords: ['fried'],
-    conditionImpacts: { 'GERD / reflux': 14, IBS: 8, 'Sensitive stomach': 10 },
-  },
-  'high-fat foods': {
-    aliases: ['high fat foods', 'fatty foods'],
-    ingredientAliases: ['cheese', 'cream', 'butter', 'bacon', 'sausage', 'burger', 'fries', 'mayo', 'aioli'],
-    prepStyles: ['fried', 'creamy'],
-    noteKeywords: ['higher fat meal'],
-    conditionImpacts: { 'GERD / reflux': 14, IBS: 6, 'Sensitive stomach': 8 },
-  },
-  'artificial sweeteners': {
-    aliases: ['sweeteners', 'artificial sweetener'],
-    ingredientAliases: ['aspartame', 'sucralose', 'saccharin', 'erythritol', 'xylitol', 'sorbitol', 'diet soda', 'sweetener'],
-    noteKeywords: ['sugar-free'],
-    conditionImpacts: { IBS: 18, 'Sensitive stomach': 10 },
-  },
-};
-
-type ScoringIngredient = {
-  name: string;
-  confidence: IngredientConfidence;
-  evidence: 'visible' | 'inferred';
-};
-
-function normalizeKey(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function clamp(value: number) {
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function clampNumber(value: number, minimum: number, maximum: number) {
-  return Math.max(minimum, Math.min(maximum, value));
-}
-
-function roundWeight(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
-function confidenceRank(confidence: IngredientConfidence) {
-  switch (confidence) {
-    case 'high':
-      return 3;
-    case 'medium':
-      return 2;
-    case 'low':
-    default:
-      return 1;
-  }
-}
-
-function strongerConfidence(left: IngredientConfidence, right: IngredientConfidence): IngredientConfidence {
-  return confidenceRank(left) >= confidenceRank(right) ? left : right;
-}
-
-// Keep in sync with the backend engine (server/src/scan/engine/scoring.ts).
-// These are authoritative band edges; the FE previously hardcoded 67/34, which
-// disagreed with the BE for scores in the 34-36 and 64-66 ranges.
-const RISK_LEVEL_MEDIUM_MIN = 37;
-const RISK_LEVEL_HIGH_MIN = 64;
 
 function extractedIngredientToScoring(entry: ExtractedIngredient): ScoringIngredient {
   return {
@@ -234,67 +99,6 @@ function ingredientMatchesSensitivityLabel(ingredientName: string, label: string
       normalizedAlias.includes(normalizedIngredient)
     );
   });
-}
-
-function frequencyRiskIndex(symptomFrequency?: string) {
-  switch (normalizeKey(symptomFrequency ?? '')) {
-    case 'almost daily':
-      return 4;
-    case 'a few times a week':
-      return 3;
-    case 'a few times a month':
-      return 2;
-    case 'rarely':
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-function severityRiskIndex(symptomSeverityBaseline?: string) {
-  switch (normalizeKey(symptomSeverityBaseline ?? '')) {
-    case 'severe':
-      return 4;
-    case 'it varies a lot':
-      return 3;
-    case 'moderate':
-      return 2;
-    case 'mild':
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-function baselineFrequencyPenalty(symptomFrequency?: string) {
-  switch (normalizeKey(symptomFrequency ?? '')) {
-    case 'frequently throughout the day':
-    case 'almost daily':
-      return 25;
-    case 'a few times a week':
-      return 16;
-    case 'a few times a month':
-      return 8;
-    case 'rarely':
-      return 0;
-    default:
-      return 4;
-  }
-}
-
-function baselineSeverityPenalty(symptomSeverityBaseline?: string) {
-  switch (normalizeKey(symptomSeverityBaseline ?? '')) {
-    case 'severe':
-      return 26;
-    case 'it varies a lot':
-      return 18;
-    case 'moderate':
-      return 12;
-    case 'mild':
-      return 0;
-    default:
-      return 6;
-  }
 }
 
 function deriveConditionSensitivityWeights(
@@ -544,15 +348,6 @@ export function computeDailyScoreForReport(report: DailyGutReport, scans: ScanRe
 
 export function recomputeDailyScores(reports: DailyGutReport[], scans: ScanRecord[], now = new Date().toISOString()) {
   return reports.map((report) => computeDailyScoreForReport(report, scans, now));
-}
-
-function scoreEventTime(value?: string) {
-  const time = value ? new Date(value).getTime() : Date.now();
-  return Number.isFinite(time) ? time : Date.now();
-}
-
-function withinDays(value: string | undefined, days: number, nowMs: number) {
-  return nowMs - scoreEventTime(value) <= days * 24 * 60 * 60 * 1000;
 }
 
 function averageScore(values: number[], fallback: number) {
@@ -1043,10 +838,6 @@ function insightConfidenceLevel(evidenceCount: number): InsightConfidenceLevel {
   return 'low';
 }
 
-function combinedRiskScore(triggerScore: number, safeScore: number) {
-  return clamp(50 + triggerScore - safeScore);
-}
-
 function sourceBreakdown(
   ingredientName: string,
   declaredSensitivities: string[] = [],
@@ -1062,30 +853,6 @@ function sourceBreakdown(
     negativeEvidenceCount,
   };
 }
-
-function profileConfidenceLevel(pairedReportDays = 0, pairedMealScans = 0): ProfileLearningStage {
-  if (
-    pairedReportDays >= PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedReportDays &&
-    pairedMealScans >= PROFILE_LEARNING_STAGE_THRESHOLDS.confident.pairedMealScans
-  ) {
-    return 'confident';
-  }
-
-  if (
-    pairedReportDays >= PROFILE_LEARNING_STAGE_THRESHOLDS.growing.pairedReportDays &&
-    pairedMealScans >= PROFILE_LEARNING_STAGE_THRESHOLDS.growing.pairedMealScans
-  ) {
-    return 'growing';
-  }
-
-  return 'early';
-}
-
-const DAILY_ATTRIBUTION_WINDOWS = [
-  { daysPrior: 0, weight: 0.55 },
-  { daysPrior: 1, weight: 0.3 },
-  { daysPrior: 2, weight: 0.15 },
-];
 
 function localDateFromScan(scan: { localDate?: string; createdAt?: string }) {
   if (scan.localDate) {

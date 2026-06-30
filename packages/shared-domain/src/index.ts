@@ -37,3 +37,13 @@ export * from './gut-score';
 export * from './profile';
 export * from './menu';
 export * from './scan';
+
+// ---------------------------------------------------------------------------
+// Shared scoring VALUE exports — constants, pure utilities, and data tables
+// that were byte-identical in src/services/ai/scoring.ts (Expo) and
+// server/src/scan/engine/scoring.ts (NestJS). Both scoring.ts files import
+// these so the duplicated definitions are removed without changing behavior.
+// ---------------------------------------------------------------------------
+export * from './scoring-constants';
+export * from './scoring-utils';
+export * from './scoring-data';
