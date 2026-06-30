@@ -27,3 +27,13 @@ export interface EvidenceCitation {
   snippet?: string;
   relevanceScore?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Shared domain type graph — migrated out of the duplicated definitions in
+// src/types/domain.ts (Expo) and server/src/scan/engine/domain.ts (NestJS).
+// Both domain.ts files re-export these so existing call sites are unaffected.
+// ---------------------------------------------------------------------------
+export * from './gut-score';
+export * from './profile';
+export * from './menu';
+export * from './scan';
