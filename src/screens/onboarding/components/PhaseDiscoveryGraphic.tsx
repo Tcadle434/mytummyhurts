@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
 import { palette, spacing, tokens, type } from "../../../theme";
+import { riskLevelTint } from "../../../utils/risk";
 
 export type PhaseDiscoveryState = "scan" | "loading" | "result";
 
@@ -181,7 +182,7 @@ function RiskScoreDial({
 	const circumference = 2 * Math.PI * radius;
 	const clamped = Math.max(0, Math.min(100, score));
 	const dashOffset = circumference * (1 - clamped / 100);
-	const ringColor = riskRingColor(tone);
+	const ringColor = riskLevelTint(tone);
 
 	return (
 		<View
@@ -218,12 +219,6 @@ function RiskScoreDial({
 			</View>
 		</View>
 	);
-}
-
-function riskRingColor(tone: "high" | "medium" | "low") {
-	if (tone === "high") return tokens.color.status.risk.high.tint;
-	if (tone === "medium") return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.low.tint;
 }
 
 const styles = StyleSheet.create({

@@ -30,6 +30,7 @@ import {
 	toLocalDate,
 	yesterdayLocalDate,
 } from "../../utils/weeklyProgress";
+import { gutScoreTint } from "../../utils/risk";
 
 export function WeeklyProgressScreen() {
 	const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -219,7 +220,7 @@ function WeekDayRow({
 }) {
 	const hasScore = day.dailyScore !== undefined && day.hasReport;
 	const score = hasScore ? (day.dailyScore as number) : undefined;
-	const scoreColor = score !== undefined ? scoreTint(score) : tokens.color.text.tertiary;
+	const scoreColor = score !== undefined ? gutScoreTint(score) : tokens.color.text.tertiary;
 	const symptomSummary = day.report?.symptomTags.length
 		? day.report.symptomTags.slice(0, 2).join(", ")
 		: day.report
@@ -314,12 +315,6 @@ function WeekDayRow({
 			</Pressable>
 		</Animated.View>
 	);
-}
-
-function scoreTint(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.tint;
-	if (score >= 34) return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.high.tint;
 }
 
 function scoreBackground(score: number) {

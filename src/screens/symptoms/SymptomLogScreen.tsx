@@ -11,6 +11,7 @@ import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { components, radii, shadows, spacing, tokens, type } from '../../theme';
 import { DailyGutReport } from '../../types/domain';
+import { gutScoreTint } from '../../utils/risk';
 import { parseLocalDate, toLocalDate } from '../../utils/weeklyProgress';
 
 type MonthCursor = {
@@ -91,9 +92,9 @@ export function SymptomLogScreen() {
         </View>
 
         <View style={styles.legendRow}>
-          <LegendItem color={scoreTone(80)} label="67-100" />
-          <LegendItem color={scoreTone(50)} label="34-66" />
-          <LegendItem color={scoreTone(20)} label="0-33" />
+          <LegendItem color={gutScoreTint(80)} label="67-100" />
+          <LegendItem color={gutScoreTint(50)} label="34-66" />
+          <LegendItem color={gutScoreTint(20)} label="0-33" />
         </View>
 
         <View style={styles.weekdayGrid}>
@@ -150,7 +151,7 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
   }
 
   const filled = Boolean(report);
-  const fillColor = report ? scoreTone(dailyScoreValue(report)) : tokens.color.surface.card.default;
+  const fillColor = report ? gutScoreTint(dailyScoreValue(report)) : tokens.color.surface.card.default;
 
   return (
     <View style={styles.calendarCell}>
@@ -174,7 +175,7 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
 
 function ReportRow({ report, onPress }: { report: DailyGutReport; onPress: () => void }) {
   const score = dailyScoreValue(report);
-  const tone = scoreTone(score);
+  const tone = gutScoreTint(score);
   const symptomSummary = report.symptomTags.length ? report.symptomTags.slice(0, 3).join(', ') : 'No symptoms tagged';
   const remainingCount = Math.max(report.symptomTags.length - 3, 0);
 
@@ -301,12 +302,6 @@ function dailyScoreValue(report: DailyGutReport) {
 function dailyScoreFromSeverity(gutSeverity: number) {
   const severity = Math.max(0, Math.min(10, Math.round(gutSeverity)));
   return Math.max(0, Math.min(100, Math.round(90 - severity * 8)));
-}
-
-function scoreTone(value: number) {
-  if (value >= 67) return tokens.color.status.risk.low.tint;
-  if (value >= 34) return tokens.color.status.risk.medium.tint;
-  return tokens.color.status.risk.high.tint;
 }
 
 function scoreForeground(value: number) {

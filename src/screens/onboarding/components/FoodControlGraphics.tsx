@@ -3,6 +3,7 @@ import { ComponentProps } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../../theme";
+import { riskLevelColors } from "../../../utils/risk";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 type RiskEvidenceTone = "low" | "medium" | "high";
@@ -124,7 +125,7 @@ function FoodControlMiniCard({
 	tone: RiskEvidenceTone;
 	featured?: boolean;
 }) {
-	const toneColors = riskEvidenceColors(tone);
+	const toneColors = riskLevelColors(tone);
 	const bodyText = body.replace(/\\n/g, "\n");
 
 	return (
@@ -265,12 +266,6 @@ function FoodLeverSecondaryRow({
 			</View>
 		</View>
 	);
-}
-
-function riskEvidenceColors(tone: RiskEvidenceTone) {
-	if (tone === "high") return tokens.color.status.risk.high;
-	if (tone === "medium") return tokens.color.status.risk.medium;
-	return tokens.color.status.risk.low;
 }
 
 const styles = StyleSheet.create({

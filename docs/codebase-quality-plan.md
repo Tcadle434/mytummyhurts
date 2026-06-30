@@ -60,7 +60,10 @@ Realistic net removable after de-dup: **~2,000–2,800 lines**, plus ~1,500 reor
 ### Phase 1 — Frontend shared UI & utils · S–M · ~500 lines
 - [x] Consolidated date helpers onto `utils/weeklyProgress.ts` — deleted private copies in SymptomLogScreen + DailyGutReportScreen. eslint+tsc clean.
 - [x] Generic `saveHealthProfileSection(...)` replaces the 3 identical SettingsScreen handlers. eslint+tsc clean.
-- [ ] `src/utils/riskColor.ts` — risk-level→color + score→level (10+ private copies). CAUTION: preserve each call site's exact breakpoints/colors (some use 67/34, some 64/37) — do not silently unify thresholds.
+- [x] Consolidated risk/score color mappers into `src/utils/risk.ts` (`riskLevelColors`, `riskLevelTint`, `gutScoreTint`).
+      Replaced 9 private copies across onboarding components + progress/symptom screens; `DailyScoreRing.scoreTint` now
+      delegates to `gutScoreTint` (one source of truth). All 67/34 gut-score copies were identical — no threshold change.
+      Left `riskLevelForScore` (risk-score→level, different semantics) for later. tsc clean, 147 tests pass.
 - [x] `src/components/modals/CustomEntryModal.tsx` — modals were NOT verbatim duplicates (DailyGutReport is a distinct
       design, left untouched). Deduped **Onboarding + Settings** onto a shared component (net −111 lines). Reconciled
       Settings subtitle tertiary→secondary; added hitSlop to both. tsc clean, 147 tests pass.

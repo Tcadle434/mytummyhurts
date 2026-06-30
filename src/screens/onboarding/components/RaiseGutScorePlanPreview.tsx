@@ -3,6 +3,7 @@ import { ComponentProps, Fragment } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../../theme";
+import { gutScoreTint } from "../../../utils/risk";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 type TimelineTone = "start" | "mid" | "goal";
@@ -117,7 +118,7 @@ function TimelineStep({
 
 function ScoreComparison({ currentScore }: { currentScore: number }) {
 	const clampedCurrent = Math.max(0, Math.min(100, Math.round(currentScore)));
-	const currentColor = scoreToneColor(clampedCurrent);
+	const currentColor = gutScoreTint(clampedCurrent);
 
 	return (
 		<View style={styles.comparisonCard}>
@@ -161,12 +162,6 @@ function nodeColors(tone: TimelineTone) {
 		phase: palette.primary,
 		line: palette.primary,
 	};
-}
-
-function scoreToneColor(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.tint;
-	if (score >= 34) return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.high.tint;
 }
 
 const styles = StyleSheet.create({

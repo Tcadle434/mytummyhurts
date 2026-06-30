@@ -3,6 +3,7 @@ import { ComponentProps, Fragment } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../../theme";
+import { riskLevelColors } from "../../../utils/risk";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 type RiskEvidenceTone = "low" | "medium" | "high";
@@ -162,7 +163,7 @@ function PhaseCard({
 }
 
 function PhasePlanRow({ title, body, pillLabel, tone, iconName }: PhasePlanRowProps) {
-	const toneColors = riskEvidenceColors(tone);
+	const toneColors = riskLevelColors(tone);
 
 	return (
 		<View style={styles.evidenceRow}>
@@ -191,7 +192,7 @@ function TonedBadge({
 	label: string;
 	tone: RiskEvidenceTone;
 }) {
-	const toneColors = riskEvidenceColors(tone);
+	const toneColors = riskLevelColors(tone);
 
 	return (
 		<View style={[styles.tonedBadge, { backgroundColor: toneColors.background }]}>
@@ -220,12 +221,6 @@ function PhaseCallout({
 			<Text style={[styles.calloutText, { color: foreground }]}>{label}</Text>
 		</View>
 	);
-}
-
-function riskEvidenceColors(tone: RiskEvidenceTone) {
-	if (tone === "high") return tokens.color.status.risk.high;
-	if (tone === "medium") return tokens.color.status.risk.medium;
-	return tokens.color.status.risk.low;
 }
 
 function calloutColors(tone: CalloutTone) {
