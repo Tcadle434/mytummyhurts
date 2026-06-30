@@ -78,12 +78,17 @@ Realistic net removable after de-dup: **~2,000–2,800 lines**, plus ~1,500 reor
 helpers, `CustomEntryModal`, `scan-result/styles.ts`, one Settings save helper; ~−330 lines of FE duplication removed
 (a11y adds ~+50 for accessibility coverage). All behavior/pixel-preserving; FE tsc clean, 147 tests green throughout.
 
-### Phase 2 — Backend shared utils & query consolidation · M · ~300 lines
-- [ ] `server/src/scan/engine/text-utils.ts` — unify 5-7 text-normalization fns (also fixes match bugs)
-- [ ] Move calibration parser + `profileSeedFromRow` + date helpers to `profile-mapper.ts`
-- [ ] Extract `getUserContext(sql, userId, opts)` — 7-query block dup'd in home + profile services
-- [ ] Move ~200 lines of personal-history logic from `scan-crud.service.ts` into `personal-history.ts`
-- [ ] Nested-ternary dispatch chains → `Record<>` lookup maps (~66 lines)
+### Phase 2 — Backend shared utils & query consolidation · M · DONE (3 commits: ec25454, c354b66, bf8c722)
+- [x] `engine/text-utils.ts` — merged the 3 **byte-identical** `normalize` copies. Divergent normalizers left as-is
+      (dietRubric `&->and`, `normalizeKey`, `normalizeIngredientName`, menuRubric, the `textHasTerm` family) to preserve matching.
+- [~] Calibration parser / `profileSeedFromRow` / date helpers — **investigated, deliberately NOT merged.** The 3
+      `parseCalibrationRatings` copies diverge (profile.service trims keys + propagates `undefined`); `toIso` fallbacks
+      differ too. Merging would risk persisted calibration data → left, documented. (Would need a deliberate behavior decision.)
+- [x] `getUserContext(sql, userId, opts)` extracted — 7-query block deduped across home + profile services (c354b66).
+- [x] Moved pure personal-history logic from `scan-crud.service.ts` (702→472) into `personal-history.ts` (ec25454).
+- [x] BE nested-ternary → helpers/lookup maps: `ingredientRiskScore`, `imageRefKind` (×5), `contributorEvidence` Record (bf8c722).
+
+**Phase 2 complete.** Behavior-preserving throughout; server tsc clean, 167 tests pass on every commit.
 
 ### Phase 3 — Database performance · M · ~150 lines + latency
 - [ ] N+1 write loops → multi-row `unnest` inserts (5 sites: learning, daily scores, RAG, taxonomy, profile)
