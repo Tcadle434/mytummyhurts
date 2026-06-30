@@ -5,8 +5,8 @@ export declare function clampNumber(value: number, minimum: number, maximum: num
 export declare function roundWeight(value: number): number;
 export declare function confidenceRank(confidence: IngredientConfidence): 1 | 2 | 3;
 export declare function strongerConfidence(left: IngredientConfidence, right: IngredientConfidence): IngredientConfidence;
-export declare function frequencyRiskIndex(symptomFrequency?: string): 0 | 1 | 2 | 3 | 4;
-export declare function severityRiskIndex(symptomSeverityBaseline?: string): 0 | 1 | 2 | 3 | 4;
+export declare function frequencyRiskIndex(symptomFrequency?: string): 1 | 0 | 2 | 3 | 4;
+export declare function severityRiskIndex(symptomSeverityBaseline?: string): 1 | 0 | 2 | 3 | 4;
 export declare function baselineFrequencyPenalty(symptomFrequency?: string): 0 | 4 | 25 | 16 | 8;
 export declare function baselineSeverityPenalty(symptomSeverityBaseline?: string): 0 | 26 | 18 | 12 | 6;
 export declare function scoreEventTime(value?: string): number;

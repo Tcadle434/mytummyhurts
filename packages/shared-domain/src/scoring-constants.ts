@@ -30,6 +30,9 @@ export type ProfileLearningProgress = {
 // disagreed with the BE for scores in the 34-36 and 64-66 ranges.
 export const RISK_LEVEL_MEDIUM_MIN = 37;
 export const RISK_LEVEL_HIGH_MIN = 64;
+// Top of the mild/low band: one below the medium floor (= 36). Both engines use
+// this for daily-score driver classification so the FE and BE agree on edges.
+export const RISK_LEVEL_MILD_MAX = RISK_LEVEL_MEDIUM_MIN - 1;
 
 export const DAILY_ATTRIBUTION_WINDOWS = [
   { daysPrior: 0, weight: 0.55 },

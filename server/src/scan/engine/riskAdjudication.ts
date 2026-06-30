@@ -1,12 +1,18 @@
 import type {
   ConditionSeverity,
   ConditionSeverityBand,
+  EvidenceCitation,
   IngredientConfidence,
   IngredientInsight,
   StructuredAnalysisV2,
   UserProfile,
 } from './domain';
 import { normalize } from './text-utils';
+
+// Canonical citation shape lives in the package; re-exported (via domain.ts)
+// so the existing `import { ... EvidenceCitation } from '.../riskAdjudication'`
+// call site (scan-workflow.service.ts) is unaffected.
+export type { EvidenceCitation } from './domain';
 
 export const RISK_ADJUDICATION_PROMPT_VERSION =
   process.env.OPENAI_RISK_ADJUDICATION_PROMPT_VERSION ?? 'mytummyhurts_risk_adjudication_v1';
@@ -73,16 +79,6 @@ export interface RiskAdjudicationMetadata {
   ragRetrievalRunId?: string | null;
   warnings?: string[];
   conditionSeverities: RawRiskAdjudicationCondition[];
-}
-
-export interface EvidenceCitation {
-  id: string;
-  title: string;
-  source: string;
-  url?: string;
-  chunkId: string;
-  snippet: string;
-  relevanceScore: number;
 }
 
 export interface ValidatedRiskAdjudication {

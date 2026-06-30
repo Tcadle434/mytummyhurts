@@ -12,7 +12,7 @@ export interface EvidenceCitation {
     source: string;
     url?: string;
     documentType?: string;
-    chunkId: string;
+    chunkId?: string;
     snippet?: string;
     relevanceScore?: number;
 }

@@ -10,6 +10,11 @@ import type {
   StructuredAnalysisV2,
   StructuredIngredient,
 } from './domain';
+// Seed insights (built in engine/scoring.ts) use the shared combinedRiskScore,
+// which is clamp(50 + trigger - safe). Learned insights previously applied a
+// 0.9 damping here, so seed and learned rows were compared on mismatched
+// scales. Import the shared function so both live on one scale.
+import { combinedRiskScore } from '@mth/shared-domain';
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -25,10 +30,6 @@ function patternStrength(value: number): PatternStrength {
   if (value >= 70) return 'strong';
   if (value >= 46) return 'moderate';
   return 'weak';
-}
-
-function combinedRiskScore(triggerScore: number, safeScore: number) {
-  return clampScore(50 + (triggerScore - safeScore) * 0.9);
 }
 
 function localDateMinusDays(value: string, days: number) {

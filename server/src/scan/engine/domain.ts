@@ -1,6 +1,7 @@
 import type {
   RiskLevel,
   PatternStrength,
+  EvidenceCitation,
   // gut-score
   GutScorePhase,
   GutScoreConfidenceLevel,
@@ -82,6 +83,7 @@ import type {
 export type {
   RiskLevel,
   PatternStrength,
+  EvidenceCitation,
   GutScorePhase,
   GutScoreConfidenceLevel,
   GutScoreTrendDirection,
@@ -155,22 +157,6 @@ export type {
   GroceryProductSummary,
   ScanHistorySummary,
 };
-
-// ---------------------------------------------------------------------------
-// EvidenceCitation: this server scan shape (optional chunkId, no documentType)
-// differs from the package's EvidenceCitation. Kept local so the FE/server scan
-// shape is preserved; reconciling with the package version needs a human
-// decision.
-// ---------------------------------------------------------------------------
-export interface EvidenceCitation {
-  id: string;
-  title: string;
-  source: string;
-  url?: string;
-  chunkId?: string;
-  snippet?: string;
-  relevanceScore?: number;
-}
 
 // ---------------------------------------------------------------------------
 // StructuredAnalysisV2 / MenuScanAnalysis / MenuItemAnalysis / ScanResult /

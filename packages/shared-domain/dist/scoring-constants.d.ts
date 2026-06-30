@@ -20,6 +20,7 @@ export type ProfileLearningProgress = {
 };
 export declare const RISK_LEVEL_MEDIUM_MIN = 37;
 export declare const RISK_LEVEL_HIGH_MIN = 64;
+export declare const RISK_LEVEL_MILD_MAX: number;
 export declare const DAILY_ATTRIBUTION_WINDOWS: {
     daysPrior: number;
     weight: number;

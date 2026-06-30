@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DAILY_ATTRIBUTION_WINDOWS = exports.RISK_LEVEL_HIGH_MIN = exports.RISK_LEVEL_MEDIUM_MIN = exports.PROFILE_LEARNING_STAGE_THRESHOLDS = exports.GUT_SCORE_ALGORITHM_VERSION = void 0;
+exports.DAILY_ATTRIBUTION_WINDOWS = exports.RISK_LEVEL_MILD_MAX = exports.RISK_LEVEL_HIGH_MIN = exports.RISK_LEVEL_MEDIUM_MIN = exports.PROFILE_LEARNING_STAGE_THRESHOLDS = exports.GUT_SCORE_ALGORITHM_VERSION = void 0;
 exports.GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
 exports.PROFILE_LEARNING_STAGE_THRESHOLDS = {
     growing: {
@@ -17,6 +17,9 @@ exports.PROFILE_LEARNING_STAGE_THRESHOLDS = {
 // disagreed with the BE for scores in the 34-36 and 64-66 ranges.
 exports.RISK_LEVEL_MEDIUM_MIN = 37;
 exports.RISK_LEVEL_HIGH_MIN = 64;
+// Top of the mild/low band: one below the medium floor (= 36). Both engines use
+// this for daily-score driver classification so the FE and BE agree on edges.
+exports.RISK_LEVEL_MILD_MAX = exports.RISK_LEVEL_MEDIUM_MIN - 1;
 exports.DAILY_ATTRIBUTION_WINDOWS = [
     { daysPrior: 0, weight: 0.55 },
     { daysPrior: 1, weight: 0.3 },

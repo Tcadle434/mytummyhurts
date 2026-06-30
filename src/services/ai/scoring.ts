@@ -24,6 +24,7 @@ import {
   PROFILE_LEARNING_STAGE_THRESHOLDS,
   RISK_LEVEL_HIGH_MIN,
   RISK_LEVEL_MEDIUM_MIN,
+  RISK_LEVEL_MILD_MAX,
   baselineFrequencyPenalty,
   baselineSeverityPenalty,
   clamp,
@@ -290,9 +291,10 @@ function foodExposureForDailyScore(report: DailyGutReport, scans: ScanRecord[]) 
   const qualityMultiplier = report.evidenceQuality === 'unscanned' ? 0.5 : 1;
   const weightedRisk = weightedRiskTotal / evidenceWeight;
   const effectiveEvidenceWeight = evidenceWeight * qualityMultiplier;
-  const foodAdjustment = Math.max(
+  const foodAdjustment = clampNumber(
+    (50 - weightedRisk) * 0.375 * Math.min(effectiveEvidenceWeight, 1),
     -15,
-    Math.min(15, (50 - weightedRisk) * 0.375 * Math.min(effectiveEvidenceWeight, 1)),
+    15,
   );
 
   return {
@@ -317,7 +319,7 @@ export function computeDailyScoreForReport(report: DailyGutReport, scans: ScanRe
           : report.gutSeverity >= 7
             ? 'Your daily report pointed to a more reactive gut day.'
             : 'Your daily report landed in the middle range.',
-      impact: symptomScore >= 67 ? 'raises' : symptomScore <= 33 ? 'lowers' : 'neutral',
+      impact: symptomScore >= RISK_LEVEL_HIGH_MIN ? 'raises' : symptomScore <= RISK_LEVEL_MILD_MAX ? 'lowers' : 'neutral',
       weight: Math.abs(symptomScore - 50),
     },
   ];
@@ -325,7 +327,11 @@ export function computeDailyScoreForReport(report: DailyGutReport, scans: ScanRe
   if (typeof food.weightedRisk === 'number') {
     drivers.push({
       id: 'food-exposure',
-      label: food.weightedRisk >= 67 ? 'Higher-risk food exposure' : food.weightedRisk <= 33 ? 'Gentler food exposure' : 'Mixed food exposure',
+      label: food.weightedRisk >= RISK_LEVEL_HIGH_MIN
+        ? 'Higher-risk food exposure'
+        : food.weightedRisk <= RISK_LEVEL_MILD_MAX
+          ? 'Gentler food exposure'
+          : 'Mixed food exposure',
       detail: 'Food logged across the same-day, previous-day, and two-day windows adjusted this Daily Score.',
       impact: food.foodAdjustment > 0 ? 'raises' : food.foodAdjustment < 0 ? 'lowers' : 'neutral',
       weight: Math.abs(food.foodAdjustment),

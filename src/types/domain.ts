@@ -1,6 +1,7 @@
 import type {
   RiskLevel,
   PatternStrength,
+  EvidenceCitation,
   // gut-score
   GutScorePhase,
   GutScoreConfidenceLevel,
@@ -82,6 +83,7 @@ import type {
 export type {
   RiskLevel,
   PatternStrength,
+  EvidenceCitation,
   GutScorePhase,
   GutScoreConfidenceLevel,
   GutScoreTrendDirection,
@@ -217,21 +219,6 @@ export interface OnboardingAnswers {
   favoriteFoodsToReintroduce: string;
   dietPreferenceKeys: DietPreferenceKey[];
   dietPreferenceNone?: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// EvidenceCitation: this FE shape (optional chunkId, no documentType) differs
-// from the package's EvidenceCitation. Kept local so the FE/server scan shape is
-// preserved; reconciling with the package version needs a human decision.
-// ---------------------------------------------------------------------------
-export interface EvidenceCitation {
-  id: string;
-  title: string;
-  source: string;
-  url?: string;
-  chunkId?: string;
-  snippet?: string;
-  relevanceScore?: number;
 }
 
 // ---------------------------------------------------------------------------
