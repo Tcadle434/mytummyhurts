@@ -61,8 +61,11 @@ Realistic net removable after de-dup: **~2,000–2,800 lines**, plus ~1,500 reor
 - [x] Consolidated date helpers onto `utils/weeklyProgress.ts` — deleted private copies in SymptomLogScreen + DailyGutReportScreen. eslint+tsc clean.
 - [x] Generic `saveHealthProfileSection(...)` replaces the 3 identical SettingsScreen handlers. eslint+tsc clean.
 - [ ] `src/utils/riskColor.ts` — risk-level→color + score→level (10+ private copies). CAUTION: preserve each call site's exact breakpoints/colors (some use 67/34, some 64/37) — do not silently unify thresholds.
-- [ ] `src/components/modals/CustomEntryModal.tsx` — modal copied across Onboarding/Settings/DailyGutReport
-- [ ] `src/components/scan-result/styles.ts` — resultCard/cardTitle/sectionLabel (5 copies; fix 28-vs-30 radius)
+- [~] `src/components/modals/CustomEntryModal.tsx` — modals were NOT verbatim duplicates (DailyGutReport is a distinct
+      design). Decision: dedup **Onboarding + Settings only**; leave DailyGutReport as-is. (in progress)
+- [x] `src/components/scan-result/styles.ts` — extracted resultCardStyle/cardTitleStyle/sectionLabelStyle; adopted in
+      HeroCards/MenuCards/ScoreDrivers/IngredientCards (~−70 lines dup). common.ts had no StyleSheet. Kept radius 28
+      (pixel-preserving; 28-vs-token a separate design call). tsc clean, 31 tests pass.
 - [ ] Add `accessibilityRole`/`Label`/`State` on interactive Pressables app-wide
 
 ### Phase 2 — Backend shared utils & query consolidation · M · ~300 lines

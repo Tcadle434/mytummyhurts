@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, View } from "react-native";
 
 import { colorForLevel, isPersonalContributor, prioritizeScoreContributors, type RiskLevel } from "./common";
+import { cardTitleStyle, resultCardStyle, sectionLabelStyle } from "./styles";
 import { palette, spacing, tokens, type } from "../../theme";
 import type { ScoreContributor } from "../../types/domain";
 
@@ -47,7 +48,7 @@ export function ScoreDriversList({
 		const maxMagnitude = Math.max(...contributors.map((driver) => Math.abs(driver.points)), 1);
 		return (
 			<View style={styles.driverList}>
-				{title ? <Text style={styles.insightLabel}>{title}</Text> : null}
+				{title ? <Text style={sectionLabelStyle}>{title}</Text> : null}
 				{contributors.map((driver) => {
 					const magnitude = Math.abs(driver.points);
 					const { label: tierLabel, tone } = driverTier(driver.points);
@@ -90,7 +91,7 @@ export function ScoreDriversList({
 
 	return (
 		<View style={styles.scoreDrivers}>
-			{title ? <Text style={styles.insightLabel}>{title}</Text> : null}
+			{title ? <Text style={sectionLabelStyle}>{title}</Text> : null}
 			{contributors.map((driver) => {
 				const { label: tierLabel, tone } = driverTier(driver.points);
 				return (
@@ -137,8 +138,8 @@ export function WhyThisScoreCard({
 	const accentColor = colorForLevel(level);
 
 	return (
-		<View style={styles.resultCard}>
-			<Text style={styles.cardTitle}>Why this score for you</Text>
+		<View style={resultCardStyle}>
+			<Text style={cardTitleStyle}>Why this score for you</Text>
 			{personalLabels.length > 0 ? (
 				<View style={styles.receiptRow}>
 					<Ionicons name="sparkles" size={14} color={palette.primary} />
@@ -156,14 +157,6 @@ export function WhyThisScoreCard({
 const styles = StyleSheet.create({
 	driverList: {
 		gap: spacing.md,
-	},
-	insightLabel: {
-		color: palette.textMuted,
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
-		textTransform: "uppercase",
-		letterSpacing: 0.4,
 	},
 	driverRow: {
 		gap: 5,
@@ -237,22 +230,6 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.regular,
 		fontSize: 12,
 		lineHeight: 16,
-	},
-	resultCard: {
-		width: "100%",
-		borderRadius: 28,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.card,
-	},
-	cardTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
 	},
 	receiptRow: {
 		flexDirection: "row",

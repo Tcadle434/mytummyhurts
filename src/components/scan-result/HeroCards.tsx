@@ -3,6 +3,7 @@ import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, Text, View } from "react-native";
 
 import { colorForLevel, type RiskLevel } from "./common";
+import { resultCardStyle } from "./styles";
 import { palette, spacing, tokens, type } from "../../theme";
 import { RiskBar } from "../charts/RiskBar";
 
@@ -66,7 +67,7 @@ export function ScanHeroCard({
 	const levelLabel = level ? `${level.charAt(0).toUpperCase()}${level.slice(1)} risk` : null;
 
 	return (
-		<View style={styles.resultCard}>
+		<View style={resultCardStyle}>
 			<View style={styles.heroIdentityRow}>
 				{image ? <View style={styles.heroImageSlot}>{image}</View> : null}
 				<View style={styles.heroIdentityCopy}>
@@ -175,16 +176,6 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.medium,
 		fontSize: 10,
 		lineHeight: 13,
-	},
-	resultCard: {
-		width: "100%",
-		borderRadius: 28,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.card,
 	},
 	heroIdentityRow: {
 		flexDirection: "row",

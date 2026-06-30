@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 
 import { colorForDietStatus, colorForLevel, dietStatusLabel, type RiskLevel, type ScanIngredient } from "./common";
+import { cardTitleStyle, resultCardStyle } from "./styles";
 import { palette, spacing, tokens, type } from "../../theme";
 import type { DietEvaluation } from "../../types/domain";
 
@@ -31,8 +32,8 @@ export function IngredientsBreakdownCard({
 	}
 
 	return (
-		<View style={styles.resultCard}>
-			<Text style={styles.cardTitle}>{title}</Text>
+		<View style={resultCardStyle}>
+			<Text style={cardTitleStyle}>{title}</Text>
 			<View style={styles.ingredientGroups}>
 				{visibleGroups.map((group) => (
 					<IngredientGroup
@@ -54,8 +55,8 @@ export function DietFitCard({ evaluations }: { evaluations?: DietEvaluation[] })
 	}
 
 	return (
-		<View style={styles.resultCard}>
-			<Text style={styles.cardTitle}>Diet fit</Text>
+		<View style={resultCardStyle}>
+			<Text style={cardTitleStyle}>Diet fit</Text>
 			<View style={styles.dietRows}>
 				{safeEvaluations.map((evaluation) => {
 					const color = colorForDietStatus(evaluation.status);
@@ -119,22 +120,6 @@ function IngredientChip({ ingredient }: { ingredient: ScanIngredient }) {
 
 
 const styles = StyleSheet.create({
-	resultCard: {
-		width: "100%",
-		borderRadius: 28,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.card,
-	},
-	cardTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
-	},
 	ingredientGroups: {
 		gap: spacing.md,
 	},

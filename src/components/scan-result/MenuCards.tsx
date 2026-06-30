@@ -5,6 +5,7 @@ import { colorForLevel, prioritizeScoreContributors, type MenuTierItem, type Ris
 import { selectIngredientHistoryRows } from "./PersonalizedScanCard.helpers";
 import { DietEvaluationRows, IngredientHistoryRows } from "./PersonalizedScanCard";
 import { ScoreDriversList } from "./ScoreDrivers";
+import { cardTitleStyle, resultCardStyle, sectionLabelStyle } from "./styles";
 import { InfoPill } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
 
@@ -24,10 +25,10 @@ export function MenuRankingCard({
 	}
 
 	return (
-		<View style={styles.resultCard}>
+		<View style={resultCardStyle}>
 			<View style={styles.rankingHeader}>
 				<View>
-					<Text style={styles.cardTitle}>Full menu ranking</Text>
+					<Text style={cardTitleStyle}>Full menu ranking</Text>
 					<Text style={styles.rankingSubtitle}>
 						{items.length} item{items.length === 1 ? "" : "s"} scored from lowest to highest risk
 					</Text>
@@ -66,7 +67,7 @@ export function MenuTierCard({
 	}
 	const color = colorForLevel(level);
 	return (
-		<View style={styles.resultCard}>
+		<View style={resultCardStyle}>
 			<View style={styles.tierHeader}>
 				<Ionicons name="checkmark-circle" size={26} color={color} />
 				<Text style={styles.tierTitle}>{title}</Text>
@@ -141,7 +142,7 @@ function MenuRow({
 				<View style={styles.expandedBlock}>
 					{item.insight ? (
 						<>
-							<Text style={styles.insightLabel}>Why this score</Text>
+							<Text style={sectionLabelStyle}>Why this score</Text>
 							<Text style={styles.insightBody}>{item.insight}</Text>
 						</>
 					) : null}
@@ -157,13 +158,13 @@ function MenuRow({
 					) : null}
 					{item.dietEvaluations && item.dietEvaluations.length > 0 ? (
 						<View style={styles.scoreDrivers}>
-							<Text style={styles.insightLabel}>Diet fit</Text>
+							<Text style={sectionLabelStyle}>Diet fit</Text>
 							<DietEvaluationRows evaluations={item.dietEvaluations} />
 						</View>
 					) : null}
 					{ingredientHistoryRows.length > 0 ? (
 						<View style={styles.scoreDrivers}>
-							<Text style={styles.insightLabel}>Ingredient history</Text>
+							<Text style={sectionLabelStyle}>Ingredient history</Text>
 							<IngredientHistoryRows rows={ingredientHistoryRows} />
 						</View>
 					) : null}
@@ -203,27 +204,11 @@ function MenuRow({
 }
 
 const styles = StyleSheet.create({
-	resultCard: {
-		width: "100%",
-		borderRadius: 28,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.card,
-	},
 	rankingHeader: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.md,
-	},
-	cardTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
 	},
 	rankingSubtitle: {
 		marginTop: 2,
@@ -320,14 +305,6 @@ const styles = StyleSheet.create({
 	expandedBlock: {
 		gap: spacing.sm,
 		paddingTop: spacing.xs,
-	},
-	insightLabel: {
-		color: palette.textMuted,
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
-		textTransform: "uppercase",
-		letterSpacing: 0.4,
 	},
 	insightBody: {
 		color: palette.text,
