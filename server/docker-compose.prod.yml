@@ -1,0 +1,73 @@
+name: mth-prod
+
+# Production VPS stack. Secrets come from server/.env (env_file) — never commit it.
+# Migrations run as a one-shot before api/worker start (see vps-deploy.md).
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+  api:
+    # Build from the repo root so the local @mth/shared-domain package
+    # (file:../packages/shared-domain, outside server/) is in the build context.
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Run the learning worker in-process for single-instance v1.
+      LEARNING_WORKER_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    expose:
+      - "3000"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mth}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mth}
+      POSTGRES_DB: ${POSTGRES_DB:-mth}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mth} -d ${POSTGRES_DB:-mth}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    env_file: .env
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    expose:
+      - "9000"
+
+volumes:
+  pgdata:
+  minio-data:
+  caddy-data:
+  caddy-config:

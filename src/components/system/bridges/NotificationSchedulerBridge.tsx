@@ -20,6 +20,7 @@ export function NotificationSchedulerBridge() {
   const dailyReports = useAppStore((state) => state.dailyReports);
   const scans = useAppStore((state) => state.scans);
   const registeredPushRef = useRef(false);
+  const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const active = onboardingStage === 'complete' && Boolean(authUser);
 
@@ -57,7 +58,7 @@ export function NotificationSchedulerBridge() {
           registeredPushRef.current = true;
           // Token registration is not launch-critical; defer it off the
           // first-paint window so it doesn't contend with home/history fetches.
-          setTimeout(() => {
+          pushTimerRef.current = setTimeout(() => {
             void registerDailyReportNotifications().catch((error) => {
               console.warn('[notifications] push token registration failed', error);
             });
@@ -79,6 +80,10 @@ export function NotificationSchedulerBridge() {
     return () => {
       cancelled = true;
       appStateSubscription.remove();
+      if (pushTimerRef.current) {
+        clearTimeout(pushTimerRef.current);
+        pushTimerRef.current = null;
+      }
     };
   }, [active, dailyReports, scans]);
 

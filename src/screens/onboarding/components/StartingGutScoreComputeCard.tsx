@@ -14,6 +14,7 @@ import Animated, {
 import Svg, { Circle } from "react-native-svg";
 
 import { palette, spacing, tokens, type } from "../../../theme";
+import { gutScoreTint } from "../../../utils/risk";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -50,7 +51,7 @@ export function StartingGutScoreComputeCard({
 	const circumference = 2 * Math.PI * radius;
 	const isRevealed = state === "revealed";
 	const isLoading = state === "loading";
-	const ringColor = isRevealed ? scoreTone(score) : palette.primary;
+	const ringColor = isRevealed ? gutScoreTint(score) : palette.primary;
 	const statusLabel = isRevealed
 		? "Starting Gut Score"
 		: isLoading
@@ -151,7 +152,7 @@ export function StartingGutScoreComputeCard({
 						isRevealed ? { backgroundColor: scoreBackground(score) } : null,
 					]}
 				>
-					<Text style={[styles.statusText, isRevealed ? { color: scoreTone(score) } : null]}>
+					<Text style={[styles.statusText, isRevealed ? { color: gutScoreTint(score) } : null]}>
 						{statusLabel}
 					</Text>
 				</View>
@@ -280,12 +281,6 @@ function StartingScoreLoadingDot({ color, delay }: { color: string; delay: numbe
 	}));
 
 	return <Animated.View style={[styles.loadingDot, { backgroundColor: color }, dotStyle]} />;
-}
-
-function scoreTone(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.tint;
-	if (score >= 34) return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.high.tint;
 }
 
 function scoreBackground(score: number) {

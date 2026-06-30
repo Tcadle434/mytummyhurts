@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RiskBar } from '../../components/charts/RiskBar';
 import {
@@ -14,8 +14,11 @@ import {
 } from '../../components/common/UI';
 import {
   buildGroupSyntheticInsight,
+  familyByKey,
+  familyForInsight,
   groupByKey,
-  groupForIngredient,
+  groupsForInsight,
+  type TrackedFoodFamily,
 } from '../../features/insights/triggerGroups';
 import {
   evidenceDetailForInsight,
@@ -27,11 +30,12 @@ import { useAppStore } from '../../store/useAppStore';
 import { useInsightsData } from '../../features/insights/hooks';
 import { formatConditionName } from '../../utils/conditionFormat';
 import { palette, spacing, tokens, type } from '../../theme';
-import { RiskLevel } from '../../types/domain';
+import type { IngredientInsight, RiskLevel } from '../../types/domain';
 import { EmptyHint } from './InsightsScreen';
 import { STATUS_META } from './TriggerProfileRow';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'InsightDetail'>;
+type MealExample = { id: string; mealTitle: string; note: string; severity?: number; when: string };
 
 const STATUS_HEADLINE: Record<TriggerStatus, string> = {
   confirmed: 'Confirmed trigger',
@@ -49,26 +53,41 @@ export function InsightDetailScreen({ route, navigation }: Props) {
 
   const allInsights = insightsQuery.data?.insights ?? fallbackInsights;
   const group = route.params.groupKey ? groupByKey(route.params.groupKey) : null;
+  const family = route.params.familyKey ? familyByKey(route.params.familyKey) : null;
   const members = useMemo(
     () =>
       group
-        ? allInsights.filter((entry) => groupForIngredient(entry.ingredientName)?.key === group.key)
+        ? allInsights.filter((entry) => groupsForInsight(entry).some((candidate) => candidate.key === group.key))
         : [],
     [allInsights, group],
+  );
+  const familyMembers = useMemo(
+    () =>
+      family
+        ? allInsights.filter((entry) => familyForInsight(entry).key === family.key)
+        : [],
+    [allInsights, family],
   );
 
   const insight = group
     ? members.length
       ? buildGroupSyntheticInsight(group, members)
       : undefined
-    : allInsights.find((entry) => entry.ingredientName === route.params.ingredientName);
+    : family
+      ? undefined
+      : allInsights.find((entry) => entry.ingredientName === route.params.ingredientName);
 
   const subjectNames = useMemo(
-    () =>
-      group
-        ? new Set(members.map((member) => member.ingredientName.toLowerCase()))
-        : new Set(route.params.ingredientName ? [route.params.ingredientName.toLowerCase()] : []),
-    [group, members, route.params.ingredientName],
+    () => {
+      if (family) {
+        return new Set(familyMembers.map((member) => member.ingredientName.toLowerCase()));
+      }
+      if (group) {
+        return new Set(members.map((member) => member.ingredientName.toLowerCase()));
+      }
+      return new Set(route.params.ingredientName ? [route.params.ingredientName.toLowerCase()] : []);
+    },
+    [family, familyMembers, group, members, route.params.ingredientName],
   );
 
   const conditionInsights = (insightsQuery.data?.conditionInsights ?? fallbackConditionInsights).filter(
@@ -76,13 +95,17 @@ export function InsightDetailScreen({ route, navigation }: Props) {
   );
 
   const examples = useMemo(() => {
-    if (!insight) {
+    if (!family && !insight) {
       return [];
     }
 
-    const tokens = group
-      ? members.map((member) => normalizeToken(member.ingredientName))
-      : [normalizeToken(insight.ingredientName)];
+    const tokens = family
+      ? familyMembers.map((member) => normalizeToken(member.ingredientName))
+      : group
+        ? members.map((member) => normalizeToken(member.ingredientName))
+        : insight
+          ? [normalizeToken(insight.ingredientName)]
+          : [];
     return scans
       .filter((scan) => (scan.scanCategory ?? 'food') === 'food')
       .map((scan) => {
@@ -107,8 +130,20 @@ export function InsightDetailScreen({ route, navigation }: Props) {
         };
       })
       .filter(Boolean)
-      .slice(0, 6) as { id: string; mealTitle: string; note: string; severity?: number; when: string }[];
-  }, [dailyReports, group, insight, members, scans]);
+      .slice(0, 6) as MealExample[];
+  }, [dailyReports, family, familyMembers, group, insight, members, scans]);
+
+  if (family) {
+    return (
+      <FamilyDetail
+        family={family}
+        members={familyMembers}
+        conditionInsightCount={conditionInsights.length}
+        examples={examples}
+        onOpenIngredient={(ingredientName) => navigation.push('InsightDetail', { ingredientName })}
+      />
+    );
+  }
 
   if (!insight) {
     return (
@@ -210,24 +245,19 @@ export function InsightDetailScreen({ route, navigation }: Props) {
               )
               .map((member) => {
                 const outcomes = member.positiveEvidenceCount + member.negativeEvidenceCount;
+                const meta =
+                  outcomes > 0
+                    ? `${member.negativeEvidenceCount} rough · ${member.positiveEvidenceCount} calm`
+                    : member.sourceBreakdown.declared
+                      ? 'from your profile'
+                      : 'no outcomes yet';
                 return (
-                  <Text
+                  <MemberRow
                     key={member.id}
-                    accessibilityRole="button"
+                    name={capitalize(member.ingredientName)}
+                    meta={meta}
                     onPress={() => navigation.push('InsightDetail', { ingredientName: member.ingredientName })}
-                    style={styles.memberRow}
-                    suppressHighlighting
-                  >
-                    <Text style={styles.memberName}>{capitalize(member.ingredientName)}</Text>
-                    <Text style={styles.memberMeta}>
-                      {'  '}
-                      {outcomes > 0
-                        ? `${member.negativeEvidenceCount} rough · ${member.positiveEvidenceCount} calm`
-                        : member.sourceBreakdown.declared
-                          ? 'from your profile'
-                          : 'no outcomes yet'}
-                    </Text>
-                  </Text>
+                  />
                 );
               })}
           </View>
@@ -279,6 +309,162 @@ export function InsightDetailScreen({ route, navigation }: Props) {
 
       <PipAnalysisCard title="What to try" body={buildSuggestion(insight.ingredientName, status)} />
     </AppScreen>
+  );
+}
+
+function FamilyDetail({
+  family,
+  members,
+  conditionInsightCount,
+  examples,
+  onOpenIngredient,
+}: {
+  family: TrackedFoodFamily;
+  members: IngredientInsight[];
+  conditionInsightCount: number;
+  examples: MealExample[];
+  onOpenIngredient: (ingredientName: string) => void;
+}) {
+  const evidenceCount = members.reduce(
+    (total, member) =>
+      total +
+      Math.max(
+        member.supportingEvidenceCount,
+        member.positiveEvidenceCount + member.negativeEvidenceCount,
+      ),
+    0,
+  );
+  const patternLabels = [
+    ...new Set(members.flatMap((member) => groupsForInsight(member).map((group) => group.label))),
+  ];
+
+  return (
+    <AppScreen>
+      <DetailScreenHeader eyebrow="Foods we are tracking" title={family.label} />
+
+      <SectionCard style={styles.verdictCard}>
+        <View style={[styles.glyph, styles.familyGlyphLarge]}>
+          <Text style={styles.glyphEmoji}>{family.emoji}</Text>
+        </View>
+        <Text style={styles.groupSubtitle}>Food family</Text>
+        <View style={styles.familyStatusPill}>
+          <Text style={styles.familyStatusPillText}>Tracking coverage</Text>
+        </View>
+        <Text style={styles.verdictDetail}>
+          This organizes foods seen in your scans. It is not a trigger verdict unless evidence forms a Digestive Pattern.
+        </Text>
+      </SectionCard>
+
+      <SectionCard>
+        <Text style={styles.sectionTitle}>Coverage</Text>
+        <View style={styles.evidenceCounts}>
+          <EvidenceCount value={members.length} label="Foods tracked" color={palette.primary} />
+          <View style={styles.evidenceDivider} />
+          <EvidenceCount value={evidenceCount} label="Paired evidence days" color={tokens.color.status.risk.medium.tint} />
+        </View>
+        <View style={styles.detailRows}>
+          <DetailRow label="Current role" value="Food history, not a verdict" />
+          <DetailRow
+            label="Linked patterns"
+            value={patternLabels.length ? patternLabels.slice(0, 3).join(', ') : 'None yet'}
+          />
+          {conditionInsightCount > 0 ? (
+            <DetailRow label="Condition links" value={`${conditionInsightCount} ingredient-level signal${conditionInsightCount === 1 ? '' : 's'}`} />
+          ) : null}
+        </View>
+      </SectionCard>
+
+      {members.length ? (
+        <SectionCard>
+          <Text style={styles.sectionTitle}>Foods in this family</Text>
+          <View style={styles.memberList}>
+            {[...members]
+              .sort((left, right) => left.ingredientName.localeCompare(right.ingredientName))
+              .map((member) => {
+                const outcomes = member.positiveEvidenceCount + member.negativeEvidenceCount;
+                const meta =
+                  outcomes > 0
+                    ? `${member.negativeEvidenceCount} rough - ${member.positiveEvidenceCount} calm`
+                    : member.supportingEvidenceCount > 0
+                      ? `${member.supportingEvidenceCount} paired day${member.supportingEvidenceCount === 1 ? '' : 's'}`
+                      : 'seen in scans';
+                return (
+                  <MemberRow
+                    key={member.id}
+                    name={capitalize(member.ingredientName)}
+                    meta={meta}
+                    onPress={() => onOpenIngredient(member.ingredientName)}
+                  />
+                );
+              })}
+          </View>
+        </SectionCard>
+      ) : (
+        <EmptyHint
+          pipState="thinking"
+          title="No foods in this family yet"
+          subtitle="When scans map here, the foods will show up on this page."
+        />
+      )}
+
+      {examples.length ? (
+        <SectionCard>
+          <Text style={styles.sectionTitle}>Seen in your meals</Text>
+          <View style={styles.exampleList}>
+            {examples.map((example) => (
+              <View key={example.id} style={styles.exampleRow}>
+                <View style={[styles.exampleDot, { backgroundColor: dotColorForSeverity(example.severity) }]} />
+                <View style={styles.exampleCopy}>
+                  <Text style={styles.exampleTitle} numberOfLines={1}>
+                    {example.mealTitle}
+                  </Text>
+                  <Text style={styles.exampleMeta}>
+                    {example.note} - {example.when}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </SectionCard>
+      ) : (
+        <EmptyHint
+          pipState="thinking"
+          title="No linked meals yet"
+          subtitle="Meal examples appear here after the app has matching scan history loaded."
+        />
+      )}
+
+      <PipAnalysisCard
+        title="How to read this"
+        body="Food families show what your history covers. Digestive Patterns decide whether that evidence becomes under review, confirmed, or cleared."
+      />
+    </AppScreen>
+  );
+}
+
+function MemberRow({
+  name,
+  meta,
+  onPress,
+}: {
+  name: string;
+  meta: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${name}, ${meta}`}
+      onPress={onPress}
+    >
+      <Text style={styles.memberRow} suppressHighlighting>
+        <Text style={styles.memberName}>{name}</Text>
+        <Text style={styles.memberMeta}>
+          {'  '}
+          {meta}
+        </Text>
+      </Text>
+    </Pressable>
   );
 }
 
@@ -367,6 +553,9 @@ const styles = StyleSheet.create({
   glyphEmoji: {
     fontSize: 34,
   },
+  familyGlyphLarge: {
+    backgroundColor: palette.sageSoft,
+  },
   groupSubtitle: {
     color: palette.textMuted,
     fontFamily: type.body.semibold,
@@ -399,6 +588,18 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   statusPillText: {
+    fontFamily: type.body.bold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  familyStatusPill: {
+    borderRadius: 999,
+    backgroundColor: palette.sageSoft,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+  },
+  familyStatusPillText: {
+    color: palette.primary,
     fontFamily: type.body.bold,
     fontSize: 14,
     lineHeight: 18,

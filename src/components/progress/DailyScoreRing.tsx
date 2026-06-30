@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
 import { tokens, type } from "../../theme";
+import { gutScoreTint } from "../../utils/risk";
 
 type DailyScoreRingProps = {
 	score?: number;
@@ -86,9 +87,7 @@ export function DailyScoreRing({ score, size = 92, strokeWidth }: DailyScoreRing
 }
 
 export function scoreTint(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.tint;
-	if (score >= 34) return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.high.tint;
+	return gutScoreTint(score);
 }
 
 const styles = StyleSheet.create({

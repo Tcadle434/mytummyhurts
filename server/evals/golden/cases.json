@@ -1,0 +1,1772 @@
+{
+  "version": "golden_scan_v1",
+  "defaultRepeat": 3,
+  "notes": [
+    "Expected ranges are intentionally ranges, not exact scores.",
+    "Add app-like photos to images/ and one case object here.",
+    "Use profile variants only when the image is important for that profile; do not explode every image across every profile."
+  ],
+  "cases": [
+    {
+      "id": "pepperoni_pizza_001",
+      "image": "images/pepperoni_pizza_001.jpg",
+      "description": "Pepperoni pizza with cheese, tomato sauce, and processed meat.",
+      "source": {
+        "type": "user_provided_attachment",
+        "path": "/Users/thomascadle/.codex/attachments/3d79f129-7ba6-4a58-9348-944c44053f08/image-1.png"
+      },
+      "repeat": 3,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "high"
+          ],
+          "expectedScoreRange": [
+            64,
+            90
+          ],
+          "maxRunScoreRange": 12,
+          "requiredMechanisms": [
+            "acidic_tomato_citrus_vinegar",
+            "high_fat_or_rich",
+            "processed_meat"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "high"
+          ],
+          "expectedScoreRange": [
+            64,
+            92
+          ],
+          "maxRunScoreRange": 12,
+          "requiredMechanisms": [
+            "acidic_tomato_citrus_vinegar",
+            "high_fat_or_rich",
+            "processed_meat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "turkey_sub_001",
+      "image": "images/turkey_sub_001.jpg",
+      "description": "Ordinary deli sub: bread, deli meat, cheese, lettuce/tomato, light condiments.",
+      "source": {
+        "type": "user_provided_attachment",
+        "path": "/Users/thomascadle/.codex/attachments/3d79f129-7ba6-4a58-9348-944c44053f08/image-2.png"
+      },
+      "repeat": 3,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            24,
+            63
+          ],
+          "maxRunScoreRange": 12,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ],
+          "forbiddenScoreContributors": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sushi_rolls_001",
+      "image": "images/sushi_rolls_001.jpg",
+      "description": "Rice-heavy sushi rolls with vegetables and small condiment exposure.",
+      "source": {
+        "type": "user_provided_attachment",
+        "path": "/Users/thomascadle/.codex/attachments/428f2690-dbfb-4f89-9b61-5c154939947a/image-1.png"
+      },
+      "repeat": 3,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            12,
+            30
+          ],
+          "maxRunScoreRange": 8,
+          "requiredMechanisms": [
+            "rice_or_simple_starch"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chicken_curry_001",
+      "image": "images/chicken_curry_001.jpg",
+      "description": "Butter chicken / chicken curry with rice and naan.",
+      "source": {
+        "type": "user_provided_attachment",
+        "path": "/Users/thomascadle/.codex/attachments/428f2690-dbfb-4f89-9b61-5c154939947a/image-2.png"
+      },
+      "repeat": 3,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium"
+          ],
+          "expectedScoreRange": [
+            58,
+            63
+          ],
+          "maxRunScoreRange": 8,
+          "requiredMechanisms": [
+            "unknown_sauce_or_marinade",
+            "rice_or_simple_starch"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            58,
+            78
+          ],
+          "maxRunScoreRange": 12,
+          "requiredMechanisms": [
+            "unknown_sauce_or_marinade"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ground_beef_tacos_001",
+      "image": "images/ground_beef_tacos_001.jpg",
+      "description": "Ground beef tacos with small shredded toppings.",
+      "source": {
+        "type": "user_provided_attachment",
+        "path": "/Users/thomascadle/.codex/attachments/428f2690-dbfb-4f89-9b61-5c154939947a/image-3.png"
+      },
+      "repeat": 3,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            18,
+            36
+          ],
+          "maxRunScoreRange": 8,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ],
+          "forbiddenScoreContributors": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cereal_milk_001",
+      "image": "images/cereal_milk_001.jpg",
+      "description": "Colorful sweet cereal, sometimes extracted with milk.",
+      "source": {
+        "type": "user_provided_attachment",
+        "path": "/Users/thomascadle/.codex/attachments/428f2690-dbfb-4f89-9b61-5c154939947a/image-4.png"
+      },
+      "repeat": 3,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            12,
+            32
+          ],
+          "maxRunScoreRange": 14,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked",
+            "allium_garlic_onion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pancakes_eggs_bacon_001",
+      "image": "images/pancakes_eggs_bacon_001.jpg",
+      "description": "Pancakes with fried eggs, bacon, syrup, and butter.",
+      "source": {
+        "type": "user_provided_attachment",
+        "path": "/Users/thomascadle/.codex/attachments/428f2690-dbfb-4f89-9b61-5c154939947a/image-5.png"
+      },
+      "repeat": 3,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium"
+          ],
+          "expectedScoreRange": [
+            37,
+            63
+          ],
+          "maxRunScoreRange": 22,
+          "requiredMechanisms": [
+            "fried_or_crispy",
+            "processed_meat"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            44,
+            78
+          ],
+          "maxRunScoreRange": 22,
+          "requiredMechanisms": [
+            "fried_or_crispy",
+            "processed_meat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tacos_commons_001",
+      "image": "images/tacos_commons_001.jpg",
+      "description": "Casual taco photo from Wikimedia Commons; tortilla, shrimp/filling, lime/avocado-style toppings.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Tacos.jpg",
+        "license": "Public domain / CC0",
+        "attribution": "Wikimedia Commons file page"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            18,
+            50
+          ],
+          "maxRunScoreRange": 14,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "goat_curry_rice_naan_commons_001",
+      "image": "images/goat_curry_rice_naan_commons_001.jpg",
+      "description": "Goat curry with rice and naan from Wikimedia Commons.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Goat_Curry,_rice_and_naan.jpg",
+        "license": "Creative Commons Attribution-ShareAlike",
+        "attribution": "Wikimedia Commons file page"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium"
+          ],
+          "expectedScoreRange": [
+            55,
+            63
+          ],
+          "maxRunScoreRange": 10,
+          "requiredMechanisms": [
+            "unknown_sauce_or_marinade"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "coffee_mugs_commons_001",
+      "image": "images/coffee_mugs_commons_001.jpg",
+      "description": "Cup of coffee from Wikimedia Commons public-domain source.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Coffee_mugs_cups.jpg",
+        "license": "Public domain",
+        "attribution": "Jon Sullivan / Wikimedia Commons file page"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            18,
+            55
+          ],
+          "maxRunScoreRange": 12,
+          "requiredMechanisms": [
+            "caffeine"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oreo_milkshake_commons_001",
+      "image": "images/oreo_milkshake_commons_001.jpg",
+      "description": "Oreo milkshake from Wikimedia Commons CC0 source.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Oreo_milkshake_-_Creperie_Doux_Sourire_2025-05-03.jpg",
+        "license": "CC0 1.0",
+        "attribution": "Wikimedia Commons file page"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "lactose_intolerance",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            50,
+            100
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "creamy_or_lactose"
+          ]
+        },
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            24,
+            63
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "creamy_or_lactose"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fried_chicken_fries_commons_001",
+      "image": "images/fried_chicken_fries_commons_001.jpg",
+      "description": "Fried chicken and french fries from Wikimedia Commons CC0 source.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:Fried_Chicken_%26_French_Fries.jpeg",
+        "license": "CC0 1.0",
+        "attribution": "Wikimedia Commons file page"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            37,
+            90
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "fried_or_crispy"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "white_bean_burritos_commons_001",
+      "image": "images/white_bean_burritos_commons_001.jpg",
+      "description": "White-bean chili burritos from public-domain Commons/pdphoto source.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File:White-bean-chili-burritos.jpg",
+        "license": "Public domain",
+        "attribution": "Jon Sullivan / pdphoto.org / Wikimedia Commons file page"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            37,
+            85
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "legume_gos"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "banana_commons_001",
+      "image": "images/banana_commons_001.jpg",
+      "description": "Bunch of bananas; simple fruit / low-prep staple case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ABunch_of_bananas_on_sale.jpg",
+        "license": "CC0",
+        "attribution": "Wilfredor"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            8,
+            36
+          ],
+          "maxRunScoreRange": 12,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "unknown_discomfort",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            6,
+            32
+          ],
+          "maxRunScoreRange": 10,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rice_beans_commons_001",
+      "image": "images/rice_beans_commons_001.jpg",
+      "description": "Rice and beans plate; legume/GOS exposure with rice base.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ARice_and_beans_food_in_Northern_Nigeria.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Zahraswaty"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            37,
+            86
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "legume_gos"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oatmeal_commons_001",
+      "image": "images/oatmeal_commons_001.jpg",
+      "description": "Bowl of oatmeal with blueberries; low-to-moderate breakfast staple.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AAnabolic_Blueberry_Oatmeal..JPG",
+        "license": "CC BY-SA 3.0",
+        "attribution": "Home Cooking Secrets"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            10,
+            45
+          ],
+          "maxRunScoreRange": 14,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked",
+            "fried_or_crispy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "salmon_fried_rice_commons_001",
+      "image": "images/salmon_fried_rice_commons_001.jpg",
+      "description": "Fried brown rice with salmon, egg, and vegetables.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFried_brown_rice_with_salmon%2C_egg%2C_and_various_vegetables_%E3%82%B5%E3%83%BC%E3%83%A2%E3%83%B3%E3%81%A8%E5%8D%B5%E3%80%81%E9%87%8E%E8%8F%9C%E3%81%84%E3%82%8D%E3%81%84%E3%82%8D%E5%85%A5%E3%82%8A%E7%8E%84%E7%B1%B3%E3%83%81%E3%83%A3%E3%83%BC%E3%83%8F%E3%83%B3.jpg",
+        "license": "CC BY 2.0",
+        "attribution": "naotakem"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            18,
+            55
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "rice_or_simple_starch"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "baked_chicken_potatoes_commons_001",
+      "image": "images/baked_chicken_potatoes_commons_001.jpg",
+      "description": "Roasted chicken with potatoes; simple protein/starch but possible fat load.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3A%D8%AF%D8%AC%D8%A7%D8%AC_%D9%85%D8%B4%D9%88%D9%8A_%D9%85%D8%B9_%D8%A8%D8%B7%D8%A7%D8%B7%D8%B3_%D8%A8%D8%A7%D9%84%D9%81%D8%B1%D9%86.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Smilebocy"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            16,
+            52
+          ],
+          "maxRunScoreRange": 14,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "onion_rings_commons_001",
+      "image": "images/onion_rings_commons_001.jpg",
+      "description": "Deep-fried onion rings with ketchup.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFlickr_pancakejess_677476794--Onion_rings.jpg",
+        "license": "CC BY 2.0",
+        "attribution": "Jess Sawrey from Los Angeles, California, USA"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            45,
+            90
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "fried_or_crispy",
+            "allium_garlic_onion"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lentil_soup_commons_001",
+      "image": "images/lentil_soup_commons_001.jpg",
+      "description": "Lentil soup; legume/GOS-heavy soup case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AMercimek_%C3%A7orbasi.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "E4024"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            42,
+            88
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "legume_gos"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hummus_plate_commons_001",
+      "image": "images/hummus_plate_commons_001.jpg",
+      "description": "Hummus plate with vegetables; chickpea/legume exposure.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AHUMMUS_PLATE.JPG",
+        "license": "CC BY-SA 3.0",
+        "attribution": "Israel.clinic"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            40,
+            86
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "legume_gos"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "watermelon_commons_001",
+      "image": "images/watermelon_commons_001.jpg",
+      "description": "Packaged watermelon slices; high-fructose fruit signal.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3APackaged_watermelon_slices.jpg",
+        "license": "CC BY 2.0",
+        "attribution": "NatalieMaynor from Jackson, Mississippi, USA"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            16,
+            52
+          ],
+          "maxRunScoreRange": 14,
+          "requiredMechanisms": [
+            "high_fructose"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "spaghetti_tomato_commons_001",
+      "image": "images/spaghetti_tomato_commons_001.jpg",
+      "description": "Spaghetti with tomato meat sauce; wheat and acidic tomato exposure.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AHK_Food_%E6%B3%A2%E4%BB%94_Eat-East_%E9%AE%AE%E8%8C%84%E7%89%9B%E8%82%89%E9%86%AC%E6%84%8F%E7%B2%89_Beet_in_Tomato_Sauce_with_Spaghetti_03_read_to_eat.JPG",
+        "license": "CC BY-SA 3.0",
+        "attribution": "Bobogoodfans"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            44,
+            82
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten",
+            "acidic_tomato_citrus_vinegar"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gluten_sensitive_or_celiac",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            50,
+            95
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cheeseburger_fries_commons_001",
+      "image": "images/cheeseburger_fries_commons_001.jpg",
+      "description": "Cheeseburger with fries; wheat bun, cheese, rich/fatty meal.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACheeseburger_and_fries_at_Jimmy_Buffett's_Margaritaville.jpg",
+        "license": "Public domain",
+        "attribution": "Kelapstick"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            42,
+            82
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten",
+            "high_fat_or_rich"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            46,
+            88
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "high_fat_or_rich"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "plain_white_rice_commons_001",
+      "image": "images/plain_white_rice_commons_001.jpg",
+      "description": "Plain white rice; safe/simple starch baseline case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3A751Cuisine_foods%20of%20Bulacan%2018.jpg",
+        "license": "CC0",
+        "attribution": "Judgefloro"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            4,
+            28
+          ],
+          "maxRunScoreRange": 8,
+          "requiredMechanisms": [
+            "rice_or_simple_starch"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked",
+            "fried_or_crispy"
+          ]
+        },
+        {
+          "profile": "unknown_discomfort",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            4,
+            24
+          ],
+          "maxRunScoreRange": 8,
+          "requiredMechanisms": [
+            "rice_or_simple_starch"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tofu_rice_bowl_commons_001",
+      "image": "images/tofu_rice_bowl_commons_001.jpg",
+      "description": "Rice bowl topped with soft tofu / bean curd.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ARice_bowl%20topped%20with%20soft%20bean%20curd%20(7770076860).jpg",
+        "license": "CC BY-SA 2.0",
+        "attribution": "pelican from Tokyo, Japan"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            16,
+            50
+          ],
+          "maxRunScoreRange": 14,
+          "requiredMechanisms": [
+            "rice_or_simple_starch"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chicken_biryani_commons_001",
+      "image": "images/chicken_biryani_commons_001.jpg",
+      "description": "Chicken biryani/rice combo; spiced rice dish with chicken.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChicken_Biryani%20combo.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Rajeeb (Marajozkee)"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium"
+          ],
+          "expectedScoreRange": [
+            37,
+            63
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "unknown_sauce_or_marinade",
+            "rice_or_simple_starch"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crispy_chicken_rice_commons_001",
+      "image": "images/crispy_chicken_rice_commons_001.jpg",
+      "description": "Crispy chicken cutlets over rice.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACrispy_chicken%20and%20rice%20at%20Highgate%20Cricket%20Club%2C%20Crouch%20End%203.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Acabashi"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            38,
+            82
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "fried_or_crispy"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "salmon_vegetables_commons_001",
+      "image": "images/salmon_vegetables_commons_001.jpg",
+      "description": "Salmon with vegetables and potatoes; balanced protein/vegetable plate.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3A02021_0652%20(1)%20Kuskus%20with%20baked%20salmon%20and%20vegetable.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Silar"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            14,
+            45
+          ],
+          "maxRunScoreRange": 14,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked",
+            "fried_or_crispy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caesar_salad_commons_001",
+      "image": "images/caesar_salad_commons_001.jpg",
+      "description": "Caesar salad; raw lettuce should not be treated as raw/undercooked risk.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood_at%20Agio%20-%202007%2008.jpg",
+        "license": "CC BY-SA 2.0",
+        "attribution": "Nikchick"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            12,
+            48
+          ],
+          "maxRunScoreRange": 14,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chicken_noodle_soup_commons_001",
+      "image": "images/chicken_noodle_soup_commons_001.jpg",
+      "description": "Chicken noodle soup with noodles and vegetables.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ASeafood_chicken%20Noodle%20Soup.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Challiyan"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            18,
+            55
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "baked_potato_commons_001",
+      "image": "images/baked_potato_commons_001.jpg",
+      "description": "Baked potatoes; simple starch baseline with possible butter/sour cream ambiguity.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood_%26%20drink%20at%20WCNA%20(Oct%202018)%2013.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Rosiestep"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            8,
+            42
+          ],
+          "maxRunScoreRange": 12,
+          "forbiddenMechanisms": [
+            "raw_or_undercooked",
+            "fried_or_crispy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "garlic_bread_commons_001",
+      "image": "images/garlic_bread_commons_001.jpg",
+      "description": "Garlic bread on grill; wheat/fructan, garlic/allium, and fat exposure.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AThe_Food%20at%20Davids%20Kitchen%20161.jpg",
+        "license": "CC BY-SA 2.0",
+        "attribution": "David Reber from Kansas City, USA"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            50,
+            90
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten",
+            "allium_garlic_onion"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gluten_sensitive_or_celiac",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            55,
+            96
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "coleslaw_bbq_commons_001",
+      "image": "images/coleslaw_bbq_commons_001.jpg",
+      "description": "BBQ plate with coleslaw, fries, pickles, and rich meat.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ABrisket_barbecue%20with%20coleslaw%2C%20French%20fries%2C%20pickles%2C%20onion%2C%20and%20roll%20-%20San%20Francisco%2C%20CA.jpg",
+        "license": "CC0",
+        "attribution": "Daderot"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            40,
+            85
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "high_fat_or_rich"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orange_juice_commons_001",
+      "image": "images/orange_juice_commons_001.jpg",
+      "description": "Glass of orange juice; acidic citrus drink.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AOrange_juice%201%20edit1.jpg",
+        "license": "Public domain",
+        "attribution": "Agency of the United States Department of Agriculture Edited Version by: Arad"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            24,
+            60
+          ],
+          "maxRunScoreRange": 14,
+          "requiredMechanisms": [
+            "acidic_tomato_citrus_vinegar"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cola_soda_commons_001",
+      "image": "images/cola_soda_commons_001.jpg",
+      "description": "Cola/soda bottles; carbonation case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACoke_Bottles.png",
+        "license": "CC BY-SA 2.0",
+        "attribution": "Wilerson S Andrade"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            22,
+            58
+          ],
+          "maxRunScoreRange": 14,
+          "requiredMechanisms": [
+            "carbonation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "beer_glass_commons_001",
+      "image": "images/beer_glass_commons_001.jpg",
+      "description": "Glass of beer; alcohol and carbonation reflux case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ABeer_glass%20(1).jpg",
+        "license": "Public domain",
+        "attribution": "Jon Sullivan"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            42,
+            82
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "alcohol"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "red_wine_dinner_commons_001",
+      "image": "images/red_wine_dinner_commons_001.jpg",
+      "description": "Dinner table with red wine; alcohol reflux case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChristmas_table%20(Serbian%20cuisine).jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Petar Milošević"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            40,
+            82
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "alcohol"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brownie_commons_001",
+      "image": "images/brownie_commons_001.jpg",
+      "description": "Chocolate brownie; chocolate/cocoa and rich dessert case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChocolatebrownie.JPG",
+        "license": "CC BY-SA 3.0",
+        "attribution": "Ɱ"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            28,
+            62
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "chocolate_or_mint"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ice_cream_sundae_commons_001",
+      "image": "images/ice_cream_sundae_commons_001.jpg",
+      "description": "Ice cream sundae; dairy/lactose and rich dessert case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood-a-sundae.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Daniel Andrew Szpunar"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "lactose_intolerance",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            52,
+            98
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "creamy_or_lactose"
+          ]
+        },
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            28,
+            62
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "high_fat_or_rich"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mac_cheese_commons_001",
+      "image": "images/mac_cheese_commons_001.jpg",
+      "description": "Macaroni and cheese; wheat pasta, dairy/lactose, rich/fatty meal.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AThe_controversial%20%40nytimes%20mac'n%20cheese.%20Good%20piping%20hot.%20%E8%B3%9B%E5%90%A6%E4%B8%A1%E8%AB%96%E3%81%AANY%E3%82%BF%E3%82%A4%E3%83%A0%E3%82%BA%E3%81%AE%E3%83%AC%E3%82%B7%E3%83%94%E3%81%A7%E3%83%9E%E3%82%AB%E3%83%AD%E3%83%8B%E3%83%81%E3%83%BC%E3%82%BA%E3%80%82%E7%86%B1%E3%80%85%E3%81%AF%E7%BE%8E%E5%91%B3%E3%80%82.jpg",
+        "license": "CC BY 2.0",
+        "attribution": "naotakem"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            45,
+            86
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten",
+            "creamy_or_lactose"
+          ]
+        },
+        {
+          "profile": "lactose_intolerance",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            55,
+            98
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "creamy_or_lactose"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "yogurt_parfait_commons_001",
+      "image": "images/yogurt_parfait_commons_001.jpg",
+      "description": "Yogurt parfait with fruit; lactose/dairy and fruit exposure.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AParfait_de%20Frutos%20Rojos.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "MarcoA01701870"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "lactose_intolerance",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            48,
+            94
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "creamy_or_lactose"
+          ]
+        },
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            20,
+            58
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "creamy_or_lactose"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ramen_bowl_commons_001",
+      "image": "images/ramen_bowl_commons_001.jpg",
+      "description": "Ramen bowl with noodles, pork, egg, and broth.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ARamen_in%20Mexico%20City.jpg",
+        "license": "CC0",
+        "attribution": "Redpanda1302"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium"
+          ],
+          "expectedScoreRange": [
+            37,
+            63
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kimchi_plate_commons_001",
+      "image": "images/kimchi_plate_commons_001.jpg",
+      "description": "Kimchi and pickled sides; fermented/pickled/acidic case.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChunjang_danmuji%20yangpa%20kimchi.jpg",
+        "license": "CC BY 2.0",
+        "attribution": "chomjong"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            24,
+            62
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "fermented_or_histamine"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            28,
+            63
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "acidic_tomato_citrus_vinegar"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sashimi_commons_001",
+      "image": "images/sashimi_commons_001.jpg",
+      "description": "Sashimi plate; raw fish should be handled as raw animal-protein risk, not raw vegetable risk.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ASashimi_plate%20-%20Massachusetts.jpg",
+        "license": "CC0",
+        "attribution": "Daderot"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            18,
+            55
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "avocado_toast_commons_001",
+      "image": "images/avocado_toast_commons_001.jpg",
+      "description": "Avocado toast with greens; wheat base and avocado fat exposure.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AAvocado_toast%20at%20the%20girl%20%26%20the%20fig%20-%20Sarah%20Stierch.jpg",
+        "license": "CC BY 4.0",
+        "attribution": "Sarah Stierch"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            22,
+            60
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "wheat_fructan_or_gluten",
+            "high_fat_or_rich"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hot_dog_fries_commons_001",
+      "image": "images/hot_dog_fries_commons_001.jpg",
+      "description": "Hot dog with fries; processed meat, wheat bun, fried side.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFrites_plus%20hot%20dog.jpg",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Mandanye"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            42,
+            84
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "processed_meat",
+            "wheat_fructan_or_gluten"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        },
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            42,
+            86
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "fried_or_crispy"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fish_chips_commons_001",
+      "image": "images/fish_chips_commons_001.jpg",
+      "description": "Fish and chips with sauce; fried fish and fries.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ANoyo_Fish%20Company%20-%20November%202022%20-%20Sarah%20Stierch.jpg",
+        "license": "CC BY 4.0",
+        "attribution": "Missvain"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            42,
+            88
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "fried_or_crispy"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fried_rice_commons_001",
+      "image": "images/fried_rice_commons_001.jpg",
+      "description": "Shrimp fried rice; rice-heavy mixed dish with fried/oil prep.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AYeung_Chow%20Fried%20Rice%20in%20Hong%20Kong%20Fast%20Food%20Shop.JPG",
+        "license": "CC BY-SA 4.0",
+        "attribution": "Ceeseven"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            20,
+            58
+          ],
+          "maxRunScoreRange": 16,
+          "requiredMechanisms": [
+            "rice_or_simple_starch"
+          ],
+          "forbiddenMechanisms": [
+            "raw_or_undercooked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fruit_smoothie_commons_001",
+      "image": "images/fruit_smoothie_commons_001.jpg",
+      "description": "Fruit smoothie / fruit dessert drink; fructose and possible dairy exposure.",
+      "source": {
+        "type": "wikimedia_commons",
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood_(31881044841).jpg",
+        "license": "CC BY-SA 2.0",
+        "attribution": "bryan... from Taipei, Taiwan"
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            24,
+            62
+          ],
+          "maxRunScoreRange": 18,
+          "requiredMechanisms": [
+            "high_fructose"
+          ]
+        },
+        {
+          "profile": "lactose_intolerance",
+          "expectedBands": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            24,
+            86
+          ],
+          "maxRunScoreRange": 20
+        }
+      ]
+    }
+  ]
+}

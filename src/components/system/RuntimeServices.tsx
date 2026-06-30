@@ -5,7 +5,7 @@ import { NotificationSchedulerBridge } from './bridges/NotificationSchedulerBrid
 import { PostHogIdentityBridge } from './bridges/PostHogIdentityBridge';
 import { RemoteBootstrapBridge } from './bridges/RemoteBootstrapBridge';
 import { RevenueCatBillingBridge } from './bridges/RevenueCatBillingBridge';
-import { SupabaseSessionBridge } from './bridges/SupabaseSessionBridge';
+import { SessionBridge } from './bridges/SessionBridge';
 
 type RuntimeServicesProps = {
   children: ReactNode;
@@ -14,7 +14,7 @@ type RuntimeServicesProps = {
 export function RuntimeServices({ children }: RuntimeServicesProps) {
   return (
     <>
-      <SupabaseSessionBridge />
+      <SessionBridge />
       <PostHogIdentityBridge />
       <RemoteBootstrapBridge />
       <RevenueCatBillingBridge />

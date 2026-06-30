@@ -1,27 +1,14 @@
 import { ReactNode, useEffect } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
-import { restoreSupabaseSession, syncSessionToStore } from '../../services/auth';
+import { restoreSession } from '../../services/auth';
 import { posthogClient } from '../../services/analytics/posthog';
-import { supabase } from '../../services/supabase/client';
 
-export function SupabaseSessionBridge() {
+export function SessionBridge() {
   useEffect(() => {
-    restoreSupabaseSession().catch((error) => {
+    restoreSession().catch((error) => {
       console.warn('[auth] failed to restore session', error);
     });
-
-    if (!supabase) {
-      return undefined;
-    }
-
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      syncSessionToStore(session);
-    });
-
-    return () => {
-      data.subscription.unsubscribe();
-    };
   }, []);
 
   return null;
@@ -56,7 +43,7 @@ type RuntimeServicesProps = {
 export function RuntimeServices({ children }: RuntimeServicesProps) {
   return (
     <>
-      <SupabaseSessionBridge />
+      <SessionBridge />
       <PostHogIdentityBridge />
       {children}
     </>

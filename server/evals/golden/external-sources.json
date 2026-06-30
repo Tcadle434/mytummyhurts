@@ -1,0 +1,452 @@
+{
+  "version": "external_sources_v1",
+  "note": "Candidate permissively licensed sources for expanding the golden image set. Prefer app-like/phone photos over polished stock. Download only after checking each file page license and attribution requirements.",
+  "sources": [
+    {
+      "id": "commons_tacos_carnitas_carne_asada_al_pastor",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:001_Tacos_de_carnitas,_carne_asada_y_al_pastor.jpg",
+      "license": "CC BY-SA 2.0",
+      "attribution": "Larry Miller via Flickr/Wikimedia Commons",
+      "candidateCase": "street_tacos_001"
+    },
+    {
+      "id": "commons_pancakes_eggs_bacon_unsplash",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Pancakes,_Eggs,_and_Bacon_(Unsplash).jpg",
+      "license": "CC0 1.0",
+      "attribution": "Unsplash/Wikimedia Commons",
+      "candidateCase": "pancakes_eggs_bacon_external_001"
+    },
+    {
+      "id": "commons_pepperoni_pizza_public_domain",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Pepperoni_pizza.jpg",
+      "license": "Public domain",
+      "attribution": "Neutrality / pdphoto.org via Wikimedia Commons",
+      "candidateCase": "pepperoni_pizza_external_001"
+    },
+    {
+      "id": "commons_butter_chicken_with_naan",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Butter_Chicken_with_Naan.JPG",
+      "license": "Check file page before use",
+      "attribution": "Wikimedia Commons file page",
+      "candidateCase": "butter_chicken_external_001"
+    },
+    {
+      "id": "commons_tacos_public_domain",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Tacos.jpg",
+      "license": "Public domain / CC0",
+      "attribution": "Wikimedia Commons file page",
+      "candidateCase": "tacos_commons_001",
+      "status": "downloaded"
+    },
+    {
+      "id": "commons_goat_curry_rice_naan",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Goat_Curry,_rice_and_naan.jpg",
+      "license": "Creative Commons Attribution-ShareAlike",
+      "attribution": "Wikimedia Commons file page",
+      "candidateCase": "goat_curry_rice_naan_commons_001",
+      "status": "downloaded"
+    },
+    {
+      "id": "commons_coffee_mugs_public_domain",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Coffee_mugs_cups.jpg",
+      "license": "Public domain",
+      "attribution": "Jon Sullivan / Wikimedia Commons file page",
+      "candidateCase": "coffee_mugs_commons_001",
+      "status": "downloaded"
+    },
+    {
+      "id": "commons_oreo_milkshake_cc0",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Oreo_milkshake_-_Creperie_Doux_Sourire_2025-05-03.jpg",
+      "license": "CC0 1.0",
+      "attribution": "Wikimedia Commons file page",
+      "candidateCase": "oreo_milkshake_commons_001",
+      "status": "downloaded"
+    },
+    {
+      "id": "commons_fried_chicken_fries_cc0",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:Fried_Chicken_%26_French_Fries.jpeg",
+      "license": "CC0 1.0",
+      "attribution": "Wikimedia Commons file page",
+      "candidateCase": "fried_chicken_fries_commons_001",
+      "status": "downloaded"
+    },
+    {
+      "id": "commons_white_bean_burritos_public_domain",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File:White-bean-chili-burritos.jpg",
+      "license": "Public domain",
+      "attribution": "Jon Sullivan / pdphoto.org / Wikimedia Commons file page",
+      "candidateCase": "white_bean_burritos_commons_001",
+      "status": "downloaded"
+    },
+    {
+      "id": "commons_banana_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ABunch_of_bananas_on_sale.jpg",
+      "license": "CC0",
+      "attribution": "Wilfredor",
+      "candidateCase": "banana_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Bunch of bananas on sale.jpg",
+      "sourceDescription": "Bunch of bananas on sale in Maracaibo, Venezuela"
+    },
+    {
+      "id": "commons_rice_beans_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ARice_and_beans_food_in_Northern_Nigeria.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Zahraswaty",
+      "candidateCase": "rice_beans_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Rice and beans food in Northern Nigeria.jpg",
+      "sourceDescription": "Rice,beans, Parm oli and pepper"
+    },
+    {
+      "id": "commons_oatmeal_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AAnabolic_Blueberry_Oatmeal..JPG",
+      "license": "CC BY-SA 3.0",
+      "attribution": "Home Cooking Secrets",
+      "candidateCase": "oatmeal_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Anabolic Blueberry Oatmeal..JPG",
+      "sourceDescription": "Hello, I'm Stephen Rummey from http://HomeCookingSecrets.com and today I'll be showing you how to make this fantastic Anabolic Blueberry Oatmeal. Makes 1 Serving Ingredients * - 3/4 cup oatmeal * - 8 Egg Whites * - 1/2 scoop (15g) of Chocolate Protein Powder * - 2 teaspoons of Pure Cocoa Powder * - 1 teaspoon of Splenda * - 1 tbsp of Flax Oil * - 1 cup of frozen Blueberries * - 1/4 cup of water Directions * 1. In a big bowl, mix All the ingredients (except for the frozen blueberries) * 2. Cook in a microwave for about 3-4 minutes (cooking time vary from one microwave to the other) - stir the mix 2 minutes after cooking has started (so the mix doesn't stick or create chunks) * 3. Once the mix is cooked, add the frozen blueberries, mix everything and enjoy :) Nutritional Facts (Per Serving) * Calories: 580 * Protein: 52g * Carbohydrates: 57g * Fat: 16g If you liked this recipe and would like some more, you should definitely check out Dave Ruel's Anabolic Cooking. Which is the ultimate cookbook and complete nutrition guide for Bodybuilders and fitness enthusiasts alike. Go to http://HomeCookingSecrets.com/AnabolicCooking to download Dave's Top 10 Most \"Anabolicious\" Recipes for free!"
+    },
+    {
+      "id": "commons_salmon_fried_rice_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFried_brown_rice_with_salmon%2C_egg%2C_and_various_vegetables_%E3%82%B5%E3%83%BC%E3%83%A2%E3%83%B3%E3%81%A8%E5%8D%B5%E3%80%81%E9%87%8E%E8%8F%9C%E3%81%84%E3%82%8D%E3%81%84%E3%82%8D%E5%85%A5%E3%82%8A%E7%8E%84%E7%B1%B3%E3%83%81%E3%83%A3%E3%83%BC%E3%83%8F%E3%83%B3.jpg",
+      "license": "CC BY 2.0",
+      "attribution": "naotakem",
+      "candidateCase": "salmon_fried_rice_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Fried brown rice with salmon, egg, and various vegetables サーモンと卵、野菜いろいろ入り玄米チャーハン.jpg",
+      "sourceDescription": "Japanese food"
+    },
+    {
+      "id": "commons_baked_chicken_potatoes_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3A%D8%AF%D8%AC%D8%A7%D8%AC_%D9%85%D8%B4%D9%88%D9%8A_%D9%85%D8%B9_%D8%A8%D8%B7%D8%A7%D8%B7%D8%B3_%D8%A8%D8%A7%D9%84%D9%81%D8%B1%D9%86.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Smilebocy",
+      "candidateCase": "baked_chicken_potatoes_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:دجاج مشوي مع بطاطس بالفرن.jpg",
+      "sourceDescription": "This is an image of food from"
+    },
+    {
+      "id": "commons_onion_rings_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFlickr_pancakejess_677476794--Onion_rings.jpg",
+      "license": "CC BY 2.0",
+      "attribution": "Jess Sawrey from Los Angeles, California, USA",
+      "candidateCase": "onion_rings_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Flickr pancakejess 677476794--Onion rings.jpg",
+      "sourceDescription": "Deep-fried onion rings arranged in a line on a platter with ketchup, as served by Ford's Filling Station at 9531 Culver Boulevard in Culver City, California, USA.I really only wanted onion rings."
+    },
+    {
+      "id": "commons_lentil_soup_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AMercimek_%C3%A7orbasi.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "E4024",
+      "candidateCase": "lentil_soup_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Mercimek çorbasi.jpg",
+      "sourceDescription": "Mercimek çorbası (lentil soup) at a restaurant in Ankara."
+    },
+    {
+      "id": "commons_hummus_plate_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AHUMMUS_PLATE.JPG",
+      "license": "CC BY-SA 3.0",
+      "attribution": "Israel.clinic",
+      "candidateCase": "hummus_plate_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:HUMMUS PLATE.JPG",
+      "sourceDescription": "HUMMUS PLATE"
+    },
+    {
+      "id": "commons_watermelon_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3APackaged_watermelon_slices.jpg",
+      "license": "CC BY 2.0",
+      "attribution": "NatalieMaynor from Jackson, Mississippi, USA",
+      "candidateCase": "watermelon_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Packaged watermelon slices.jpg",
+      "sourceDescription": "Actually, I think the word \"meat\" is in fact used for the heart of fruits. But I don't think that's how the stranger in Kroger intended it this afternoon when she asked me what kind of meat this was, saying that she thought it looked very good. When I told her that it was watermelon, she laughed at herself. I agree that it does look like a package of small steaks."
+    },
+    {
+      "id": "commons_spaghetti_tomato_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AHK_Food_%E6%B3%A2%E4%BB%94_Eat-East_%E9%AE%AE%E8%8C%84%E7%89%9B%E8%82%89%E9%86%AC%E6%84%8F%E7%B2%89_Beet_in_Tomato_Sauce_with_Spaghetti_03_read_to_eat.JPG",
+      "license": "CC BY-SA 3.0",
+      "attribution": "Bobogoodfans",
+      "candidateCase": "spaghetti_tomato_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:HK Food 波仔 Eat-East 鮮茄牛肉醬意粉 Beet in Tomato Sauce with Spaghetti 03 read to eat.JPG",
+      "sourceDescription": "zh:波仔鮮茄牛肉醬zh:意粉"
+    },
+    {
+      "id": "commons_cheeseburger_fries_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACheeseburger_and_fries_at_Jimmy_Buffett's_Margaritaville.jpg",
+      "license": "Public domain",
+      "attribution": "Kelapstick",
+      "candidateCase": "cheeseburger_fries_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Cheeseburger and fries at Jimmy Buffett's Margaritaville.jpg",
+      "sourceDescription": "A Cheeseburger in Paradise at Jimmy Buffett's Margaritaville"
+    },
+    {
+      "id": "commons_plain_white_rice_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3A751Cuisine_foods%20of%20Bulacan%2018.jpg",
+      "license": "CC0",
+      "attribution": "Judgefloro",
+      "candidateCase": "plain_white_rice_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:751Cuisine foods of Bulacan 18.jpg",
+      "sourceDescription": "Cuisine foods of Bulacan in Poblacion, Baliuag, Bulacan during Timeline of the 2020 coronavirus pandemic in the Philippines 2020 coronavirus pandemic in the Philippines Bayanihan to Heal as One Act (RA 11469) Bayanihan Act of 2020. Signed on March 24, 2020 Bayanihan to Recover as One Act Template:COVID-19 pandemic in the Philippines September 1 Coronavirus Cases: 224,264 Deaths: 3,597 Recovered: 158,012; September 25-26 Philippines Coronavirus Cases: 296,755 Deaths: 5,127 Recovered: 231,928; Philippines Coronavirus Cases: 301,256 Deaths: 5,284 Recovered: 232,906 Category:Sitios and puroks of the Philippines Subdivisions of the Philippines Barangay Poblacion 14°57'17\"N 120°54'2\"E, Baliuag, Bulacan, Bulacan province taken under weather conditions of Habagat Monsoon of South Asia Low Pressure Area (LPA) Southwest Monsoon and Tropical Storm Dolphin (Marce) Dolphin Current storm status Tropical storm (JMA) Category:Tropical Storm Dolphin (2020) (Note: Judge Florentino Floro, the owner, to repeat, Donor FlorentinoFloro of all these photos hereby donate gratuitously, freely and unconditionally Judge Floro all these photos to and for Wikimedia Commons, exclusively, for public use of the public domain, and again without any condition whatsoever)."
+    },
+    {
+      "id": "commons_tofu_rice_bowl_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ARice_bowl%20topped%20with%20soft%20bean%20curd%20(7770076860).jpg",
+      "license": "CC BY-SA 2.0",
+      "attribution": "pelican from Tokyo, Japan",
+      "candidateCase": "tofu_rice_bowl_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Rice bowl topped with soft bean curd (7770076860).jpg",
+      "sourceDescription": "Rice bowl topped with soft bean curd"
+    },
+    {
+      "id": "commons_chicken_biryani_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChicken_Biryani%20combo.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Rajeeb (Marajozkee)",
+      "candidateCase": "chicken_biryani_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Chicken Biryani combo.jpg",
+      "sourceDescription": "Chicken Biriyani combo is a meal box having one plate of chicken Briyani with a glass of cold drink and a bowl of raita."
+    },
+    {
+      "id": "commons_crispy_chicken_rice_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACrispy_chicken%20and%20rice%20at%20Highgate%20Cricket%20Club%2C%20Crouch%20End%203.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Acabashi",
+      "candidateCase": "crispy_chicken_rice_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Crispy chicken and rice at Highgate Cricket Club, Crouch End 3.jpg",
+      "sourceDescription": "Thai style crispy chicken and rice &amp; vegetables in a tin foil carton at the pavilion clubhouse café-bar of Highgate Cricket Club in August 2020, in Crouch End, Haringey, London, England.Mobile device view: Wikimedia (2021) makes it difficult to immediately view photo groups related to this image. To see its most relevant allied photos, click on Highgate Cricket Club, and this uploader's Food and drink photos. You can add a click-through 'categories' button to the very bottom of photo-pages you view by going to settings... three-bar icon top left.Desktop view: Wikimedia (2021) makes it difficult to immediately view the helpful category links where you can find images related to this one in a variety of ways; for these go to the very bottom of the page.This image is one of a series of date and/or subject allied consecutive photographs kept in progression or location by file name number and/or time marking.Camera: Canon PowerShot SX60 HSSoftware: File lens-corrected, optimized, perhaps cropped, with DxO PhotoLab 4 Elite, and likely further optimized with Adobe Photoshop CS2."
+    },
+    {
+      "id": "commons_salmon_vegetables_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3A02021_0652%20(1)%20Kuskus%20with%20baked%20salmon%20and%20vegetable.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Silar",
+      "candidateCase": "salmon_vegetables_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:02021 0652 (1) Kuskus with baked salmon and vegetable.jpg",
+      "sourceDescription": "Kuskus with baked salmon and vegetable"
+    },
+    {
+      "id": "commons_caesar_salad_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood_at%20Agio%20-%202007%2008.jpg",
+      "license": "CC BY-SA 2.0",
+      "attribution": "Nikchick",
+      "candidateCase": "caesar_salad_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Food at Agio - 2007 08.jpg",
+      "sourceDescription": "Caesar salad at Agio, Indianapolis."
+    },
+    {
+      "id": "commons_chicken_noodle_soup_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ASeafood_chicken%20Noodle%20Soup.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Challiyan",
+      "candidateCase": "chicken_noodle_soup_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Seafood chicken Noodle Soup.jpg",
+      "sourceDescription": "Seafood chicken Noodle Soup"
+    },
+    {
+      "id": "commons_baked_potato_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood_%26%20drink%20at%20WCNA%20(Oct%202018)%2013.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Rosiestep",
+      "candidateCase": "baked_potato_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Food & drink at WCNA (Oct 2018) 13.jpg",
+      "sourceDescription": "Food at WikiConference North America 2018"
+    },
+    {
+      "id": "commons_garlic_bread_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AThe_Food%20at%20Davids%20Kitchen%20161.jpg",
+      "license": "CC BY-SA 2.0",
+      "attribution": "David Reber from Kansas City, USA",
+      "candidateCase": "garlic_bread_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:The Food at Davids Kitchen 161.jpg",
+      "sourceDescription": "Fathers Day Meal. Ribeyes and pizza."
+    },
+    {
+      "id": "commons_coleslaw_bbq_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ABrisket_barbecue%20with%20coleslaw%2C%20French%20fries%2C%20pickles%2C%20onion%2C%20and%20roll%20-%20San%20Francisco%2C%20CA.jpg",
+      "license": "CC0",
+      "attribution": "Daderot",
+      "candidateCase": "coleslaw_bbq_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Brisket barbecue with coleslaw, French fries, pickles, onion, and roll - San Francisco, CA.jpg",
+      "sourceDescription": "Brisket barbecue with coleslaw, French fries, pickles, onion, and roll - San Francisco, California, USA."
+    },
+    {
+      "id": "commons_orange_juice_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AOrange_juice%201%20edit1.jpg",
+      "license": "Public domain",
+      "attribution": "Agency of the United States Department of Agriculture Edited Version by: Arad",
+      "candidateCase": "orange_juice_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Orange juice 1 edit1.jpg",
+      "sourceDescription": "A glass of Orange juice."
+    },
+    {
+      "id": "commons_cola_soda_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACoke_Bottles.png",
+      "license": "CC BY-SA 2.0",
+      "attribution": "Wilerson S Andrade",
+      "candidateCase": "cola_soda_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Coke Bottles.png",
+      "sourceDescription": "Six glass coca-cola bottles demonstrating early an early history of the soda bottle."
+    },
+    {
+      "id": "commons_beer_glass_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ABeer_glass%20(1).jpg",
+      "license": "Public domain",
+      "attribution": "Jon Sullivan",
+      "candidateCase": "beer_glass_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Beer glass (1).jpg",
+      "sourceDescription": "Image title: Beer glass Image from Public domain images website, http://www.public-domain-image.com/full-image/food-and-drink-public-domain-images-pictures/beer-public-domain-images-pictures/beer-glass.jpg.html"
+    },
+    {
+      "id": "commons_red_wine_dinner_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChristmas_table%20(Serbian%20cuisine).jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Petar Milošević",
+      "candidateCase": "red_wine_dinner_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Christmas table (Serbian cuisine).jpg",
+      "sourceDescription": "Christmas table (Cuisine of Serbia); grilled pork, Olivier salad (also called Russian salad), tzatziki salad, red wine Vranac, kifli and strudel sweets."
+    },
+    {
+      "id": "commons_brownie_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChocolatebrownie.JPG",
+      "license": "CC BY-SA 3.0",
+      "attribution": "Ɱ",
+      "candidateCase": "brownie_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Chocolatebrownie.JPG",
+      "sourceDescription": "This is an image of a chocolate brownie."
+    },
+    {
+      "id": "commons_ice_cream_sundae_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood-a-sundae.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Daniel Andrew Szpunar",
+      "candidateCase": "ice_cream_sundae_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Food-a-sundae.jpg",
+      "sourceDescription": "This is an image of a ice cream sundae with vanilla and chocolate, with a cherry and whipped cream on top. It was taken in a small desert shop near Kyoto train station."
+    },
+    {
+      "id": "commons_mac_cheese_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AThe_controversial%20%40nytimes%20mac'n%20cheese.%20Good%20piping%20hot.%20%E8%B3%9B%E5%90%A6%E4%B8%A1%E8%AB%96%E3%81%AANY%E3%82%BF%E3%82%A4%E3%83%A0%E3%82%BA%E3%81%AE%E3%83%AC%E3%82%B7%E3%83%94%E3%81%A7%E3%83%9E%E3%82%AB%E3%83%AD%E3%83%8B%E3%83%81%E3%83%BC%E3%82%BA%E3%80%82%E7%86%B1%E3%80%85%E3%81%AF%E7%BE%8E%E5%91%B3%E3%80%82.jpg",
+      "license": "CC BY 2.0",
+      "attribution": "naotakem",
+      "candidateCase": "mac_cheese_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:The controversial @nytimes mac'n cheese. Good piping hot. 賛否両論なNYタイムズのレシピでマカロニチーズ。熱々は美味。.jpg",
+      "sourceDescription": "Japanese food"
+    },
+    {
+      "id": "commons_yogurt_parfait_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AParfait_de%20Frutos%20Rojos.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "MarcoA01701870",
+      "candidateCase": "yogurt_parfait_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Parfait de Frutos Rojos.jpg",
+      "sourceDescription": "Parfait de Frutos Rojos de Mr.Juice Querétaro"
+    },
+    {
+      "id": "commons_ramen_bowl_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ARamen_in%20Mexico%20City.jpg",
+      "license": "CC0",
+      "attribution": "Redpanda1302",
+      "candidateCase": "ramen_bowl_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Ramen in Mexico City.jpg",
+      "sourceDescription": "This is a bowl of ramen ordered in CDMX"
+    },
+    {
+      "id": "commons_kimchi_plate_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AChunjang_danmuji%20yangpa%20kimchi.jpg",
+      "license": "CC BY 2.0",
+      "attribution": "chomjong",
+      "candidateCase": "kimchi_plate_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Chunjang danmuji yangpa kimchi.jpg",
+      "sourceDescription": "Chunjang (sweet wheat sauce), danmuji (yellow pickled radish), raw onions, and kimchi"
+    },
+    {
+      "id": "commons_sashimi_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ASashimi_plate%20-%20Massachusetts.jpg",
+      "license": "CC0",
+      "attribution": "Daderot",
+      "candidateCase": "sashimi_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Sashimi plate - Massachusetts.jpg",
+      "sourceDescription": "Sashimi plate - Massachusetts, USA."
+    },
+    {
+      "id": "commons_avocado_toast_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AAvocado_toast%20at%20the%20girl%20%26%20the%20fig%20-%20Sarah%20Stierch.jpg",
+      "license": "CC BY 4.0",
+      "attribution": "Sarah Stierch",
+      "candidateCase": "avocado_toast_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Avocado toast at the girl & the fig - Sarah Stierch.jpg",
+      "sourceDescription": "Avocado toast with a salad at the girl &amp; the fig in Sonoma, California."
+    },
+    {
+      "id": "commons_hot_dog_fries_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFrites_plus%20hot%20dog.jpg",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Mandanye",
+      "candidateCase": "hot_dog_fries_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Frites plus hot dog.jpg",
+      "sourceDescription": "This is an image of food from"
+    },
+    {
+      "id": "commons_fish_chips_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3ANoyo_Fish%20Company%20-%20November%202022%20-%20Sarah%20Stierch.jpg",
+      "license": "CC BY 4.0",
+      "attribution": "Missvain",
+      "candidateCase": "fish_chips_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Noyo Fish Company - November 2022 - Sarah Stierch.jpg",
+      "sourceDescription": "Fried fish and shimp with chips and a beer at Noyo Fish Company, Fort Bragg, California"
+    },
+    {
+      "id": "commons_fried_rice_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AYeung_Chow%20Fried%20Rice%20in%20Hong%20Kong%20Fast%20Food%20Shop.JPG",
+      "license": "CC BY-SA 4.0",
+      "attribution": "Ceeseven",
+      "candidateCase": "fried_rice_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Yeung Chow Fried Rice in Hong Kong Fast Food Shop.JPG",
+      "sourceDescription": "Yangzhou (\"Yeung Chow\") Fried Rice in Hong Kong Fast Food Shop"
+    },
+    {
+      "id": "commons_fruit_smoothie_commons_001",
+      "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFood_(31881044841).jpg",
+      "license": "CC BY-SA 2.0",
+      "attribution": "bryan... from Taipei, Taiwan",
+      "candidateCase": "fruit_smoothie_commons_001",
+      "status": "downloaded",
+      "sourceTitle": "File:Food (31881044841).jpg",
+      "sourceDescription": "Bingsu (Korean shaved ice) &amp; a smoothie"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, PrimaryButton } from '../../components/common/UI';
-import { signOutSupabase } from '../../services/auth';
+import { signOut } from '../../services/auth';
 import { useAppStore } from '../../store/useAppStore';
 import { palette, spacing, tokens, type } from '../../theme';
 
@@ -38,7 +38,7 @@ export function FinishingSetupScreen() {
         {serverSyncError ? (
           <PrimaryButton label={busy ? 'Retrying...' : 'Retry'} onPress={() => void handleRetry()} disabled={busy} />
         ) : null}
-        <Text accessibilityRole="button" onPress={() => void signOutSupabase()} style={styles.signOut}>
+        <Text accessibilityRole="button" onPress={() => void signOut()} style={styles.signOut}>
           Sign out
         </Text>
       </View>

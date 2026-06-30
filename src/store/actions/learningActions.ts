@@ -5,7 +5,12 @@ import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { apiErrorCode, patchInsightsCacheFromLearning, patchDailyReportsInHistoryCache, sleep } from '../helpers';
+import {
+  apiErrorCode,
+  learningResponseStatePatch,
+  patchLearningResponseInQueryCaches,
+  sleep,
+} from '../helpers';
 
 export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
@@ -35,8 +40,7 @@ export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
             }
 
             if (response.learningSyncStatus === 'updated') {
-              patchInsightsCacheFromLearning(response);
-              patchDailyReportsInHistoryCache(response.dailyReports);
+              patchLearningResponseInQueryCaches(response);
 
               set((state) => {
                 if (state.learningSyncRequestId !== syncRequestId) {
@@ -44,14 +48,7 @@ export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
                 }
 
                 return {
-                  profile: response.profile ?? state.profile,
-                  insights: response.insights ?? state.insights,
-                  conditionInsights: response.conditionInsights ?? state.conditionInsights,
-                  dailyReports: response.dailyReports
-                    ? response.dailyReports.sort(
-                        (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-                      )
-                    : state.dailyReports,
+                  ...learningResponseStatePatch(state, response),
                 };
               });
 

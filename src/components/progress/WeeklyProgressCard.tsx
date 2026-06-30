@@ -4,6 +4,7 @@ import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-n
 
 import { DailyScoreRing as SharedDailyScoreRing } from "./DailyScoreRing";
 import { components, radii, spacing, tokens, type } from "../../theme";
+import { gutScoreTint } from "../../utils/risk";
 import {
 	WeeklyProgressDay,
 	WeeklyProgressTrendDirection,
@@ -203,7 +204,7 @@ function DailyScoreRing({ score }: { score?: number }) {
 
 function WeeklyProgressColumn({ day }: { day: WeeklyProgressDay }) {
 	const hasScore = day.dailyScore !== undefined && day.hasReport;
-	const scoreColor = hasScore ? scoreTint(day.dailyScore as number) : tokens.color.chart.track;
+	const scoreColor = hasScore ? gutScoreTint(day.dailyScore as number) : tokens.color.chart.track;
 	const trend = dayTrend(day.trendDirection);
 
 	return (
@@ -297,12 +298,6 @@ function symptomSeverityTone(gutSeverity: number | undefined) {
 	if (gutSeverity <= 6) {
 		return tokens.color.status.risk.medium.tint;
 	}
-	return tokens.color.status.risk.high.tint;
-}
-
-function scoreTint(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.tint;
-	if (score >= 34) return tokens.color.status.risk.medium.tint;
 	return tokens.color.status.risk.high.tint;
 }
 

@@ -1,0 +1,14 @@
+# Replace api.mytummyhurts.app with your real API domain. Caddy auto-provisions
+# TLS via Let's Encrypt and reverse-proxies to the NestJS api service.
+api.mytummyhurts.app {
+	encode gzip
+	reverse_proxy api:3000
+}
+
+# Signed scan image URLs must be reachable by the mobile app. Point
+# S3_ENDPOINT at this public HTTPS host in production, e.g.
+# S3_ENDPOINT=https://storage.mytummyhurts.app
+storage.mytummyhurts.app {
+	encode gzip
+	reverse_proxy minio:9000
+}

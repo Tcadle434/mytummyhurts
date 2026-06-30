@@ -2,77 +2,50 @@ import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
 import * as StoreReview from "expo-store-review";
-import { ComponentProps, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	Image,
-	KeyboardAvoidingView,
-	Modal,
 	Platform,
 	Pressable,
 	ScrollView,
-	StyleProp,
-	StyleSheet,
 	Text,
 	useWindowDimensions,
 	View,
-	ViewStyle,
 } from "react-native";
-import Animated, { FadeInUp } from "react-native-reanimated";
 
-import { Gauge } from "../../components/charts/Gauge";
-import { RiskBar } from "../../components/charts/RiskBar";
 import {
 	AppScreen,
-	DetailRow,
-	Divider,
 	InfoPill,
-	InputField,
-	MetricPill,
-	OnboardingPickerOption,
 	PrimaryButton,
 	ScreenHeader,
-	SectionCard,
 } from "../../components/common/UI";
-import {
-	calibrationFoodOptions,
-	dietPreferenceKeyFromLabel,
-	dietPreferenceLabelFromKey,
-	noSpecificDietOption,
-} from "../../data/catalog";
+import { CustomEntryModal } from "../../components/modals/CustomEntryModal";
 import { getMascotStateForStep, normalizeOnboardingAnswers, onboardingSteps } from "../../data/onboarding";
 import { trackEvent } from "../../services/analytics";
 import { computeGutScoreState } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
-import { palette, spacing, tokens, type } from "../../theme";
+import { palette, tokens } from "../../theme";
 import { OnboardingStackParamList } from "../../navigation/types";
-import {
-	StartingGutScoreComputeCard,
-	type StartingScoreState,
-} from "./components/StartingGutScoreComputeCard";
-import { RaiseGutScorePlanPreview } from "./components/RaiseGutScorePlanPreview";
+import { type StartingScoreState } from "./components/StartingGutScoreComputeCard";
 import { WelcomeFoodScene } from "./components/WelcomeFoodScene";
 import { type PhaseDiscoveryState } from "./components/PhaseDiscoveryGraphic";
 import { OnboardingCenterGraphic } from "./components/OnboardingCenterGraphic";
 import { OnboardingPipCompanion } from "./components/OnboardingPipCompanion";
 import { OnboardingProgressBar } from "./components/OnboardingProgressBar";
-import { CalibrationDeck } from "./components/CalibrationDeck";
-import { CommitmentHoldCard } from "./components/CommitmentHoldCard";
-import { KnowBeforeEatDemo, type KnowBeforeEatStage } from "./components/KnowBeforeEatDemo";
-import { PersonalHealingApproach } from "./components/PersonalHealingApproach";
+import { type KnowBeforeEatStage } from "./components/KnowBeforeEatDemo";
 import { StepTransition, StepTransitionDirection } from "./components/StepTransition";
-import { TrialFreePreview } from "./components/TrialFreePreview";
-import { AppStoreRatingPreview } from "./components/AppStoreRatingPreview";
+import { OnboardingSelectionControls } from "./OnboardingFlowParts";
+import {
+	STAGGER_BASE_MS,
+	STAGGER_STEP_MS,
+	StaggerItem,
+} from "./OnboardingFlowScreen.helpers";
+import { styles } from "./OnboardingFlowScreen.styles";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "OnboardingFlow">;
-type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
 const GET_STARTED_BACKGROUND_IMAGE = require("../../../assets/get_started_background_image.png");
 const GUT_ISSUES_DIAGRAM = require("../../../assets/ui/gut_issues_diagram.png");
-
-const STAGGER_BASE_MS = 80;
-const STAGGER_STEP_MS = 50;
-const ENTER_DURATION_MS = 360;
-const INGREDIENT_SENSITIVITY_UNKNOWN_OPTION = "I'm not sure";
 
 export function OnboardingFlowScreen({ navigation }: Props) {
 	const stepIndex = useAppStore((state) => state.onboardingStepIndex);
@@ -406,197 +379,6 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		return true;
 	}
 
-	function renderPreview() {
-		switch (step.previewVariant) {
-			case "howItWorks":
-				return (
-					<View style={styles.previewStack}>
-						{[
-							"Scan food",
-							"Check Gut Score impact",
-							"Log daily reports",
-							"Improve Gut Score",
-						].map((entry, index) => (
-							<SectionCard key={entry} style={styles.previewCard}>
-								<InfoPill label={`Step ${index + 1}`} tone="soft" />
-								<Text style={styles.previewTitle}>{entry}</Text>
-							</SectionCard>
-						))}
-					</View>
-				);
-			case "resultPreview":
-				return (
-					<SectionCard>
-						<Gauge score={72} label="high" />
-						<Text style={styles.previewBody}>
-							This meal may lower your Gut Score by 5 points.
-						</Text>
-						<RiskBar label="GERD" score={81} level="high" />
-						<RiskBar label="IBS" score={56} level="medium" />
-						<DetailRow label="Possible triggers" value="Tomato, garlic" />
-					</SectionCard>
-				);
-			case "triggerPreview":
-				return (
-					<View style={styles.previewStack}>
-						{[
-							{ name: "Tomato", value: "Strong pattern" },
-							{ name: "Garlic", value: "Growing pattern" },
-							{ name: "Dairy", value: "Early watch-out" },
-						].map((entry) => (
-							<SectionCard key={entry.name} style={styles.previewCard}>
-								<Text style={styles.previewTitle}>{entry.name}</Text>
-								<Text style={styles.previewNote}>{entry.value}</Text>
-							</SectionCard>
-						))}
-					</View>
-				);
-			case "safeFoodsPreview":
-				return (
-					<View style={styles.previewStack}>
-						{["Rice", "Salmon", "Oats"].map((entry) => (
-							<SectionCard key={entry} style={styles.previewCard}>
-								<Text style={styles.previewTitle}>{entry}</Text>
-								<Text style={styles.previewNote}>
-									Trending gentler for your stomach
-								</Text>
-							</SectionCard>
-						))}
-					</View>
-				);
-			case "knowBeforeEat":
-				return (
-					<KnowBeforeEatDemo
-						stage={knowBeforeEatStage}
-						imageHeight={centerImageHeight}
-					/>
-				);
-			case "trust":
-				return <PersonalHealingApproach />;
-			case "commitmentHold":
-				return <CommitmentHoldCard onCommitted={advanceStep} />;
-			case "appStoreReview":
-				return (
-					<AppStoreRatingPreview
-						busy={reviewPromptBusy}
-						onSkip={skipNativeAppStoreReview}
-					/>
-				);
-			case "trialFreePreview":
-				return <TrialFreePreview />;
-			case "summaryIntro":
-				return (
-					<SectionCard>
-						<MetricPill
-							label="Conditions"
-							value={String(
-								answers.conditions.length + answers.customConditions.length || 0
-							)}
-						/>
-						<MetricPill
-							label="Known triggers"
-							value={String(
-								answers.ingredientSensitivities.length +
-									answers.customIngredientSensitivities.length || 0
-							)}
-						/>
-						<MetricPill
-							label="Gut context"
-							value={String(
-								currentEatingPatterns.length + lifestyleFactors.length || 0
-							)}
-						/>
-					</SectionCard>
-				);
-			case "scoreAnalyzing":
-				return (
-					<StartingGutScoreComputeCard
-						score={startingGutScore.currentScore}
-						state={startingScoreState}
-					/>
-				);
-			case "lowerScorePlan":
-				return <RaiseGutScorePlanPreview currentScore={startingGutScore.currentScore} />;
-			case "recap":
-				return (
-					<View style={styles.metricRow}>
-						<MetricPill label="Gut Score" value="Higher is better" />
-						<MetricPill label="History" value="Scan-led" />
-						<MetricPill label="Insights" value="Adaptive" />
-					</View>
-				);
-			default:
-				return null;
-		}
-	}
-
-	function renderSummary() {
-		const conditionSummary =
-			answers.conditions.length + answers.customConditions.length > 0
-				? [...answers.conditions, ...answers.customConditions].join(", ")
-				: "General digestive triggers until your scans teach us more.";
-
-		const triggerSummary =
-			answers.ingredientSensitivities.length + answers.customIngredientSensitivities.length >
-			0
-				? [
-						...answers.ingredientSensitivities,
-						...answers.customIngredientSensitivities,
-				  ].join(", ")
-				: "No declared ingredient triggers yet. The app will learn from daily reports.";
-
-		return (
-			<SectionCard>
-				<DetailRow label="Conditions we will score for" value={conditionSummary} />
-				<Divider />
-				<DetailRow label="Known trigger ingredients" value={triggerSummary} />
-				<Divider />
-				<DetailRow
-					label="What daily reports will track"
-					value={
-						[...answers.symptoms, ...(answers.customSymptoms ?? [])].length
-							? [...answers.symptoms, ...(answers.customSymptoms ?? [])].join(", ")
-							: "Bloating, pain, reflux, and general symptom patterns"
-					}
-				/>
-				<Divider />
-				<DetailRow
-					label="Where you most need clarity"
-					value={
-						answers.mealContexts.length
-							? answers.mealContexts.join(", ")
-							: "Restaurants, takeout, and uncertain ingredient mixes"
-					}
-				/>
-				<Divider />
-				<DetailRow
-					label="Current gut context"
-					value={
-						[...currentEatingPatterns, ...lifestyleFactors].length
-							? [...currentEatingPatterns, ...lifestyleFactors].join(", ")
-							: "No extra lifestyle context added."
-					}
-				/>
-				<Divider />
-				<DetailRow
-					label="Diet goal"
-					value={
-						answers.dietPreferenceKeys.length
-							? answers.dietPreferenceKeys.map(dietPreferenceLabelFromKey).join(", ")
-							: "No specific diet, just help me feel better."
-					}
-				/>
-				<Divider />
-				<DetailRow
-					label="Foods to earn back"
-					value={
-						favoriteFoodsToReintroduce.trim() || "No reintroduction foods added yet."
-					}
-				/>
-			</SectionCard>
-		);
-	}
-
 	function customFieldForCurrentStep() {
 		if (step.field === "conditions") return "customConditions" as const;
 		if (step.field === "ingredientSensitivities") {
@@ -656,221 +438,6 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		}
 
 		removeCustomValue(field, value);
-	}
-
-	function renderSelectionControls() {
-		const pickerVariant = hasImageBackground ? "image" : "plain";
-
-		if (step.type === "multi_select" && step.field && step.options) {
-			const values = answers[step.field];
-			const customField = customFieldForCurrentStep();
-			const customCount = customField ? (answers[customField] ?? []).length : 0;
-			const isIngredientSensitivityStep = step.field === "ingredientSensitivities";
-			const isDietPreferenceStep = step.field === "dietPreferenceKeys";
-
-			function handleMultiSelectOptionPress(option: string) {
-				if (isDietPreferenceStep) {
-					if (option === noSpecificDietOption) {
-						updateField("dietPreferenceNone", true);
-						updateField("dietPreferenceKeys", []);
-						return;
-					}
-
-					const dietKey = dietPreferenceKeyFromLabel(option);
-					if (!dietKey) {
-						return;
-					}
-
-					updateField("dietPreferenceNone", false);
-					toggleValue("dietPreferenceKeys", dietKey);
-					return;
-				}
-
-				if (isIngredientSensitivityStep) {
-					updateField("ingredientSensitivitiesUnknown", false);
-				}
-
-				toggleValue(
-					step.field as
-						| "conditions"
-						| "ingredientSensitivities"
-						| "symptoms"
-						| "mealContexts"
-						| "motivations"
-						| "currentEatingPatterns"
-						| "lifestyleFactors"
-						| "dietPreferenceKeys",
-					option
-				);
-			}
-
-			function handleCustomOptionPress() {
-				if (isIngredientSensitivityStep) {
-					updateField("ingredientSensitivitiesUnknown", false);
-				}
-
-				setCustomOptionModalVisible(true);
-			}
-
-			function handleIngredientSensitivityUnknownPress() {
-				updateField("ingredientSensitivitiesUnknown", true);
-				updateField("ingredientSensitivities", []);
-				updateField("customIngredientSensitivities", []);
-			}
-
-			return (
-				<View style={styles.optionGrid}>
-					{step.options.map((option, index) => (
-						<StaggerItem key={option} delayMs={optionDelayMs(index)}>
-							<OnboardingPickerOption
-								label={option}
-								iconName={step.optionIcons?.[option] as IoniconName | undefined}
-								variant={pickerVariant}
-								selected={
-									isDietPreferenceStep
-										? option === noSpecificDietOption
-											? Boolean(answers.dietPreferenceNone)
-											: Boolean(
-													dietPreferenceKeyFromLabel(option) &&
-														answers.dietPreferenceKeys.includes(
-															dietPreferenceKeyFromLabel(option)!
-														)
-											  )
-											: Array.isArray(values)
-											? (values as string[]).includes(option)
-										: values === option
-								}
-								onPress={() => handleMultiSelectOptionPress(option)}
-							/>
-						</StaggerItem>
-					))}
-					{step.allowCustom ? (
-						<StaggerItem delayMs={optionDelayMs(step.options.length)}>
-							<OnboardingPickerOption
-								label="Other"
-								variant={pickerVariant}
-								badgeText={customCount > 0 ? `+${customCount}` : undefined}
-								selected={false}
-								onPress={handleCustomOptionPress}
-							/>
-						</StaggerItem>
-					) : null}
-					{isIngredientSensitivityStep ? (
-						<StaggerItem
-							delayMs={optionDelayMs(
-								step.options.length + (step.allowCustom ? 1 : 0)
-							)}
-						>
-							<OnboardingPickerOption
-								label={INGREDIENT_SENSITIVITY_UNKNOWN_OPTION}
-								variant={pickerVariant}
-								selected={Boolean(answers.ingredientSensitivitiesUnknown)}
-								onPress={handleIngredientSensitivityUnknownPress}
-							/>
-						</StaggerItem>
-					) : null}
-				</View>
-			);
-		}
-
-		if (step.type === "single_select" && step.field && step.options) {
-			const value = answers[step.field];
-			return (
-				<View style={styles.optionGrid}>
-					{step.options.map((option, index) => (
-						<StaggerItem key={option} delayMs={optionDelayMs(index)}>
-							<OnboardingPickerOption
-								label={option}
-								iconName={step.optionIcons?.[option] as IoniconName | undefined}
-								variant={pickerVariant}
-								selected={value === option}
-								onPress={() =>
-									updateField(
-										step.field as
-											| "symptomFrequency"
-											| "symptomSeverityBaseline"
-											| "triedOtherGutHealthApps"
-											| "motivation",
-										option
-									)
-								}
-							/>
-						</StaggerItem>
-					))}
-				</View>
-			);
-		}
-
-		const blockDelay = STAGGER_BASE_MS + STAGGER_STEP_MS * 2;
-
-		if (step.type === "calibration") {
-			return (
-				<CalibrationDeck
-					foods={calibrationFoodOptions}
-					ratings={answers.foodCalibrations}
-					onRate={(food, rating) => {
-						const next = { ...answers.foodCalibrations };
-						if (rating === null) {
-							delete next[food];
-						} else {
-							next[food] = rating;
-						}
-						updateField("foodCalibrations", next);
-					}}
-				/>
-			);
-		}
-
-		if (
-			step.type === "text_input" &&
-			(step.field === "displayName" ||
-				step.field === "favoriteFoodsToReintroduce" ||
-				step.field === "lastBadMealText")
-		) {
-			const value =
-				step.field === "displayName"
-					? answers.displayName
-					: step.field === "lastBadMealText"
-					? answers.lastBadMealText
-					: favoriteFoodsToReintroduce;
-			return (
-				<StaggerItem delayMs={blockDelay}>
-					<SectionCard>
-						<InputField
-							value={value}
-							multiline={step.field === "lastBadMealText"}
-							placeholder={
-								step.field === "displayName"
-									? "Enter a display name"
-									: step.field === "lastBadMealText"
-									? "Chicken alfredo with garlic bread, glass of red wine..."
-									: "pizza, coffee, pasta"
-							}
-							onChangeText={(nextValue) =>
-								updateField(
-									step.field as
-										| "displayName"
-										| "favoriteFoodsToReintroduce"
-										| "lastBadMealText",
-									nextValue
-								)
-							}
-						/>
-						{step.helper ? <Text style={styles.previewNote}>{step.helper}</Text> : null}
-					</SectionCard>
-				</StaggerItem>
-			);
-		}
-
-		if (step.type === "summary") {
-			return <StaggerItem delayMs={blockDelay}>{renderSummary()}</StaggerItem>;
-		}
-
-		if (step.type === "preview") {
-			return <StaggerItem delayMs={blockDelay}>{renderPreview()}</StaggerItem>;
-		}
-
-		return null;
 	}
 
 	const customOptionField = customFieldForCurrentStep();
@@ -938,7 +505,25 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 						</StaggerItem>
 					) : null}
 
-					{renderSelectionControls()}
+					<OnboardingSelectionControls
+						step={step}
+						answers={answers}
+						hasImageBackground={hasImageBackground}
+						customField={customFieldForCurrentStep()}
+						currentEatingPatterns={currentEatingPatterns}
+						lifestyleFactors={lifestyleFactors}
+						favoriteFoodsToReintroduce={favoriteFoodsToReintroduce}
+						knowBeforeEatStage={knowBeforeEatStage}
+						centerImageHeight={centerImageHeight}
+						reviewPromptBusy={reviewPromptBusy}
+						startingScore={startingGutScore.currentScore}
+						startingScoreState={startingScoreState}
+						onUpdateField={updateField}
+						onToggleValue={toggleValue}
+						onOpenCustomModal={() => setCustomOptionModalVisible(true)}
+						onAdvance={advanceStep}
+						onSkipReview={skipNativeAppStoreReview}
+					/>
 
 					{centerImageSource ? (
 						<StaggerItem
@@ -995,112 +580,20 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 				)}
 			</StepTransition>
 
-			<Modal
-				animationType="fade"
-				transparent
+			<CustomEntryModal
 				visible={customOptionModalVisible}
-				onRequestClose={closeCustomOptionModal}
-			>
-				<View style={styles.customModalRoot}>
-					<Pressable
-						accessibilityRole="button"
-						accessibilityLabel="Close custom entry"
-						style={styles.customModalBackdrop}
-						onPress={closeCustomOptionModal}
-					/>
-					<KeyboardAvoidingView
-						behavior={Platform.OS === "ios" ? "padding" : undefined}
-						pointerEvents="box-none"
-						style={styles.customModalKeyboard}
-					>
-						<View style={styles.customModalCard}>
-							<View style={styles.customModalHeader}>
-								<View style={styles.customModalTitleWrap}>
-									<Text style={styles.customModalTitle}>
-										{customOptionCopy.title}
-									</Text>
-									<Text style={styles.customModalSubtitle}>
-										{customOptionCopy.subtitle}
-									</Text>
-								</View>
-								<Pressable
-									accessibilityRole="button"
-									accessibilityLabel="Close"
-									onPress={closeCustomOptionModal}
-									style={({ pressed }) => [
-										styles.customModalClose,
-										pressed && { opacity: 0.7 },
-									]}
-								>
-									<Ionicons
-										name="close"
-										size={20}
-										color={tokens.color.icon.primary}
-									/>
-								</Pressable>
-							</View>
-							<InputField
-								value={customEntry}
-								placeholder={customOptionCopy.placeholder}
-								onChangeText={setCustomEntry}
-								autoFocus
-							/>
-							<PrimaryButton
-								label="Add"
-								onPress={submitCustomOption}
-								disabled={!customEntry.trim()}
-							/>
-							{customOptionValues.length > 0 ? (
-								<View style={styles.customOptionStack}>
-									{customOptionValues.map((value) => (
-										<View key={value} style={styles.customValuePill}>
-											<Text style={styles.customValueText}>{value}</Text>
-											<Pressable
-												accessibilityRole="button"
-												accessibilityLabel={`Remove ${value}`}
-												onPress={() => removeCustomOption(value)}
-												hitSlop={8}
-												style={({ pressed }) => [
-													styles.customValueRemove,
-													pressed && { opacity: 0.7 },
-												]}
-											>
-												<Ionicons
-													name="close"
-													size={13}
-													color={tokens.color.text.inverse}
-												/>
-											</Pressable>
-										</View>
-									))}
-								</View>
-							) : null}
-						</View>
-					</KeyboardAvoidingView>
-				</View>
-			</Modal>
+				title={customOptionCopy.title}
+				subtitle={customOptionCopy.subtitle}
+				placeholder={customOptionCopy.placeholder}
+				value={customEntry}
+				onChangeText={setCustomEntry}
+				onSubmit={submitCustomOption}
+				onClose={closeCustomOptionModal}
+				values={customOptionValues}
+				onRemove={removeCustomOption}
+			/>
 		</AppScreen>
 	);
-}
-
-function StaggerItem({
-	children,
-	delayMs,
-	style,
-}: {
-	children: ReactNode;
-	delayMs: number;
-	style?: StyleProp<ViewStyle>;
-}) {
-	return (
-		<Animated.View entering={FadeInUp.duration(ENTER_DURATION_MS).delay(delayMs)} style={style}>
-			{children}
-		</Animated.View>
-	);
-}
-
-function optionDelayMs(index: number) {
-	return STAGGER_BASE_MS + STAGGER_STEP_MS * 2 + index * 36;
 }
 
 function renderOnboardingBackground(
@@ -1201,209 +694,3 @@ function previousKnowBeforeEatStage(stage: KnowBeforeEatStage): KnowBeforeEatSta
 			return "menu-scan";
 	}
 }
-
-const styles = StyleSheet.create({
-	backgroundLayer: {
-		...StyleSheet.absoluteFillObject,
-		alignItems: "center",
-		justifyContent: "center",
-		overflow: "hidden",
-	},
-	backgroundImage: {
-		opacity: 1,
-	},
-	backgroundWash: {
-		...StyleSheet.absoluteFillObject,
-		backgroundColor: "rgba(19, 28, 26, 0.1)",
-	},
-	onboardingContent: {
-		paddingBottom: spacing.lg,
-	},
-	topBar: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.sm,
-	},
-	backButton: {
-		width: 38,
-		height: 38,
-		alignItems: "flex-start",
-		justifyContent: "center",
-	},
-	choiceStepShell: {
-		gap: spacing.md,
-	},
-	stepScroll: {
-		flex: 1,
-	},
-	stepScrollContent: {
-		flexGrow: 1,
-		gap: spacing.lg,
-		paddingBottom: spacing.md,
-	},
-	choiceStepScrollContent: {
-		gap: spacing.md,
-	},
-	imageBackgroundTitle: {
-		textShadowColor: "rgba(64, 152, 119, 0.38)",
-		textShadowOffset: { width: 0, height: 1 },
-		textShadowRadius: 3,
-	},
-	optionGrid: {
-		gap: spacing.sm,
-	},
-	centerImageSlot: {
-		flexGrow: 1,
-		alignItems: "center",
-		justifyContent: "center",
-		paddingVertical: spacing.sm,
-	},
-	centerImage: {
-		borderRadius: 28,
-	},
-	centerGraphicSlot: {
-		flexGrow: 1,
-		width: "100%",
-		alignItems: "center",
-		justifyContent: "center",
-		paddingVertical: spacing.lg,
-	},
-	customModalRoot: {
-		flex: 1,
-		backgroundColor: "rgba(22, 29, 33, 0.44)",
-	},
-	customModalBackdrop: {
-		...StyleSheet.absoluteFillObject,
-		zIndex: 0,
-	},
-	customModalKeyboard: {
-		flex: 1,
-		width: "100%",
-		alignItems: "center",
-		justifyContent: "center",
-		padding: spacing.lg,
-		zIndex: 1,
-	},
-	customModalCard: {
-		width: "100%",
-		maxWidth: 380,
-		zIndex: 2,
-		borderRadius: 24,
-		backgroundColor: tokens.color.surface.sheet,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.modal,
-	},
-	customModalHeader: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		gap: spacing.md,
-	},
-	customModalTitleWrap: {
-		flex: 1,
-		gap: spacing.xs,
-	},
-	customModalTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 20,
-		lineHeight: 25,
-	},
-	customModalSubtitle: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 14,
-		lineHeight: 20,
-	},
-	customModalClose: {
-		width: 34,
-		height: 34,
-		borderRadius: 17,
-		backgroundColor: tokens.color.surface.card.warm,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	customOptionStack: {
-		gap: spacing.sm,
-	},
-	customValuePill: {
-		minHeight: 50,
-		borderRadius: 18,
-		backgroundColor: palette.primary,
-		paddingHorizontal: spacing.md,
-		paddingVertical: 13,
-		paddingRight: 42,
-		justifyContent: "center",
-		position: "relative",
-	},
-	customValueText: {
-		color: tokens.color.text.inverse,
-		fontFamily: type.body.semibold,
-		fontSize: 15,
-		lineHeight: 20,
-	},
-	customValueRemove: {
-		position: "absolute",
-		top: 8,
-		right: 8,
-		width: 22,
-		height: 22,
-		borderRadius: 11,
-		backgroundColor: "rgba(255,255,255,0.18)",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	previewStack: {
-		gap: spacing.md,
-	},
-	previewCard: {
-		gap: spacing.sm,
-	},
-	previewTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 17,
-	},
-	previewBody: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 15,
-		lineHeight: 21,
-		textAlign: "center",
-	},
-	previewNote: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 14,
-		lineHeight: 20,
-	},
-	metricRow: {
-		flexDirection: "row",
-		flexWrap: "wrap",
-		gap: spacing.sm,
-	},
-	footer: {
-		paddingTop: spacing.md,
-	},
-	choiceFooter: {
-		paddingTop: spacing.sm,
-	},
-	footerBody: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 17,
-		lineHeight: 25,
-		textAlign: "center",
-		marginBottom: spacing.md,
-	},
-	footerBodyOnImage: {
-		color: "rgba(255, 255, 255, 0.9)",
-		textShadowColor: "rgba(64, 152, 119, 0.28)",
-		textShadowOffset: { width: 0, height: 1 },
-		textShadowRadius: 2,
-	},
-	trialFooterBody: {
-		color: palette.primaryDark,
-		fontFamily: type.body.semibold,
-	},
-});

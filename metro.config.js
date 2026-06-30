@@ -11,6 +11,14 @@ const config = getDefaultConfig(__dirname);
 config.resolver.unstable_enablePackageExports = false;
 config.resolver.useWatchman = false;
 
+// Keep the NestJS backend (server/) out of the React Native bundle graph. It
+// imports Node-only packages (@nestjs/*, pg, etc.) that must never be crawled
+// or bundled by Metro. Preserve any blockList the default Expo config set.
+const serverBlock = /[\\/]server[\\/].*/;
+config.resolver.blockList = config.resolver.blockList
+  ? [].concat(config.resolver.blockList, serverBlock)
+  : [serverBlock];
+
 function isInside(parent, child) {
   const relativePath = path.relative(parent, child);
   return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
@@ -93,6 +101,14 @@ config.server.enhanceMiddleware = (middleware, metroServer) => {
       res.end(error instanceof Error ? error.message : 'Unknown instant refresh error');
     }
   };
+};
+
+// Resolve the local shared package (@mth/shared-domain). packages/ lives inside
+// the project root so Metro already watches it; this forces resolution to the
+// package's react-native entry (src/index.ts) regardless of symlink handling.
+config.resolver.extraNodeModules = {
+  ...config.resolver.extraNodeModules,
+  '@mth/shared-domain': path.resolve(__dirname, 'packages/shared-domain'),
 };
 
 module.exports = config;

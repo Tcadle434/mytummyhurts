@@ -6,6 +6,9 @@ node_modules/
 # Expo
 .expo/
 dist/
+# ...but commit the shared package's build output so the server runtime resolves
+# @mth/shared-domain without a build step on install (avoids needing tsc at install time).
+!/packages/shared-domain/dist/
 web-build/
 expo-env.d.ts
 

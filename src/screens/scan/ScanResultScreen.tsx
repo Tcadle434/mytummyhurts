@@ -4,9 +4,8 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import {
   IngredientsBreakdownCard,
-  DietFitCard,
+  PersonalizedScanCard,
   ScanHeroCard,
-  WhyThisScoreCard,
 } from '../../components/scan-result/ScanResultCards';
 import { ScanResultSkeleton } from '../../components/scan-result/ScanResultSkeleton';
 import { SkeletonImage } from '../../components/common/SkeletonImage';
@@ -169,14 +168,13 @@ export function ScanResultScreen({ navigation, route }: Props) {
         ingredients={ingredientRisks.map(toScanIngredient)}
       />
 
-      <DietFitCard evaluations={scan.dietEvaluations} />
-
-      <WhyThisScoreCard
+      <PersonalizedScanCard
+        dietEvaluations={scan.dietEvaluations}
+        ingredientRisks={ingredientRisks}
         contributors={scan.scoreContributors}
         level={scan.overallRiskLevel}
         impactSummary={scan.gutScoreImpact?.summary}
       />
-
 
       <SectionCard>
         <Text style={shared.sectionTitle}>Did you eat this?</Text>

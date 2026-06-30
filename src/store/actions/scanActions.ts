@@ -2,20 +2,75 @@ import { isLiveBackendConfigured } from '../../config/env';
 import { trackEvent } from '../../services/analytics';
 import { apiClient } from '../../services/api/client';
 import { isEntitledSubscriptionStatus } from '../../features/access/appAccess';
-import { analyzeMealInput } from '../../services/ai/scoring';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
-import { uploadMealImage } from '../../services/storage';
 import { showToast } from '../../services/toast';
-import { ScanRecord } from '../../types/domain';
-import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { now, localDateString, currentTimezone, scanCategoryForPayload, removeScanFromHistoryCache, scanRequestId, apiErrorCode, mergeById, rebuildLocalLearningState } from '../helpers';
+import {
+  localDateString,
+  currentTimezone,
+  scanCategoryForPayload,
+  removeScanFromHistoryCache,
+  scanRequestId,
+  apiErrorCode,
+  learningResponseStatePatch,
+  mergeById,
+  patchLearningResponseInQueryCaches,
+  rebuildLocalLearningState,
+  profileWithGutScoreFallback,
+} from '../helpers';
 
 export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
   'updateScanConsumption' | 'cacheScanRecord' | 'analyzeScanInput' | 'deleteScanRecord'
 > {
+  const refreshScanLearning = (scanId: string, eventType: string) => {
+    if (!isLiveBackendConfigured || !get().authUser) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await apiClient.learningRecompute({
+          sourceType: 'scan',
+          sourceId: scanId,
+          eventType,
+        });
+
+        if (response.learningSyncStatus !== 'updated') {
+          trackEvent('learning_recompute_failed', {
+            source_type: 'scan',
+            source_id: scanId,
+            status: response.learningSyncStatus,
+            event_type: eventType,
+          });
+          return;
+        }
+
+        patchLearningResponseInQueryCaches(response);
+        set((state) => learningResponseStatePatch(state, response));
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+        ]);
+        trackEvent('learning_recompute_completed', {
+          source_type: 'scan',
+          source_id: scanId,
+          status: response.learningSyncStatus,
+          event_type: eventType,
+        });
+      } catch (error) {
+        trackEvent('learning_recompute_failed', {
+          source_type: 'scan',
+          source_id: scanId,
+          error_code: apiErrorCode(error),
+          event_type: eventType,
+        });
+      }
+    })();
+  };
+
   return {
       updateScanConsumption: async ({ scanId, consumptionStatus, consumedMenuItemSourceIds }) => {
         const nextStatus = consumptionStatus ?? (consumedMenuItemSourceIds?.length ? 'consumed' : undefined);
@@ -38,11 +93,14 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
         }
 
         try {
-          await apiClient.updateScanConsumption({
+          const response = await apiClient.updateScanConsumption({
             scanId,
             consumptionStatus,
             consumedMenuItemSourceIds,
           });
+          if (response.learningSyncStatus === 'queued') {
+            refreshScanLearning(scanId, 'scan_consumption_updated');
+          }
         } catch (error) {
           console.warn('[scan] consumption update failed', error);
           showToast({
@@ -63,7 +121,6 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           throw new Error('Subscription required before running scans.');
         }
 
-        const scanStartedAt = now();
         const requestId = scanRequestId(payload);
         const scanCategory = scanCategoryForPayload(payload);
         const requestedScanCategory = payload.scanCategory ?? scanCategory;
@@ -73,37 +130,18 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
         trackEvent('scan_analysis_started', { request_id: requestId, source_type: payload.sourceType, scan_category: requestedScanCategory });
 
         if (isLiveBackendConfigured && state.authUser) {
-          const authUser = state.authUser;
           if (state.initialServerSyncNeeded) {
             await get().syncInitialAccountState();
           }
 
           try {
-            const imageUris = payload.imageUris?.length ? payload.imageUris : payload.imageUri ? [payload.imageUri] : [];
             const imageDataUrls = payload.imageDataUrls?.length
               ? payload.imageDataUrls
               : payload.imageDataUrl
                 ? [payload.imageDataUrl]
                 : [];
-            const imageUploadResults = imageUris.length
-              ? (
-                  await Promise.all(
-                    imageUris.map((imageUri, index) =>
-                      uploadMealImage(imageUri, authUser.id, imageDataUrls[index]).catch((error) => {
-                        console.warn('[scan] image upload failed; continuing with inline image data.', error);
-                        return null;
-                      }),
-                    ),
-                  )
-                )
-              : [];
-            const imagePaths = imageUploadResults
-              .map((result) => result?.storagePath)
-              .filter((path): path is string => Boolean(path));
-            const thumbnailImagePaths = imageUploadResults.map((result) => result?.thumbnailStoragePath ?? null);
-            const hasThumbnailImagePaths = thumbnailImagePaths.some((path) => Boolean(path));
-            const inlineImageDataUrls = imageDataUrls;
-            const inlineImageDataUrl = inlineImageDataUrls[0];
+            // The backend persists inline images to object storage (MinIO/S3) and
+            // returns the stored imagePath — the client no longer uploads directly.
             const response = payload.barcode?.trim()
               ? await apiClient.analyzeBarcode({
                   requestId,
@@ -113,31 +151,33 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
                   localDate,
                   timezone,
                 })
-              : await apiClient.analyzeImage({
-                  requestId,
-                  imagePath: imagePaths[0],
-                  imagePaths: imagePaths.length > 1 ? imagePaths : undefined,
-                  thumbnailImagePaths: hasThumbnailImagePaths ? thumbnailImagePaths : undefined,
-                  imageDataUrl: inlineImageDataUrl,
-                  imageDataUrls: inlineImageDataUrls.length > 1 ? inlineImageDataUrls : undefined,
-                  sourceType: payload.sourceType,
-                  scanCategory: requestedScanCategory,
-                  localDate,
-                  timezone,
-                });
+                : await apiClient.analyzeImage({
+                    requestId,
+                    imageDataUrls,
+                    sourceType: payload.sourceType,
+                    scanCategory: requestedScanCategory,
+                    localDate,
+                    timezone,
+                  });
 
-            set((currentState) => ({
-              scans: mergeById(currentState.scans, response.scan),
-              billing: response.billing,
-              profile: response.profile ?? currentState.profile,
-              insights: response.insights ?? currentState.insights,
-              conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
-            }));
+            set((currentState) => {
+              const nextInsights = response.insights ?? currentState.insights;
+              return {
+                scans: mergeById(currentState.scans, response.scan),
+                billing: response.billing,
+                profile: profileWithGutScoreFallback(response.profile ?? currentState.profile, currentState, nextInsights),
+                insights: nextInsights,
+                conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+              };
+            });
             await Promise.all([
               queryClient.invalidateQueries({ queryKey: queryKeys.history }),
               queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
               queryClient.invalidateQueries({ queryKey: queryKeys.home }),
             ]);
+            if (response.learningSyncStatus === 'queued') {
+              refreshScanLearning(response.scanId, 'scan_analyzed');
+            }
 
             trackEvent('scan_analysis_completed', {
               request_id: requestId,
@@ -161,42 +201,16 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           }
         }
 
-        const result = analyzeMealInput(payload, get().profile, get().insights);
-        const scanId = createId('scan');
-
-        const scan: ScanRecord = {
-          id: scanId,
-          requestId,
-          sourceType: payload.sourceType,
-          scanCategory,
-          analysisStatus: 'completed',
-          tokenCost: 1,
-          createdAt: scanStartedAt,
-          completedAt: now(),
-          inputText: payload.text,
-          localDate,
-          timezone,
-          ...result,
-        };
-
-        set((currentState) => ({
-          scans: [scan, ...currentState.scans],
-          billing: {
-            ...currentState.billing,
-            tokensRemaining: currentState.billing.tokensRemaining - 1,
-          },
-          ...rebuildLocalLearningState(currentState, [scan, ...currentState.scans], currentState.dailyReports, 'scan_completed'),
-        }));
-
-        trackEvent('scan_analysis_completed', {
+        // No live backend / not signed in: scanning requires a server round-trip
+        // (the LLM analysis runs server-side). Surface a clear, friendly error
+        // instead of fabricating a local result.
+        trackEvent('scan_analysis_failed', {
           request_id: requestId,
-          scan_id: scanId,
-          overall_risk_level: result.overallRiskLevel,
-          overall_risk_score: result.overallRiskScore,
-          token_balance_after: get().billing.tokensRemaining,
+          source_type: payload.sourceType,
+          scan_category: requestedScanCategory,
+          error_code: 'offline_unsupported',
         });
-
-        return { scanId };
+        throw new Error('Scanning needs a connection. Please check your internet and try again.');
       },
       deleteScanRecord: async (scanId) => {
         const existingScan = get().scans.find((scan) => scan.id === scanId);
@@ -222,11 +236,17 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           void (async () => {
             try {
               const response = await apiClient.deleteScan({ scanId });
-              set((state) => ({
-                profile: response.profile ?? state.profile,
-                insights: response.insights ?? state.insights,
-                conditionInsights: response.conditionInsights ?? state.conditionInsights,
-              }));
+              if (response.learningSyncStatus === 'queued') {
+                refreshScanLearning(scanId, 'scan_deleted');
+              }
+              set((state) => {
+                const nextInsights = response.insights ?? state.insights;
+                return {
+                  profile: profileWithGutScoreFallback(response.profile ?? state.profile, state, nextInsights),
+                  insights: nextInsights,
+                  conditionInsights: response.conditionInsights ?? state.conditionInsights,
+                };
+              });
               await Promise.all([
                 queryClient.invalidateQueries({ queryKey: queryKeys.history }),
                 queryClient.invalidateQueries({ queryKey: queryKeys.home }),

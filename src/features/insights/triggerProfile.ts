@@ -1,13 +1,23 @@
 import type { IngredientInsight } from '../../types/domain';
-import { buildGroupedTriggerEntries, type GroupedTriggerEntry } from './triggerGroups';
+import {
+  buildGroupedTriggerEntries,
+  buildTrackedFoodFamilyEntries,
+  type GroupedTriggerEntry,
+  type TrackedFoodFamilyEntry,
+} from './triggerGroups';
 
 export type TriggerStatus = 'confirmed' | 'suspect' | 'cleared' | 'safe';
 
 // Core taxonomy for the Trigger Profile: every insight is bucketed by how much
-// outcome evidence backs it. "Suspect" covers both declared/seeded entries and
-// early elevated patterns; neutral mid-zone insights return null and stay out
-// of the headline buckets.
+// outcome evidence backs it. "Suspect" covers declared/seeded entries, early
+// elevated patterns, and neutral paired evidence that is still under review.
 export function statusForInsight(insight: IngredientInsight): TriggerStatus | null {
+  const outcomeEvidence = insight.positiveEvidenceCount + insight.negativeEvidenceCount;
+  const neutralPersonalEvidence =
+    insight.sourceBreakdown.personal &&
+    insight.supportingEvidenceCount > 0 &&
+    outcomeEvidence === 0;
+
   if (
     insight.combinedRiskScore >= 60 &&
     (insight.confidenceLevel === 'high' || insight.negativeEvidenceCount >= 3)
@@ -21,6 +31,10 @@ export function statusForInsight(insight: IngredientInsight): TriggerStatus | nu
     insight.negativeEvidenceCount === 0
   ) {
     return 'cleared';
+  }
+
+  if (neutralPersonalEvidence) {
+    return 'suspect';
   }
 
   if (
@@ -44,9 +58,15 @@ export type TriggerCounts = {
   safe: number;
 };
 
-export function summarizeTriggerCounts(insights: IngredientInsight[]): TriggerCounts {
+type OptionalInsights = IngredientInsight[] | null | undefined;
+
+function normalizeInsights(insights: OptionalInsights): IngredientInsight[] {
+  return Array.isArray(insights) ? insights : [];
+}
+
+export function summarizeTriggerCounts(insights: OptionalInsights): TriggerCounts {
   const counts: TriggerCounts = { confirmed: 0, suspects: 0, cleared: 0, safe: 0 };
-  for (const insight of insights) {
+  for (const insight of normalizeInsights(insights)) {
     const status = statusForInsight(insight);
     if (status === 'confirmed') counts.confirmed += 1;
     else if (status === 'suspect') counts.suspects += 1;
@@ -61,14 +81,19 @@ export function summarizeTriggerCounts(insights: IngredientInsight[]): TriggerCo
 export function evidenceDetailForInsight(insight: IngredientInsight, status: TriggerStatus): string {
   const negative = insight.negativeEvidenceCount;
   const positive = insight.positiveEvidenceCount;
+  const outcomes = negative + positive;
 
   if (status === 'suspect') {
-    if (negative + positive === 0) {
+    if (outcomes === 0 && insight.sourceBreakdown.personal && insight.supportingEvidenceCount > 0) {
+      const pairedDays = Math.max(1, insight.supportingEvidenceCount);
+      return `${pairedDays} paired day${pairedDays === 1 ? '' : 's'} logged — no clear reaction yet`;
+    }
+    if (outcomes === 0) {
       return insight.sourceBreakdown.declared
         ? 'From your profile — no outcomes logged yet'
         : 'Early signal — no outcomes logged yet';
     }
-    return `${Math.min(negative + positive, 3)} of 3 paired outcomes logged`;
+    return `${Math.min(outcomes, 3)} of 3 paired outcomes logged`;
   }
 
   if (status === 'confirmed') {
@@ -94,6 +119,7 @@ export type TriggerProfileViewState = {
   sections: TriggerProfileSection[];
   totalTracked: number;
   allSeeded: boolean;
+  trackedFamilies: TrackedFoodFamilyEntry[];
   earlySignals: IngredientInsight[];
 };
 
@@ -105,13 +131,13 @@ const SECTION_META: Record<TriggerStatus, { title: string; subtitle: string }> =
 };
 
 export function buildTriggerProfileViewState(
-  insights: IngredientInsight[],
+  insights: OptionalInsights,
   filters: { search?: string; condition?: string } = {},
 ): TriggerProfileViewState {
   const search = filters.search?.trim().toLowerCase() ?? '';
   const condition = filters.condition?.trim().toLowerCase() ?? '';
 
-  const filtered = insights.filter((insight) => {
+  const filtered = normalizeInsights(insights).filter((insight) => {
     if (search && !insight.ingredientName.toLowerCase().includes(search)) {
       return false;
     }
@@ -125,6 +151,7 @@ export function buildTriggerProfileViewState(
   });
 
   const { entries, earlySignals } = buildGroupedTriggerEntries(filtered);
+  const trackedFamilies = buildTrackedFoodFamilyEntries(filtered);
 
   const byStatus: Record<TriggerStatus, GroupedTriggerEntry[]> = {
     confirmed: [],
@@ -168,16 +195,17 @@ export function buildTriggerProfileViewState(
     allSeeded:
       filtered.length > 0 &&
       filtered.every(
-        (insight) => insight.positiveEvidenceCount + insight.negativeEvidenceCount === 0,
+        (insight) =>
+          !insight.sourceBreakdown.personal &&
+          insight.positiveEvidenceCount + insight.negativeEvidenceCount === 0,
       ),
+    trackedFamilies,
     earlySignals,
   };
 }
 
 export function entryDisplayName(entry: GroupedTriggerEntry): string {
-  return entry.kind === 'group'
-    ? entry.group.label
-    : entry.insight.ingredientName.charAt(0).toUpperCase() + entry.insight.ingredientName.slice(1);
+  return entry.group.label;
 }
 
 export function buildTriggerProfileShareText(viewState: TriggerProfileViewState): string {

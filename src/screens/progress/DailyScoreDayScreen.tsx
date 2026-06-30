@@ -33,6 +33,7 @@ import {
 	formatDayTitle,
 	getWeekStartForLocalDate,
 } from "../../utils/weeklyProgress";
+import { riskLevelTint } from "../../utils/risk";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DailyScoreDay">;
 
@@ -85,7 +86,7 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 						<View style={styles.sectionTitleStack}>
 							<Text style={styles.sectionTitle}>Meals</Text>
 							<Text style={styles.sectionMeta}>
-								{day.mealCount} {day.mealCount === 1 ? "logged" : "logged"}
+								{day.mealCount} {day.mealCount === 1 ? "meal logged" : "meals logged"}
 							</Text>
 						</View>
 					</View>
@@ -197,7 +198,7 @@ function SectionEditButton({ label, onPress }: { label: string; onPress: () => v
 }
 
 function MealRow({ scan, onPress }: { scan: ScanHistorySummary; onPress: () => void }) {
-	const tone = riskTone(scan.overallRiskLevel);
+	const tone = riskLevelTint(scan.overallRiskLevel);
 
 	return (
 		<Pressable
@@ -249,12 +250,6 @@ function descriptionForDay(day: WeeklyProgressDay) {
 		return "Meals were logged, but need symptom report.";
 	}
 	return "Nothing was logged for this day.";
-}
-
-function riskTone(level: ScanHistorySummary["overallRiskLevel"]) {
-	if (level === "high") return tokens.color.status.risk.high.tint;
-	if (level === "medium") return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.low.tint;
 }
 
 const styles = StyleSheet.create({

@@ -10,18 +10,17 @@ import { AppScreen, SectionCard, SkeletonBlock, TabScreenHeader } from "../../co
 import { InfoModal } from "../../components/modals/InfoModal";
 import { isLiveBackendConfigured } from "../../config/env";
 import { useInsightsData } from "../../features/insights/hooks";
+import { resolveTriggerProfileLearningProgress } from "../../features/insights/learningProgress";
 import { buildTriggerProfileViewState } from "../../features/insights/triggerProfile";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import {
-	computeProfileLearningProgress,
-	profileLearningProgressFromCounts,
 	type ProfileLearningProgress,
 } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
 import { components, palette, radii, spacing, tokens, type, type PipState } from "../../theme";
 import { ConditionsChipRow } from "./ConditionsChipRow";
-import { STATUS_META, TriggerProfileRow } from "./TriggerProfileRow";
+import { TriggerProfileRow } from "./TriggerProfileRow";
 
 const ROW_STAGGER_MS = 45;
 
@@ -37,7 +36,7 @@ export function InsightsScreen() {
 	const serverSyncInFlight = useAppStore((state) => state.serverSyncInFlight);
 	const insightsQuery = useInsightsData("");
 	const hasFallbackInsights = Boolean(fallbackProfile || fallbackInsights.length);
-	const [earlyExpanded, setEarlyExpanded] = useState(false);
+	const [familiesExpanded, setFamiliesExpanded] = useState(true);
 	const [learningInfoVisible, setLearningInfoVisible] = useState(false);
 
 	const isWaitingForInitialRemoteData = Boolean(
@@ -63,22 +62,16 @@ export function InsightsScreen() {
 
 	const viewState = useMemo(() => buildTriggerProfileViewState(insights), [insights]);
 	const conditions = profile?.knownConditions ?? [];
-	const learningProgress = useMemo(() => {
-		if (fallbackScans.length > 0) {
-			return computeProfileLearningProgress(fallbackScans, fallbackDailyReports);
-		}
-
-		const metadata = profile?.stomachProfile.metadata;
-		return profileLearningProgressFromCounts(
-			metadata?.learningEvidenceDays ?? 0,
-			metadata?.learningMealScanCount ?? 0,
-		);
-	}, [
-		fallbackDailyReports,
-		fallbackScans,
-		profile?.stomachProfile.metadata.learningEvidenceDays,
-		profile?.stomachProfile.metadata.learningMealScanCount,
-	]);
+	const learningProgress = useMemo(
+		() =>
+			resolveTriggerProfileLearningProgress({
+				liveBackendConfigured: isLiveBackendConfigured,
+				profile,
+				fallbackScans,
+				fallbackDailyReports,
+			}),
+		[fallbackDailyReports, fallbackScans, profile],
+	);
 
 	useEffect(() => {
 		trackEvent("trigger_profile_viewed", {
@@ -91,14 +84,14 @@ export function InsightsScreen() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	function openIngredient(ingredientName: string) {
-		trackEvent("trigger_detail_viewed", { item_name: ingredientName });
-		navigation.navigate("InsightDetail", { ingredientName });
-	}
-
 	function openGroup(groupKey: string, label: string) {
 		trackEvent("trigger_group_detail_viewed", { group_key: groupKey, label });
 		navigation.navigate("InsightDetail", { groupKey });
+	}
+
+	function openFamily(familyKey: string, label: string) {
+		trackEvent("tracked_food_family_detail_viewed", { family_key: familyKey, label });
+		navigation.navigate("InsightDetail", { familyKey });
 	}
 
 	let rowIndex = 0;
@@ -124,7 +117,7 @@ export function InsightsScreen() {
 
 				{!isWaitingForComputedData ? (
 					<View style={styles.countsBlock}>
-						<Text style={styles.countsTitle}>Food Groups</Text>
+						<Text style={styles.countsTitle}>Digestive Patterns</Text>
 						<View style={styles.heroCountsRow}>
 							<HeroCount
 								value={viewState.counts.confirmed}
@@ -157,7 +150,7 @@ export function InsightsScreen() {
 
 				{isWaitingForComputedData ? (
 					<ListSkeleton rows={4} />
-				) : viewState.sections.length === 0 ? (
+				) : viewState.sections.length === 0 && viewState.trackedFamilies.length === 0 ? (
 					<EmptyHint
 						pipState="thinking"
 						title="Your Trigger Profile starts here"
@@ -187,25 +180,13 @@ export function InsightsScreen() {
 											<TriggerProfileRow
 												insight={entry.insight}
 												status={section.status}
-												emoji={
-													entry.kind === "group"
-														? entry.group.emoji
-														: undefined
-												}
-												extraDetail={
-													entry.kind === "group"
-														? entry.memberSummary
-														: undefined
-												}
+												emoji={entry.group.emoji}
+												extraDetail={entry.memberSummary}
 												onPress={() =>
-													entry.kind === "group"
-														? openGroup(
-																entry.group.key,
-																entry.group.label,
-															)
-														: openIngredient(
-																entry.insight.ingredientName,
-															)
+													openGroup(
+														entry.group.key,
+														entry.group.label,
+													)
 												}
 											/>
 										</Animated.View>
@@ -216,53 +197,56 @@ export function InsightsScreen() {
 					))
 				)}
 
-				{!isWaitingForComputedData && viewState.earlySignals.length > 0 ? (
-					<View style={styles.earlyBlock}>
+				{!isWaitingForComputedData && viewState.trackedFamilies.length > 0 ? (
+					<View style={styles.familyBlock}>
 						<Pressable
 							accessibilityRole="button"
-							onPress={() => setEarlyExpanded((current) => !current)}
+							accessibilityState={{ expanded: familiesExpanded }}
+							onPress={() => setFamiliesExpanded((current) => !current)}
 							style={({ pressed }) => [
-								styles.earlyToggle,
+								styles.familyToggle,
 								pressed && { opacity: 0.85 },
 							]}
 						>
 							<Ionicons
-								name={earlyExpanded ? "chevron-down" : "chevron-forward"}
+								name={familiesExpanded ? "chevron-down" : "chevron-forward"}
 								size={15}
 								color={palette.textMuted}
 							/>
-							<Text style={styles.earlyToggleText}>
-								{viewState.earlySignals.length} more ingredient
-								{viewState.earlySignals.length === 1 ? "" : "s"} accumulating
-								evidence
+							<Text style={styles.familyToggleText}>
+								Foods we are tracking
 							</Text>
+							<Text style={styles.familyToggleCount}>{viewState.trackedFamilies.length}</Text>
 						</Pressable>
-						{earlyExpanded ? (
-							<View style={styles.earlyList}>
-								{viewState.earlySignals.map((insight) => (
+						<Text style={styles.familyIntro}>
+							Food coverage from your scans. These are not trigger verdicts yet.
+						</Text>
+						{familiesExpanded ? (
+							<View style={styles.familyList}>
+								{viewState.trackedFamilies.map((entry) => (
 									<Pressable
-										key={insight.id}
+										key={entry.family.key}
 										accessibilityRole="button"
-										onPress={() => openIngredient(insight.ingredientName)}
+										accessibilityLabel={`${entry.family.label}, ${familyMeta(entry.members.length, entry.evidenceCount)}`}
+										onPress={() => openFamily(entry.family.key, entry.family.label)}
 										style={({ pressed }) => [
-											styles.earlyRow,
-											pressed && { opacity: 0.85 },
+											styles.familyRow,
+											pressed && { opacity: 0.88 },
 										]}
 									>
-										<Text style={styles.earlyRowName}>
-											{insight.ingredientName}
-										</Text>
-										<Text style={styles.earlyRowMeta}>
-											{insight.positiveEvidenceCount +
-												insight.negativeEvidenceCount}{" "}
-											outcome
-											{insight.positiveEvidenceCount +
-												insight.negativeEvidenceCount ===
-											1
-												? ""
-												: "s"}{" "}
-											so far
-										</Text>
+										<View style={styles.familyGlyph}>
+											<Text style={styles.familyGlyphEmoji}>{entry.family.emoji}</Text>
+										</View>
+										<View style={styles.familyCopy}>
+											<Text style={styles.familyRowName} numberOfLines={1}>
+												{entry.family.label}
+											</Text>
+											<Text style={styles.familyRowMeta} numberOfLines={2}>
+												{familyMeta(entry.members.length, entry.evidenceCount)}
+												{entry.memberSummary ? ` · ${entry.memberSummary}` : ""}
+											</Text>
+										</View>
+										<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
 									</Pressable>
 								))}
 							</View>
@@ -277,6 +261,12 @@ export function InsightsScreen() {
 			/>
 		</>
 	);
+}
+
+function familyMeta(foodCount: number, evidenceCount: number) {
+	const foods = `${foodCount} food${foodCount === 1 ? "" : "s"}`;
+	if (evidenceCount <= 0) return foods;
+	return `${foods} tracked across ${evidenceCount} paired day${evidenceCount === 1 ? "" : "s"}`;
 }
 
 function HeroSummaryCard({
@@ -298,20 +288,6 @@ function HeroSummaryCard({
 			: learningProgress.stage === "growing"
 				? "subtle"
 				: "thinking";
-	const remainingReportDays = Math.max(
-		0,
-		learningProgress.confidentReportDays - learningProgress.pairedReportDays,
-	);
-	const remainingMealScans = Math.max(
-		0,
-		learningProgress.confidentMealScans - learningProgress.pairedMealScans,
-	);
-	// const stageCopy =
-	// 	learningProgress.stage === "confident"
-	// 		? "Paired meal and symptom history is strong."
-	// 		: learningProgress.stage === "growing"
-	// 			? `${remainingReportDays} paired report day${remainingReportDays === 1 ? "" : "s"} and ${remainingMealScans} meal scan${remainingMealScans === 1 ? "" : "s"} to confident.`
-	// 			: "Scan meals and log symptoms on the same week to start learning.";
 
 	return (
 		<View style={styles.heroStack}>
@@ -357,7 +333,6 @@ function HeroSummaryCard({
 				<Ionicons name="chevron-forward" size={14} color={palette.primary} />
 			</Pressable>
 
-			{/* <Text style={styles.learningStageCopy}>{stageCopy}</Text> */}
 		</View>
 	);
 }
@@ -646,13 +621,6 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 16,
 	},
-	// learningStageCopy: {
-	// 	color: tokens.color.text.tertiary,
-	// 	fontFamily: type.body.medium,
-	// 	fontSize: 12,
-	// 	lineHeight: 17,
-	// 	paddingHorizontal: spacing.xs,
-	// },
 	learningModalStats: {
 		width: "100%",
 		flexDirection: "row",
@@ -814,47 +782,77 @@ const styles = StyleSheet.create({
 		flex: 1,
 		gap: 4,
 	},
-	earlyBlock: {
+	familyBlock: {
 		gap: spacing.xs,
 	},
-	earlyToggle: {
+	familyToggle: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.xs,
 		paddingVertical: spacing.xs,
 		paddingHorizontal: spacing.sm,
 	},
-	earlyToggleText: {
+	familyToggleText: {
+		flex: 1,
 		color: palette.textMuted,
-		fontFamily: type.body.medium,
+		fontFamily: type.body.bold,
+		fontSize: 13,
+		lineHeight: 18,
+		textTransform: "uppercase",
+		letterSpacing: 0.6,
+	},
+	familyToggleCount: {
+		color: palette.textMuted,
+		fontFamily: type.body.bold,
 		fontSize: 13,
 		lineHeight: 18,
 	},
-	earlyList: {
-		gap: 2,
+	familyIntro: {
+		color: palette.textMuted,
+		fontFamily: type.body.regular,
+		fontSize: 12,
+		lineHeight: 16,
+		paddingHorizontal: spacing.sm,
+		marginTop: -spacing.xs,
+	},
+	familyList: {
+		gap: spacing.xs,
+	},
+	familyRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.sm,
 		borderRadius: radii.lg,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
-		paddingVertical: spacing.xs,
-	},
-	earlyRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: spacing.sm,
 		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.xs,
+		paddingVertical: spacing.sm,
+		...tokens.shadow.card,
 	},
-	earlyRowName: {
+	familyGlyph: {
+		width: 38,
+		height: 38,
+		borderRadius: 19,
+		alignItems: "center",
+		justifyContent: "center",
+		backgroundColor: palette.sageSoft,
+	},
+	familyGlyphEmoji: {
+		fontSize: 18,
+	},
+	familyCopy: {
+		flex: 1,
+		gap: 3,
+	},
+	familyRowName: {
 		flexShrink: 1,
 		color: palette.text,
-		fontFamily: type.body.medium,
+		fontFamily: type.body.semibold,
 		fontSize: 13,
 		lineHeight: 18,
-		textTransform: "capitalize",
 	},
-	earlyRowMeta: {
+	familyRowMeta: {
 		color: palette.textMuted,
 		fontFamily: type.body.regular,
 		fontSize: 11,

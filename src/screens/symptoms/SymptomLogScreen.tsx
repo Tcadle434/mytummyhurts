@@ -11,6 +11,8 @@ import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { components, radii, shadows, spacing, tokens, type } from '../../theme';
 import { DailyGutReport } from '../../types/domain';
+import { gutScoreTint } from '../../utils/risk';
+import { parseLocalDate, toLocalDate } from '../../utils/weeklyProgress';
 
 type MonthCursor = {
   year: number;
@@ -66,6 +68,8 @@ export function SymptomLogScreen() {
       <SectionCard style={styles.calendarCard}>
         <View style={styles.monthHeader}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous month"
             onPress={() => setVisibleMonth(addMonths(visibleMonth, -1))}
             style={({ pressed }) => [styles.monthButton, pressed && { opacity: 0.7 }]}
           >
@@ -73,8 +77,13 @@ export function SymptomLogScreen() {
           </Pressable>
           <Text style={styles.monthTitle}>{formatMonthTitle(visibleMonth)}</Text>
           <Pressable
-            disabled={isCurrentMonth}
-            onPress={() => setVisibleMonth(addMonths(visibleMonth, 1))}
+            accessibilityRole="button"
+            accessibilityLabel="Next month"
+            accessibilityState={{ disabled: isCurrentMonth }}
+            onPress={() => {
+              if (isCurrentMonth) return;
+              setVisibleMonth(addMonths(visibleMonth, 1));
+            }}
             style={({ pressed }) => [
               styles.monthButton,
               isCurrentMonth && styles.monthButtonDisabled,
@@ -90,9 +99,9 @@ export function SymptomLogScreen() {
         </View>
 
         <View style={styles.legendRow}>
-          <LegendItem color={scoreTone(80)} label="67-100" />
-          <LegendItem color={scoreTone(50)} label="34-66" />
-          <LegendItem color={scoreTone(20)} label="0-33" />
+          <LegendItem color={gutScoreTint(80)} label="67-100" />
+          <LegendItem color={gutScoreTint(50)} label="34-66" />
+          <LegendItem color={gutScoreTint(20)} label="0-33" />
         </View>
 
         <View style={styles.weekdayGrid}>
@@ -149,11 +158,13 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
   }
 
   const filled = Boolean(report);
-  const fillColor = report ? scoreTone(dailyScoreValue(report)) : tokens.color.surface.card.default;
+  const fillColor = report ? gutScoreTint(dailyScoreValue(report)) : tokens.color.surface.card.default;
 
   return (
     <View style={styles.calendarCell}>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Day ${cell.day}, ${filled ? 'report logged' : 'no report'}`}
         disabled={!onPress}
         onPress={onPress}
         style={({ pressed }) => [
@@ -173,12 +184,17 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
 
 function ReportRow({ report, onPress }: { report: DailyGutReport; onPress: () => void }) {
   const score = dailyScoreValue(report);
-  const tone = scoreTone(score);
+  const tone = gutScoreTint(score);
   const symptomSummary = report.symptomTags.length ? report.symptomTags.slice(0, 3).join(', ') : 'No symptoms tagged';
   const remainingCount = Math.max(report.symptomTags.length - 3, 0);
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.reportRow, pressed && { opacity: 0.9 }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${formatReportDate(report.localDate)}, gut severity ${report.gutSeverity} out of 10, ${symptomSummary}`}
+      onPress={onPress}
+      style={({ pressed }) => [styles.reportRow, pressed && { opacity: 0.9 }]}
+    >
       <View style={[styles.reportDateBadge, { backgroundColor: tone }]}>
         <Text style={styles.reportMonth}>{formatShortMonth(report.localDate)}</Text>
         <Text style={styles.reportDay}>{formatDayNumber(report.localDate)}</Text>
@@ -277,18 +293,6 @@ function buildCalendarCells(cursor: MonthCursor): CalendarCell[] {
   return cells;
 }
 
-function toLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function parseLocalDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year ?? new Date().getFullYear(), (month ?? 1) - 1, day ?? 1);
-}
-
 function formatMonthTitle(cursor: MonthCursor) {
   return new Date(cursor.year, cursor.month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
@@ -312,12 +316,6 @@ function dailyScoreValue(report: DailyGutReport) {
 function dailyScoreFromSeverity(gutSeverity: number) {
   const severity = Math.max(0, Math.min(10, Math.round(gutSeverity)));
   return Math.max(0, Math.min(100, Math.round(90 - severity * 8)));
-}
-
-function scoreTone(value: number) {
-  if (value >= 67) return tokens.color.status.risk.low.tint;
-  if (value >= 34) return tokens.color.status.risk.medium.tint;
-  return tokens.color.status.risk.high.tint;
 }
 
 function scoreForeground(value: number) {

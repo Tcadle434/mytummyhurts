@@ -1,7 +1,6 @@
 import {
 	conditionOptions,
 	dietPreferenceOnboardingOptions,
-	ingredientSensitivityOptions,
 	motivationOptions,
 	symptomFrequencyOptions,
 	symptomOptions,
@@ -9,7 +8,11 @@ import {
 	triedGutHealthAppsOptions,
 } from "./catalog";
 import { PipState } from "../theme";
-import { FoodCalibrationRating, OnboardingAnswers, OnboardingStepDefinition } from "../types/domain";
+import {
+	FoodCalibrationRating,
+	OnboardingAnswers,
+	OnboardingStepDefinition,
+} from "../types/domain";
 
 export const defaultOnboardingAnswers: OnboardingAnswers = {
 	displayName: "",
@@ -46,19 +49,18 @@ function calibrationRecord(value: unknown): Record<string, FoodCalibrationRating
 		return {};
 	}
 
-	return Object.entries(value as Record<string, unknown>).reduce<Record<string, FoodCalibrationRating>>(
-		(accumulator, [food, rating]) => {
-			if (rating === "fine" || rating === "unsure" || rating === "bad") {
-				accumulator[food] = rating;
-			}
-			return accumulator;
-		},
-		{}
-	);
+	return Object.entries(value as Record<string, unknown>).reduce<
+		Record<string, FoodCalibrationRating>
+	>((accumulator, [food, rating]) => {
+		if (rating === "fine" || rating === "unsure" || rating === "bad") {
+			accumulator[food] = rating;
+		}
+		return accumulator;
+	}, {});
 }
 
 export function normalizeOnboardingAnswers(
-	answers: Partial<OnboardingAnswers> | null | undefined
+	answers: Partial<OnboardingAnswers> | null | undefined,
 ): OnboardingAnswers {
 	const current = answers ?? {};
 	const motivations = stringArray(current.motivations);
@@ -73,7 +75,8 @@ export function normalizeOnboardingAnswers(
 		customIngredientSensitivities: stringArray(current.customIngredientSensitivities),
 		ingredientSensitivitiesUnknown: Boolean(current.ingredientSensitivitiesUnknown),
 		foodCalibrations: calibrationRecord(current.foodCalibrations),
-		lastBadMealText: optionalString(current.lastBadMealText) ?? defaultOnboardingAnswers.lastBadMealText,
+		lastBadMealText:
+			optionalString(current.lastBadMealText) ?? defaultOnboardingAnswers.lastBadMealText,
 		symptoms: stringArray(current.symptoms),
 		customSymptoms: stringArray(current.customSymptoms),
 		symptomFrequency: optionalString(current.symptomFrequency),
@@ -84,21 +87,22 @@ export function normalizeOnboardingAnswers(
 			motivations,
 			motivation: legacyMotivation,
 		}),
-		motivations: motivations.length > 0 ? motivations : legacyMotivation ? [legacyMotivation] : [],
+		motivations:
+			motivations.length > 0 ? motivations : legacyMotivation ? [legacyMotivation] : [],
 		currentEatingPatterns: stringArray(current.currentEatingPatterns),
 		lifestyleFactors: stringArray(current.lifestyleFactors),
 		favoriteFoodsToReintroduce:
 			optionalString(current.favoriteFoodsToReintroduce) ??
 			defaultOnboardingAnswers.favoriteFoodsToReintroduce,
 		dietPreferenceKeys: stringArray(
-			current.dietPreferenceKeys
+			current.dietPreferenceKeys,
 		) as OnboardingAnswers["dietPreferenceKeys"],
 		dietPreferenceNone: Boolean(current.dietPreferenceNone),
 	};
 }
 
 export function getOnboardingMotivationSummary(
-	answers: Pick<Partial<OnboardingAnswers>, "motivation" | "motivations">
+	answers: Pick<Partial<OnboardingAnswers>, "motivation" | "motivations">,
 ) {
 	const motivations = stringArray(answers.motivations);
 	if (motivations.length > 0) {
@@ -149,18 +153,6 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 		allowCustom: true,
 	},
 	{
-		id: "ingredient-select",
-		step: 5,
-		type: "multi_select",
-		backgroundVariant: "getStartedImage",
-		headline: "Are there any specific foods that bother you?",
-		body: "It's okay if you don't know. We will learn how you respond to food over time.",
-		cta: "Continue",
-		field: "ingredientSensitivities",
-		options: ingredientSensitivityOptions,
-		allowCustom: true,
-	},
-	{
 		id: "food-calibration",
 		step: 5,
 		type: "calibration",
@@ -176,8 +168,8 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 		type: "text_input",
 		backgroundVariant: "getStartedImage",
 		headline: "What was the last meal that wrecked you?",
-		body: "Describe it however you remember it — \"chicken alfredo and garlic bread\" works. We'll pull out the likely suspects.",
-		helper: "Optional, but it gives your profile a head start.",
+		body: "Tell us what you remember. We'll pull out the likely suspects.",
+		// helper: "Optional, but it gives your profile a head start.",
 		cta: "Continue",
 		field: "lastBadMealText",
 	},
@@ -371,15 +363,15 @@ export const onboardingSteps: OnboardingStepDefinition[] = [
 	// 	body: "A quick daily report helps us learn what actually affected you, without asking you to judge every meal.",
 	// 	cta: "Continue",
 	// },
-	{
-		id: "notification-priming",
-		step: 24,
-		type: "message",
-		backgroundVariant: "getStartedImage",
-		headline: "One tap a day keeps your triggers accurate",
-		body: "We'll send one evening reminder. Answer it with a single tap — Calm, Meh, or Rough — and your Gut Score and triggers stay honest.",
-		cta: "Continue",
-	},
+	// {
+	// 	id: "notification-priming",
+	// 	step: 24,
+	// 	type: "message",
+	// 	backgroundVariant: "getStartedImage",
+	// 	headline: "One tap a day keeps your triggers accurate",
+	// 	body: "We'll send one evening reminder. Answer it with a single tap — Calm, Meh, or Rough — and your Gut Score and triggers stay honest.",
+	// 	cta: "Continue",
+	// },
 	// {
 	// 	id: "adaptation",
 	// 	step: 25,

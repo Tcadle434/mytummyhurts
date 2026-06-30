@@ -233,6 +233,7 @@ describe('Gut Score movement', () => {
   });
 
   it('lets severe reports lower the score, capped to four points', () => {
+    const dailyReport = computeDailyScoreForReport(report('2026-05-12', 9), []);
     const score = computeGutScoreState({
       answers: answers({
         symptoms: ['Bloating'],
@@ -241,9 +242,10 @@ describe('Gut Score movement', () => {
       }),
       insights: [],
       scans: [],
-      dailyReports: [computeDailyScoreForReport(report('2026-05-12', 9), [])],
+      dailyReports: [dailyReport],
       previousGutScore: mildBaseline,
       movementSource: 'daily_report',
+      movementDailyScore: dailyReport.dailyScore,
       now: '2026-05-12T18:00:00.000Z',
     });
 
@@ -251,7 +253,7 @@ describe('Gut Score movement', () => {
     expect(mildBaseline.currentScore - score.currentScore).toBeLessThanOrEqual(4);
   });
 
-  it('lets weak mixed daily reports lower the score slightly', () => {
+  it('lets weak mixed daily reports move a low Gut Score up slightly', () => {
     const previousGutScore = {
       ...mildBaseline,
       currentScore: 30,
@@ -271,10 +273,91 @@ describe('Gut Score movement', () => {
       dailyReports: [report('2026-05-12', 5, 36)],
       previousGutScore,
       movementSource: 'daily_report',
+      movementDailyScore: 36,
       now: '2026-05-12T18:00:00.000Z',
     });
 
-    expect(score.currentScore - previousGutScore.currentScore).toBe(-1);
+    expect(score.currentScore - previousGutScore.currentScore).toBe(1);
+  });
+
+  it('moves a very low Gut Score up one point for a middling Daily Score', () => {
+    const previousGutScore = {
+      ...mildBaseline,
+      currentScore: 23,
+      baselineScore: 23,
+      history: [{ score: 23, createdAt: '2026-05-11T18:00:00.000Z' }],
+      updatedAt: '2026-05-11T18:00:00.000Z',
+    };
+    const score = computeGutScoreState({
+      answers: answers({
+        conditions: ['IBS'],
+        symptoms: ['Bloating'],
+        symptomFrequency: 'A few times a week',
+        symptomSeverityBaseline: 'Moderate',
+      }),
+      insights: [],
+      scans: [],
+      dailyReports: [report('2026-05-12', 6, 42)],
+      previousGutScore,
+      movementSource: 'daily_report',
+      movementDailyScore: 42,
+      now: '2026-05-12T18:00:00.000Z',
+    });
+
+    expect(score.currentScore).toBe(24);
+  });
+
+  it('moves a very low Gut Score up one point for a neutral Daily Score', () => {
+    const previousGutScore = {
+      ...mildBaseline,
+      currentScore: 23,
+      baselineScore: 23,
+      history: [{ score: 23, createdAt: '2026-05-11T18:00:00.000Z' }],
+      updatedAt: '2026-05-11T18:00:00.000Z',
+    };
+    const score = computeGutScoreState({
+      answers: answers({
+        conditions: ['IBS'],
+        symptoms: ['Bloating'],
+        symptomFrequency: 'A few times a week',
+        symptomSeverityBaseline: 'Moderate',
+      }),
+      insights: [],
+      scans: [],
+      dailyReports: [report('2026-05-12', 5, 55)],
+      previousGutScore,
+      movementSource: 'daily_report',
+      movementDailyScore: 55,
+      now: '2026-05-12T18:00:00.000Z',
+    });
+
+    expect(score.currentScore).toBe(24);
+  });
+
+  it('moves a high Gut Score down one point for a neutral Daily Score', () => {
+    const previousGutScore = {
+      ...mildBaseline,
+      currentScore: 90,
+      baselineScore: 75,
+      history: [{ score: 90, createdAt: '2026-05-11T18:00:00.000Z' }],
+      updatedAt: '2026-05-11T18:00:00.000Z',
+    };
+    const score = computeGutScoreState({
+      answers: answers({
+        symptoms: ['Bloating'],
+        symptomFrequency: 'Rarely',
+        symptomSeverityBaseline: 'Mild',
+      }),
+      insights: [],
+      scans: [],
+      dailyReports: [report('2026-05-12', 5, 55)],
+      previousGutScore,
+      movementSource: 'daily_report',
+      movementDailyScore: 55,
+      now: '2026-05-12T18:00:00.000Z',
+    });
+
+    expect(score.currentScore).toBe(89);
   });
 
   it('does not let a reactive daily report raise the score when rolling history is better', () => {
@@ -302,6 +385,7 @@ describe('Gut Score movement', () => {
       ],
       previousGutScore,
       movementSource: 'daily_report',
+      movementDailyScore: 26,
       now: '2026-05-12T18:00:00.000Z',
     });
 
@@ -332,6 +416,7 @@ describe('Gut Score movement', () => {
       dailyReports: [computeDailyScoreForReport(report('2026-05-12', 2), [])],
       previousGutScore: reactiveBaseline,
       movementSource: 'daily_report',
+      movementDailyScore: 74,
       now: '2026-05-12T18:00:00.000Z',
     });
 
@@ -358,10 +443,37 @@ describe('Gut Score movement', () => {
       dailyReports: [report('2026-05-12', 0, 100)],
       previousGutScore,
       movementSource: 'daily_report',
+      movementDailyScore: 100,
       now: '2026-05-12T18:00:00.000Z',
     });
 
     expect(score.currentScore - previousGutScore.currentScore).toBe(4);
+  });
+
+  it('keeps tiny Daily Score and Gut Score gaps flat', () => {
+    const previousGutScore = {
+      ...mildBaseline,
+      currentScore: 55,
+      baselineScore: 55,
+      history: [{ score: 55, createdAt: '2026-05-11T18:00:00.000Z' }],
+      updatedAt: '2026-05-11T18:00:00.000Z',
+    };
+    const score = computeGutScoreState({
+      answers: answers({
+        symptoms: ['Bloating'],
+        symptomFrequency: 'Rarely',
+        symptomSeverityBaseline: 'Mild',
+      }),
+      insights: [],
+      scans: [],
+      dailyReports: [report('2026-05-12', 5, 55)],
+      previousGutScore,
+      movementSource: 'daily_report',
+      movementDailyScore: 55,
+      now: '2026-05-12T18:00:00.000Z',
+    });
+
+    expect(score.currentScore).toBe(55);
   });
 
   it('raises the score into green after a calm week', () => {
@@ -417,6 +529,21 @@ describe('Daily Score', () => {
 });
 
 describe('Ingredient evidence', () => {
+  it('keeps neutral paired ingredients as centered personal evidence', () => {
+    const insights = recomputeInsights(
+      [scan('2026-05-12', ['bread', 'pickle'], 50)],
+      [report('2026-05-12', 5)],
+    );
+    const bread = insights.find((insight) => insight.ingredientName === 'bread');
+
+    expect(bread).toBeDefined();
+    expect(bread!.combinedRiskScore).toBe(50);
+    expect(bread!.positiveEvidenceCount).toBe(0);
+    expect(bread!.negativeEvidenceCount).toBe(0);
+    expect(bread!.supportingEvidenceCount).toBeGreaterThan(0);
+    expect(bread!.sourceBreakdown.personal).toBe(true);
+  });
+
   it('adds trigger evidence for repeated garlic/onion on reactive days', () => {
     const insights = recomputeInsights(
       [

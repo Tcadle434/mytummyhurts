@@ -10,13 +10,14 @@ import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { yesterdayLocalDate } from '../../utils/weeklyProgress';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DailyGutReport'>;
 
 const NO_SYMPTOMS_TAG = 'None';
 
 export function DailyGutReportScreen({ navigation, route }: Props) {
-  const targetDate = route.params?.localDate ?? yesterdayLocalDate();
+  const targetDate = normalizeLocalDate(route.params?.localDate) ?? yesterdayLocalDate();
   const existingReport = useAppStore((state) => state.dailyReports.find((report) => report.localDate === targetDate));
   const upsertDailyReport = useAppStore((state) => state.upsertDailyReport);
   const existingCustomSymptoms = useMemo(
@@ -315,17 +316,18 @@ function OtherSymptomChip({ count, onPress }: { count: number; onPress: () => vo
   );
 }
 
-function yesterdayLocalDate() {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  return toLocalDate(date);
-}
+function normalizeLocalDate(value?: string) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
 
-function toLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const [year = 0, month = 0, day = 0] = value.split('-').map(Number);
+  const parsed = new Date(year, month - 1, day);
+  if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) {
+    return null;
+  }
+
+  return value;
 }
 
 function formatLocalDate(value: string) {

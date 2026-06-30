@@ -1,0 +1,30 @@
+{
+  "version": "retrieval_v1",
+  "defaultTopK": 8,
+  "cases": [
+    {
+      "id": "ibs_wheat_allium",
+      "ingredients": ["wheat bread", "onion", "garlic"],
+      "conditions": ["IBS"],
+      "requiredConcepts": ["fodmap", "fructan"],
+      "anyConcepts": ["wheat", "garlic", "onion", "allium"],
+      "minRelevantChunks": 2
+    },
+    {
+      "id": "gerd_fat_tomato",
+      "ingredients": ["tomato sauce", "cheese", "pepperoni"],
+      "conditions": ["GERD / Acid reflux"],
+      "requiredConcepts": ["reflux"],
+      "anyConcepts": ["tomato", "fat", "fried", "pepperoni", "trigger"],
+      "minRelevantChunks": 2
+    },
+    {
+      "id": "lactose_milk_ice_cream",
+      "ingredients": ["milk", "ice cream", "cream"],
+      "conditions": ["Lactose intolerance"],
+      "requiredConcepts": ["lactose"],
+      "anyConcepts": ["milk", "dairy", "ice cream"],
+      "minRelevantChunks": 2
+    }
+  ]
+}

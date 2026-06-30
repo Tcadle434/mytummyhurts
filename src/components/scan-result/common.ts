@@ -1,7 +1,7 @@
 import { LayoutAnimation, Platform, UIManager } from "react-native";
 
 import { tokens } from "../../theme";
-import type { DietEvaluation, DietFitStatus, ScoreContributor } from "../../types/domain";
+import type { DietEvaluation, DietFitStatus, ScanIngredientRisk, ScoreContributor } from "../../types/domain";
 
 if (
 	Platform.OS === "android" &&
@@ -31,6 +31,7 @@ export type MenuTierItem = {
 	scoreContributors?: ScoreContributor[];
 	scoringConfidence?: "low" | "medium" | "high";
 	dietEvaluations?: DietEvaluation[];
+	ingredientRisks?: ScanIngredientRisk[];
 	saferSwap?: string;
 	sourceItemId?: string;
 	consumed?: boolean;

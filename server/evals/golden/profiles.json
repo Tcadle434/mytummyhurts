@@ -1,0 +1,61 @@
+{
+  "version": "profile_v1",
+  "profiles": {
+    "unknown_discomfort": {
+      "description": "No named diagnosis; user reports general digestive discomfort.",
+      "knownConditions": [],
+      "knownIngredientSensitivities": [],
+      "commonSymptoms": ["Bloating", "Stomach pain", "Nausea"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    },
+    "general_sensitive_stomach": {
+      "description": "General sensitive-stomach profile without a specific condition label.",
+      "knownConditions": [],
+      "knownIngredientSensitivities": [],
+      "commonSymptoms": ["Bloating", "Reflux / Heartburn", "Stomach pain"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    },
+    "ibs": {
+      "description": "IBS-only profile.",
+      "knownConditions": ["IBS"],
+      "knownIngredientSensitivities": [],
+      "commonSymptoms": ["Bloating", "Gas", "Stomach pain"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    },
+    "gerd": {
+      "description": "GERD/reflux-only profile.",
+      "knownConditions": ["GERD / Acid reflux"],
+      "knownIngredientSensitivities": [],
+      "commonSymptoms": ["Reflux / Heartburn", "Nausea"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    },
+    "ibs_gerd": {
+      "description": "Primary development profile used for most scan-stability work.",
+      "knownConditions": ["IBS", "GERD / Acid reflux"],
+      "knownIngredientSensitivities": [],
+      "commonSymptoms": ["Bloating", "Reflux / Heartburn"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    },
+    "lactose_intolerance": {
+      "description": "Lactose/dairy-sensitive profile.",
+      "knownConditions": ["Lactose intolerance"],
+      "knownIngredientSensitivities": ["lactose", "milk"],
+      "commonSymptoms": ["Bloating", "Diarrhea"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    },
+    "gluten_sensitive_or_celiac": {
+      "description": "Gluten/wheat-sensitive profile.",
+      "knownConditions": ["Gluten sensitivity / celiac"],
+      "knownIngredientSensitivities": ["gluten", "wheat"],
+      "commonSymptoms": ["Bloating", "Stomach pain"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    }
+  }
+}

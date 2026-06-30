@@ -3,11 +3,8 @@ import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navig
 import { ComponentProps, useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
   LayoutChangeEvent,
   Linking,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +22,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '../../components/common/UI';
+import { CustomEntryModal } from '../../components/modals/CustomEntryModal';
 import { env } from '../../config/env';
 import {
   conditionOptions,
@@ -36,7 +34,7 @@ import {
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList, SettingsSection } from '../../navigation/types';
 import { apiClient } from '../../services/api/client';
-import { signOutSupabase } from '../../services/auth';
+import { signOut } from '../../services/auth';
 import { trackEvent } from '../../services/analytics';
 import {
   ensureDailyCheckinScheduled,
@@ -218,70 +216,43 @@ export function SettingsScreen() {
     setExpandedSection((current) => (current === next ? null : next));
   }
 
-  async function handleSaveConditions() {
-    setBusySection('conditions');
+  // Shared flow for the predefined+custom health-profile lists (conditions,
+  // sensitivities, symptoms). Each only differs by section key, profile field,
+  // merged values, analytics count key, and the noun used in status messages.
+  async function saveHealthProfileSection(
+    section: NonNullable<BusySection>,
+    noun: string,
+    update: Parameters<typeof updateProfileSettings>[0],
+    countKey: string,
+    count: number,
+  ) {
+    setBusySection(section);
     setStatusMessage(null);
-    const mergedConditions = [...selectedConditions, ...customConditions];
     try {
-      await updateProfileSettings({
-        knownConditions: mergedConditions,
-      });
-      trackEvent('profile_saved', {
-        conditions_count: mergedConditions.length,
-      });
-      setStatusMessage('Conditions saved.');
+      await updateProfileSettings(update);
+      trackEvent('profile_saved', { [countKey]: count });
+      setStatusMessage(`${noun} saved.`);
       setExpandedSection(null);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Conditions could not be saved.',
-      );
+      setStatusMessage(error instanceof Error ? error.message : `${noun} could not be saved.`);
     } finally {
       setBusySection(null);
     }
   }
 
-  async function handleSaveSensitivities() {
-    setBusySection('sensitivities');
-    setStatusMessage(null);
-    const mergedSensitivities = [...selectedSensitivities, ...customSensitivities];
-    try {
-      await updateProfileSettings({
-        knownIngredientSensitivities: mergedSensitivities,
-      });
-      trackEvent('profile_saved', {
-        sensitivities_count: mergedSensitivities.length,
-      });
-      setStatusMessage('Sensitivities saved.');
-      setExpandedSection(null);
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Sensitivities could not be saved.',
-      );
-    } finally {
-      setBusySection(null);
-    }
+  function handleSaveConditions() {
+    const merged = [...selectedConditions, ...customConditions];
+    return saveHealthProfileSection('conditions', 'Conditions', { knownConditions: merged }, 'conditions_count', merged.length);
   }
 
-  async function handleSaveSymptoms() {
-    setBusySection('symptoms');
-    setStatusMessage(null);
-    const mergedSymptoms = [...selectedSymptoms, ...customSymptoms];
-    try {
-      await updateProfileSettings({
-        commonSymptoms: mergedSymptoms,
-      });
-      trackEvent('profile_saved', {
-        symptoms_count: mergedSymptoms.length,
-      });
-      setStatusMessage('Symptoms saved.');
-      setExpandedSection(null);
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Symptoms could not be saved.',
-      );
-    } finally {
-      setBusySection(null);
-    }
+  function handleSaveSensitivities() {
+    const merged = [...selectedSensitivities, ...customSensitivities];
+    return saveHealthProfileSection('sensitivities', 'Sensitivities', { knownIngredientSensitivities: merged }, 'sensitivities_count', merged.length);
+  }
+
+  function handleSaveSymptoms() {
+    const merged = [...selectedSymptoms, ...customSymptoms];
+    return saveHealthProfileSection('symptoms', 'Symptoms', { commonSymptoms: merged }, 'symptoms_count', merged.length);
   }
 
   async function handleSaveDiet() {
@@ -440,7 +411,7 @@ export function SettingsScreen() {
   async function handleSignOut() {
     setStatusMessage(null);
     try {
-      await signOutSupabase();
+      await signOut();
       resetToSignIn();
     } catch (error) {
       setStatusMessage(
@@ -454,7 +425,7 @@ export function SettingsScreen() {
     setStatusMessage(null);
     try {
       await apiClient.deleteAccount();
-      await signOutSupabase();
+      await signOut();
       resetToCreateAccount();
     } catch (error) {
       setStatusMessage(
@@ -783,89 +754,20 @@ export function SettingsScreen() {
 
       <Text style={styles.versionLabel}>App version 1.2.0</Text>
 
-      <Modal
-        animationType="fade"
-        transparent
+      <CustomEntryModal
         visible={customModalCategory !== null}
-        onRequestClose={closeCustomModal}
-      >
-        <View style={styles.customModalRoot}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close custom entry"
-            style={styles.customModalBackdrop}
-            onPress={closeCustomModal}
-          />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            pointerEvents="box-none"
-            style={styles.customModalKeyboard}
-          >
-            {customModalCategory ? (
-              <View style={styles.customModalCard}>
-                <View style={styles.customModalHeader}>
-                  <View style={styles.customModalTitleWrap}>
-                    <Text style={styles.customModalTitle}>
-                      {CUSTOM_CATEGORY_COPY[customModalCategory].title}
-                    </Text>
-                    <Text style={styles.customModalSubtitle}>
-                      {CUSTOM_CATEGORY_COPY[customModalCategory].subtitle}
-                    </Text>
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Close"
-                    onPress={closeCustomModal}
-                    hitSlop={8}
-                    style={({ pressed }) => [
-                      styles.customModalClose,
-                      pressed && { opacity: 0.7 },
-                    ]}
-                  >
-                    <Ionicons name="close" size={20} color={tokens.color.icon.primary} />
-                  </Pressable>
-                </View>
-                <InputField
-                  value={customEntry}
-                  placeholder={CUSTOM_CATEGORY_COPY[customModalCategory].placeholder}
-                  onChangeText={setCustomEntry}
-                  autoFocus
-                />
-                <PrimaryButton
-                  label="Add"
-                  onPress={addCustomEntry}
-                  disabled={!customEntry.trim()}
-                />
-                {getCustomValuesForModal(customModalCategory).length > 0 ? (
-                  <View style={styles.customValuesStack}>
-                    {getCustomValuesForModal(customModalCategory).map((value) => (
-                      <View key={value} style={styles.customValuePill}>
-                        <Text style={styles.customValueText}>{value}</Text>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Remove ${value}`}
-                          onPress={() => removeCustomEntry(customModalCategory, value)}
-                          hitSlop={8}
-                          style={({ pressed }) => [
-                            styles.customValueRemove,
-                            pressed && { opacity: 0.7 },
-                          ]}
-                        >
-                          <Ionicons
-                            name="close"
-                            size={13}
-                            color={tokens.color.text.inverse}
-                          />
-                        </Pressable>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+        title={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].title : ''}
+        subtitle={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].subtitle : undefined}
+        placeholder={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].placeholder : ''}
+        value={customEntry}
+        onChangeText={setCustomEntry}
+        onSubmit={addCustomEntry}
+        onClose={closeCustomModal}
+        values={customModalCategory ? getCustomValuesForModal(customModalCategory) : []}
+        onRemove={(value) => {
+          if (customModalCategory) removeCustomEntry(customModalCategory, value);
+        }}
+      />
     </AppScreen>
   );
 }
@@ -908,8 +810,12 @@ function SettingsRow({
   expanded?: boolean;
   danger?: boolean;
 }) {
+  const accessibilityLabel = [label, value ?? badge].filter(Boolean).join(', ');
+
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && { opacity: 0.78 }]}
     >
@@ -1196,90 +1102,5 @@ const styles = StyleSheet.create({
     fontFamily: type.body.medium,
     fontSize: 12,
     marginTop: spacing.sm,
-  },
-  customModalRoot: {
-    flex: 1,
-    backgroundColor: 'rgba(22, 29, 33, 0.44)',
-  },
-  customModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
-  customModalKeyboard: {
-    flex: 1,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
-    zIndex: 1,
-  },
-  customModalCard: {
-    width: '100%',
-    maxWidth: 380,
-    zIndex: 2,
-    borderRadius: 24,
-    backgroundColor: tokens.color.surface.sheet,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...tokens.shadow.modal,
-  },
-  customModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  customModalTitleWrap: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  customModalTitle: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 20,
-    lineHeight: 25,
-  },
-  customModalSubtitle: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.regular,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  customModalClose: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: tokens.color.surface.card.warm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  customValuesStack: {
-    gap: spacing.sm,
-  },
-  customValuePill: {
-    minHeight: 50,
-    borderRadius: 18,
-    backgroundColor: palette.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 13,
-    paddingRight: 42,
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  customValueText: {
-    color: tokens.color.text.inverse,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  customValueRemove: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

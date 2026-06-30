@@ -10,8 +10,13 @@ import { createOnboardingActions } from './actions/onboardingActions';
 import { createReportActions } from './actions/reportActions';
 import { createScanActions } from './actions/scanActions';
 import { AppStoreState, defaultBillingState } from './types';
+import { sortDailyReportsByDate } from '../utils/dailyReports';
 
 export type { AppStoreState } from './types';
+
+function arrayOrFallback<T>(value: T[] | undefined, fallback: T[]) {
+  return Array.isArray(value) ? value : fallback;
+}
 
 export const useAppStore = create<AppStoreState>()(
   persist(
@@ -50,6 +55,13 @@ export const useAppStore = create<AppStoreState>()(
           ...current,
           ...persistedState,
           onboardingAnswers: normalizeOnboardingAnswers(persistedState?.onboardingAnswers),
+          scans: arrayOrFallback(persistedState?.scans, current.scans),
+          dailyReports: sortDailyReportsByDate(arrayOrFallback(persistedState?.dailyReports, current.dailyReports)),
+          insights: arrayOrFallback(persistedState?.insights, current.insights),
+          conditionInsights: arrayOrFallback(
+            persistedState?.conditionInsights,
+            current.conditionInsights,
+          ),
           remoteDataLoaded: false,
         };
       },

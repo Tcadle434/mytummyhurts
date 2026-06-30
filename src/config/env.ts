@@ -1,6 +1,7 @@
 export const env = {
-  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
-  supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
+  // Self-hosted NestJS API base, e.g. https://api.mytummyhurts.app. This is the
+  // single backend: auth, scans, learning, billing all funnel through /v1/*.
+  apiUrl: process.env.EXPO_PUBLIC_API_URL ?? '',
   appScheme: process.env.EXPO_PUBLIC_APP_SCHEME ?? 'mytummyhurts',
   iosBundleId: process.env.EXPO_PUBLIC_IOS_BUNDLE_ID ?? 'com.thomascadle.mytummyhurts',
   googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
@@ -21,16 +22,17 @@ export const env = {
   annualProductId: process.env.EXPO_PUBLIC_APPLE_IAP_ANNUAL ?? 'annual',
 };
 
-// A release build with missing backend config would silently fall back to the
+// A release build with no backend configured would silently fall back to the
 // local mock engine AND bypass the entitlement gate — fail loudly instead.
 declare const __DEV__: boolean;
-if (typeof __DEV__ !== 'undefined' && !__DEV__ && (!env.supabaseUrl || !env.supabaseAnonKey)) {
-  throw new Error(
-    'Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY in a release build.',
-  );
+if (typeof __DEV__ !== 'undefined' && !__DEV__ && !env.apiUrl) {
+  throw new Error('Missing EXPO_PUBLIC_API_URL in a release build.');
 }
 
-export const isLiveBackendConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
+// The self-hosted backend is the one and only live backend now. These aliases are
+// kept so existing call sites (home/history/insights/scan/store) read naturally.
+export const isSelfHostApiConfigured = Boolean(env.apiUrl);
+export const isLiveBackendConfigured = isSelfHostApiConfigured;
 export const shouldUseLiveBackend = isLiveBackendConfigured;
 export const isPostHogConfigured = Boolean(env.posthogKey);
 export const shouldUsePostHog = isPostHogConfigured;

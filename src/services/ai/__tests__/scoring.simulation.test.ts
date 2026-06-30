@@ -199,6 +199,7 @@ function simulateTimeline(params: {
       dailyReports: scoredReports,
       previousGutScore: gutScore,
       movementSource: dailyReport ? 'daily_report' : day.scans?.length ? 'scan' : undefined,
+      movementDailyScore: dailyReport?.dailyScore,
       now: `${day.date}T21:00:00.000Z`,
     });
 
@@ -243,7 +244,7 @@ describe('Gut Score longitudinal simulations', () => {
     symptomSeverityBaseline: 'Severe',
   });
 
-  it('does not improve just because a user scans safe foods while symptoms stay reactive', () => {
+  it('keeps reactive safe-food days capped near their Daily Score target', () => {
     const result = simulateTimeline({
       answers: severeUser,
       initialGutScore: 30,
@@ -253,9 +254,9 @@ describe('Gut Score longitudinal simulations', () => {
       })),
     });
 
-    expect(result.finalGutScore).toBeLessThan(30);
-    expect(result.timeline.every((point) => point.gutScore <= 30)).toBe(true);
-    expect(maxDelta(result.timeline)).toBeLessThanOrEqual(1);
+    expect(result.finalGutScore).toBeLessThanOrEqual(33);
+    expect(result.timeline.every((point) => point.gutScore <= 33)).toBe(true);
+    expect(maxDelta(result.timeline)).toBeLessThanOrEqual(2);
     expect(minDelta(result.timeline)).toBeGreaterThanOrEqual(-4);
     expect(result.timeline.every((point) => (point.dailyScore ?? 0) <= 33)).toBe(true);
   });
@@ -284,7 +285,7 @@ describe('Gut Score longitudinal simulations', () => {
       ],
     });
 
-    expect(result.timeline[6]?.gutScore).toBeLessThanOrEqual(30);
+    expect(result.timeline[6]?.gutScore).toBeLessThanOrEqual(37);
     expect(result.finalGutScore).toBeGreaterThan(45);
     expect(result.finalGutScore).toBeLessThan(90);
     expect(maxDelta(result.timeline)).toBeLessThanOrEqual(4);

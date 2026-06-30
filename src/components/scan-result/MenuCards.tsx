@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colorForDietStatus, colorForLevel, dietStatusLabel, prioritizeScoreContributors, type MenuTierItem, type RiskLevel } from "./common";
+import { colorForLevel, prioritizeScoreContributors, type MenuTierItem, type RiskLevel } from "./common";
+import { selectIngredientHistoryRows } from "./PersonalizedScanCard.helpers";
+import { DietEvaluationRows, IngredientHistoryRows } from "./PersonalizedScanCard";
 import { ScoreDriversList } from "./ScoreDrivers";
+import { cardTitleStyle, resultCardStyle, sectionLabelStyle } from "./styles";
 import { InfoPill } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
 
@@ -22,10 +25,10 @@ export function MenuRankingCard({
 	}
 
 	return (
-		<View style={styles.resultCard}>
+		<View style={resultCardStyle}>
 			<View style={styles.rankingHeader}>
 				<View>
-					<Text style={styles.cardTitle}>Full menu ranking</Text>
+					<Text style={cardTitleStyle}>Full menu ranking</Text>
 					<Text style={styles.rankingSubtitle}>
 						{items.length} item{items.length === 1 ? "" : "s"} scored from lowest to highest risk
 					</Text>
@@ -64,7 +67,7 @@ export function MenuTierCard({
 	}
 	const color = colorForLevel(level);
 	return (
-		<View style={styles.resultCard}>
+		<View style={resultCardStyle}>
 			<View style={styles.tierHeader}>
 				<Ionicons name="checkmark-circle" size={26} color={color} />
 				<Text style={styles.tierTitle}>{title}</Text>
@@ -96,14 +99,18 @@ function MenuRow({
 }) {
 	const riskColor = colorForLevel(item.level);
 	const scoreDrivers = prioritizeScoreContributors(item.scoreContributors, 4);
+	const ingredientHistoryRows = selectIngredientHistoryRows(item.ingredientRisks, 3);
 	const hasExpandedContent =
 		Boolean(item.insight) ||
 		scoreDrivers.length > 0 ||
 		Boolean(item.triggers?.length) ||
 		Boolean(item.dietEvaluations?.length) ||
+		ingredientHistoryRows.length > 0 ||
 		Boolean(item.saferSwap);
 	return (
 		<Pressable
+			accessibilityRole={hasExpandedContent ? "button" : undefined}
+			accessibilityState={hasExpandedContent ? { expanded } : undefined}
 			onPress={hasExpandedContent ? onToggle : undefined}
 			style={({ pressed }) => [styles.menuRow, pressed && hasExpandedContent && styles.menuRowPressed]}
 		>
@@ -137,7 +144,7 @@ function MenuRow({
 				<View style={styles.expandedBlock}>
 					{item.insight ? (
 						<>
-							<Text style={styles.insightLabel}>Why this score</Text>
+							<Text style={sectionLabelStyle}>Why this score</Text>
 							<Text style={styles.insightBody}>{item.insight}</Text>
 						</>
 					) : null}
@@ -153,23 +160,14 @@ function MenuRow({
 					) : null}
 					{item.dietEvaluations && item.dietEvaluations.length > 0 ? (
 						<View style={styles.scoreDrivers}>
-							<Text style={styles.insightLabel}>Diet fit</Text>
-							{item.dietEvaluations.map((evaluation) => (
-								<View key={evaluation.dietKey} style={styles.dietChipRow}>
-									<View
-										style={[
-											styles.dietStatusDot,
-											{ backgroundColor: colorForDietStatus(evaluation.status) },
-										]}
-									/>
-									<View style={styles.scoreDriverBody}>
-										<Text style={styles.scoreDriverLabel}>
-											{dietStatusLabel(evaluation.status)} {evaluation.dietLabel}
-										</Text>
-										<Text style={styles.scoreDriverReason}>{evaluation.reason}</Text>
-									</View>
-								</View>
-							))}
+							<Text style={sectionLabelStyle}>Diet fit</Text>
+							<DietEvaluationRows evaluations={item.dietEvaluations} />
+						</View>
+					) : null}
+					{ingredientHistoryRows.length > 0 ? (
+						<View style={styles.scoreDrivers}>
+							<Text style={sectionLabelStyle}>Ingredient history</Text>
+							<IngredientHistoryRows rows={ingredientHistoryRows} />
 						</View>
 					) : null}
 					{item.saferSwap ? (
@@ -208,27 +206,11 @@ function MenuRow({
 }
 
 const styles = StyleSheet.create({
-	resultCard: {
-		width: "100%",
-		borderRadius: 28,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.card,
-	},
 	rankingHeader: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.md,
-	},
-	cardTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
 	},
 	rankingSubtitle: {
 		marginTop: 2,
@@ -326,14 +308,6 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 		paddingTop: spacing.xs,
 	},
-	insightLabel: {
-		color: palette.textMuted,
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
-		textTransform: "uppercase",
-		letterSpacing: 0.4,
-	},
 	insightBody: {
 		color: palette.text,
 		fontFamily: type.body.regular,
@@ -347,37 +321,6 @@ const styles = StyleSheet.create({
 	},
 	scoreDrivers: {
 		gap: spacing.xs,
-	},
-	dietChipRow: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		gap: spacing.sm,
-		borderRadius: 14,
-		backgroundColor: tokens.color.surface.card.warm,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.xs,
-	},
-	dietStatusDot: {
-		width: 10,
-		height: 10,
-		borderRadius: 5,
-		marginTop: 5,
-	},
-	scoreDriverBody: {
-		flex: 1,
-		gap: 1,
-	},
-	scoreDriverLabel: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 18,
-	},
-	scoreDriverReason: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 	saferSwapRow: {
 		flexDirection: "row",

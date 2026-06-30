@@ -5,8 +5,14 @@ import { buildGutScoreEvent, buildUserProfile, computeGutScoreState, computeProf
 import { queryClient } from '../services/query/client';
 import { queryKeys } from '../services/query/keys';
 import { ConditionIngredientInsight, DailyGutReport, IngredientInsight, OnboardingAnswers, ScanInputPayload, ScanRecord, ScanCategory, SubscriptionPlan, UserProfile } from '../types/domain';
+import {
+  mergeDailyReportByLocalDate,
+  sortDailyReportsByDate,
+} from '../utils/dailyReports';
 import { createScanRequestId } from '../utils/id';
 import { AppStoreState, defaultBillingState } from './types';
+
+export { mergeDailyReportByLocalDate, sortDailyReportsByDate } from '../utils/dailyReports';
 
 export function now() {
   return new Date().toISOString();
@@ -149,9 +155,7 @@ export function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] |
     return;
   }
 
-  const orderedReports = [...dailyReports].sort(
-    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-  );
+  const orderedReports = sortDailyReportsByDate(dailyReports);
 
   queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
     if (!cached || typeof cached !== 'object') {
@@ -186,6 +190,76 @@ export function patchDailyReportsInHistoryCache(dailyReports: DailyGutReport[] |
   });
 }
 
+export function patchLearningResponseInQueryCaches(response: LearningRecomputeResponse) {
+  patchInsightsCacheFromLearning(response);
+  patchDailyReportsInHistoryCache(response.dailyReports);
+}
+
+export function learningResponseStatePatch(
+  currentState: AppStoreState,
+  response: LearningRecomputeResponse,
+): Partial<AppStoreState> {
+  const nextInsights = response.insights ?? currentState.insights;
+  return {
+    profile: profileWithGutScoreFallback(response.profile ?? currentState.profile, currentState, nextInsights),
+    insights: nextInsights,
+    conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+    dailyReports: response.dailyReports
+      ? sortDailyReportsByDate(response.dailyReports)
+      : currentState.dailyReports,
+  };
+}
+
+export function patchDailyReportInQueryCaches(report: DailyGutReport) {
+  queryClient.setQueryData(queryKeys.home, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const homeCache = cached as HomeResponse;
+    if (!Array.isArray(homeCache.dailyReports)) {
+      return cached;
+    }
+
+    return {
+      ...homeCache,
+      dailyReports: mergeDailyReportByLocalDate(homeCache.dailyReports, report),
+    };
+  });
+
+  queryClient.setQueriesData({ queryKey: queryKeys.history }, (cached: unknown) => {
+    if (!cached || typeof cached !== 'object') {
+      return cached;
+    }
+
+    const historyCache = cached as {
+      pages?: { dailyReports?: DailyGutReport[]; [key: string]: unknown }[];
+      dailyReports?: DailyGutReport[];
+      [key: string]: unknown;
+    };
+
+    if (Array.isArray(historyCache.pages)) {
+      return {
+        ...historyCache,
+        pages: historyCache.pages.map((page) =>
+          Array.isArray(page.dailyReports)
+            ? { ...page, dailyReports: mergeDailyReportByLocalDate(page.dailyReports, report) }
+            : page,
+        ),
+      };
+    }
+
+    if (Array.isArray(historyCache.dailyReports)) {
+      return {
+        ...historyCache,
+        dailyReports: mergeDailyReportByLocalDate(historyCache.dailyReports, report),
+      };
+    }
+
+    return cached;
+  });
+}
+
 export function homeSummaryInsights(response: HomeResponse) {
   const byId = new Map<string, IngredientInsight>();
 
@@ -196,29 +270,36 @@ export function homeSummaryInsights(response: HomeResponse) {
   return [...byId.values()];
 }
 
-export function sortDailyReportsByDate(dailyReports: DailyGutReport[]) {
-  return [...dailyReports].sort(
-    (left, right) => new Date(right.localDate).getTime() - new Date(left.localDate).getTime(),
-  );
+export function normalizeHomeResponse(response: HomeResponse): HomeResponse {
+  return {
+    ...response,
+    dailyReports: sortDailyReportsByDate(response.dailyReports),
+  };
 }
 
 export function homeResponseStatePatch(
   currentState: AppStoreState,
   response: HomeResponse,
 ): Partial<AppStoreState> {
-  const summaryInsights = homeSummaryInsights(response);
-  const learningIsInFlight = response.learningStatus === 'pending' || response.learningStatus === 'running';
-  const learningFailed = response.learningStatus === 'failed';
+  const normalizedResponse = normalizeHomeResponse(response);
+  const currentInsights = Array.isArray(currentState.insights) ? currentState.insights : [];
+  const currentConditionInsights = Array.isArray(currentState.conditionInsights)
+    ? currentState.conditionInsights
+    : [];
+  const summaryInsights = homeSummaryInsights(normalizedResponse);
+  const nextInsights = currentInsights.length ? currentInsights : summaryInsights;
+  const learningIsInFlight = normalizedResponse.learningStatus === 'pending' || normalizedResponse.learningStatus === 'running';
+  const learningFailed = normalizedResponse.learningStatus === 'failed';
 
   return {
-    profile: response.profile,
-    billing: response.billing,
-    dailyReports: sortDailyReportsByDate(response.dailyReports),
-    insights: currentState.insights.length ? currentState.insights : summaryInsights,
-    conditionInsights: currentState.conditionInsights.length
-      ? currentState.conditionInsights
-      : response.insightSummary.conditionInsights,
-    initialServerSyncNeeded: response.profile ? false : currentState.initialServerSyncNeeded,
+    profile: profileWithGutScoreFallback(normalizedResponse.profile, currentState, nextInsights),
+    billing: normalizedResponse.billing,
+    dailyReports: normalizedResponse.dailyReports,
+    insights: nextInsights,
+    conditionInsights: currentConditionInsights.length
+      ? currentConditionInsights
+      : normalizedResponse.insightSummary.conditionInsights,
+    initialServerSyncNeeded: normalizedResponse.profile ? false : currentState.initialServerSyncNeeded,
     remoteDataLoaded: true,
     serverSyncError: null,
     learningSyncInFlight: learningIsInFlight,
@@ -231,10 +312,6 @@ export function homeResponseStatePatch(
 
 export function mergeById<T extends { id: string }>(items: T[], incoming: T) {
   return [incoming, ...items.filter((item) => item.id !== incoming.id)];
-}
-
-export function mergeDailyReportByLocalDate(items: DailyGutReport[], incoming: DailyGutReport) {
-  return [incoming, ...items.filter((item) => item.localDate !== incoming.localDate)];
 }
 
 export function sleep(ms: number) {
@@ -271,6 +348,36 @@ export function createLocalProfile(userId: string, answers: OnboardingAnswers, i
   return buildUserProfile(userId, answers, insights);
 }
 
+export function profileWithGutScoreFallback(
+  profile: UserProfile | null | undefined,
+  state: Pick<AppStoreState, 'profile' | 'onboardingAnswers' | 'insights'>,
+  insights: IngredientInsight[] = state.insights,
+): UserProfile | null {
+  if (!profile) {
+    return profile ?? null;
+  }
+
+  if (profile.stomachProfile.metadata.gutScore) {
+    return profile;
+  }
+
+  const safeInsights = Array.isArray(insights) ? insights : [];
+  const gutScore =
+    state.profile?.stomachProfile.metadata.gutScore ??
+    buildUserProfile(profile.userId, state.onboardingAnswers, safeInsights).stomachProfile.metadata.gutScore;
+
+  return {
+    ...profile,
+    stomachProfile: {
+      ...profile.stomachProfile,
+      metadata: {
+        ...profile.stomachProfile.metadata,
+        gutScore,
+      },
+    },
+  };
+}
+
 export function buildScoringOptions(state: Pick<AppStoreState, 'onboardingAnswers'>) {
   return {
     declaredSensitivities: state.onboardingAnswers.ingredientSensitivities.concat(
@@ -288,6 +395,18 @@ export function rebuildLocalLearningState(
 ) {
   const scoringOptions = buildScoringOptions(state);
   const scoredDailyReports = recomputeDailyScores(dailyReports, scans);
+  const changedDailyReports = scoredDailyReports.filter((report) => {
+    const previous = dailyReports.find((candidate) => candidate.id === report.id || candidate.localDate === report.localDate);
+    return normalizedDailyScore(previous?.dailyScore) !== normalizedDailyScore(report.dailyScore);
+  });
+  const latestChangedDailyReport = mostRecentDailyReport(changedDailyReports);
+  const latestDailyReport = mostRecentDailyReport(scoredDailyReports);
+  const movementSource = eventType.includes('scan')
+    ? latestChangedDailyReport ? 'daily_report' : 'scan'
+    : eventType.includes('daily_report') ? 'daily_report' : 'profile';
+  const movementDailyScore = movementSource === 'daily_report'
+    ? (eventType.includes('scan') ? latestChangedDailyReport?.dailyScore : latestDailyReport?.dailyScore)
+    : undefined;
   const insights = recomputeInsights(scans, scoredDailyReports, scoringOptions);
   const conditionInsights = recomputeConditionIngredientInsights(scans, scoredDailyReports, scoringOptions);
   const learningProgress = computeProfileLearningProgress(scans, scoredDailyReports);
@@ -309,7 +428,8 @@ export function rebuildLocalLearningState(
       scans,
       dailyReports: scoredDailyReports,
       previousGutScore: state.profile?.stomachProfile.metadata.gutScore,
-      movementSource: eventType.includes('scan') ? 'scan' : eventType.includes('daily_report') ? 'daily_report' : 'profile',
+      movementSource,
+      movementDailyScore,
     });
     profile.stomachProfile.metadata.gutScore = {
       ...gutScore,
@@ -327,6 +447,18 @@ export function rebuildLocalLearningState(
     conditionInsights,
     dailyReports: scoredDailyReports,
   };
+}
+
+function normalizedDailyScore(score: unknown) {
+  return typeof score === 'number' && Number.isFinite(score) ? Math.round(score) : undefined;
+}
+
+function mostRecentDailyReport(reports: DailyGutReport[]) {
+  return [...reports].sort((left, right) => {
+    const leftTime = new Date(left.updatedAt ?? left.localDate).getTime();
+    const rightTime = new Date(right.updatedAt ?? right.localDate).getTime();
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+  })[0];
 }
 
 export function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<

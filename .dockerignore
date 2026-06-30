@@ -1,0 +1,18 @@
+# Build context for the server image (server/docker-compose.prod.yml) is the repo
+# root, because the server depends on packages/shared-domain (outside server/).
+# Keep the context lean and NEVER bake secrets or node_modules into the image.
+**/node_modules
+**/.env
+**/.env.*
+.env
+.env.*
+.git
+.gitignore
+**/*.log
+ios-build.log
+.expo
+ios
+android
+output
+tmp
+*.tsbuildinfo

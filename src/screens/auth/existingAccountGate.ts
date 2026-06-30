@@ -1,5 +1,5 @@
 import { apiClient } from '../../services/api/client';
-import { signOutSupabase } from '../../services/auth';
+import { signOut } from '../../services/auth';
 import { showToast } from '../../services/toast';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -46,7 +46,7 @@ export async function verifyExistingAccountSignIn({
     return false;
   }
 
-  await signOutSupabase();
+  await signOut();
   useAppStore.getState().setOnboardingStage('intro');
   onRejected();
   showToast({
