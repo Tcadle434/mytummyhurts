@@ -233,8 +233,10 @@ export class ScanAnalysisService {
         const p = json.product;
         return [p.brands, p.product_name, p.ingredients_text].filter(Boolean).join(' — ') || `packaged product ${barcode}`;
       }
-    } catch {
-      // fall through
+    } catch (err) {
+      this.logger.warn(
+        `[barcode] lookup failed for ${barcode}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     return `packaged product (barcode ${barcode})`;
   }

@@ -287,12 +287,6 @@ function HeroSummaryCard({
 			: learningProgress.stage === "growing"
 				? "subtle"
 				: "thinking";
-	// const stageCopy =
-	// 	learningProgress.stage === "confident"
-	// 		? "Paired meal and symptom history is strong."
-	// 		: learningProgress.stage === "growing"
-	// 			? `${remainingReportDays} paired report day${remainingReportDays === 1 ? "" : "s"} and ${remainingMealScans} meal scan${remainingMealScans === 1 ? "" : "s"} to confident.`
-	// 			: "Scan meals and log symptoms on the same week to start learning.";
 
 	return (
 		<View style={styles.heroStack}>
@@ -338,7 +332,6 @@ function HeroSummaryCard({
 				<Ionicons name="chevron-forward" size={14} color={palette.primary} />
 			</Pressable>
 
-			{/* <Text style={styles.learningStageCopy}>{stageCopy}</Text> */}
 		</View>
 	);
 }
@@ -627,13 +620,6 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 16,
 	},
-	// learningStageCopy: {
-	// 	color: tokens.color.text.tertiary,
-	// 	fontFamily: type.body.medium,
-	// 	fontSize: 12,
-	// 	lineHeight: 17,
-	// 	paddingHorizontal: spacing.xs,
-	// },
 	learningModalStats: {
 		width: "100%",
 		flexDirection: "row",

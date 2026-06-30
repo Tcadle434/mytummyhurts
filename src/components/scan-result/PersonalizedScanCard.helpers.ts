@@ -144,8 +144,11 @@ function fallbackLabelFromKey(key: string, source: string) {
 	return readableByKey[key] ?? source;
 }
 
+// NOTE: kept local (not imported from ./common) to keep this module react-native-free
+// so it stays unit-testable in node. Phase 1 will extract a shared *pure* labels module.
 function dietStatusLabel(status: DietFitStatus) {
 	if (status === "does_not_fit") return "Doesn't fit";
+	if (status === "caution") return "Use caution for";
 	if (status === "unknown") return "Cannot verify";
 	return "Fits";
 }

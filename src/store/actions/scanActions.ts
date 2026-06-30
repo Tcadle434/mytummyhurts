@@ -2,15 +2,11 @@ import { isLiveBackendConfigured } from '../../config/env';
 import { trackEvent } from '../../services/analytics';
 import { apiClient } from '../../services/api/client';
 import { isEntitledSubscriptionStatus } from '../../features/access/appAccess';
-import { analyzeMealInput } from '../../services/ai/scoring';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { showToast } from '../../services/toast';
-import { ScanRecord } from '../../types/domain';
-import { createId } from '../../utils/id';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
 import {
-  now,
   localDateString,
   currentTimezone,
   scanCategoryForPayload,
@@ -125,7 +121,6 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           throw new Error('Subscription required before running scans.');
         }
 
-        const scanStartedAt = now();
         const requestId = scanRequestId(payload);
         const scanCategory = scanCategoryForPayload(payload);
         const requestedScanCategory = payload.scanCategory ?? scanCategory;
@@ -135,7 +130,6 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
         trackEvent('scan_analysis_started', { request_id: requestId, source_type: payload.sourceType, scan_category: requestedScanCategory });
 
         if (isLiveBackendConfigured && state.authUser) {
-          const authUser = state.authUser;
           if (state.initialServerSyncNeeded) {
             await get().syncInitialAccountState();
           }
@@ -207,42 +201,16 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           }
         }
 
-        const result = analyzeMealInput(payload, get().profile, get().insights);
-        const scanId = createId('scan');
-
-        const scan: ScanRecord = {
-          id: scanId,
-          requestId,
-          sourceType: payload.sourceType,
-          scanCategory,
-          analysisStatus: 'completed',
-          tokenCost: 1,
-          createdAt: scanStartedAt,
-          completedAt: now(),
-          inputText: payload.text,
-          localDate,
-          timezone,
-          ...result,
-        };
-
-        set((currentState) => ({
-          scans: [scan, ...currentState.scans],
-          billing: {
-            ...currentState.billing,
-            tokensRemaining: currentState.billing.tokensRemaining - 1,
-          },
-          ...rebuildLocalLearningState(currentState, [scan, ...currentState.scans], currentState.dailyReports, 'scan_completed'),
-        }));
-
-        trackEvent('scan_analysis_completed', {
+        // No live backend / not signed in: scanning requires a server round-trip
+        // (the LLM analysis runs server-side). Surface a clear, friendly error
+        // instead of fabricating a local result.
+        trackEvent('scan_analysis_failed', {
           request_id: requestId,
-          scan_id: scanId,
-          overall_risk_level: result.overallRiskLevel,
-          overall_risk_score: result.overallRiskScore,
-          token_balance_after: get().billing.tokensRemaining,
+          source_type: payload.sourceType,
+          scan_category: requestedScanCategory,
+          error_code: 'offline_unsupported',
         });
-
-        return { scanId };
+        throw new Error('Scanning needs a connection. Please check your internet and try again.');
       },
       deleteScanRecord: async (scanId) => {
         const existingScan = get().scans.find((scan) => scan.id === scanId);

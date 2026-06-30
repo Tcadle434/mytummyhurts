@@ -1190,50 +1190,6 @@ function extractOutputText(payload: Record<string, unknown>) {
   return textChunks.join('\n').trim();
 }
 
-async function runResponsesRequest(input: unknown) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
-  let response: Response;
-
-  try {
-    response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(input),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    const errorName =
-      error && typeof error === 'object' && 'name' in error
-        ? String((error as { name?: unknown }).name)
-        : '';
-    if (errorName === 'AbortError') {
-      throw new Error('openai_timeout');
-    }
-
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`openai_error:${response.status}:${errorText}`);
-  }
-
-  const payload = (await response.json()) as Record<string, unknown>;
-  const outputText = extractOutputText(payload);
-
-  if (!outputText) {
-    throw new Error('openai_missing_output');
-  }
-
-  return JSON.parse(outputText) as RawExtractionPayload;
-}
-
 async function runResponsesRequestWithAudit<TPayload extends object>(
   input: unknown,
   audit: ResponseAuditDescriptor,
@@ -1404,15 +1360,6 @@ function isTransientOpenAiError(error: unknown) {
 
   const status = Number(match[1]);
   return status === 408 || status === 409 || status === 429 || status >= 500;
-}
-
-async function runResponsesRequestWithRetry(input: unknown) {
-  return withRetry(() => runResponsesRequest(input), {
-    attempts: 3,
-    delayMs: 350,
-    shouldRetry: isTransientOpenAiError,
-    onRetry: (error, attempt) => console.warn('[openai] retrying request', { attempt, error }),
-  });
 }
 
 async function runResponsesRequestWithAuditRetry<TPayload extends object>(
@@ -1618,32 +1565,6 @@ function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
   ].join('\n');
 }
 
-async function normalizeExtraction(payload: RawExtractionPayload, imageDetail: ExtractionImageDetail) {
-  const normalized = await runResponsesRequestWithRetry({
-    model: NORMALIZATION_MODEL,
-    input: [
-      {
-        role: 'system',
-        content: [{ type: 'input_text', text: 'You normalize meal extraction JSON for storage. Return only valid JSON that matches the provided schema. Do not add commentary.' }],
-      },
-      {
-        role: 'user',
-        content: [{ type: 'input_text', text: buildNormalizationPrompt(payload) }],
-      },
-    ],
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'meal_extraction_normalized',
-        schema: extractionSchema,
-        strict: true,
-      },
-    },
-  });
-
-  return coerceExtraction(normalized, { model: NORMALIZATION_MODEL, imageDetail });
-}
-
 async function normalizeExtractionWithAudit(
   payload: RawExtractionPayload,
   imageDetail: ExtractionImageDetail,
@@ -1759,10 +1680,6 @@ export async function adjudicateScanRiskWithAudit(
       },
     ],
   };
-}
-
-export async function extractMealFromText(text: string, context: ExtractionContext) {
-  return (await extractMealFromTextWithAudit(text, context)).result;
 }
 
 export async function extractMealFromTextWithAudit(
@@ -1892,13 +1809,6 @@ export async function classifyScanImagesWithAudit(
   };
 }
 
-export async function extractMealFromImage(
-  imageUrl: string | null,
-  context: ExtractionContext,
-) {
-  return (await extractMealFromImageWithAudit(imageUrl, context)).result;
-}
-
 export async function extractMealFromImageWithAudit(
   imageUrl: string | null,
   context: ExtractionContext,
@@ -2026,13 +1936,6 @@ export async function extractMealFromImagesWithAudit(
     result: normalized.result,
     audits: [audit, normalized.audit],
   };
-}
-
-export async function extractMenuFromImages(
-  imageUrls: string[],
-  context: ExtractionContext,
-) {
-  return (await extractMenuFromImagesWithAudit(imageUrls, context)).result;
 }
 
 async function requestMenuExtraction(

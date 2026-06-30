@@ -48,7 +48,6 @@ async function invokeFunction<TResponse>(
   body: object,
   options: { timeoutMs?: number } = {},
 ): Promise<TResponse> {
-  const startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? DEFAULT_INVOKE_TIMEOUT_MS;
   const token = await getNestAccessToken();
   const ctrl = new AbortController();
@@ -85,7 +84,6 @@ async function invokeFunction<TResponse>(
     throw normalizeRetryableTransportError(error, name) ?? error;
   } finally {
     clearTimeout(timer);
-    if (__DEV__) console.log(`[api] ${name} ${Date.now() - startedAt}ms`);
   }
 }
 

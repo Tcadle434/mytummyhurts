@@ -2852,12 +2852,9 @@ function learnedMenuContributors(item: MenuItemAnalysis, profile: UserProfile | 
   return contributors;
 }
 
-// Removed by design (2026-06-11): a "stacked triggers" bonus double-counts an
-// already-additive score — the drivers themselves are the stacking. Filters
-// referencing 'stacked_load' remain so historical scan rows still render.
-function stackMenuContributors(_contributors: ScoreContributor[]): ScoreContributor | null {
-  return null;
-}
+// Note: a "stacked triggers" bonus was removed by design (2026-06-11) — it double-counted
+// an already-additive score (the drivers themselves are the stacking). Filters referencing
+// 'stacked_load' remain so historical scan rows still render.
 
 function unknownMenuContributor(item: MenuItemAnalysis, contributors: ScoreContributor[]): ScoreContributor | null {
   const hasFoodEvidence = item.extractedIngredients.length > 0 || item.inferredIngredients.length > 0 || contributors.length > 1;
@@ -3041,11 +3038,6 @@ function scoreFoodRiskEntity(
   }
 
   contributors.push(...learnedMenuContributors(item, profile, insights));
-
-  const stacked = stackMenuContributors(contributors);
-  if (stacked) {
-    contributors.push(calibrateContributorForProfile(stacked, profile));
-  }
 
   const unknown = unknownMenuContributor(item, contributors);
   if (unknown) {

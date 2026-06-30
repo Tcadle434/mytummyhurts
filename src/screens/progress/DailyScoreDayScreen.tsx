@@ -85,7 +85,7 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 						<View style={styles.sectionTitleStack}>
 							<Text style={styles.sectionTitle}>Meals</Text>
 							<Text style={styles.sectionMeta}>
-								{day.mealCount} {day.mealCount === 1 ? "logged" : "logged"}
+								{day.mealCount} {day.mealCount === 1 ? "meal logged" : "meals logged"}
 							</Text>
 						</View>
 					</View>
