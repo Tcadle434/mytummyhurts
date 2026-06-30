@@ -103,7 +103,16 @@ export function displaySignalLabel(contributor: Pick<ScoreContributor, "key" | "
 }
 
 function historyRank(history: NonNullable<ScanIngredientRisk["personalHistory"]>) {
-	const riskRank = history.riskLevel === "high" ? 4000 : history.riskLevel === "low" ? 3000 : history.riskLevel === "medium" ? 2000 : 1000;
+	const riskRank =
+		history.riskLevel === "high"
+			? 5000
+			: history.riskLevel === "inconsistent"
+				? 4000
+				: history.riskLevel === "low"
+					? 3000
+					: history.riskLevel === "medium"
+						? 2000
+						: 1000;
 	const matchRank = history.matchType === "exact" ? 200 : history.matchType === "family" ? 100 : 0;
 	return riskRank + matchRank + history.supportingEvidenceCount * 10 + history.exactScanCount + history.familyScanCount;
 }

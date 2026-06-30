@@ -486,7 +486,7 @@ export interface ScanIngredientRisk {
 }
 
 export type ScanIngredientPersonalHistoryMatchType = 'exact' | 'family' | 'none';
-export type ScanIngredientPersonalHistoryRiskLevel = RiskLevel | 'unknown';
+export type ScanIngredientPersonalHistoryRiskLevel = RiskLevel | 'inconsistent' | 'unknown';
 
 export interface ScanIngredientPersonalHistory {
   exactScanCount: number;

@@ -4,7 +4,8 @@ import type { Sql } from 'postgres';
 import { DatabaseService } from '../database/database.service';
 import { LearningJobService } from '../learning/learning-job.service';
 import { StorageService } from '../storage/storage.service';
-import type { InsightConfidenceLevel, RiskLevel, ScanIngredientPersonalHistory } from './engine/domain';
+import type { InsightConfidenceLevel, ScanIngredientPersonalHistory } from './engine/domain';
+import { personalHistorySummary, riskLevelForPersonalHistory } from './personal-history';
 
 /**
  * Read/mutation endpoints over existing scan rows (scan-get, scan-delete,
@@ -541,7 +542,7 @@ function buildPersonalHistory(
     Boolean(familyMatch) &&
     (!exactInsight || exactInsight.supportingEvidenceCount < 2 || exactInsight.positiveEvidenceCount + exactInsight.negativeEvidenceCount === 0);
   const selectedInsight = useFamilyMatch ? familyMatch?.insight : exactInsight;
-  const riskLevel = selectedInsight ? riskLevelForInsight(selectedInsight) : 'unknown';
+  const riskLevel = selectedInsight ? riskLevelForPersonalHistory(selectedInsight) : 'unknown';
   const matchType = useFamilyMatch
     ? 'family'
     : exactScanCount > 0 || selectedInsight
@@ -560,7 +561,7 @@ function buildPersonalHistory(
     supportingEvidenceCount: selectedInsight?.supportingEvidenceCount ?? 0,
     positiveEvidenceCount: selectedInsight?.positiveEvidenceCount ?? 0,
     negativeEvidenceCount: selectedInsight?.negativeEvidenceCount ?? 0,
-    summary: historySummary({
+    summary: personalHistorySummary({
       exactScanCount,
       familyScanCount: familyScanIds.size,
       matchType,
@@ -621,36 +622,6 @@ function taxonomiesOverlap(left: IngredientTaxonomyHistoryRow, right: Ingredient
 
   const rightPatterns = new Set(right.digestivePatternKeys);
   return left.digestivePatternKeys.some((pattern) => rightPatterns.has(pattern));
-}
-
-function riskLevelForInsight(insight: IngredientInsightHistoryRow): RiskLevel | 'unknown' {
-  if (insight.negativeEvidenceCount >= 3 || (insight.negativeEvidenceCount > 0 && insight.riskScore >= 64)) {
-    return 'high';
-  }
-  if (insight.positiveEvidenceCount >= 2 && insight.negativeEvidenceCount === 0 && insight.riskScore <= 44) {
-    return 'low';
-  }
-  if (insight.supportingEvidenceCount > 0 || insight.riskScore !== 50) {
-    return 'medium';
-  }
-  return 'unknown';
-}
-
-function historySummary(input: {
-  exactScanCount: number;
-  familyScanCount: number;
-  matchType: 'exact' | 'family' | 'none';
-  riskLevel: RiskLevel | 'unknown';
-}) {
-  if (input.exactScanCount === 0 && input.matchType !== 'family') return 'New for your history';
-
-  const count = input.matchType === 'family' && input.exactScanCount === 0 ? input.familyScanCount : input.exactScanCount;
-  const countLabel = `${count} time${count === 1 ? '' : 's'}`;
-  const prefix = input.matchType === 'family' && input.exactScanCount === 0 ? 'Similar foods seen' : 'Seen';
-
-  if (input.riskLevel === 'high') return `${prefix} ${countLabel} · usually rough for you`;
-  if (input.riskLevel === 'low') return `${prefix} ${countLabel} · usually sits fine`;
-  return `${prefix} ${countLabel} · still learning`;
 }
 
 function toStringArray(value: unknown): string[] {

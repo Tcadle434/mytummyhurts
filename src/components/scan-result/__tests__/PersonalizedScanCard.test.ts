@@ -66,9 +66,26 @@ describe("PersonalizedScanCard helpers", () => {
 					summary: "Seen 5 times · usually sits fine",
 				},
 			}),
+			ingredient("tomato", {
+				displayOrder: 3,
+				personalHistory: {
+					exactScanCount: 10,
+					familyScanCount: 0,
+					matchType: "exact",
+					riskLevel: "inconsistent",
+					riskScore: 52,
+					confidenceLevel: "high",
+					supportingEvidenceCount: 10,
+					positiveEvidenceCount: 5,
+					negativeEvidenceCount: 5,
+					summary: "Seen 10 times · inconsistent for you",
+				},
+			}),
 		]);
 
-		expect(rows.map((row) => row.ingredient.canonicalName)).toEqual(["bread", "rice", "turkey"]);
+		expect(rows.map((row) => row.ingredient.canonicalName)).toEqual(["bread", "tomato", "rice", "turkey"]);
+		expect(rows[1]?.history.summary).toBe("Seen 10 times · inconsistent for you");
+		expect(rows[1]?.history.summary).not.toContain("usually rough for you");
 	});
 
 	it("renders concise diet verdict titles", () => {

@@ -132,7 +132,7 @@ function MainSignalLabels({ labels }: { labels: string[] }) {
 function historyTone(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"]>["riskLevel"]) {
 	if (riskLevel === "high") return tokens.color.status.risk.high;
 	if (riskLevel === "low") return tokens.color.status.risk.low;
-	if (riskLevel === "medium") return tokens.color.status.risk.medium;
+	if (riskLevel === "medium" || riskLevel === "inconsistent") return tokens.color.status.risk.medium;
 	return {
 		background: tokens.color.surface.card.info,
 		foreground: palette.textMuted,
@@ -143,7 +143,7 @@ function historyTone(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"
 function historyIconName(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"]>["riskLevel"]) {
 	if (riskLevel === "high") return "alert-circle-outline";
 	if (riskLevel === "low") return "checkmark-circle-outline";
-	if (riskLevel === "medium") return "analytics-outline";
+	if (riskLevel === "medium" || riskLevel === "inconsistent") return "analytics-outline";
 	return "time-outline";
 }
 
