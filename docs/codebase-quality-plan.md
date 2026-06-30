@@ -111,10 +111,22 @@ helpers, `CustomEntryModal`, `scan-result/styles.ts`, one Settings save helper; 
       extraNodeModules, both tsconfig paths, both vitest aliases, node runtime. First dedup: RiskLevel + PatternStrength
       (both domain.ts re-export). Verified: FE tsc, server tsc, FE 147, server 167, nest build, runtime resolution.
       ⚠️ **Live Metro bundle + server boot NOT smoke-tested yet** — confirm before migrating the bulk onto the package.
-- [ ] 4b — migrate the rest of the mirrored domain type graph (~600 lines) → re-export from both domain.ts
-- [ ] 4c — move the ~20 pure scoring utilities + shared constants; fold in the B2 combinedRiskScore decision
-- [ ] 4d — move the 3 data tables + large state-computation functions (needs a shared ProfileSeed type)
-- [ ] split server scoring.ts (~3,760) as the core moves out; CI test asserting FE/BE export identical shared members
+- [x] **4b — 53 shared domain types migrated (0c0bf2e, pushed).** gut-score/profile/menu/scan modules; both domain.ts
+      re-export. FE domain.ts 871→414, server 779→317. tsc/tests/build green.
+- [x] **4c — 22 byte-identical scoring values migrated (762b713, pushed).** 3 data tables + 14 utils + 5 constants.
+      FE scoring.ts 1392→1159, server 3760→3534. `combinedRiskScore` confirmed identical in both scoring.ts (B2's 0.9
+      divergence is in insights-learning.ts, separate). tsc/tests/build/runtime green.
+- [ ] **4d — DECISION-GATED (the remaining FE/BE scoring code is divergent BY DESIGN, not duplicated).** Needs human calls:
+      - **Daily-score threshold drift**: FE `computeDailyScoreForReport` uses literal `67/33`; server uses
+        `RISK_LEVEL_HIGH_MIN`/`RISK_LEVEL_MILD_MAX` (64/36). Pick canonical (server's named consts ≈ B1 fix) → behavior change at boundary scores.
+      - **State functions** (`computeGutScoreState`, `buildUserProfile` vs `buildUserProfileFromSeed`, `recomputeDailyScores`,
+        `buildGutScoreEvent`, `computeProfileLearningProgress`): genuinely different signatures (FE `OnboardingAnswers`/`ScanRecord`
+        vs server `ProfileSeed`/`ScanForInsightRecompute`). Unifying needs a shared input abstraction — real design work, risky.
+      - **B2**: `combinedRiskScore` `*0.9` in `insights-learning.ts` vs `scoring.ts` (seed vs learned on different scales).
+      - **EvidenceCitation**: package shape (`chunkId` required + `documentType`) vs scan-domain shape (`chunkId?`). Reconcile.
+      - **MenuItemAnalysis**: server-only `componentRoles` (scoring-internal, not serialized) — keep separate or shared-with-optional?
+      - trivial: brace-style-only diffs in averageScore/gutScoreConfidence/gutScoreTrendDirection (normalize → merge, low value).
+- [ ] split server scoring.ts (now 3,534) into modules — structural, do AFTER 4d settles the file; + CI drift-guard test.
 
 ### Phase 5 — God-file splits · DONE (2 commits: 028049b, c271ee7)
 - [x] `UI.tsx` (1,093) → 4-line barrel + `ui/{Screen,Buttons,Forms,Cards,shared}` (all <800). 22-export parity verified (028049b).
