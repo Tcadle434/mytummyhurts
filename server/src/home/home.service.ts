@@ -11,6 +11,7 @@ import {
   mapGutScoreSnapshot,
   mapInsight,
 } from '../user-context/profile-mapper';
+import { getUserContext } from '../user-context/user-context';
 
 @Injectable()
 export class HomeService {
@@ -21,7 +22,15 @@ export class HomeService {
 
   async getHome(userId: string) {
     return this.db.service(async (sql) => {
-      const [profileRow] = await sql`select * from public.user_profiles where user_id = ${userId}`;
+      const {
+        insightRows,
+        conditionInsightRows,
+        profileRow,
+        dietRows,
+        gutScoreSnapshots,
+        learningScanRows,
+        learningReportRows,
+      } = await getUserContext(sql, userId, { insightsLimit: 8, conditionInsightsLimit: 12 });
       const billing = await this.billing.getBillingState(userId, sql);
 
       const recentScans = (
@@ -52,32 +61,9 @@ export class HomeService {
         await sql`select * from public.daily_gut_reports where user_id = ${userId}
                   order by local_date desc limit 30`
       ).map(mapDailyReport);
-      const learningScanRows = await sql`
-        select id, title, scan_category, consumption_status, local_date, created_at
-        from public.scans
-        where user_id = ${userId} and analysis_status = 'completed'`;
-      const learningReportRows = await sql`
-        select id, local_date, created_at
-        from public.daily_gut_reports
-        where user_id = ${userId}`;
       const learningProgress = buildLearningProgressFromRows(learningScanRows, learningReportRows);
 
-      const triggers = (
-        await sql`select i.*,
-                    c.primary_food_family_key as taxonomy_primary_food_family_key,
-                    c.digestive_pattern_keys as taxonomy_digestive_pattern_keys,
-                    c.confidence as taxonomy_confidence,
-                    c.reason as taxonomy_reason,
-                    c.taxonomy_version as taxonomy_version,
-                    c.model as taxonomy_model,
-                    c.prompt_version as taxonomy_prompt_version,
-                    c.source as taxonomy_source
-                  from public.ingredient_insights i
-                  left join public.ingredient_taxonomy_classifications c
-                    on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
-                  where i.user_id = ${userId}
-                  order by i.combined_risk_score desc nulls last limit 8`
-      ).map(mapInsight);
+      const triggers = insightRows.map(mapInsight);
       const safeFoods = (
         await sql`select i.*,
                     c.primary_food_family_key as taxonomy_primary_food_family_key,
@@ -94,19 +80,7 @@ export class HomeService {
                   where i.user_id = ${userId}
                   order by i.combined_risk_score asc nulls last limit 8`
       ).map(mapInsight);
-      const conditionInsights = (
-        await sql`select * from public.condition_ingredient_insights where user_id = ${userId}
-                  order by risk_score desc limit 12`
-      ).map(mapConditionInsight);
-      const gutScoreSnapshots = await sql`
-        select * from public.gut_score_snapshots
-        where user_id = ${userId}
-        order by created_at desc limit 14`;
-      const dietRows = await sql`
-        select diet_key, diet_label, strictness, source, priority, status
-        from public.user_diet_preferences
-        where user_id = ${userId} and status = 'active'
-        order by priority asc, created_at asc`;
+      const conditionInsights = conditionInsightRows.map(mapConditionInsight);
 
       const [snap] = await sql`select learning_status from public.user_app_snapshots where user_id = ${userId}`;
       const now = new Date().toISOString();
