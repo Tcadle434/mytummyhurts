@@ -90,13 +90,20 @@ helpers, `CustomEntryModal`, `scan-result/styles.ts`, one Settings save helper; 
 
 **Phase 2 complete.** Behavior-preserving throughout; server tsc clean, 167 tests pass on every commit.
 
-### Phase 3 — Database performance · M · ~150 lines + latency
-- [ ] N+1 write loops → multi-row `unnest` inserts (5 sites: learning, daily scores, RAG, taxonomy, profile)
-- [ ] Parallelize query waterfalls: `getScan` (7→1 batch), `getHome` (~9→1; stop double-querying; UNION triggers/safe)
-- [ ] Indexes: `auth_refresh_tokens(family_id)` partial, `(scan_id,user_id)` covering, partial leaf HNSW;
-      drop unused thumbnail index; push `canonical_name`/`menu_item_source_id` filters into SQL
-- [ ] Migrate early-migration RLS policies to `(select auth.uid())`
-- [ ] `history()` OFFSET → keyset pagination
+### Phase 3 — Database performance · DONE (safe scope) · 2 commits (5018c86, 4888e86)
+- [x] N+1 write loops batched (profile conditions/sensitivities/diet, learning insights, RAG chunks, taxonomy upsert);
+      daily-score UPDATEs → Promise.all (JSONB cols don't vectorize). getScan + getHome parallelized via Promise.all.
+      Behavior-preserving; 167 tests pass against the real DB. (5018c86)
+- [x] Indexes: `auth_refresh_tokens(family_id)` partial, `(scan_id,user_id)` covering ×2, drop unused thumbnail index.
+      Validated in a rolled-back tx. (4888e86)
+- [ ] **DEFERRED (noted, higher risk / needs decisions):**
+      - partial leaf HNSW index + `hnsw.ef_search` — expensive index rebuild + recall-affecting; do deliberately.
+      - RLS `(select auth.uid())` sweep — sensitive AND possibly **vestigial in self-hosted** (verify RLS is even
+        enforced when the app connects as `mth_app` before touching policies).
+      - getHome UNION triggers/safeFoods + stop double-querying scans/reports — query restructure (medium risk).
+      - `history()` OFFSET → keyset pagination — **API-contract change**, needs coordinated FE pagination update.
+
+**Phase 3 safe scope complete.** Remaining: **Phase 4** (shared scoring/domain package + scoring.ts split).
 
 ### Phase 4 — Shared scoring-core + domain package · L · ~1,500 lines (strategic)
 - [ ] New `packages/` workspace pkg (pure TS, no platform deps) imported by Expo app + NestJS server
