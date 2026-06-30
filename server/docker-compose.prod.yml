@@ -17,7 +17,11 @@ services:
       - api
 
   api:
-    build: .
+    # Build from the repo root so the local @mth/shared-domain package
+    # (file:../packages/shared-domain, outside server/) is in the build context.
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
