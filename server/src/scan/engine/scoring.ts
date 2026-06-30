@@ -275,6 +275,16 @@ const RISK_LEVEL_MEDIUM_MIN = 37;
 const RISK_LEVEL_HIGH_MIN = 64;
 const RISK_LEVEL_MILD_MAX = RISK_LEVEL_MEDIUM_MIN - 1;
 
+function ingredientRiskScore(triggerMatch: boolean, personalizedRiskScore: number) {
+  return triggerMatch
+    ? Math.max(RISK_LEVEL_HIGH_MIN, personalizedRiskScore)
+    : personalizedRiskScore >= RISK_LEVEL_HIGH_MIN
+      ? 55
+      : personalizedRiskScore >= RISK_LEVEL_MEDIUM_MIN
+        ? 40
+        : 18;
+}
+
 function roundWeight(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -3341,13 +3351,7 @@ function menuResultItem(
     .map((ingredient, index) => {
       const canonicalName = normalizeKey(ingredient.canonicalName || ingredient.rawName);
       const triggerMatch = triggerSet.has(canonicalName);
-      const score = triggerMatch
-        ? Math.max(RISK_LEVEL_HIGH_MIN, option.personalizedRiskScore)
-        : option.personalizedRiskScore >= RISK_LEVEL_HIGH_MIN
-          ? 55
-          : option.personalizedRiskScore >= RISK_LEVEL_MEDIUM_MIN
-            ? 40
-            : 18;
+      const score = ingredientRiskScore(triggerMatch, option.personalizedRiskScore);
       const level = toRiskLevel(score);
 
       return {
@@ -3369,13 +3373,7 @@ function menuResultItem(
     : fallbackMenuIngredientNames(option, item);
   const fallbackIngredientRisks: ScanIngredientRisk[] = fallbackNames.map((trigger, index) => {
     const triggerMatch = option.triggerIngredients.some((candidate) => normalizeKey(candidate) === normalizeKey(trigger));
-    const score = triggerMatch
-      ? Math.max(RISK_LEVEL_HIGH_MIN, option.personalizedRiskScore)
-      : option.personalizedRiskScore >= RISK_LEVEL_HIGH_MIN
-        ? 55
-        : option.personalizedRiskScore >= RISK_LEVEL_MEDIUM_MIN
-          ? 40
-          : 18;
+    const score = ingredientRiskScore(triggerMatch, option.personalizedRiskScore);
     const level = toRiskLevel(score);
     return {
       menuItemSourceId: option.itemId,

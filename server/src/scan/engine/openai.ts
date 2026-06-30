@@ -614,6 +614,10 @@ function normalizeIngredientName(value: string) {
   return value.trim().toLowerCase();
 }
 
+function imageRefKind(url: string) {
+  return url.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url';
+}
+
 function normalizeCanonicalIngredientName(rawName: string, canonicalName: string) {
   const normalizedCanonical = normalizeIngredientName(canonicalName);
   if (normalizedCanonical && !isMenuRubricClassificationKey(normalizedCanonical)) {
@@ -975,6 +979,12 @@ function fallbackMenuBaseFoodCategory(item: { name: string; description?: string
   };
 }
 
+const CONTRIBUTOR_EVIDENCE_TO_MENU_RUBRIC_EVIDENCE: Partial<Record<string, MenuRubricEvidence>> = {
+  prep: 'prep',
+  protective: 'common_dish_knowledge',
+  uncertainty: 'unclear',
+};
+
 function fallbackMenuRiskModifiers(item: { name: string; description?: string; section?: string; prepStyle: string[] }): MenuRiskModifier[] {
   const text = normalizeMenuText([item.name, item.description, item.section, ...item.prepStyle].filter(Boolean).join(' '));
   const modifiers: MenuRiskModifier[] = [];
@@ -994,13 +1004,8 @@ function fallbackMenuRiskModifiers(item: { name: string; description?: string; s
   for (const rule of menuRiskModifierRubric) {
     const match = firstRubricTermSource(text, rule.terms);
     if (match) {
-      const evidence: MenuRubricEvidence = rule.contributorEvidence === 'prep'
-        ? 'prep'
-        : rule.contributorEvidence === 'protective'
-          ? 'common_dish_knowledge'
-          : rule.contributorEvidence === 'uncertainty'
-            ? 'unclear'
-            : 'ingredient';
+      const evidence: MenuRubricEvidence =
+        CONTRIBUTOR_EVIDENCE_TO_MENU_RUBRIC_EVIDENCE[rule.contributorEvidence] ?? 'ingredient';
       addModifier(rule.key as MenuRiskModifierKey, match, evidence);
     }
   }
@@ -1784,7 +1789,7 @@ export async function classifyScanImagesWithAudit(
   const inputRefs = imageUrls.map((imageUrl, index) => ({
     inputKind: 'image',
     pageIndex: index,
-    imageRef: imageUrl.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url',
+    imageRef: imageRefKind(imageUrl),
   }));
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawScanCategoryClassificationPayload>(request, {
     stage: 'scan_category_classification',
@@ -1850,7 +1855,7 @@ export async function extractMealFromImageWithAudit(
     },
   };
 
-  const inputRefs = [{ inputKind: 'image', imageRef: imageUrl.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url' }];
+  const inputRefs = [{ inputKind: 'image', imageRef: imageRefKind(imageUrl) }];
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
     stage: 'food_image_extraction',
     model: IMAGE_EXTRACTION_MODEL,
@@ -1918,7 +1923,7 @@ export async function extractMealFromImagesWithAudit(
     inputKind: 'image',
     imageRole: 'meal',
     pageIndex: index,
-    imageRef: imageUrl.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url',
+    imageRef: imageRefKind(imageUrl),
   }));
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
     stage: 'food_multi_image_extraction',
@@ -1980,7 +1985,7 @@ async function requestMenuExtraction(
     inputKind: 'image',
     imageRole: 'menu_page',
     pageIndex: options.pageOffset + index,
-    imageRef: imageUrl.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url',
+    imageRef: imageRefKind(imageUrl),
   }));
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawMenuPayload>(request, {
     stage: options.stage,
@@ -2093,7 +2098,7 @@ function combinedMenuAudit(
     inputKind: 'image',
     imageRole: 'menu_page',
     pageIndex: index,
-    imageRef: imageUrl.startsWith('data:image/') ? 'inline_data_url' : 'signed_storage_url',
+    imageRef: imageRefKind(imageUrl),
   }));
   const parsedItems = dedupeMenuItemsByNameAndPrice(pageResults.flatMap((entry, pageIndex) =>
     (Array.isArray(entry.parsed.items) ? entry.parsed.items : []).map((item, itemIndex) => {

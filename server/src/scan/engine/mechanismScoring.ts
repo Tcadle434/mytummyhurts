@@ -14,6 +14,7 @@ import type {
   UserProfile,
 } from './domain';
 import type { MenuRiskModifierKey } from './menuRubric';
+import { normalize } from './text-utils';
 
 export const MECHANISM_SCORING_MODEL_VERSION = 'mechanism_v1' as const;
 
@@ -236,10 +237,6 @@ const MECHANISMS: readonly MechanismDefinition[] = [
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
-}
-
-function normalize(value: string | undefined | null) {
-  return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function conditionGroup(condition: string): ConditionGroup | null {

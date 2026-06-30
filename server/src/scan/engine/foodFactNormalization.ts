@@ -13,6 +13,7 @@ import {
   menuRiskModifierRubric,
   type MenuRubricRule,
 } from './menuRubric';
+import { normalize as normalizeText } from './text-utils';
 
 type FactEvidence = 'ingredient' | 'prep';
 
@@ -109,15 +110,6 @@ const HEDGED_TERMS = [
   'unclear',
   'unspecified',
 ];
-
-function normalizeText(value: string | undefined | null) {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 function hasAny(text: string, terms: readonly string[]) {
   return terms.some((term) => {

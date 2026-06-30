@@ -6,6 +6,7 @@ import type {
   StructuredAnalysisV2,
   UserProfile,
 } from './domain';
+import { normalize } from './text-utils';
 
 export const RISK_ADJUDICATION_PROMPT_VERSION =
   process.env.OPENAI_RISK_ADJUDICATION_PROMPT_VERSION ?? 'mytummyhurts_risk_adjudication_v1';
@@ -99,15 +100,6 @@ const INGREDIENT_ALIASES: Record<string, string[]> = {
   deli: ['deli meat', 'processed meat', 'ham', 'turkey'],
   'deli meat': ['processed meat', 'ham', 'turkey'],
 };
-
-function normalize(value: string | undefined | null) {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 function bandIndex(band: ConditionSeverityBand) {
   return Math.max(0, CONDITION_SEVERITY_BANDS.indexOf(band));
