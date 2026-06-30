@@ -116,17 +116,21 @@ helpers, `CustomEntryModal`, `scan-result/styles.ts`, one Settings save helper; 
 - [x] **4c — 22 byte-identical scoring values migrated (762b713, pushed).** 3 data tables + 14 utils + 5 constants.
       FE scoring.ts 1392→1159, server 3760→3534. `combinedRiskScore` confirmed identical in both scoring.ts (B2's 0.9
       divergence is in insights-learning.ts, separate). tsc/tests/build/runtime green.
-- [ ] **4d — DECISION-GATED (the remaining FE/BE scoring code is divergent BY DESIGN, not duplicated).** Needs human calls:
-      - **Daily-score threshold drift**: FE `computeDailyScoreForReport` uses literal `67/33`; server uses
-        `RISK_LEVEL_HIGH_MIN`/`RISK_LEVEL_MILD_MAX` (64/36). Pick canonical (server's named consts ≈ B1 fix) → behavior change at boundary scores.
-      - **State functions** (`computeGutScoreState`, `buildUserProfile` vs `buildUserProfileFromSeed`, `recomputeDailyScores`,
-        `buildGutScoreEvent`, `computeProfileLearningProgress`): genuinely different signatures (FE `OnboardingAnswers`/`ScanRecord`
-        vs server `ProfileSeed`/`ScanForInsightRecompute`). Unifying needs a shared input abstraction — real design work, risky.
-      - **B2**: `combinedRiskScore` `*0.9` in `insights-learning.ts` vs `scoring.ts` (seed vs learned on different scales).
-      - **EvidenceCitation**: package shape (`chunkId` required + `documentType`) vs scan-domain shape (`chunkId?`). Reconcile.
-      - **MenuItemAnalysis**: server-only `componentRoles` (scoring-internal, not serialized) — keep separate or shared-with-optional?
-      - trivial: brace-style-only diffs in averageScore/gutScoreConfidence/gutScoreTrendDirection (normalize → merge, low value).
-- [ ] split server scoring.ts (now 3,534) into modules — structural, do AFTER 4d settles the file; + CI drift-guard test.
+- [x] **4d Tier-1 — DONE (aed5765, pushed).** The small, real consistency fixes:
+      - ✅ **Daily-score threshold drift** — FE `computeDailyScoreForReport` now uses shared `RISK_LEVEL_HIGH_MIN`/`RISK_LEVEL_MILD_MAX`
+        (64/36) + `clampNumber`, matching the server. FE/BE daily scores now compute identically. 147 tests, no value changes needed.
+      - ✅ **B2** — `insights-learning.ts` now uses the shared `combinedRiskScore` (dropped the `*0.9`); seed + learned on one scale.
+        Verified the 0.9 wasn't a behavior contract. 167 tests, no value changes needed.
+      - ✅ **EvidenceCitation** — 4 divergent defs collapsed to one canonical package type (`chunkId?` optional superset); domain.ts +
+        riskAdjudication.ts re-export it. Type-only.
+- [~] **4d Tier-2 — NOT pursuing (by decision).** State functions (`computeGutScoreState`/`buildUserProfile` vs `…FromSeed`/etc.) are
+      divergent BY DESIGN (FE `OnboardingAnswers`/`ScanRecord` vs server `ProfileSeed`/`ScanForInsightRecompute`). Investigation showed the
+      authenticated+online flow ALREADY uses server-returned values; the FE local recompute is mostly **onboarding starting-score** + offline/
+      fallback. The high-leverage alternative (if ever pursued) is to compute the **onboarding starting score server-side** (it already shows a
+      compute animation) → would let the FE drop its scoring engine and make the server the single source of truth. That's a **product/feature
+      decision**, not a refactor. Left for a deliberate future call.
+- [~] **4d Tier-3 — skipped:** `MenuItemAnalysis` server-only `componentRoles` (intentional divergence); brace-style cosmetic diffs (low value).
+- [ ] split server scoring.ts (now ~3,534) into modules — structural, behavior-preserving; do as its own focused task + CI drift-guard test.
 
 ### Phase 5 — God-file splits · DONE (2 commits: 028049b, c271ee7)
 - [x] `UI.tsx` (1,093) → 4-line barrel + `ui/{Screen,Buttons,Forms,Cards,shared}` (all <800). 22-export parity verified (028049b).
