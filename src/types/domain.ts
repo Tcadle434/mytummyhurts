@@ -1,4 +1,6 @@
-export type RiskLevel = 'low' | 'medium' | 'high';
+import type { RiskLevel, PatternStrength } from '@mth/shared-domain';
+
+export type { RiskLevel, PatternStrength };
 export type ScanSourceType = 'camera' | 'upload' | 'manual_photo' | 'manual_upload' | 'manual_text' | 'barcode';
 export type ScanCategory = 'food' | 'menu' | 'grocery';
 export type ScanInputCategory = ScanCategory;
@@ -19,7 +21,6 @@ export type DietPreferenceKey =
   | 'vegetarian'
   | 'vegan';
 export type DietFitStatus = 'fits' | 'caution' | 'does_not_fit' | 'unknown';
-export type PatternStrength = 'weak' | 'moderate' | 'strong';
 export type IngredientConfidence = 'low' | 'medium' | 'high';
 export type IngredientEvidence = 'visible' | 'inferred' | 'label' | 'database';
 export type ExtractionClarity = 'clear' | 'unclear';

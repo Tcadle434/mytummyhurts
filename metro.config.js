@@ -103,4 +103,12 @@ config.server.enhanceMiddleware = (middleware, metroServer) => {
   };
 };
 
+// Resolve the local shared package (@mth/shared-domain). packages/ lives inside
+// the project root so Metro already watches it; this forces resolution to the
+// package's react-native entry (src/index.ts) regardless of symlink handling.
+config.resolver.extraNodeModules = {
+  ...config.resolver.extraNodeModules,
+  '@mth/shared-domain': path.resolve(__dirname, 'packages/shared-domain'),
+};
+
 module.exports = config;

@@ -10,6 +10,9 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "@mth/shared-domain": ["../packages/shared-domain/src"]
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,

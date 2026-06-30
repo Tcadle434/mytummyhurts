@@ -1,5 +1,6 @@
-export type RiskLevel = 'low' | 'medium' | 'high';
-export type PatternStrength = 'weak' | 'moderate' | 'strong';
+import type { RiskLevel, PatternStrength } from '@mth/shared-domain';
+
+export type { RiskLevel, PatternStrength };
 export type IngredientConfidence = 'low' | 'medium' | 'high';
 export type IngredientEvidence = 'visible' | 'inferred' | 'label' | 'database';
 export type ExtractionClarity = 'clear' | 'unclear';

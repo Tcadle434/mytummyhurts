@@ -4,6 +4,14 @@
 // exists so both projects can depend on the package from Phase 0 onward.
 export const SHARED_DOMAIN_VERSION = '0.1.0';
 
+// ---------------------------------------------------------------------------
+// Risk primitives — shared verbatim by the Expo app (src/types/domain.ts) and
+// the NestJS server (server/src/scan/engine/domain.ts). Both re-export these so
+// existing `import { RiskLevel } from '.../domain'` call sites are unaffected.
+// ---------------------------------------------------------------------------
+export type RiskLevel = 'low' | 'medium' | 'high';
+export type PatternStrength = 'weak' | 'moderate' | 'strong';
+
 /**
  * Optional, additive citation surfaced on scan / condition-risk / ingredient-risk
  * / menu-item results when RAG evidence is used. Additive => existing screens are
