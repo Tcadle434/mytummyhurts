@@ -104,10 +104,16 @@ helpers, `CustomEntryModal`, `scan-result/styles.ts`, one Settings save helper; 
       (4) large state-computation functions once shared `ProfileSeed` agreed
 - [ ] CI test asserting FE/BE export identical members for shared primitives (drift guard)
 
-### Phase 5 — God-file splits · L · structural (net ~0 lines)
-- [ ] `OnboardingFlowScreen.tsx` (1,409) → `useOnboardingStepState`, `useOnboardingCta`, preview/selection panels
-- [ ] `UI.tsx` (1,093) → Screen/Buttons/Cards/Atoms behind a barrel
-- [ ] `scoring.ts` (3,770) → scoring-data/gut-score/scan-scoring/profile-builder (with Phase 4)
+### Phase 5 — God-file splits · DONE (2 commits: 028049b, c271ee7)
+- [x] `UI.tsx` (1,093) → 4-line barrel + `ui/{Screen,Buttons,Forms,Cards,shared}` (all <800). 22-export parity verified (028049b).
+- [x] `OnboardingFlowScreen.tsx` (1,251 → **696**) → presentational parts (`OnboardingFlowParts.tsx`) + styles + helpers.
+      Conservative: ALL state/refs/effects kept in the main component (no hook extraction — onboarding lacks behavior tests). (c271ee7)
+- [~] `scoring.ts` (server, ~3,750) split → bundled into **Phase 4** (do it alongside the scoring-core extraction).
+
+**Phase 5 complete (FE god-files).** tsc/eslint clean, 147 tests pass on each commit.
+
+---
+## Status: Phases 0, 1, 2, 5 DONE. Remaining: Phase 3 (DB perf) + Phase 4 (shared scoring/domain package, incl. scoring.ts split).
 
 ---
 
