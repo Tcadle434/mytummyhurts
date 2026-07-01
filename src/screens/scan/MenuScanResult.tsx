@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 
 import {
-  MenuRankingCard,
+  MenuBandSection,
+  MenuTopPickCard,
   ScanHeroCard,
   toggleExpandedId,
   type MenuTierItem,
@@ -19,10 +20,43 @@ import {
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { ScanRecord } from '../../types/domain';
+import { MenuRecommendationTier, RiskLevel, ScanRecord } from '../../types/domain';
 import { DeleteAction, formatTimestamp, ResultImageFallback, sharedResultStyles as shared } from './resultShared';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanResult'>;
+
+// The three tiers as worded, toned bands. Titles echo the app's calm / mixed /
+// rough voice instead of system vocabulary; each band header wears its risk
+// tone's text-grade foreground.
+const MENU_BANDS: {
+  tier: MenuRecommendationTier;
+  level: RiskLevel;
+  title: string;
+  spotlightFollowUpTitle: string;
+  subtitle: string;
+}[] = [
+  {
+    tier: 'best_for_you',
+    level: 'low',
+    title: 'Easier picks',
+    spotlightFollowUpTitle: 'More easier picks',
+    subtitle: 'Closest to what usually sits fine for you.',
+  },
+  {
+    tier: 'eat_with_caution',
+    level: 'medium',
+    title: 'Middle of the menu',
+    spotlightFollowUpTitle: 'Middle of the menu',
+    subtitle: 'Could go either way — open one for the why.',
+  },
+  {
+    tier: 'try_to_avoid',
+    level: 'high',
+    title: 'Likely rough',
+    spotlightFollowUpTitle: 'Likely rough',
+    subtitle: 'These lean hardest on your triggers.',
+  },
+];
 
 export function MenuScanResult({
   scan,
@@ -38,6 +72,29 @@ export function MenuScanResult({
   const [isDeleting, setIsDeleting] = useState(false);
   const menu = scan.menuResult!;
   const rankedItems = rankedMenuItems(menu);
+  // Ranked entries keep their tier alongside the display item so the top pick
+  // and the worded bands stay in agreement with the ranking order.
+  const rankedEntries = rankedItems.map((item) => ({
+    tier: item.tier,
+    item: {
+      ...toMenuTierItem(item),
+      consumed: Boolean(item.consumedAt) || consumedItemIds.has(item.sourceItemId),
+    },
+  }));
+  const topPick = rankedEntries[0];
+  const remainingEntries = rankedEntries.slice(1);
+  const easierCount = rankedEntries.filter((entry) => entry.tier === 'best_for_you').length;
+
+  function handleConsume(item: MenuTierItem) {
+    if (!item.sourceItemId) {
+      return;
+    }
+    setConsumedItemIds((current) => new Set(current).add(item.sourceItemId!));
+    void updateScanConsumption({
+      scanId: scan.id,
+      consumedMenuItemSourceIds: [item.sourceItemId],
+    });
+  }
 
   function confirmDelete() {
     if (isDeleting) {
@@ -83,7 +140,7 @@ export function MenuScanResult({
       />
 
       <ScanHeroCard
-        verdict={`We ranked ${menu.items.length} item${menu.items.length === 1 ? '' : 's'} for your gut — safest picks first.`}
+        verdict={menuVerdictCopy(rankedEntries.length, easierCount)}
         image={
           <SkeletonImage
             uri={scan.imageUri}
@@ -96,26 +153,31 @@ export function MenuScanResult({
         }
       />
 
+      {topPick ? (
+        <MenuTopPickCard
+          item={topPick.item}
+          expanded={expanded === topPick.item.id}
+          onToggle={() => toggleExpandedId(expanded, topPick.item.id, setExpanded)}
+          onConsume={handleConsume}
+        />
+      ) : null}
+
       {menu.summary ? <PipAnalysisCard body={menu.summary} /> : null}
 
-      <MenuRankingCard
-        items={rankedItems.map((item) => ({
-          ...toMenuTierItem(item),
-          consumed: Boolean(item.consumedAt) || consumedItemIds.has(item.sourceItemId),
-        }))}
-        expandedId={expanded}
-        onToggle={(id) => toggleExpandedId(expanded, id, setExpanded)}
-        onConsume={(item) => {
-          if (!item.sourceItemId) {
-            return;
-          }
-          setConsumedItemIds((current) => new Set(current).add(item.sourceItemId!));
-          void updateScanConsumption({
-            scanId: scan.id,
-            consumedMenuItemSourceIds: [item.sourceItemId],
-          });
-        }}
-      />
+      {MENU_BANDS.map((band) => (
+        <MenuBandSection
+          key={band.tier}
+          title={topPick?.tier === band.tier ? band.spotlightFollowUpTitle : band.title}
+          subtitle={band.subtitle}
+          level={band.level}
+          items={remainingEntries
+            .filter((entry) => entry.tier === band.tier)
+            .map((entry) => entry.item)}
+          expandedId={expanded}
+          onToggle={(id) => toggleExpandedId(expanded, id, setExpanded)}
+          onConsume={handleConsume}
+        />
+      ))}
 
       {rankedItems.length < 3 ? (
         <SectionCard>
@@ -215,19 +277,40 @@ function rankedMenuItems(menu: NonNullable<ScanRecord['menuResult']>) {
   return [...items].sort((left, right) => left.displayOrder - right.displayOrder);
 }
 
+// The hero verdict answers "how did this menu go for me?" with the count of
+// easier picks inline — and never claims more comfort than the ranking found.
+function menuVerdictCopy(total: number, easierCount: number): string {
+  if (total === 0) {
+    return 'We could not read enough of this menu to rank its items.';
+  }
+  if (total === 1) {
+    return easierCount > 0
+      ? 'The one dish we could read looks easy on your gut.'
+      : 'We could only read one dish — here is how it sits with you.';
+  }
+  if (easierCount === 0) {
+    return `We ranked ${total} items from easiest to hardest on your gut.`;
+  }
+  if (easierCount === total) {
+    return `All ${total} items here look gentle on your gut.`;
+  }
+  return `${easierCount} of ${total} look${easierCount === 1 ? 's' : ''} easier on your gut.`;
+}
+
+// `reason` carries the item's one-line why on the scan line, so `insight` is
+// left unset — the expanded detail leads with the numeric score instead of
+// repeating the same sentence.
 function toMenuTierItem(item: NonNullable<ScanRecord['menuResult']>['items'][number]): MenuTierItem {
   return {
     id: item.id,
     sourceItemId: item.sourceItemId,
     consumed: Boolean(item.consumedAt),
-    rank: item.displayOrder + 1,
     name: item.name,
     section: item.section,
     price: item.price,
     score: item.riskScore,
     level: item.riskLevel,
     reason: item.whyThisScore,
-    insight: item.whyThisScore,
     triggers: item.ingredientRisks.length ? item.ingredientRisks.slice(0, 3).map((ingredient) => ingredient.canonicalName) : undefined,
     scoreContributors: item.scoreContributors,
     scoringConfidence: item.scoringConfidence,

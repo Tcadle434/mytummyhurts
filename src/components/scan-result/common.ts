@@ -19,7 +19,6 @@ export type ScanIngredient = {
 
 export type MenuTierItem = {
 	id: string;
-	rank?: number;
 	name: string;
 	section?: string;
 	price?: string;
