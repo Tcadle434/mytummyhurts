@@ -3,15 +3,25 @@ import { ComponentProps, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
-import { LinearGradient } from "expo-linear-gradient";
 
 import { Pip } from "../../components/common/Pip";
-import { AppScreen, SectionCard, SkeletonBlock, TabScreenHeader } from "../../components/common/UI";
+import {
+	AppScreen,
+	EmptyState,
+	SectionCard,
+	SkeletonBlock,
+	TabScreenHeader,
+	verdictTone,
+} from "../../components/common/UI";
 import { InfoModal } from "../../components/modals/InfoModal";
 import { isLiveBackendConfigured } from "../../config/env";
 import { useInsightsData } from "../../features/insights/hooks";
 import { resolveTriggerProfileLearningProgress } from "../../features/insights/learningProgress";
-import { buildTriggerProfileViewState } from "../../features/insights/triggerProfile";
+import {
+	buildTriggerProfileViewState,
+	type TriggerProfileViewState,
+	type TriggerStatus,
+} from "../../features/insights/triggerProfile";
 import { RootStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import {
@@ -20,9 +30,12 @@ import {
 import { useAppStore } from "../../store/useAppStore";
 import { components, palette, radii, spacing, tokens, type, type PipState } from "../../theme";
 import { ConditionsChipRow } from "./ConditionsChipRow";
+import { STATUS_LABEL } from "./statusVisuals";
 import { TriggerProfileRow } from "./TriggerProfileRow";
 
 const ROW_STAGGER_MS = 45;
+const CASEBOARD_STATUSES: TriggerStatus[] = ["confirmed", "suspect", "watching", "safe", "cleared"];
+const HERO_NAME_LIMIT = 3;
 
 export function InsightsScreen() {
 	const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -108,6 +121,11 @@ export function InsightsScreen() {
 		navigation.navigate("DailyGutReport", {});
 	}
 
+	const isEmptyBoard =
+		!isWaitingForComputedData &&
+		viewState.sections.length === 0 &&
+		viewState.trackedFamilies.length === 0;
+
 	let rowIndex = 0;
 
 	return (
@@ -116,170 +134,162 @@ export function InsightsScreen() {
 				<TabScreenHeader title="Your Trigger Profile" />
 
 				{isWaitingForComputedData ? (
-					<HeroSkeleton />
+					<>
+						<HeroSkeleton />
+						<ListSkeleton rows={4} />
+					</>
+				) : isEmptyBoard ? (
+					<>
+						<EmptyState
+							title="Your Trigger Profile starts here"
+							subtitle="Scan meals and file daily check-ins — suspects, confirmed triggers, and safe foods build up on this screen."
+							actionLabel="File today's check-in"
+							onAction={openDailyCheckIn}
+						/>
+						<LearningStageCue
+							learningProgress={learningProgress}
+							onOpen={() => setLearningInfoVisible(true)}
+						/>
+						<ConditionsChipRow
+							conditions={conditions}
+							onEdit={() => navigation.navigate("Settings", { section: "conditions" })}
+						/>
+					</>
 				) : (
-					<HeroSummaryCard
-						learningProgress={learningProgress}
-						onOpenLearningInfo={() => setLearningInfoVisible(true)}
-					/>
-				)}
+					<>
+						<CaseboardHero viewState={viewState} />
 
-				<ConditionsChipRow
-					conditions={conditions}
-					onEdit={() => navigation.navigate("Settings", { section: "conditions" })}
-				/>
-
-				{!isWaitingForComputedData ? (
-					<View style={styles.countsBlock}>
-						<Text style={styles.countsTitle}>The caseboard</Text>
-						<View style={styles.heroCountsRow}>
-							<HeroCount
-								value={viewState.counts.confirmed}
-								label="Confirmed"
-								color={tokens.color.status.risk.high.tint}
-							/>
-							<HeroCount
-								value={viewState.counts.suspects}
-								label="Under review"
-								color={tokens.color.status.risk.medium.tint}
-							/>
-							<HeroCount
-								value={viewState.counts.safe}
-								label="Looking safe"
-								color={tokens.color.status.risk.low.tint}
-							/>
-							<HeroCount
-								value={viewState.counts.cleared}
-								label="Cleared"
-								color={tokens.color.status.risk.low.foreground}
-							/>
-						</View>
 						<Pressable
 							accessibilityRole="button"
 							accessibilityLabel="File today's check-in"
 							onPress={openDailyCheckIn}
-							style={({ pressed }) => [styles.checkInCta, pressed && { opacity: 0.88 }]}
+							style={({ pressed }) => [styles.checkInCta, pressed && { opacity: 0.9 }]}
 						>
-							<Ionicons name="pulse-outline" size={16} color={palette.primary} />
-							<Text style={styles.checkInCtaText}>
-								{"File today's check-in — it moves every open case"}
-							</Text>
-							<Ionicons name="chevron-forward" size={14} color={palette.primary} />
+							<Ionicons name="pulse-outline" size={20} color={tokens.color.action.primary.foreground} />
+							<View style={styles.checkInCtaCopy}>
+								<Text style={styles.checkInCtaTitle}>{"File today's check-in"}</Text>
+								<Text style={styles.checkInCtaSubtitle}>It moves every open case</Text>
+							</View>
+							<Ionicons name="arrow-forward" size={18} color={tokens.color.action.primary.foreground} />
 						</Pressable>
-					</View>
-				) : null}
 
-				{!isWaitingForComputedData && viewState.allSeeded ? (
-					<SectionCard style={styles.seedBanner}>
-						<Pip state="thinking" size={44} />
-						<Text style={styles.seedBannerText}>
-							These suspects come straight from your answers. Daily check-ins confirm
-							or clear each one with real evidence.
-						</Text>
-					</SectionCard>
-				) : null}
+						<LearningStageCue
+							learningProgress={learningProgress}
+							onOpen={() => setLearningInfoVisible(true)}
+						/>
 
-				{isWaitingForComputedData ? (
-					<ListSkeleton rows={4} />
-				) : viewState.sections.length === 0 && viewState.trackedFamilies.length === 0 ? (
-					<EmptyHint
-						pipState="thinking"
-						title="Your Trigger Profile starts here"
-						subtitle="Scan meals and file daily check-ins — suspects, confirmed triggers, and safe foods build up on this screen."
-					/>
-				) : (
-					viewState.sections.map((section) => (
-						<View key={section.status} style={styles.section}>
-							<View style={styles.sectionHeader}>
-								<View style={styles.sectionTitleRow}>
-									<Text style={styles.sectionTitle}>{section.title}</Text>
-									<View style={styles.sectionTitleSpacer} />
-									<Text style={styles.sectionCountText}>
-										{section.entries.length}
-									</Text>
+						{viewState.allSeeded ? (
+							<SectionCard variant="warm" style={styles.seedBanner}>
+								<View style={styles.seedBannerIcon}>
+									<Ionicons name="document-text-outline" size={18} color={tokens.color.text.warm} />
 								</View>
-								<Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
-							</View>
-							<View style={styles.listStack}>
-								{section.entries.map((entry) => {
-									const delay = ROW_STAGGER_MS * Math.min(rowIndex, 10);
-									rowIndex += 1;
-									return (
-										<Animated.View
-											key={entry.insight.id}
-											entering={FadeInUp.duration(300).delay(delay)}
-										>
-											<TriggerProfileRow
-												insight={entry.insight}
-												status={section.status}
-												emoji={entry.emoji}
-												extraDetail={entry.memberSummary}
-												onPress={() => openEntry(entry)}
-											/>
-										</Animated.View>
-									);
-								})}
-							</View>
-						</View>
-					))
-				)}
+								<Text style={styles.seedBannerText}>
+									These suspects come straight from your answers. Daily check-ins confirm
+									or clear each one with real evidence.
+								</Text>
+							</SectionCard>
+						) : null}
 
-				{!isWaitingForComputedData && viewState.trackedFamilies.length > 0 ? (
-					<View style={styles.familyBlock}>
-						<Pressable
-							accessibilityRole="button"
-							accessibilityState={{ expanded: familiesExpanded }}
-							onPress={() => setFamiliesExpanded((current) => !current)}
-							style={({ pressed }) => [
-								styles.familyToggle,
-								pressed && { opacity: 0.85 },
-							]}
-						>
-							<Ionicons
-								name={familiesExpanded ? "chevron-down" : "chevron-forward"}
-								size={15}
-								color={palette.textMuted}
-							/>
-							<Text style={styles.familyToggleText}>
-								Still watching
-							</Text>
-							<Text style={styles.familyToggleCount}>{viewState.trackedFamilies.length}</Text>
-						</Pressable>
-						<Text style={styles.familyIntro}>
-							Foods from your scans that need paired check-ins before a verdict.
-						</Text>
-						{familiesExpanded ? (
-							<View style={styles.familyList}>
-								{viewState.trackedFamilies.map((entry) => (
-									<Pressable
-										key={entry.family.key}
-										accessibilityRole="button"
-										accessibilityLabel={`${entry.family.label}, ${familyMeta(entry.members.length, entry.evidenceCount)}`}
-										onPress={() => openFamily(entry.family.key, entry.family.label)}
-										style={({ pressed }) => [
-											styles.familyRow,
-											pressed && { opacity: 0.88 },
-										]}
-									>
-										<View style={styles.familyGlyph}>
-											<Text style={styles.familyGlyphEmoji}>{entry.family.emoji}</Text>
-										</View>
-										<View style={styles.familyCopy}>
-											<Text style={styles.familyRowName} numberOfLines={1}>
-												{entry.family.label}
-											</Text>
-											<Text style={styles.familyRowMeta} numberOfLines={2}>
-												{familyMeta(entry.members.length, entry.evidenceCount)}
-												{entry.memberSummary ? ` · ${entry.memberSummary}` : ""}
-											</Text>
-										</View>
-										<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
-									</Pressable>
-								))}
+						{viewState.sections.map((section) => (
+							<View key={section.status} style={styles.section}>
+								<View style={styles.sectionHeader}>
+									<View style={styles.sectionTitleRow}>
+										<Text style={[styles.sectionTitle, { color: verdictTone(section.status).foreground }]}>
+											{section.title}
+										</Text>
+										<View style={styles.sectionTitleSpacer} />
+										<Text style={styles.sectionCountText}>
+											{section.entries.length}
+										</Text>
+									</View>
+									<Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+								</View>
+								<View style={styles.listStack}>
+									{section.entries.map((entry) => {
+										const delay = ROW_STAGGER_MS * Math.min(rowIndex, 10);
+										rowIndex += 1;
+										return (
+											<Animated.View
+												key={entry.insight.id}
+												entering={FadeInUp.duration(300).delay(delay)}
+											>
+												<TriggerProfileRow
+													insight={entry.insight}
+													status={section.status}
+													emoji={entry.emoji}
+													extraDetail={entry.memberSummary}
+													onPress={() => openEntry(entry)}
+												/>
+											</Animated.View>
+										);
+									})}
+								</View>
+							</View>
+						))}
+
+						{viewState.trackedFamilies.length > 0 ? (
+							<View style={styles.familyBlock}>
+								<Pressable
+									accessibilityRole="button"
+									accessibilityState={{ expanded: familiesExpanded }}
+									onPress={() => setFamiliesExpanded((current) => !current)}
+									style={({ pressed }) => [
+										styles.familyToggle,
+										pressed && { opacity: 0.85 },
+									]}
+								>
+									<Ionicons
+										name={familiesExpanded ? "chevron-down" : "chevron-forward"}
+										size={15}
+										color={palette.textMuted}
+									/>
+									<Text style={styles.familyToggleText}>
+										Still watching
+									</Text>
+									<Text style={styles.familyToggleCount}>{viewState.trackedFamilies.length}</Text>
+								</Pressable>
+								<Text style={styles.familyIntro}>
+									Foods from your scans that need paired check-ins before a verdict.
+								</Text>
+								{familiesExpanded ? (
+									<View style={styles.familyList}>
+										{viewState.trackedFamilies.map((entry) => (
+											<Pressable
+												key={entry.family.key}
+												accessibilityRole="button"
+												accessibilityLabel={`${entry.family.label}, ${familyMeta(entry.members.length, entry.evidenceCount)}`}
+												onPress={() => openFamily(entry.family.key, entry.family.label)}
+												style={({ pressed }) => [
+													styles.familyRow,
+													pressed && { opacity: 0.88 },
+												]}
+											>
+												<View style={styles.familyGlyph}>
+													<Text style={styles.familyGlyphEmoji}>{entry.family.emoji}</Text>
+												</View>
+												<View style={styles.familyCopy}>
+													<Text style={styles.familyRowName} numberOfLines={1}>
+														{entry.family.label}
+													</Text>
+													<Text style={styles.familyRowMeta} numberOfLines={2}>
+														{familyMeta(entry.members.length, entry.evidenceCount)}
+														{entry.memberSummary ? ` · ${entry.memberSummary}` : ""}
+													</Text>
+												</View>
+												<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
+											</Pressable>
+										))}
+									</View>
+								) : null}
 							</View>
 						) : null}
-					</View>
-				) : null}
+
+						<ConditionsChipRow
+							conditions={conditions}
+							onEdit={() => navigation.navigate("Settings", { section: "conditions" })}
+						/>
+					</>
+				)}
 			</AppScreen>
 			<LearningStageInfoModal
 				visible={learningInfoVisible}
@@ -296,12 +306,135 @@ function familyMeta(foodCount: number, evidenceCount: number) {
 	return `${foods} tracked across ${evidenceCount} paired day${evidenceCount === 1 ? "" : "s"}`;
 }
 
-function HeroSummaryCard({
+type CaseboardStory = {
+	headline: string;
+	names?: string;
+	support: string;
+	pip: PipState;
+};
+
+// The hero answers "what's triggering me?" first: a serif verdict sentence,
+// the confirmed names, then the five caseboard counts. Honest at every stage —
+// no verdicts yet reads as an open case, not a celebration.
+function caseboardStory(viewState: TriggerProfileViewState): CaseboardStory {
+	const counts = viewState.counts;
+
+	if (counts.confirmed > 0) {
+		const confirmedSection = viewState.sections.find((section) => section.status === "confirmed");
+		const labels = confirmedSection?.entries.map((entry) => entry.label) ?? [];
+		const shown = labels.slice(0, HERO_NAME_LIMIT).join(", ");
+		const names =
+			labels.length > HERO_NAME_LIMIT
+				? `${shown} +${labels.length - HERO_NAME_LIMIT} more`
+				: shown;
+		return {
+			headline: `${counts.confirmed} confirmed trigger${counts.confirmed === 1 ? "" : "s"}`,
+			names: names || undefined,
+			support:
+				counts.suspects > 0
+					? `${counts.suspects} case${counts.suspects === 1 ? "" : "s"} still under review — check-ins settle them.`
+					: "Backed by repeated rough-day evidence from your check-ins.",
+			pip: "base",
+		};
+	}
+
+	if (counts.suspects > 0) {
+		return {
+			headline: "No confirmed triggers yet",
+			support: `${counts.suspects} suspect${counts.suspects === 1 ? "" : "s"} under review — each check-in moves the case.`,
+			pip: "thinking",
+		};
+	}
+
+	if (counts.cleared > 0 || counts.safe > 0) {
+		return {
+			headline: "No triggers so far",
+			support:
+				counts.cleared > 0
+					? `${counts.cleared} food${counts.cleared === 1 ? "" : "s"} cleared for good — the rest are still earning it.`
+					: `${counts.safe} food${counts.safe === 1 ? "" : "s"} looking safe — a few more calm days each earns cleared.`,
+			pip: "joy",
+		};
+	}
+
+	return {
+		headline: "The case is just opening",
+		support: `Watching ${counts.watching} food${counts.watching === 1 ? "" : "s"} from your scans — paired check-ins bring the first verdicts.`,
+		pip: "thinking",
+	};
+}
+
+function caseboardCountForStatus(viewState: TriggerProfileViewState, status: TriggerStatus) {
+	if (status === "confirmed") return viewState.counts.confirmed;
+	if (status === "suspect") return viewState.counts.suspects;
+	if (status === "watching") return viewState.counts.watching;
+	if (status === "safe") return viewState.counts.safe;
+	return viewState.counts.cleared;
+}
+
+function CaseboardHero({ viewState }: { viewState: TriggerProfileViewState }) {
+	const story = caseboardStory(viewState);
+
+	return (
+		<SectionCard style={styles.heroCard}>
+			<View style={styles.heroTopRow}>
+				<View style={styles.heroCopy}>
+					<Text style={styles.heroEyebrow}>The caseboard</Text>
+					<Text style={styles.heroHeadline}>{story.headline}</Text>
+					{story.names ? (
+						<Text style={styles.heroNames} numberOfLines={2}>
+							{story.names}
+						</Text>
+					) : null}
+					<Text style={styles.heroSupport}>{story.support}</Text>
+				</View>
+				<View style={styles.heroPip}>
+					<Pip state={story.pip} size={76} />
+				</View>
+			</View>
+			<View style={styles.caseboardRow}>
+				{CASEBOARD_STATUSES.map((status) => (
+					<CaseboardCount
+						key={status}
+						status={status}
+						value={caseboardCountForStatus(viewState, status)}
+					/>
+				))}
+			</View>
+		</SectionCard>
+	);
+}
+
+function CaseboardCount({ status, value }: { status: TriggerStatus; value: number }) {
+	const tone = verdictTone(status);
+
+	return (
+		<View
+			accessible
+			accessibilityLabel={`${STATUS_LABEL[status]}: ${value}`}
+			style={[styles.caseboardCell, { backgroundColor: tone.background }]}
+		>
+			<Text style={[styles.caseboardCellValue, { color: tone.foreground }]}>{value}</Text>
+			<Text
+				style={[styles.caseboardCellLabel, { color: tone.foreground }]}
+				numberOfLines={2}
+				adjustsFontSizeToFit
+				minimumFontScale={0.8}
+			>
+				{STATUS_LABEL[status]}
+			</Text>
+		</View>
+	);
+}
+
+// The learning-stage card, demoted from hero to supporting cue: same content
+// (stage, percent, paired counts), quieter surface, one tap for the full story.
+function LearningStageCue({
 	learningProgress,
-	onOpenLearningInfo,
+	onOpen,
 }: {
 	learningProgress: ProfileLearningProgress;
-	onOpenLearningInfo: () => void;
+	onOpen: () => void;
 }) {
 	const stageLabel =
 		learningProgress.stage === "confident"
@@ -309,58 +442,38 @@ function HeroSummaryCard({
 			: learningProgress.stage === "growing"
 				? "Growing"
 				: "Early";
-	const pipState: PipState =
-		learningProgress.stage === "confident"
-			? "joy"
-			: learningProgress.stage === "growing"
-				? "subtle"
-				: "thinking";
 
 	return (
-		<View style={styles.heroStack}>
-			<SectionCard style={styles.heroCard}>
-				<LinearGradient
-					colors={[...components.scanCta.gradient]}
-					start={{ x: 0, y: 0 }}
-					end={{ x: 1, y: 1 }}
-					style={StyleSheet.absoluteFill}
+		<Pressable
+			accessibilityRole="button"
+			accessibilityLabel="What is learning stage?"
+			onPress={onOpen}
+			style={({ pressed }) => [styles.learningCard, pressed && { opacity: 0.9 }]}
+		>
+			<View style={styles.learningHeader}>
+				<Ionicons name="sparkles-outline" size={14} color={tokens.color.text.accent} />
+				<Text style={styles.learningTitle}>Learning stage</Text>
+				<View style={styles.learningStageBubble}>
+					<Text style={styles.learningStageLabel}>{stageLabel}</Text>
+				</View>
+				<View style={styles.learningSpacer} />
+				<Text style={styles.learningPercent}>{learningProgress.percent}%</Text>
+				<Ionicons name="chevron-forward" size={14} color={tokens.color.icon.muted} />
+			</View>
+			<View style={styles.learningProgressTrack}>
+				<View
+					style={[
+						styles.learningProgressFill,
+						{ width: `${learningProgress.percent}%` },
+					]}
 				/>
-				<View style={styles.heroCopy}>
-					<Text style={styles.heroKicker}>Learning stage</Text>
-					<Text style={styles.learningPercent}>{learningProgress.percent}%</Text>
-					<View style={styles.learningStageBubble}>
-						<Text style={styles.learningStage}>{stageLabel}</Text>
-					</View>
-					<View style={styles.learningProgressTrack}>
-						<View
-							style={[
-								styles.learningProgressFill,
-								{ width: `${learningProgress.percent}%` },
-							]}
-						/>
-					</View>
-				</View>
-				<View style={styles.heroPip}>
-					<Pip state={pipState} size={104} />
-				</View>
-			</SectionCard>
-
-			<Pressable
-				accessibilityRole="button"
-				accessibilityLabel="What is learning stage?"
-				onPress={onOpenLearningInfo}
-				style={({ pressed }) => [styles.learningCue, pressed && { opacity: 0.84 }]}
-			>
-				<Ionicons name="sparkles-outline" size={13} color={palette.primary} />
-				<Text style={styles.learningCueText}>
-					{learningProgress.pairedReportDays}/{learningProgress.confidentReportDays}{" "}
-					symptom-report days · {learningProgress.pairedMealScans}/
-					{learningProgress.confidentMealScans} meal scans paired
-				</Text>
-				<Ionicons name="chevron-forward" size={14} color={palette.primary} />
-			</Pressable>
-
-		</View>
+			</View>
+			<Text style={styles.learningMeta}>
+				{learningProgress.pairedReportDays}/{learningProgress.confidentReportDays}{" "}
+				symptom-report days · {learningProgress.pairedMealScans}/
+				{learningProgress.confidentMealScans} meal scans paired
+			</Text>
+		</Pressable>
 	);
 }
 
@@ -458,55 +571,23 @@ function LearningModalStep({
 	);
 }
 
-function HeroCount({ value, label, color }: { value: number; label: string; color: string }) {
-	return (
-		<View style={styles.heroCount}>
-			<Text style={[styles.heroCountValue, { color }]}>{value}</Text>
-			<Text style={styles.heroCountLabel}>{label}</Text>
-		</View>
-	);
-}
-
-export function EmptyHint({
-	pipState,
-	title,
-	subtitle,
-}: {
-	pipState: PipState;
-	title: string;
-	subtitle: string;
-}) {
-	return (
-		<SectionCard style={styles.emptyHintCard}>
-			<View style={styles.emptyHintBadge}>
-				<Pip state={pipState} size={48} />
-			</View>
-			<View style={styles.emptyHintCopy}>
-				<Text style={styles.emptyHintTitle}>{title}</Text>
-				<Text style={styles.emptyHintSubtitle}>{subtitle}</Text>
-			</View>
-		</SectionCard>
-	);
-}
-
 function HeroSkeleton() {
 	return (
 		<View style={styles.heroStack}>
 			<SectionCard style={styles.heroCard}>
 				<View style={styles.heroCopy}>
-					<SkeletonBlock width="54%" height={14} radius={radii.sm} />
-					<SkeletonBlock width={96} height={46} radius={radii.md} />
-					<SkeletonBlock width="72%" height={22} radius={radii.sm} />
-					<SkeletonBlock width="88%" height={7} radius={radii.pill} />
+					<SkeletonBlock width="34%" height={12} radius={radii.sm} />
+					<SkeletonBlock width="72%" height={38} radius={radii.md} />
+					<SkeletonBlock width="88%" height={14} radius={radii.sm} />
 				</View>
-				<SkeletonBlock width={96} height={112} radius={48} />
+				<View style={styles.caseboardRow}>
+					{CASEBOARD_STATUSES.map((status) => (
+						<SkeletonBlock key={status} width="18%" height={78} radius={radii.md} />
+					))}
+				</View>
 			</SectionCard>
-			<View style={styles.heroCountsRow}>
-				<SkeletonBlock width="31%" height={86} radius={radii.lg} />
-				<SkeletonBlock width="31%" height={86} radius={radii.lg} />
-				<SkeletonBlock width="31%" height={86} radius={radii.lg} />
-			</View>
-			<SkeletonBlock width="100%" height={42} radius={radii.lg} />
+			<SkeletonBlock width="100%" height={56} radius={radii.pill} />
+			<SkeletonBlock width="100%" height={78} radius={radii.lg} />
 		</View>
 	);
 }
@@ -533,140 +614,137 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 	},
 	heroCard: {
-		minHeight: 170,
+		gap: spacing.md,
+	},
+	heroTopRow: {
 		flexDirection: "row",
-		alignItems: "stretch",
-		overflow: "hidden",
-		borderColor: "rgba(91, 151, 123, 0.18)",
-		padding: spacing.lg,
+		alignItems: "flex-end",
+		gap: spacing.sm,
 	},
 	heroCopy: {
 		flex: 1,
-		justifyContent: "space-between",
-		gap: spacing.sm,
+		gap: spacing.xs,
 	},
-	heroKicker: {
-		color: "#FFFFFF",
-		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 17,
+	heroEyebrow: {
+		...tokens.type.label.eyebrow,
+		color: tokens.color.text.tertiary,
+		textTransform: "uppercase",
 	},
-	learningPercent: {
-		color: "#FFFFFF",
-		fontFamily: type.body.bold,
-		fontSize: 42,
-		lineHeight: 46,
-		letterSpacing: 0,
+	heroHeadline: {
+		...tokens.type.display.hero,
+		color: tokens.color.text.primary,
 	},
-	learningStageBubble: {
-		alignSelf: "flex-start",
-		borderRadius: radii.pill,
-		backgroundColor: "#FFFFFF",
-		paddingHorizontal: 10,
-		paddingVertical: 4,
+	heroNames: {
+		...tokens.type.display.accent,
+		color: tokens.color.status.verdict.confirmed.foreground,
 	},
-	learningStage: {
-		color: "#4F8B70",
-		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 16,
-		letterSpacing: 0.2,
-	},
-	learningProgressTrack: {
-		width: "88%",
-		height: 7,
-		overflow: "hidden",
-		borderRadius: radii.pill,
-		backgroundColor: "rgba(255,255,255,0.74)",
-	},
-	learningProgressFill: {
-		height: "100%",
-		minWidth: 8,
-		borderRadius: radii.pill,
-		backgroundColor: palette.primary,
+	heroSupport: {
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
+		color: tokens.color.text.secondary,
 	},
 	heroPip: {
-		width: 116,
+		width: 80,
 		alignItems: "center",
 		justifyContent: "flex-end",
-		marginRight: -spacing.md,
-		marginBottom: -spacing.lg,
 	},
-	countsBlock: {
-		gap: spacing.xs,
-	},
-	countsTitle: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 20,
-	},
-	heroCountsRow: {
+	caseboardRow: {
 		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.xs,
+		alignItems: "stretch",
+		gap: tokens.space.xxs,
 	},
-	heroCount: {
+	caseboardCell: {
 		flex: 1,
 		alignItems: "center",
-		gap: 4,
-		minHeight: 86,
 		justifyContent: "center",
-		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
-		...tokens.shadow.card,
+		gap: 2,
+		minHeight: 78,
+		borderRadius: radii.md,
+		paddingHorizontal: tokens.space.xxs,
+		paddingVertical: spacing.xs,
 	},
-	heroCountValue: {
-		fontFamily: type.body.bold,
-		fontSize: 24,
-		lineHeight: 28,
+	caseboardCellValue: {
+		...tokens.type.display.accent,
 	},
-	heroCountLabel: {
-		color: tokens.color.text.tertiary,
-		fontFamily: type.body.medium,
+	caseboardCellLabel: {
+		...tokens.type.label.tab,
+		fontFamily: type.body.semibold,
 		fontSize: 11,
 		lineHeight: 14,
 		textAlign: "center",
 	},
 	checkInCta: {
-		minHeight: 44,
+		...components.button.primary,
 		flexDirection: "row",
 		alignItems: "center",
-		gap: spacing.xs,
-		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: "rgba(91, 151, 123, 0.32)",
-		backgroundColor: palette.sageSoft,
-		paddingHorizontal: spacing.md,
-		marginTop: spacing.xs,
+		gap: spacing.sm,
+		paddingVertical: spacing.sm,
 	},
-	checkInCtaText: {
+	checkInCtaCopy: {
 		flex: 1,
-		color: palette.primary,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 17,
+		gap: 1,
 	},
-	learningCue: {
-		minHeight: 42,
-		flexDirection: "row",
-		alignItems: "center",
+	checkInCtaTitle: {
+		...tokens.type.label.button,
+		color: tokens.color.action.primary.foreground,
+	},
+	checkInCtaSubtitle: {
+		...tokens.type.label.tab,
+		color: tokens.color.action.primary.foreground,
+		opacity: 0.85,
+	},
+	learningCard: {
 		gap: spacing.xs,
 		borderRadius: radii.lg,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
+		backgroundColor: tokens.color.surface.frosted,
 		paddingHorizontal: spacing.md,
-		...tokens.shadow.card,
+		paddingVertical: spacing.sm,
 	},
-	learningCueText: {
+	learningHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+	},
+	learningTitle: {
+		...tokens.type.body.small,
+		fontFamily: type.body.semibold,
+		color: tokens.color.text.secondary,
+	},
+	learningStageBubble: {
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.action.quiet.background,
+		paddingHorizontal: spacing.xs,
+		paddingVertical: 2,
+	},
+	learningStageLabel: {
+		...tokens.type.label.tab,
+		fontFamily: type.body.semibold,
+		color: tokens.color.action.quiet.foreground,
+	},
+	learningSpacer: {
 		flex: 1,
+	},
+	learningPercent: {
+		...tokens.type.metric.value,
+		color: tokens.color.text.primary,
+	},
+	learningProgressTrack: {
+		height: 6,
+		overflow: "hidden",
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.chart.track,
+	},
+	learningProgressFill: {
+		height: "100%",
+		minWidth: 8,
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.accent.brand,
+	},
+	learningMeta: {
+		...tokens.type.label.metric,
 		color: tokens.color.text.tertiary,
-		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 	learningModalStats: {
 		width: "100%",
@@ -745,12 +823,19 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.md,
 	},
+	seedBannerIcon: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		alignItems: "center",
+		justifyContent: "center",
+		backgroundColor: tokens.color.surface.frosted,
+	},
 	seedBannerText: {
+		...tokens.type.body.small,
 		flex: 1,
-		color: tokens.color.text.secondary,
 		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
+		color: tokens.color.text.secondary,
 	},
 	section: {
 		gap: spacing.sm,
@@ -761,63 +846,26 @@ const styles = StyleSheet.create({
 	},
 	sectionTitleRow: {
 		flexDirection: "row",
-		alignItems: "center",
+		alignItems: "baseline",
 		gap: spacing.xs,
 	},
 	sectionTitle: {
-		color: tokens.color.text.tertiary,
-		fontFamily: type.body.bold,
-		fontSize: 11,
-		lineHeight: 14,
-		letterSpacing: 0.8,
-		textTransform: "uppercase",
+		...tokens.type.display.accent,
 	},
 	sectionTitleSpacer: {
 		flex: 1,
 	},
 	sectionCountText: {
-		color: tokens.color.text.tertiary,
+		...tokens.type.body.small,
 		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 17,
+		color: tokens.color.text.tertiary,
 	},
 	sectionSubtitle: {
+		...tokens.type.label.metric,
 		color: tokens.color.text.tertiary,
-		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
 	},
 	listStack: {
 		gap: spacing.xs,
-	},
-	emptyHintCard: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.md,
-	},
-	emptyHintBadge: {
-		width: 64,
-		height: 64,
-		borderRadius: 32,
-		backgroundColor: palette.sageSoft,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	emptyHintCopy: {
-		flex: 1,
-		gap: 4,
-	},
-	emptyHintTitle: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 16,
-		letterSpacing: 0,
-	},
-	emptyHintSubtitle: {
-		color: tokens.color.text.tertiary,
-		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
 	},
 	skeletonRow: {
 		minHeight: 64,
@@ -889,7 +937,7 @@ const styles = StyleSheet.create({
 		borderRadius: 19,
 		alignItems: "center",
 		justifyContent: "center",
-		backgroundColor: palette.sageSoft,
+		backgroundColor: tokens.color.status.verdict.watching.background,
 	},
 	familyGlyphEmoji: {
 		fontSize: 18,

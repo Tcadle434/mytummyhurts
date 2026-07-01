@@ -2,14 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { ComponentProps } from "react";
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
 
+import { bandForeground, bandRiskColors } from "./bandStyle";
 import { DailyScoreRing as SharedDailyScoreRing } from "./DailyScoreRing";
 import { components, radii, spacing, tokens, type } from "../../theme";
-import { gutScoreTint } from "../../utils/risk";
 import {
+	DailyScoreBand,
 	WeeklyProgressDay,
-	WeeklyProgressTrendDirection,
+	dailyScoreBand,
 	formatMonthDay,
 	getFeaturedDailyScoreDay,
+	parseLocalDate,
 } from "../../utils/weeklyProgress";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -85,11 +87,7 @@ export function WeeklyProgressCard({
 				))}
 			</View>
 
-			<View style={styles.legendRow}>
-				<LegendItem iconName="restaurant-outline" label="Meal logged" />
-				<LegendItem type="dot" label="Score Range" />
-				<LegendItem iconName="trending-up" label="Score trend" />
-			</View>
+			<BandSummaryLine days={days} />
 		</View>
 	);
 
@@ -123,7 +121,14 @@ function FeaturedDailyScore({
 	const hasScore = day.hasReport && day.dailyScore !== undefined;
 	const score = hasScore ? day.dailyScore : undefined;
 	const mealLine = `${day.mealCount} meal${day.mealCount === 1 ? "" : "s"} logged`;
-	const symptomLine = `${symptomSeverityLabel(day.report?.gutSeverity)} symptoms reported`;
+	// Honest uncertainty: a missing check-in is said out loud, never read as
+	// "no symptoms".
+	const symptomLine = day.report
+		? `${symptomSeverityLabel(day.report.gutSeverity)} symptoms reported`
+		: "no check-in yet";
+	const symptomTone = day.report
+		? symptomSeverityForeground(day.report.gutSeverity)
+		: undefined;
 
 	return (
 		<View style={styles.featuredWrap}>
@@ -143,7 +148,7 @@ function FeaturedDailyScore({
 					<FeaturedDetailLine
 						iconName="pulse-outline"
 						text={symptomLine}
-						tone={symptomSeverityTone(day.report?.gutSeverity)}
+						tone={symptomTone}
 						onPress={onSymptomsPress}
 					/>
 				</View>
@@ -186,6 +191,8 @@ function FeaturedDetailLine({
 	return (
 		<Pressable
 			accessibilityRole="button"
+			accessibilityLabel={text}
+			hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
 			onPress={(event) => {
 				event.stopPropagation();
 				onPress();
@@ -202,86 +209,94 @@ function DailyScoreRing({ score }: { score?: number }) {
 	return <SharedDailyScoreRing score={score} size={92} />;
 }
 
+/**
+ * One day of the seven-day strip: a full weekday abbreviation over a
+ * band-toned score chip. The chip carries number + color; the summary line
+ * below the strip carries the band words — no legend required.
+ */
 function WeeklyProgressColumn({ day }: { day: WeeklyProgressDay }) {
 	const hasScore = day.dailyScore !== undefined && day.hasReport;
-	const scoreColor = hasScore ? gutScoreTint(day.dailyScore as number) : tokens.color.chart.track;
-	const trend = dayTrend(day.trendDirection);
+	const score = hasScore ? (day.dailyScore as number) : undefined;
+	const colors = score !== undefined ? bandRiskColors(score) : undefined;
 
 	return (
-		<View style={styles.dayColumn}>
-			<Text style={styles.weekday}>{day.weekdayLabel}</Text>
+		<View
+			style={styles.dayColumn}
+			accessible
+			accessibilityLabel={columnAccessibilityLabel(day, score)}
+		>
+			<Text style={styles.weekday}>{shortWeekday(day.localDate)}</Text>
 			<View
 				style={[
-					styles.mealIconWrap,
-					day.mealCount > 0 ? styles.mealIconWrapFilled : styles.mealIconWrapEmpty,
+					styles.scoreChip,
+					colors
+						? { backgroundColor: colors.background }
+						: styles.scoreChipEmpty,
 				]}
 			>
-				<Ionicons
-					name="restaurant-outline"
-					size={14}
-					color={day.mealCount > 0 ? tokens.color.icon.accent : tokens.color.icon.muted}
-				/>
-			</View>
-			<View
-				style={[
-					styles.scoreDot,
-					hasScore
-						? { backgroundColor: scoreColor, borderColor: scoreColor }
-						: { backgroundColor: "transparent", borderColor: tokens.color.chart.track },
-				]}
-			/>
-			<View style={styles.scoreRow}>
-				<Text style={styles.dayScore}>{hasScore ? day.dailyScore : "—"}</Text>
-				{hasScore && trend.iconName ? (
-					<Ionicons name={trend.iconName} size={12} color={trend.color} />
-				) : null}
+				<Text
+					style={[
+						styles.scoreChipText,
+						{ color: colors ? colors.foreground : tokens.color.text.tertiary },
+					]}
+				>
+					{score !== undefined ? `${score}%` : "—"}
+				</Text>
 			</View>
 		</View>
 	);
 }
 
-function LegendItem({
-	iconName,
-	label,
-	type: itemType,
-}: {
-	iconName?: IoniconName;
-	label: string;
-	type?: "dot";
-}) {
+/**
+ * The strip's meaning, spoken: band-word counts in the matching text-grade
+ * colors ("4 calm · 1 mixed · 1 rough"). Replaces the old decoder legend.
+ */
+function BandSummaryLine({ days }: { days: WeeklyProgressDay[] }) {
+	const scored = days.filter((day) => day.hasReport && day.dailyScore !== undefined);
+
+	if (scored.length === 0) {
+		return <Text style={styles.summaryEmpty}>No check-ins yet this week.</Text>;
+	}
+
+	const counts = scored.reduce<Record<DailyScoreBand, number>>(
+		(current, day) => {
+			const band = dailyScoreBand(day.dailyScore as number);
+			return { ...current, [band]: current[band] + 1 };
+		},
+		{ calm: 0, mixed: 0, rough: 0 }
+	);
+	const bands: DailyScoreBand[] = ["calm", "mixed", "rough"];
+	const segments = bands.filter((band) => counts[band] > 0);
+
 	return (
-		<View style={styles.legendItem}>
-			{itemType === "dot" ? (
-				<View style={styles.legendDot} />
-			) : (
-				<Ionicons
-					name={iconName ?? "ellipse-outline"}
-					size={13}
-					color={tokens.color.icon.muted}
-				/>
-			)}
-			<Text style={styles.legendLabel}>{label}</Text>
+		<View style={styles.summaryRow}>
+			{segments.map((band, index) => (
+				<View key={band} style={styles.summaryItem}>
+					{index > 0 ? <Text style={styles.summarySeparator}>·</Text> : null}
+					<Text style={[styles.summaryLabel, { color: bandForeground(band) }]}>
+						{counts[band]} {band}
+					</Text>
+				</View>
+			))}
+			<Text style={styles.summarySuffix}>
+				{scored.length === 1 ? "day so far" : "days so far"}
+			</Text>
 		</View>
 	);
 }
 
-function dayTrend(direction: WeeklyProgressTrendDirection): {
-	iconName?: IoniconName;
-	color: string;
-} {
-	if (direction === "up") {
-		return { iconName: "arrow-up-outline", color: tokens.color.status.risk.low.foreground };
+function columnAccessibilityLabel(day: WeeklyProgressDay, score: number | undefined) {
+	const weekday = parseLocalDate(day.localDate).toLocaleDateString(undefined, {
+		weekday: "long",
+	});
+	if (score === undefined) {
+		return `${weekday}: no check-in yet`;
 	}
+	return `${weekday}: Daily Score ${score} percent, ${dailyScoreBand(score)} day`;
+}
 
-	if (direction === "down") {
-		return { iconName: "arrow-down-outline", color: tokens.color.status.risk.high.foreground };
-	}
-
-	if (direction === "flat") {
-		return { iconName: "remove-outline", color: tokens.color.text.tertiary };
-	}
-
-	return { color: tokens.color.text.tertiary };
+function shortWeekday(localDate: string) {
+	return parseLocalDate(localDate).toLocaleDateString(undefined, { weekday: "short" });
 }
 
 function symptomSeverityLabel(gutSeverity: number | undefined) {
@@ -291,46 +306,43 @@ function symptomSeverityLabel(gutSeverity: number | undefined) {
 	return "severe";
 }
 
-function symptomSeverityTone(gutSeverity: number | undefined) {
+// Text-grade severity color: always the darker `foreground` tone — tints are
+// fills, not text.
+function symptomSeverityForeground(gutSeverity: number | undefined) {
 	if (gutSeverity === undefined || gutSeverity <= 3) {
-		return tokens.color.status.risk.low.tint;
+		return tokens.color.status.risk.low.foreground;
 	}
 	if (gutSeverity <= 6) {
-		return tokens.color.status.risk.medium.tint;
+		return tokens.color.status.risk.medium.foreground;
 	}
-	return tokens.color.status.risk.high.tint;
+	return tokens.color.status.risk.high.foreground;
 }
 
 const styles = StyleSheet.create({
 	card: {
 		...components.card.default,
 		width: "100%",
-		maxWidth: 390,
-		gap: spacing.sm,
-		padding: spacing.sm,
+		gap: spacing.md,
+		padding: spacing.lg,
 	},
 	headerRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",
 		justifyContent: "space-between",
 		gap: spacing.md,
-		paddingLeft: spacing.xs,
 	},
 	titleStack: {
 		flex: 1,
 		gap: 2,
 	},
 	title: {
+		...tokens.type.title.block,
 		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 20,
 	},
 	subtitle: {
-		color: tokens.color.text.secondary,
+		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+		color: tokens.color.text.secondary,
 	},
 	headerRight: {
 		flexDirection: "row",
@@ -353,10 +365,9 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	featuredEyebrow: {
-		color: tokens.color.text.tertiary,
+		...tokens.type.label.eyebrow,
 		fontFamily: type.body.semibold,
-		fontSize: 11,
-		lineHeight: 14,
+		color: tokens.color.text.tertiary,
 		letterSpacing: 0.6,
 		textTransform: "uppercase",
 	},
@@ -368,26 +379,24 @@ const styles = StyleSheet.create({
 		opacity: 0.7,
 	},
 	featuredDate: {
-		color: tokens.color.text.secondary,
+		...tokens.type.label.eyebrow,
 		fontFamily: type.body.semibold,
-		fontSize: 11,
-		lineHeight: 14,
+		color: tokens.color.text.secondary,
 	},
 	featuredDetailStack: {
-		gap: 4,
+		gap: spacing.xs,
 	},
 	featuredDetailLine: {
-		minHeight: 22,
+		minHeight: 28,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.xs,
 	},
 	featuredDetailText: {
+		...tokens.type.body.small,
 		flex: 1,
-		color: tokens.color.text.secondary,
 		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
+		color: tokens.color.text.secondary,
 	},
 	featuredDetailTextLink: {
 		color: tokens.color.text.accent,
@@ -398,84 +407,59 @@ const styles = StyleSheet.create({
 	},
 	dayColumn: {
 		flex: 1,
-		minHeight: 108,
 		alignItems: "center",
-		justifyContent: "space-between",
-		paddingHorizontal: 4,
-		paddingVertical: spacing.xs,
-		borderRadius: radii.md,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
-		gap: 4,
+		gap: spacing.xs,
 	},
 	weekday: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.semibold,
-		fontSize: 11,
-		lineHeight: 14,
+		...tokens.type.label.tab,
+		color: tokens.color.text.tertiary,
 	},
-	mealIconWrap: {
-		width: 28,
-		height: 28,
-		borderRadius: 14,
+	scoreChip: {
+		alignSelf: "stretch",
 		alignItems: "center",
 		justifyContent: "center",
+		minHeight: 26,
+		borderRadius: radii.sm,
+		paddingHorizontal: 2,
+		paddingVertical: 4,
+	},
+	scoreChipEmpty: {
+		backgroundColor: tokens.color.surface.card.warm,
 		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
 	},
-	mealIconWrapFilled: {
-		borderColor: tokens.color.status.success.background,
-		backgroundColor: tokens.color.status.success.background,
-	},
-	mealIconWrapEmpty: {
-		borderStyle: "dashed",
-		borderColor: tokens.color.border.strong,
-		backgroundColor: tokens.color.surface.card.default,
-		opacity: 0.78,
-	},
-	scoreDot: {
-		width: 14,
-		height: 14,
-		borderRadius: 7,
-		borderWidth: 2,
-	},
-	scoreRow: {
-		minHeight: 16,
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 1,
-	},
-	dayScore: {
-		color: tokens.color.text.primary,
+	scoreChipText: {
+		...tokens.type.label.tab,
 		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 15,
 		fontVariant: ["tabular-nums"],
 	},
-	legendRow: {
+	summaryRow: {
 		flexDirection: "row",
 		flexWrap: "wrap",
 		alignItems: "center",
-		justifyContent: "center",
-		gap: spacing.sm,
-		paddingTop: 2,
+		gap: spacing.xs,
 	},
-	legendItem: {
+	summaryItem: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: 4,
+		gap: spacing.xs,
 	},
-	legendDot: {
-		width: 8,
-		height: 8,
-		borderRadius: 4,
-		backgroundColor: tokens.color.status.risk.medium.tint,
-	},
-	legendLabel: {
+	summarySeparator: {
+		...tokens.type.body.small,
 		color: tokens.color.text.tertiary,
+	},
+	summaryLabel: {
+		...tokens.type.body.small,
+		fontFamily: type.body.semibold,
+	},
+	summarySuffix: {
+		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		fontSize: 11,
-		lineHeight: 14,
+		color: tokens.color.text.tertiary,
+	},
+	summaryEmpty: {
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
+		color: tokens.color.text.tertiary,
 	},
 });

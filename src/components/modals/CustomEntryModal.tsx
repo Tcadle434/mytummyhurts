@@ -10,7 +10,7 @@ import {
 } from "react-native";
 
 import { InputField, PrimaryButton } from "../common/UI";
-import { palette, spacing, tokens, type } from "../../theme";
+import { radii, spacing, tokens, type } from "../../theme";
 
 interface CustomEntryModalProps {
 	visible: boolean;
@@ -95,8 +95,10 @@ export function CustomEntryModal({
 						{values.length > 0 ? (
 							<View style={styles.customValuesStack}>
 								{values.map((entry) => (
-									<View key={entry} style={styles.customValuePill}>
-										<Text style={styles.customValueText}>{entry}</Text>
+									<View key={entry} style={styles.customValueChip}>
+										<Text style={styles.customValueText} numberOfLines={1}>
+											{entry}
+										</Text>
 										<Pressable
 											accessibilityRole="button"
 											accessibilityLabel={`Remove ${entry}`}
@@ -109,8 +111,8 @@ export function CustomEntryModal({
 										>
 											<Ionicons
 												name="close"
-												size={13}
-												color={tokens.color.text.inverse}
+												size={14}
+												color={tokens.color.status.verdict.watching.foreground}
 											/>
 										</Pressable>
 									</View>
@@ -127,7 +129,7 @@ export function CustomEntryModal({
 const styles = StyleSheet.create({
 	customModalRoot: {
 		flex: 1,
-		backgroundColor: "rgba(22, 29, 33, 0.44)",
+		backgroundColor: tokens.color.overlay.scrim,
 	},
 	customModalBackdrop: {
 		...StyleSheet.absoluteFillObject,
@@ -145,7 +147,7 @@ const styles = StyleSheet.create({
 		width: "100%",
 		maxWidth: 380,
 		zIndex: 2,
-		borderRadius: 24,
+		borderRadius: radii.lg,
 		backgroundColor: tokens.color.surface.sheet,
 		padding: spacing.lg,
 		gap: spacing.md,
@@ -161,10 +163,8 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	customModalTitle: {
+		...tokens.type.title.card,
 		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 20,
-		lineHeight: 25,
 	},
 	customModalSubtitle: {
 		color: tokens.color.text.secondary,
@@ -181,32 +181,29 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 	},
 	customValuesStack: {
-		gap: spacing.sm,
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: spacing.xs,
 	},
-	customValuePill: {
-		minHeight: 50,
-		borderRadius: 18,
-		backgroundColor: palette.primary,
-		paddingHorizontal: spacing.md,
-		paddingVertical: 13,
-		paddingRight: 42,
-		justifyContent: "center",
-		position: "relative",
+	// Added entries stay quiet: neutral watching-tone chips, never a stack of
+	// saturated pills. The input remains the focal point of the dialog.
+	customValueChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		minHeight: 34,
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.status.verdict.watching.background,
+		paddingHorizontal: spacing.sm,
 	},
 	customValueText: {
-		color: tokens.color.text.inverse,
+		flexShrink: 1,
+		color: tokens.color.status.verdict.watching.foreground,
 		fontFamily: type.body.semibold,
-		fontSize: 15,
-		lineHeight: 20,
+		fontSize: 13,
+		lineHeight: 18,
 	},
 	customValueRemove: {
-		position: "absolute",
-		top: 8,
-		right: 8,
-		width: 22,
-		height: 22,
-		borderRadius: 11,
-		backgroundColor: "rgba(255,255,255,0.18)",
 		alignItems: "center",
 		justifyContent: "center",
 	},

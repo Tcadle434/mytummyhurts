@@ -1,110 +1,74 @@
 import { ReactNode } from "react";
-import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, Text, View } from "react-native";
 
 import { colorForLevel, type RiskLevel } from "./common";
 import { resultCardStyle } from "./styles";
+import { HeroMetric } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
 import { RiskBar } from "../charts/RiskBar";
 
-function ScoreArc({ score, level }: { score: number; level: RiskLevel }) {
-	const size = 104;
-	const strokeWidth = 9;
-	const radius = (size - strokeWidth) / 2;
-	const center = size / 2;
-	const circumference = 2 * Math.PI * radius;
-	const clamped = Math.max(0, Math.min(100, score));
-	const dashOffset = circumference - (circumference * clamped) / 100;
-	const tone = colorForLevel(level);
+const HERO_IMAGE_HEIGHT = 176;
 
-	return (
-		<View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-			<Svg width={size} height={size}>
-				<Circle cx={center} cy={center} r={radius} stroke={tokens.color.chart.track} strokeWidth={strokeWidth} fill="transparent" />
-				<Circle
-					cx={center}
-					cy={center}
-					r={radius}
-					stroke={tone}
-					strokeWidth={strokeWidth}
-					strokeDasharray={`${circumference} ${circumference}`}
-					strokeDashoffset={dashOffset}
-					strokeLinecap="round"
-					fill="transparent"
-					rotation={-90}
-					origin={`${center}, ${center}`}
-				/>
-			</Svg>
-			<View style={styles.scoreArcCenter}>
-				<Text style={[styles.scoreArcValue, { color: tone }]}>{score}</Text>
-				<Text style={styles.scoreArcScale}>/100</Text>
-			</View>
-		</View>
-	);
+function toneForLevel(level: RiskLevel) {
+	return tokens.color.status.risk[level];
 }
 
-// Consolidated result hero shared by food, grocery, and menu results: photo +
-// identity up top, decision block below. Menu results omit the arc and lead
-// with a ranking verdict instead.
+// The scan payoff, verdict-first: the meal photo as a real image moment, the
+// level word on its tone surface, the verdict sentence in the display serif,
+// and the score as a supporting serif metric. Identity (dish name, timestamp)
+// lives in the screen header — this card carries only the judgment. Menu
+// results omit the score and lead with the ranking verdict.
 export function ScanHeroCard({
-	title,
-	meta,
+	verdict,
 	image,
 	score,
 	level,
-	verdict,
+	levelLabelOverride,
 	conditionRows,
 }: {
-	title: string;
-	meta?: string;
+	verdict: string;
 	image?: ReactNode;
 	score?: number;
 	level?: RiskLevel;
-	verdict?: string;
+	levelLabelOverride?: string;
 	conditionRows?: { name: string; score: number; level: RiskLevel }[];
 }) {
-	const showArc = typeof score === "number" && Boolean(level);
-	const levelLabel = level ? `${level.charAt(0).toUpperCase()}${level.slice(1)} risk` : null;
+	const showScore = typeof score === "number" && Boolean(level);
+	const tone = level ? toneForLevel(level) : undefined;
+	const levelLabel = level
+		? levelLabelOverride ?? `${level.charAt(0).toUpperCase()}${level.slice(1)} risk`
+		: undefined;
 
 	return (
-		<View style={resultCardStyle}>
-			<View style={styles.heroIdentityRow}>
-				{image ? <View style={styles.heroImageSlot}>{image}</View> : null}
-				<View style={styles.heroIdentityCopy}>
-					<Text style={styles.heroCardTitle} numberOfLines={3}>
-						{title}
-					</Text>
-					{meta ? <Text style={styles.heroCardMeta}>{meta}</Text> : null}
-				</View>
-			</View>
-
-			{showArc || verdict ? <View style={styles.heroDivider} /> : null}
-
-			{showArc ? (
-				<View style={styles.heroScoreBlock}>
-					<ScoreArc score={score!} level={level!} />
-					<View style={styles.heroVerdictCopy}>
-						<View style={styles.heroLevelRow}>
-							<View style={[styles.heroLevelDot, { backgroundColor: colorForLevel(level!) }]} />
-							<Text style={[styles.heroLevelText, { color: colorForLevel(level!) }]}>{levelLabel}</Text>
-						</View>
-						{verdict ? <Text style={styles.heroVerdict}>{verdict}</Text> : null}
+		<View style={[resultCardStyle, styles.heroCard]}>
+			{image ? <View style={styles.heroImageSlot}>{image}</View> : null}
+			<View style={styles.heroBody}>
+				{tone && levelLabel ? (
+					<View style={[styles.levelPill, { backgroundColor: tone.background }]}>
+						<View style={[styles.levelPillDot, { backgroundColor: tone.tint }]} />
+						<Text style={[styles.levelPillLabel, { color: tone.foreground }]}>{levelLabel}</Text>
 					</View>
-				</View>
-			) : verdict ? (
+				) : null}
 				<Text style={styles.heroVerdict}>{verdict}</Text>
-			) : null}
-
-			{conditionRows && conditionRows.length > 0 ? (
-				<>
-					<View style={styles.heroDivider} />
-					<View style={styles.heroConditionRows}>
-						{conditionRows.map((row) => (
-							<RiskBar key={row.name} label={row.name} score={row.score} level={row.level} />
-						))}
-					</View>
-				</>
-			) : null}
+				{showScore ? (
+					<HeroMetric
+						value={score!}
+						unit="/100"
+						caption="Lower is easier on your gut"
+						color={tone!.foreground}
+					/>
+				) : null}
+				{conditionRows && conditionRows.length > 0 ? (
+					<>
+						<View style={styles.heroDivider} />
+						<View style={styles.heroConditionRows}>
+							{conditionRows.map((row) => (
+								<RiskBar key={row.name} label={row.name} score={row.score} level={row.level} />
+							))}
+						</View>
+					</>
+				) : null}
+			</View>
 		</View>
 	);
 }
@@ -162,84 +126,44 @@ export function RiskHeroCard({
 }
 
 const styles = StyleSheet.create({
-	scoreArcCenter: {
-		position: "absolute",
-		alignItems: "center",
-	},
-	scoreArcValue: {
-		fontFamily: type.body.bold,
-		fontSize: 27,
-		lineHeight: 31,
-	},
-	scoreArcScale: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 10,
-		lineHeight: 13,
-	},
-	heroIdentityRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.md,
-	},
-	heroImageSlot: {
-		width: 64,
-		height: 64,
-		borderRadius: 18,
+	heroCard: {
+		padding: 0,
+		gap: 0,
 		overflow: "hidden",
 	},
-	heroIdentityCopy: {
-		flex: 1,
-		gap: 3,
+	heroImageSlot: {
+		width: "100%",
+		height: HERO_IMAGE_HEIGHT,
 	},
-	heroCardTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 20,
-		lineHeight: 25,
-		letterSpacing: -0.3,
+	heroBody: {
+		padding: spacing.lg,
+		gap: spacing.md,
 	},
-	heroCardMeta: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+	levelPill: {
+		flexDirection: "row",
+		alignItems: "center",
+		alignSelf: "flex-start",
+		gap: spacing.xs,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: tokens.space.xxs,
+		borderRadius: tokens.radius.pill,
+	},
+	levelPillDot: {
+		width: 7,
+		height: 7,
+		borderRadius: 4,
+	},
+	levelPillLabel: {
+		...tokens.type.body.small,
+		fontFamily: type.body.semibold,
+	},
+	heroVerdict: {
+		...tokens.type.display.section,
+		color: tokens.color.text.primary,
 	},
 	heroDivider: {
 		height: 1,
 		backgroundColor: tokens.color.border.subtle,
-	},
-	heroScoreBlock: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.md,
-	},
-	heroVerdictCopy: {
-		flex: 1,
-		gap: 4,
-	},
-	heroLevelRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 6,
-	},
-	heroLevelDot: {
-		width: 8,
-		height: 8,
-		borderRadius: 4,
-	},
-	heroLevelText: {
-		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 17,
-		textTransform: "uppercase",
-		letterSpacing: 0.4,
-	},
-	heroVerdict: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 16,
-		lineHeight: 22,
 	},
 	heroConditionRows: {
 		gap: spacing.sm,

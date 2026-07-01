@@ -3,13 +3,22 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Pip } from '../../components/common/Pip';
 import { SeveritySlider } from '../../components/common/SeveritySlider';
-import { AppScreen, DetailScreenHeader, InputField, OptionChip, PrimaryButton, SectionCard } from '../../components/common/UI';
+import {
+  AppScreen,
+  DetailScreenHeader,
+  HeroMetric,
+  InputField,
+  OptionChip,
+  PrimaryButton,
+  SectionCard,
+} from '../../components/common/UI';
 import { symptomOptions } from '../../data/catalog';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { components, palette, radii, spacing, tokens, type, type PipState } from '../../theme';
 import { yesterdayLocalDate } from '../../utils/weeklyProgress';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DailyGutReport'>;
@@ -41,6 +50,7 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
 
   const dateLabel = useMemo(() => formatLocalDate(targetDate), [targetDate]);
   const canSave = (gutSeverity === 0 || symptomTags.filter((tag) => tag !== NO_SYMPTOMS_TAG).length > 0) && !busy;
+  const bandColor = severityBandColor(gutSeverity);
 
   useEffect(() => {
     if (!existingReport) {
@@ -153,14 +163,26 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
 
   return (
     <AppScreen contentContainerStyle={styles.screenContent}>
-      <DetailScreenHeader eyebrow="Daily report" title={dateLabel} />
+      <DetailScreenHeader eyebrow={dateLabel} />
 
-      <SectionCard style={[styles.scaleCard, styles.compactCard]}>
-        <View style={styles.scaleHeader}>
-          <Text style={styles.fieldLabel}>Gut severity</Text>
-          <Text style={[styles.severityValue, { color: severityTone(gutSeverity) }]}>{gutSeverity}/10</Text>
+      <SectionCard style={styles.heroCard}>
+        <Text style={styles.heroQuestion}>How did your gut feel?</Text>
+        <View style={styles.heroReadout}>
+          <View style={styles.heroMetricWrap}>
+            <HeroMetric value={gutSeverity} unit="/10" color={bandColor} />
+            <Text style={[styles.heroBandPhrase, { color: bandColor }]}>{severityBandPhrase(gutSeverity)}</Text>
+          </View>
+          <Pip
+            state={severityPipState(gutSeverity)}
+            size={76}
+            accessibilityLabel={`Pip reflecting a ${severityBandWord(gutSeverity)} day`}
+          />
         </View>
-        <SeveritySlider value={gutSeverity} onChange={handleSeverityChange} />
+        <SeveritySlider
+          value={gutSeverity}
+          onChange={handleSeverityChange}
+          accessibilityLabel="How your gut felt, from 0 no symptoms to 10 worst symptoms"
+        />
         <View style={styles.scaleLegend}>
           <Text style={styles.legendLabel}>No symptoms</Text>
           <Text style={styles.legendLabel}>Worst symptoms</Text>
@@ -169,40 +191,33 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
 
       <SectionCard style={styles.compactCard}>
         <View style={styles.cardHeader}>
-          <Text style={styles.fieldLabel}>Symptoms</Text>
-          <Text style={gutSeverity === 0 ? styles.optionalLabel : styles.requiredLabel}>
-            {gutSeverity === 0 ? 'Auto selected' : 'Required'}
-          </Text>
+          <Text style={styles.fieldLabel}>What did you feel?</Text>
+          {gutSeverity > 0 ? <Text style={styles.optionalLabel}>Pick what fits</Text> : null}
         </View>
-        <View style={styles.optionWrap}>
-          {gutSeverity === 0 ? (
-            <OptionChip label={NO_SYMPTOMS_TAG} selected onPress={() => undefined} />
-          ) : (
-            <>
-              {symptomOptions.map((tag) => (
-                <OptionChip key={tag} label={tag} selected={symptomTags.includes(tag)} onPress={() => toggleSymptom(tag)} />
-              ))}
-              <OtherSymptomChip
-                count={customSymptomTags.length}
-                onPress={() => setCustomModalVisible(true)}
-              />
-            </>
-          )}
-        </View>
+        {gutSeverity === 0 ? (
+          <Text style={styles.quietNote}>No symptoms — we&apos;ll save this as a symptom-free day.</Text>
+        ) : (
+          <View style={styles.optionWrap}>
+            {symptomOptions.map((tag) => (
+              <OptionChip key={tag} label={tag} selected={symptomTags.includes(tag)} onPress={() => toggleSymptom(tag)} />
+            ))}
+            <OtherSymptomChip
+              count={customSymptomTags.length}
+              onPress={() => setCustomModalVisible(true)}
+            />
+          </View>
+        )}
       </SectionCard>
 
       <SectionCard style={styles.compactCard}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.fieldLabel}>Scan coverage</Text>
-          <Text style={styles.optionalLabel}>Keeps learning honest</Text>
-        </View>
-        <View style={styles.optionWrap}>
-          <OptionChip
+        <Text style={styles.fieldLabel}>Did you scan what you ate?</Text>
+        <View style={styles.coverageStack}>
+          <CoverageChoice
             label="Typical day — scanned what I ate"
             selected={evidenceQuality === 'typical'}
             onPress={() => setEvidenceQuality('typical')}
           />
-          <OptionChip
+          <CoverageChoice
             label="Ate things I didn't scan"
             selected={evidenceQuality === 'unscanned'}
             onPress={() => setEvidenceQuality('unscanned')}
@@ -212,7 +227,7 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
 
       <SectionCard style={styles.compactCard}>
         <View style={styles.cardHeader}>
-          <Text style={styles.fieldLabel}>Notes</Text>
+          <Text style={styles.fieldLabel}>Anything else?</Text>
           <Text style={styles.optionalLabel}>Optional</Text>
         </View>
         <InputField
@@ -233,8 +248,12 @@ export function DailyGutReportScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
+      {!canSave && !busy ? (
+        <Text style={styles.saveHint}>Pick at least one symptom above and this is ready to save.</Text>
+      ) : null}
+
       <PrimaryButton
-        label={busy ? 'Saving...' : 'Save report'}
+        label={busy ? 'Saving...' : 'Save check-in'}
         onPress={() => void handleSave()}
         disabled={!canSave}
       />
@@ -316,6 +335,26 @@ function OtherSymptomChip({ count, onPress }: { count: number; onPress: () => vo
   );
 }
 
+function CoverageChoice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.coverageChoice,
+        selected && styles.coverageChoiceSelected,
+        pressed && { opacity: 0.88 },
+      ]}
+    >
+      <View style={[styles.coverageDot, selected && styles.coverageDotSelected]}>
+        {selected ? <View style={styles.coverageDotInner} /> : null}
+      </View>
+      <Text style={[styles.coverageLabel, selected && styles.coverageLabelSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function normalizeLocalDate(value?: string) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return null;
@@ -336,10 +375,32 @@ function formatLocalDate(value: string) {
   return date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
-function severityTone(value: number) {
-  if (value <= 3) return palette.low;
-  if (value <= 6) return palette.medium;
-  return palette.high;
+// Text-grade band colors: the darker `foreground` tones keep the numeral and
+// band phrase readable on the white card; the slider keeps the brighter tints
+// for its fill — fills and text are different jobs.
+function severityBandColor(value: number) {
+  if (value <= 3) return tokens.color.status.risk.low.foreground;
+  if (value <= 6) return tokens.color.status.risk.medium.foreground;
+  return tokens.color.status.risk.high.foreground;
+}
+
+function severityBandWord(value: number) {
+  if (value <= 3) return 'calm';
+  if (value <= 6) return 'mixed';
+  return 'rough';
+}
+
+function severityBandPhrase(value: number) {
+  if (value === 0) return 'symptom-free — a calm day';
+  if (value <= 3) return 'sounds like a calm day';
+  if (value <= 6) return 'sounds like a mixed day';
+  return 'sounds like a rough day';
+}
+
+function severityPipState(value: number): PipState {
+  if (value <= 3) return 'joy';
+  if (value <= 6) return 'base';
+  return 'pain';
 }
 
 function normalizeSymptom(value: string) {
@@ -395,18 +456,29 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingBottom: spacing.xl,
   },
-  compactCard: {
-    padding: spacing.md,
-    gap: spacing.sm,
+  heroCard: {
+    gap: spacing.md,
   },
-  scaleCard: {
-    gap: spacing.sm,
+  heroQuestion: {
+    ...tokens.type.display.hero,
+    color: tokens.color.text.primary,
   },
-  scaleHeader: {
+  heroReadout: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
+  },
+  heroMetricWrap: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  heroBandPhrase: {
+    ...tokens.type.body.strong,
+  },
+  compactCard: {
+    padding: spacing.md,
+    gap: spacing.sm,
   },
   fieldLabel: {
     color: palette.text,
@@ -415,20 +487,15 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     letterSpacing: -0.1,
   },
-  severityValue: {
-    fontFamily: type.body.bold,
-    fontSize: 20,
-    letterSpacing: -0.4,
-  },
   scaleLegend: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   legendLabel: {
-    color: palette.textMuted,
+    ...tokens.type.body.small,
     fontFamily: type.body.medium,
-    fontSize: 14,
+    color: palette.textMuted,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -441,15 +508,60 @@ const styles = StyleSheet.create({
     fontFamily: type.body.medium,
     fontSize: 13,
   },
-  requiredLabel: {
-    color: palette.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
+  quietNote: {
+    ...tokens.type.body.default,
+    color: tokens.color.text.secondary,
   },
   optionWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  coverageStack: {
+    gap: spacing.sm,
+  },
+  coverageChoice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: tokens.color.border.strong,
+    backgroundColor: 'transparent',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 48,
+  },
+  coverageChoiceSelected: {
+    backgroundColor: tokens.color.status.success.background,
+    borderColor: tokens.color.border.emphasis,
+  },
+  coverageDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: tokens.color.border.strong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coverageDotSelected: {
+    borderColor: tokens.color.accent.brand,
+  },
+  coverageDotInner: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: tokens.color.accent.brand,
+  },
+  coverageLabel: {
+    ...tokens.type.body.emphasis,
+    flex: 1,
+    color: tokens.color.text.primary,
+  },
+  coverageLabelSelected: {
+    fontFamily: type.body.semibold,
+    color: tokens.color.status.success.foreground,
   },
   otherChip: {
     ...components.chip.option,
@@ -495,6 +607,12 @@ const styles = StyleSheet.create({
     fontFamily: type.body.semibold,
     fontSize: 14,
     lineHeight: 20,
+  },
+  saveHint: {
+    ...tokens.type.body.small,
+    fontFamily: type.body.medium,
+    color: tokens.color.text.secondary,
+    textAlign: 'center',
   },
   customModalRoot: {
     flex: 1,

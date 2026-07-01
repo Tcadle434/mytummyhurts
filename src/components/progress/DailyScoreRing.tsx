@@ -3,6 +3,7 @@ import Svg, { Circle } from "react-native-svg";
 
 import { tokens, type } from "../../theme";
 import { gutScoreTint } from "../../utils/risk";
+import { dailyScoreZoneColor } from "../../utils/weeklyProgress";
 
 type DailyScoreRingProps = {
 	score?: number;
@@ -10,6 +11,18 @@ type DailyScoreRingProps = {
 	strokeWidth?: number;
 };
 
+const METRIC_TYPE = tokens.type.display.metric;
+// Numeral height relative to the ring diameter — the serif face reads a touch
+// larger than Jakarta at the same size, so this stays conservative.
+const SCORE_SIZE_RATIO = 0.36;
+const UNIT_SIZE_RATIO = 0.44;
+const MIN_UNIT_FONT_SIZE = 10;
+
+/**
+ * The exclusive marker for Daily Score (0-100, higher = calmer). The numeral
+ * is the display serif — the app's voice for anything it has concluded — in
+ * the darker text-grade band color; the ring fill keeps the brighter tint.
+ */
 export function DailyScoreRing({ score, size = 92, strokeWidth }: DailyScoreRingProps) {
 	const stroke = strokeWidth ?? Math.max(8, Math.round(size * 0.08));
 	const radius = (size - stroke) / 2;
@@ -18,8 +31,9 @@ export function DailyScoreRing({ score, size = 92, strokeWidth }: DailyScoreRing
 	const clampedScore = Math.max(0, Math.min(100, score ?? 0));
 	const progressOffset = circumference * (1 - clampedScore / 100);
 	const ringColor = hasScore ? scoreTint(clampedScore) : tokens.color.chart.track;
-	const scoreFontSize = Math.round(size * 0.34);
-	const unitFontSize = Math.max(10, Math.round(scoreFontSize * 0.48));
+	const numeralColor = hasScore ? scoreForeground(clampedScore) : tokens.color.text.tertiary;
+	const scoreFontSize = Math.round(size * SCORE_SIZE_RATIO);
+	const unitFontSize = Math.max(MIN_UNIT_FONT_SIZE, Math.round(scoreFontSize * UNIT_SIZE_RATIO));
 	const unitLineHeight = Math.round(scoreFontSize * 1.05);
 
 	return (
@@ -59,9 +73,10 @@ export function DailyScoreRing({ score, size = 92, strokeWidth }: DailyScoreRing
 					style={[
 						styles.score,
 						{
-							color: hasScore ? ringColor : tokens.color.text.tertiary,
+							color: numeralColor,
 							fontSize: scoreFontSize,
 							lineHeight: Math.round(scoreFontSize * 1.05),
+							letterSpacing: scaledMetricLetterSpacing(scoreFontSize),
 						},
 					]}
 				>
@@ -71,7 +86,7 @@ export function DailyScoreRing({ score, size = 92, strokeWidth }: DailyScoreRing
 							style={[
 								styles.unit,
 								{
-									color: ringColor,
+									color: numeralColor,
 									fontSize: unitFontSize,
 									lineHeight: unitLineHeight,
 								},
@@ -90,6 +105,19 @@ export function scoreTint(score: number) {
 	return gutScoreTint(score);
 }
 
+/**
+ * Text-grade band color for Daily Score copy: the darker `foreground` tones
+ * stay readable on cream and white, where the brighter tints do not.
+ */
+export function scoreForeground(score: number) {
+	return tokens.color.status.risk[dailyScoreZoneColor(score)].foreground;
+}
+
+function scaledMetricLetterSpacing(fontSize: number) {
+	const baseLetterSpacing = METRIC_TYPE.letterSpacing ?? 0;
+	return (baseLetterSpacing * fontSize) / METRIC_TYPE.fontSize;
+}
+
 const styles = StyleSheet.create({
 	wrap: {
 		alignItems: "center",
@@ -101,13 +129,11 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 	},
 	score: {
-		fontFamily: type.body.bold,
-		fontVariant: ["tabular-nums"],
-		letterSpacing: -0.6,
+		fontFamily: METRIC_TYPE.fontFamily,
 		textAlign: "center",
 	},
 	unit: {
-		fontFamily: type.body.bold,
+		fontFamily: type.body.semibold,
 		letterSpacing: -0.4,
 	},
 });

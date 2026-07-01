@@ -8,9 +8,12 @@ import {
   AppScreen,
   DetailRow,
   DetailScreenHeader,
+  EmptyState,
+  EvidenceMeter,
   PipAnalysisCard,
-  ScreenHeader,
   SectionCard,
+  VerdictPill,
+  verdictTone,
 } from '../../components/common/UI';
 import {
   buildGroupSyntheticInsight,
@@ -30,10 +33,9 @@ import { RootStackParamList } from '../../navigation/types';
 import { useAppStore } from '../../store/useAppStore';
 import { useInsightsData } from '../../features/insights/hooks';
 import { formatConditionName } from '../../utils/conditionFormat';
-import { palette, spacing, tokens, type } from '../../theme';
+import { spacing, tokens, type } from '../../theme';
 import type { IngredientInsight, RiskLevel } from '../../types/domain';
-import { EmptyHint } from './InsightsScreen';
-import { STATUS_META } from './TriggerProfileRow';
+import { STATUS_LABEL } from './statusVisuals';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'InsightDetail'>;
 type MealExample = { id: string; mealTitle: string; note: string; severity?: number; when: string };
@@ -158,10 +160,12 @@ export function InsightDetailScreen({ route, navigation }: Props) {
   if (!insight) {
     return (
       <AppScreen>
-        <ScreenHeader
-          eyebrow="Trigger Profile"
-          title="We couldn't find that ingredient."
-          subtitle="Go back and try another entry."
+        <DetailScreenHeader eyebrow="Trigger Profile" />
+        <EmptyState
+          title="We couldn't find that one"
+          subtitle="It may have been regrouped as new evidence came in — head back and try another entry."
+          actionLabel="Go back"
+          onAction={() => navigation.goBack()}
         />
       </AppScreen>
     );
@@ -170,7 +174,7 @@ export function InsightDetailScreen({ route, navigation }: Props) {
   // A group's verdict derives from its members (same rule as the caseboard
   // list) so tapping a row never opens a detail page with a different status.
   const status: TriggerStatus = group && members.length ? statusForMembers(members) : statusForInsight(insight);
-  const meta = STATUS_META[status];
+  const tone = verdictTone(status);
   const displayName = group
     ? group.label
     : insight.ingredientName.charAt(0).toUpperCase() + insight.ingredientName.slice(1);
@@ -181,36 +185,24 @@ export function InsightDetailScreen({ route, navigation }: Props) {
     <AppScreen>
       <DetailScreenHeader eyebrow="Trigger Profile" title={displayName} />
 
-      <SectionCard style={styles.verdictCard}>
-        <View style={[styles.glyph, { backgroundColor: meta.tone.background }]}>
-          {group ? (
+      <SectionCard style={[styles.verdictCard, { backgroundColor: tone.background }]}>
+        {group ? (
+          <View style={styles.glyphBubble}>
             <Text style={styles.glyphEmoji}>{group.emoji}</Text>
-          ) : (
-            <Text style={[styles.glyphLabel, { color: meta.tone.tint }]}>{displayName.charAt(0)}</Text>
-          )}
-        </View>
-        {group ? <Text style={styles.groupSubtitle}>{group.subtitle}</Text> : null}
-        <View style={[styles.statusPill, { backgroundColor: meta.tone.background }]}>
-          <Text style={[styles.statusPillText, { color: meta.tone.tint }]}>
-            {STATUS_HEADLINE[status]}
-          </Text>
-        </View>
-        <Text style={styles.verdictDetail}>{evidenceDetailForInsight(insight, status)}</Text>
-        <View style={styles.confidenceRow}>
-          {[0, 1, 2].map((segment) => (
-            <View
-              key={segment}
-              style={[
-                styles.confidenceSegment,
-                segment < confidenceFill && { backgroundColor: meta.tone.tint },
-              ]}
-            />
-          ))}
-          <Text style={styles.confidenceLabel}>{insight.confidenceLevel} confidence</Text>
-        </View>
+          </View>
+        ) : null}
+        {group ? (
+          <Text style={[styles.groupSubtitle, { color: tone.foreground }]}>{group.subtitle}</Text>
+        ) : null}
+        <Text style={[styles.verdictHeadline, { color: tone.foreground }]}>
+          {STATUS_HEADLINE[status]}
+        </Text>
+        <Text style={[styles.verdictDetail, { color: tone.foreground }]}>
+          {evidenceDetailForInsight(insight, status)}
+        </Text>
         {insight.sourceBreakdown.declared ? (
           <View style={styles.declaredBadge}>
-            <Ionicons name="person" size={10} color={palette.primary} />
+            <Ionicons name="person" size={10} color={tokens.color.action.quiet.foreground} />
             <Text style={styles.declaredBadgeText}>You told us about this one</Text>
           </View>
         ) : null}
@@ -236,6 +228,12 @@ export function InsightDetailScreen({ route, navigation }: Props) {
             No real-world outcomes yet — daily check-ins after meals with {insight.ingredientName} build this up.
           </Text>
         ) : null}
+        <EvidenceMeter
+          filled={confidenceFill}
+          total={3}
+          label={`${capitalize(insight.confidenceLevel)} confidence`}
+          tone={status}
+        />
         <View style={styles.detailRows}>
           <DetailRow label="Pattern strength" value={capitalize(insight.patternStrength)} />
           {insight.lastSeenAt ? <DetailRow label="Last seen in a scan" value={formatDate(insight.lastSeenAt)} /> : null}
@@ -267,6 +265,7 @@ export function InsightDetailScreen({ route, navigation }: Props) {
                     key={member.id}
                     name={capitalize(member.ingredientName)}
                     meta={meta}
+                    status={statusForInsight(member)}
                     onPress={() => navigation.push('InsightDetail', { ingredientName: member.ingredientName })}
                   />
                 );
@@ -311,8 +310,7 @@ export function InsightDetailScreen({ route, navigation }: Props) {
           </View>
         </SectionCard>
       ) : (
-        <EmptyHint
-          pipState="thinking"
+        <QuietHint
           title="No linked meals yet"
           subtitle="Scans and check-ins referencing this ingredient will land here."
         />
@@ -350,31 +348,32 @@ function FamilyDetail({
   ];
 
   const familyStatus = statusForMembers(members);
-  const familyMeta = STATUS_META[familyStatus];
+  const familyTone = verdictTone(familyStatus);
 
   return (
     <AppScreen>
       <DetailScreenHeader eyebrow="Trigger Profile" title={family.label} />
 
-      <SectionCard style={styles.verdictCard}>
-        <View style={[styles.glyph, styles.familyGlyphLarge]}>
+      <SectionCard style={[styles.verdictCard, { backgroundColor: familyTone.background }]}>
+        <View style={styles.glyphBubble}>
           <Text style={styles.glyphEmoji}>{family.emoji}</Text>
         </View>
-        <Text style={styles.groupSubtitle}>Food family</Text>
-        <View style={[styles.statusPill, { backgroundColor: familyMeta.tone.background }]}>
-          <Text style={[styles.statusPillText, { color: familyMeta.tone.tint }]}>
-            {STATUS_HEADLINE[familyStatus]}
-          </Text>
-        </View>
-        <Text style={styles.verdictDetail}>{FAMILY_STATUS_DETAIL[familyStatus]}</Text>
+        <Text style={[styles.groupSubtitle, { color: familyTone.foreground }]}>Food family</Text>
+        <Text style={[styles.verdictHeadline, { color: familyTone.foreground }]}>
+          {STATUS_HEADLINE[familyStatus]}
+        </Text>
+        <Text style={[styles.verdictDetail, { color: familyTone.foreground }]}>
+          {FAMILY_STATUS_DETAIL[familyStatus]}
+        </Text>
       </SectionCard>
 
       <SectionCard>
         <Text style={styles.sectionTitle}>Coverage</Text>
         <View style={styles.evidenceCounts}>
-          <EvidenceCount value={members.length} label="Foods tracked" color={palette.primary} />
+          <EvidenceCount value={members.length} label="Foods tracked" color={tokens.color.accent.brand} />
           <View style={styles.evidenceDivider} />
-          <EvidenceCount value={evidenceCount} label="Paired evidence days" color={tokens.color.status.risk.medium.tint} />
+          {/* Numerals are text: the darker text-grade foreground, never the bar-fill tint. */}
+          <EvidenceCount value={evidenceCount} label="Paired evidence days" color={tokens.color.status.risk.medium.foreground} />
         </View>
         <View style={styles.detailRows}>
           <DetailRow label="Family verdict" value={STATUS_HEADLINE[familyStatus]} />
@@ -396,19 +395,18 @@ function FamilyDetail({
               .sort((left, right) => left.ingredientName.localeCompare(right.ingredientName))
               .map((member) => {
                 const outcomes = member.positiveEvidenceCount + member.negativeEvidenceCount;
-                const memberPill = STATUS_META[statusForInsight(member)].pill;
                 const counts =
                   outcomes > 0
-                    ? `${member.negativeEvidenceCount} rough - ${member.positiveEvidenceCount} calm`
+                    ? `${member.negativeEvidenceCount} rough · ${member.positiveEvidenceCount} calm`
                     : member.supportingEvidenceCount > 0
                       ? `${member.supportingEvidenceCount} paired day${member.supportingEvidenceCount === 1 ? '' : 's'}`
                       : 'seen in scans';
-                const meta = `${memberPill} · ${counts}`;
                 return (
                   <MemberRow
                     key={member.id}
                     name={capitalize(member.ingredientName)}
-                    meta={meta}
+                    meta={counts}
+                    status={statusForInsight(member)}
                     onPress={() => onOpenIngredient(member.ingredientName)}
                   />
                 );
@@ -416,8 +414,7 @@ function FamilyDetail({
           </View>
         </SectionCard>
       ) : (
-        <EmptyHint
-          pipState="thinking"
+        <QuietHint
           title="No foods in this family yet"
           subtitle="When scans map here, the foods will show up on this page."
         />
@@ -435,7 +432,7 @@ function FamilyDetail({
                     {example.mealTitle}
                   </Text>
                   <Text style={styles.exampleMeta}>
-                    {example.note} - {example.when}
+                    {example.note} · {example.when}
                   </Text>
                 </View>
               </View>
@@ -443,8 +440,7 @@ function FamilyDetail({
           </View>
         </SectionCard>
       ) : (
-        <EmptyHint
-          pipState="thinking"
+        <QuietHint
           title="No linked meals yet"
           subtitle="Meal examples appear here after the app has matching scan history loaded."
         />
@@ -461,26 +457,48 @@ function FamilyDetail({
 function MemberRow({
   name,
   meta,
+  status,
   onPress,
 }: {
   name: string;
   meta: string;
+  status?: TriggerStatus;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${name}, ${meta}`}
+      accessibilityLabel={status ? `${name}, ${STATUS_LABEL[status]}, ${meta}` : `${name}, ${meta}`}
       onPress={onPress}
+      style={({ pressed }) => [styles.memberRow, pressed && { opacity: 0.88 }]}
     >
-      <Text style={styles.memberRow} suppressHighlighting>
-        <Text style={styles.memberName}>{name}</Text>
-        <Text style={styles.memberMeta}>
-          {'  '}
+      <View style={styles.memberCopy}>
+        <Text style={styles.memberName} numberOfLines={1}>
+          {name}
+        </Text>
+        <Text style={styles.memberMeta} numberOfLines={1}>
           {meta}
         </Text>
-      </Text>
+      </View>
+      {status ? <VerdictPill label={STATUS_LABEL[status]} tone={status} size="sm" /> : null}
+      <Ionicons name="chevron-forward" size={16} color={tokens.color.icon.muted} />
     </Pressable>
+  );
+}
+
+// A hushed placeholder for sections that have no data yet — the screen's
+// warmth budget belongs to the "What to try" Pip card below.
+function QuietHint({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <SectionCard style={styles.quietHint}>
+      <View style={styles.quietHintIcon}>
+        <Ionicons name="search-outline" size={18} color={tokens.color.icon.accent} />
+      </View>
+      <View style={styles.quietHintCopy}>
+        <Text style={styles.quietHintTitle}>{title}</Text>
+        <Text style={styles.quietHintSubtitle}>{subtitle}</Text>
+      </View>
+    </SectionCard>
   );
 }
 
@@ -500,7 +518,7 @@ function normalizeToken(value?: string | null) {
 function severityCopy(value?: number) {
   if (typeof value === 'number') {
     if (value <= 3) return 'Calm day';
-    if (value <= 6) return 'Neutral day';
+    if (value <= 6) return 'Mixed day';
     return 'Rough day';
   }
 
@@ -559,117 +577,69 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  glyph: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  glyphBubble: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  glyphLabel: {
-    fontFamily: type.body.bold,
-    fontSize: 30,
+    backgroundColor: tokens.color.surface.frosted,
   },
   glyphEmoji: {
-    fontSize: 34,
-  },
-  familyGlyphLarge: {
-    backgroundColor: palette.sageSoft,
+    fontSize: 28,
   },
   groupSubtitle: {
-    color: palette.textMuted,
+    ...tokens.type.label.eyebrow,
     fontFamily: type.body.semibold,
-    fontSize: 12,
-    lineHeight: 16,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  },
+  verdictHeadline: {
+    ...tokens.type.display.section,
+    textAlign: 'center',
+  },
+  verdictDetail: {
+    ...tokens.type.body.emphasis,
+    textAlign: 'center',
   },
   memberList: {
     gap: spacing.xs,
   },
   memberRow: {
-    paddingVertical: 2,
-  },
-  memberName: {
-    color: palette.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  memberMeta: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  statusPill: {
-    borderRadius: 999,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5,
-  },
-  statusPillText: {
-    fontFamily: type.body.bold,
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  familyStatusPill: {
-    borderRadius: 999,
-    backgroundColor: palette.sageSoft,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5,
-  },
-  familyStatusPillText: {
-    color: palette.primary,
-    fontFamily: type.body.bold,
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  verdictDetail: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  confidenceRow: {
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
   },
-  confidenceSegment: {
-    width: 18,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: tokens.color.chart.track,
+  memberCopy: {
+    flex: 1,
+    gap: 1,
   },
-  confidenceLabel: {
-    marginLeft: spacing.xs,
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 12,
-    lineHeight: 16,
-    textTransform: 'capitalize',
+  memberName: {
+    ...tokens.type.body.strong,
+    color: tokens.color.text.primary,
+  },
+  memberMeta: {
+    ...tokens.type.body.small,
+    color: tokens.color.text.secondary,
   },
   declaredBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    borderRadius: 999,
-    backgroundColor: palette.sageSoft,
+    borderRadius: tokens.radius.pill,
+    backgroundColor: tokens.color.surface.frosted,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
   },
   declaredBadgeText: {
-    color: palette.primary,
+    ...tokens.type.label.tab,
     fontFamily: type.body.semibold,
-    fontSize: 11,
-    lineHeight: 15,
+    color: tokens.color.action.quiet.foreground,
   },
   sectionTitle: {
-    color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-    lineHeight: 20,
+    ...tokens.type.body.strong,
+    color: tokens.color.text.primary,
   },
   evidenceCounts: {
     flexDirection: 'row',
@@ -687,10 +657,8 @@ const styles = StyleSheet.create({
     lineHeight: 34,
   },
   evidenceCountLabel: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 11,
-    lineHeight: 14,
+    ...tokens.type.metric.label,
+    color: tokens.color.text.secondary,
     textAlign: 'center',
   },
   evidenceDivider: {
@@ -699,10 +667,8 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.border.subtle,
   },
   evidenceHint: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 12,
-    lineHeight: 17,
+    ...tokens.type.body.small,
+    color: tokens.color.text.secondary,
   },
   detailRows: {
     gap: spacing.xs,
@@ -728,15 +694,36 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   exampleTitle: {
-    color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 14,
-    lineHeight: 19,
+    ...tokens.type.body.strong,
+    color: tokens.color.text.primary,
   },
   exampleMeta: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 12,
-    lineHeight: 16,
+    ...tokens.type.label.metric,
+    color: tokens.color.text.secondary,
+  },
+  quietHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  quietHintIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: tokens.color.status.verdict.watching.background,
+  },
+  quietHintCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  quietHintTitle: {
+    ...tokens.type.body.strong,
+    color: tokens.color.text.primary,
+  },
+  quietHintSubtitle: {
+    ...tokens.type.body.small,
+    color: tokens.color.text.secondary,
   },
 });

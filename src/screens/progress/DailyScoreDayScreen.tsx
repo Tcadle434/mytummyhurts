@@ -13,13 +13,16 @@ import Animated, {
 	withTiming,
 } from "react-native-reanimated";
 
-import { DailyScoreRing, scoreTint } from "../../components/progress/DailyScoreRing";
+import { Pip } from "../../components/common/Pip";
 import {
 	AppScreen,
 	DetailScreenHeader,
 	PrimaryButton,
 	SectionCard,
 } from "../../components/common/UI";
+import { bandForeground, pipStateForBand } from "../../components/progress/bandStyle";
+import { DailyScoreRing } from "../../components/progress/DailyScoreRing";
+import { SkeletonImage } from "../../components/common/SkeletonImage";
 import { useHomeData } from "../../features/home/hooks";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { RootStackParamList } from "../../navigation/types";
@@ -33,7 +36,8 @@ import {
 	formatDayTitle,
 	getWeekStartForLocalDate,
 } from "../../utils/weeklyProgress";
-import { riskLevelTint } from "../../utils/risk";
+import { riskLevelColors } from "../../utils/risk";
+import { buildDayStory } from "./dayStory";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DailyScoreDay">;
 
@@ -74,7 +78,7 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 
 	return (
 		<AppScreen>
-			<DetailScreenHeader eyebrow="Daily Score" title={formatDayTitle(localDate)} />
+			<DetailScreenHeader eyebrow={formatDayTitle(localDate)} />
 
 			<Animated.View entering={FadeIn.duration(280)}>
 				<DailyScoreHero day={day} />
@@ -126,11 +130,17 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 					</View>
 					{day.report ? (
 						<View style={styles.symptomStack}>
-							<Text style={styles.symptomBody}>
-								{day.report.symptomTags.length
-									? day.report.symptomTags.join(", ")
-									: "No symptoms tagged."}
-							</Text>
+							{day.report.symptomTags.length ? (
+								<View style={styles.symptomChipRow}>
+									{day.report.symptomTags.map((tag) => (
+										<View key={tag} style={styles.symptomChip}>
+											<Text style={styles.symptomChipText}>{tag}</Text>
+										</View>
+									))}
+								</View>
+							) : (
+								<Text style={styles.emptyCopy}>No symptoms tagged.</Text>
+							)}
 							{day.report.notes ? (
 								<Text style={styles.notesText}>{day.report.notes}</Text>
 							) : null}
@@ -149,10 +159,15 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 	);
 }
 
+/**
+ * The screen's one hero: the day spoken as a finding. Serif verdict, ring
+ * numeral, Pip's face, and a one-sentence evidence story built from what was
+ * actually logged.
+ */
 function DailyScoreHero({ day }: { day: WeeklyProgressDay }) {
 	const hasScore = day.hasReport && day.dailyScore !== undefined;
 	const score = hasScore ? (day.dailyScore as number) : undefined;
-	const tone = score !== undefined ? scoreTint(score) : tokens.color.text.tertiary;
+	const story = buildDayStory(day);
 	const ringScale = useSharedValue(0.7);
 	const ringOpacity = useSharedValue(0);
 
@@ -175,8 +190,16 @@ function DailyScoreHero({ day }: { day: WeeklyProgressDay }) {
 				<DailyScoreRing score={score} size={156} strokeWidth={14} />
 			</Animated.View>
 			<View style={styles.heroCopy}>
-				<Text style={[styles.heroVerdict, { color: tone }]}>{verdictForScore(score)}</Text>
-				<Text style={styles.heroDescription}>{descriptionForDay(day)}</Text>
+				<View style={styles.heroVerdictRow}>
+					<Pip state={pipStateForBand(story.band)} size={44} />
+					<Text style={[styles.heroVerdict, { color: bandForeground(story.band) }]}>
+						{story.headline}
+					</Text>
+				</View>
+				<Text style={styles.heroStory}>{story.story}</Text>
+				{story.profileNote ? (
+					<Text style={styles.heroProfileNote}>{story.profileNote}</Text>
+				) : null}
 			</View>
 		</SectionCard>
 	);
@@ -191,32 +214,48 @@ function SectionEditButton({ label, onPress }: { label: string; onPress: () => v
 			hitSlop={8}
 			style={({ pressed }) => [styles.editButton, pressed && { opacity: 0.78 }]}
 		>
-			<Ionicons name="add" size={14} color={tokens.color.text.accent} />
+			<Ionicons name="add" size={14} color={tokens.color.action.quiet.foreground} />
 			<Text style={styles.editButtonText}>{label}</Text>
 		</Pressable>
 	);
 }
 
 function MealRow({ scan, onPress }: { scan: ScanHistorySummary; onPress: () => void }) {
-	const tone = riskLevelTint(scan.overallRiskLevel);
+	const tone = riskLevelColors(scan.overallRiskLevel);
+	const title = scan.dishName?.trim() || "Meal scan";
 
 	return (
 		<Pressable
 			accessibilityRole="button"
+			accessibilityLabel={`${title}, ${scan.overallRiskLevel} risk`}
 			onPress={onPress}
 			style={({ pressed }) => [styles.mealRow, pressed && { opacity: 0.9 }]}
 		>
-			<View style={styles.mealIcon}>
-				<Ionicons name="restaurant-outline" size={18} color={tokens.color.icon.accent} />
-			</View>
+			<SkeletonImage
+				uri={scan.imageUri}
+				style={styles.mealThumb}
+				resizeMode="cover"
+				skeletonRadius={radii.md}
+				accessibilityLabel={`${title} photo`}
+				fallback={
+					<View style={styles.mealThumbFallback}>
+						<Ionicons
+							name="restaurant-outline"
+							size={18}
+							color={tokens.color.icon.muted}
+						/>
+					</View>
+				}
+			/>
 			<View style={styles.mealCopy}>
 				<Text style={styles.mealTitle} numberOfLines={1}>
-					{scan.dishName}
+					{title}
 				</Text>
-				<Text style={styles.mealMeta}>{scan.overallRiskLevel} risk</Text>
 			</View>
-			<View style={[styles.riskBadge, { borderColor: tone }]}>
-				<Text style={[styles.riskBadgeText, { color: tone }]}>{scan.overallRiskScore}</Text>
+			<View style={[styles.riskPill, { backgroundColor: tone.background }]}>
+				<Text style={[styles.riskPillText, { color: tone.foreground }]}>
+					{scan.overallRiskLevel} risk
+				</Text>
 			</View>
 			<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
 		</Pressable>
@@ -234,23 +273,7 @@ function emptyDay(localDate: string): WeeklyProgressDay {
 	};
 }
 
-function verdictForScore(score: number | undefined) {
-	if (score === undefined) return "Awaiting report";
-	if (score >= 67) return "Calm day";
-	if (score >= 34) return "Mixed day";
-	return "Reactive day";
-}
-
-function descriptionForDay(day: WeeklyProgressDay) {
-	const hasScore = day.hasReport && day.dailyScore !== undefined;
-	if (hasScore) {
-		return "Based on meals and symptoms.";
-	}
-	if (day.mealCount) {
-		return "Meals were logged, but need symptom report.";
-	}
-	return "Nothing was logged for this day.";
-}
+const THUMB_SIZE = 44;
 
 const styles = StyleSheet.create({
 	heroCard: {
@@ -263,18 +286,28 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 		paddingHorizontal: spacing.md,
 	},
-	heroVerdict: {
-		fontFamily: type.body.bold,
-		fontSize: 20,
-		lineHeight: 26,
-		letterSpacing: -0.3,
+	heroVerdictRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.sm,
 	},
-	heroDescription: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.medium,
-		fontSize: 14,
-		lineHeight: 20,
+	heroVerdict: {
+		...tokens.type.display.section,
+		flexShrink: 1,
 		textAlign: "center",
+	},
+	heroStory: {
+		...tokens.type.body.default,
+		fontFamily: type.body.medium,
+		color: tokens.color.text.secondary,
+		textAlign: "center",
+	},
+	heroProfileNote: {
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
+		color: tokens.color.text.tertiary,
+		textAlign: "center",
+		marginTop: spacing.xs,
 	},
 	sectionCard: {
 		gap: spacing.md,
@@ -290,16 +323,13 @@ const styles = StyleSheet.create({
 		gap: 2,
 	},
 	sectionTitle: {
+		...tokens.type.title.block,
 		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
 	},
 	sectionMeta: {
-		color: tokens.color.text.tertiary,
+		...tokens.type.body.small,
 		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 17,
+		color: tokens.color.text.tertiary,
 	},
 	mealList: {
 		gap: spacing.sm,
@@ -313,11 +343,18 @@ const styles = StyleSheet.create({
 		backgroundColor: tokens.color.surface.card.warm,
 		padding: spacing.sm,
 	},
-	mealIcon: {
-		width: 38,
-		height: 38,
-		borderRadius: 19,
-		backgroundColor: tokens.color.status.success.background,
+	mealThumb: {
+		width: THUMB_SIZE,
+		height: THUMB_SIZE,
+		borderRadius: radii.md,
+	},
+	mealThumbFallback: {
+		width: THUMB_SIZE,
+		height: THUMB_SIZE,
+		borderRadius: radii.md,
+		backgroundColor: tokens.color.surface.card.default,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
 		alignItems: "center",
 		justifyContent: "center",
 	},
@@ -326,68 +363,62 @@ const styles = StyleSheet.create({
 		gap: 2,
 	},
 	mealTitle: {
+		...tokens.type.body.strong,
 		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 20,
 	},
-	mealMeta: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
-		textTransform: "capitalize",
+	riskPill: {
+		borderRadius: radii.pill,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 5,
 	},
-	riskBadge: {
-		width: 38,
-		height: 38,
-		borderRadius: 19,
-		borderWidth: 1,
-		alignItems: "center",
-		justifyContent: "center",
-		backgroundColor: tokens.color.surface.card.default,
-	},
-	riskBadgeText: {
-		fontFamily: type.body.bold,
-		fontSize: 13,
+	riskPillText: {
+		...tokens.type.label.tab,
+		fontFamily: type.body.semibold,
 	},
 	editButton: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 3,
 		borderRadius: radii.pill,
-		backgroundColor: tokens.color.status.success.background,
+		backgroundColor: tokens.color.action.quiet.background,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: 6,
 	},
 	editButtonText: {
-		color: tokens.color.text.accent,
+		...tokens.type.body.small,
 		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 17,
+		color: tokens.color.action.quiet.foreground,
 	},
 	symptomStack: {
 		gap: spacing.sm,
 	},
-	symptomBody: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.medium,
-		fontSize: 15,
-		lineHeight: 22,
+	symptomChipRow: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: spacing.xs,
+	},
+	symptomChip: {
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.status.verdict.watching.background,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 6,
+	},
+	symptomChipText: {
+		...tokens.type.label.chip,
+		color: tokens.color.status.verdict.watching.foreground,
 	},
 	notesText: {
+		...tokens.type.body.small,
 		color: tokens.color.text.secondary,
-		fontFamily: type.body.regular,
-		fontSize: 14,
-		lineHeight: 21,
 	},
 	noReportStack: {
 		gap: spacing.md,
 	},
 	emptyCopy: {
-		color: tokens.color.text.secondary,
+		...tokens.type.body.default,
 		fontFamily: type.body.medium,
-		fontSize: 14,
-		lineHeight: 21,
+		color: tokens.color.text.secondary,
 	},
 });

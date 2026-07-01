@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ReactNode } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text } from "react-native";
 
 import { Pip } from "../common/Pip";
 import { components, spacing, tokens, type PipState } from "../../theme";
@@ -121,8 +121,10 @@ const styles = StyleSheet.create({
 	pip: {
 		marginBottom: spacing.xs,
 	},
+	// The modal exists to explain something the app concluded — the title is a
+	// finding, so it gets the serif accent face.
 	title: {
-		...tokens.type.title.screen,
+		...tokens.type.display.accent,
 		color: tokens.color.text.primary,
 		textAlign: "center",
 	},

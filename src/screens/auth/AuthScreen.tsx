@@ -10,9 +10,13 @@ import {
   signUpWithEmailPassword,
 } from '../../services/auth';
 import { useAppStore } from '../../store/useAppStore';
-import { radii } from '../../theme';
 import { OnboardingStackParamList } from '../../navigation/types';
-import { AuthAccountContent, AuthProviderButton } from './AuthAccountContent';
+import {
+  AuthAccountContent,
+  AuthProviderButton,
+  PROVIDER_BUTTON_CORNER_RADIUS,
+  PROVIDER_BUTTON_HEIGHT,
+} from './AuthAccountContent';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingAuth'>;
 
@@ -83,7 +87,7 @@ export function AuthScreen({ navigation }: Props) {
           <AppleButton
             buttonStyle={AppleButton.Style.BLACK}
             buttonType={AppleButton.Type.CONTINUE}
-            cornerRadius={radii.md}
+            cornerRadius={PROVIDER_BUTTON_CORNER_RADIUS}
             style={styles.appleButton}
             onPress={() => void handleProvider('apple')}
           />
@@ -101,7 +105,7 @@ export function AuthScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   appleButton: {
-    height: 50,
-    borderRadius: radii.md,
+    height: PROVIDER_BUTTON_HEIGHT,
+    borderRadius: PROVIDER_BUTTON_CORNER_RADIUS,
   },
 });

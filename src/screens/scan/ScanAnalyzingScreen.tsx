@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -10,15 +10,39 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
-import { AppScreen, ScreenHeader, SectionCard } from '../../components/common/UI';
+import {
+  AppScreen,
+  PrimaryButton,
+  ScreenHeader,
+  SecondaryButton,
+  SectionCard,
+} from '../../components/common/UI';
 import { Pip } from '../../components/common/Pip';
 import { RootStackParamList } from '../../navigation/types';
 import { useAppStore } from '../../store/useAppStore';
-import { components, palette, radii, shadows, spacing, tokens, type } from '../../theme';
+import { palette, spacing, tokens, type } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanAnalyzing'>;
 
-const ELAPSED_REVEAL_DELAY_SEC = 3;
+// Staged reassurance: each honest step holds this long, then the copy moves
+// on. The last step holds until the result lands — no stopwatch counting up.
+const STAGE_STEP_SECONDS = 7;
+
+const FOOD_STAGES = [
+  'Reading the ingredients…',
+  'Checking your history…',
+  'Scoring this for you…',
+];
+const MENU_STAGES = [
+  'Reading every dish…',
+  'Checking your history…',
+  'Ranking the menu for you — menus take the longest.',
+];
+const GROCERY_STAGES = [
+  'Reading the label…',
+  'Checking your history…',
+  'Scoring this for you…',
+];
 
 export function ScanAnalyzingScreen({ navigation, route }: Props) {
   const analyzeScanInput = useAppStore((state) => state.analyzeScanInput);
@@ -38,11 +62,8 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
       ? 'Analyzing barcode…'
       : 'Analyzing your meal…';
 
-  const subtitle = isMenuScan
-    ? 'Menus take a little longer — up to 2 minutes while Pip ranks every option.'
-    : isGroceryScan
-      ? 'Usually under 15 seconds.'
-      : 'This can take up to 2 minutes. Pip is reading every ingredient.';
+  const stages = isMenuScan ? MENU_STAGES : isGroceryScan ? GROCERY_STAGES : FOOD_STAGES;
+  const stageIndex = Math.min(Math.floor(elapsed / STAGE_STEP_SECONDS), stages.length - 1);
 
   useEffect(() => {
     const ticker = setInterval(() => {
@@ -78,38 +99,38 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
     return (
       <AppScreen>
         <ScreenHeader
-          eyebrow="Analysis failed"
-          title={isMenuScan ? 'The menu could not be analyzed.' : isGroceryScan ? 'The grocery item could not be analyzed.' : 'The meal could not be analyzed.'}
+          eyebrow="Scan hiccup"
+          title={isMenuScan ? "We couldn't read that menu." : isGroceryScan ? "We couldn't read that product." : "We couldn't read that meal."}
           subtitle={error}
         />
         <SectionCard>
-          <Pressable
+          <View style={styles.errorPip}>
+            <Pip state="anxious" size={96} />
+          </View>
+          <Text style={styles.errorBody}>
+            {"Nothing was saved — try again whenever you're ready."}
+          </Text>
+          <PrimaryButton
+            label="Try again"
             onPress={() => navigation.replace('ScanCapture', {
               sourceType: route.params.payload.sourceType,
               manualMode: route.params.manualMode,
               scanCategory: route.params.payload.scanCategory,
               initialMode: retryInitialMode,
             })}
-            style={({ pressed }) => [styles.primaryAction, pressed && { opacity: 0.82 }]}
-          >
-            <Text style={styles.primaryActionLabel}>Try again</Text>
-          </Pressable>
+          />
           {isGroceryScan ? (
-            <Pressable
+            <SecondaryButton
+              label="Snap the ingredient label instead"
               onPress={() => navigation.replace('ScanCapture', {
                 sourceType: 'camera',
                 manualMode: route.params.manualMode,
                 scanCategory: 'food',
                 initialMode: 'food',
               })}
-              style={({ pressed }) => [styles.secondaryAction, pressed && { opacity: 0.82 }]}
-            >
-              <Text style={styles.secondaryActionLabel}>Snap the ingredient label instead</Text>
-            </Pressable>
+            />
           ) : null}
-          <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.secondaryAction, pressed && { opacity: 0.82 }]}>
-            <Text style={styles.secondaryActionLabel}>Go back</Text>
-          </Pressable>
+          <SecondaryButton label="Go back" onPress={() => navigation.goBack()} />
         </SectionCard>
       </AppScreen>
     );
@@ -121,19 +142,12 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
 
       <View style={styles.copy}>
         <Text style={styles.heroTitle}>{title}</Text>
-        <Text style={styles.heroSubtitle}>{subtitle}</Text>
-        {elapsed >= ELAPSED_REVEAL_DELAY_SEC ? (
-          <Text style={styles.elapsed}>{formatElapsed(elapsed)} elapsed</Text>
-        ) : null}
+        <Text style={styles.heroSubtitle} accessibilityLiveRegion="polite">
+          {stages[stageIndex]}
+        </Text>
       </View>
     </AppScreen>
   );
-}
-
-function formatElapsed(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function IndeterminateRing() {
@@ -219,10 +233,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   heroTitle: {
+    ...tokens.type.display.section,
     color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 30,
-    letterSpacing: -0.6,
     textAlign: 'center',
   },
   heroSubtitle: {
@@ -231,13 +243,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 24,
     textAlign: 'center',
-  },
-  elapsed: {
-    color: palette.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 14,
-    letterSpacing: 0.2,
-    marginTop: spacing.xs,
   },
   ringWrap: {
     width: 160,
@@ -252,31 +257,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryAction: {
-    minHeight: 54,
-    borderRadius: radii.pill,
-    backgroundColor: palette.primary,
+  errorPip: {
     alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.lift,
   },
-  primaryActionLabel: {
-    color: palette.white,
-    fontFamily: type.body.bold,
-    fontSize: 16,
-  },
-  secondaryAction: {
-    minHeight: 54,
-    borderRadius: radii.pill,
-    backgroundColor: components.button.secondary.backgroundColor,
-    borderWidth: 1,
-    borderColor: components.button.secondary.borderColor,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryActionLabel: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 16,
+  errorBody: {
+    ...tokens.type.body.default,
+    color: tokens.color.text.secondary,
+    textAlign: 'center',
   },
 });

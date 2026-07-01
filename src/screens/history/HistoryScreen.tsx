@@ -4,18 +4,32 @@ import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryCard } from '../../components/cards/HistoryCard';
-import { EmptyState, SectionCard, SkeletonBlock, TabScreenHeader } from '../../components/common/UI';
+import {
+  AppScreen,
+  EmptyState,
+  SectionCard,
+  SkeletonBlock,
+  TabScreenHeader,
+} from '../../components/common/UI';
+import { bandForeground, bandTint } from '../../components/progress/bandStyle';
 import { groupHistoryScans, useHistoryFeed } from '../../features/history/hooks';
 import { resolveHistoryView } from '../../features/history/viewState';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, radii, shadows, spacing, type } from '../../theme';
-import { ScanHistorySummary } from '../../types/domain';
+import { radii, shadows, spacing, tokens, type } from '../../theme';
+import { DailyGutReport, ScanHistorySummary } from '../../types/domain';
+import {
+  DailyScoreBand,
+  dailyScoreBand,
+  dailyScoreValue,
+  localDateFromScan,
+} from '../../utils/weeklyProgress';
 
 type HistoryFilter = 'food' | 'menu' | 'grocery';
 type HistorySection = {
   title: string;
+  localDate: string;
   data: ScanHistorySummary[];
 };
 
@@ -29,8 +43,10 @@ export function HistoryScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const fallbackScans = useAppStore((state) => state.scans);
+  const fallbackReports = useAppStore((state) => state.dailyReports);
   const [selectedFilter, setSelectedFilter] = useState<HistoryFilter>('food');
-  const historyQuery = useHistoryFeed(12, { includeDailyReports: false, scanCategory: selectedFilter });
+  // Daily reports ride along so each date group can carry its day verdict.
+  const historyQuery = useHistoryFeed(12, { includeDailyReports: true, scanCategory: selectedFilter });
 
   const remoteScans = useMemo(
     () =>
@@ -39,6 +55,11 @@ export function HistoryScreen() {
         : null,
     [historyQuery.data],
   );
+  const reports = useMemo(
+    () => historyQuery.data?.pages.flatMap((page) => page.dailyReports ?? []) ?? fallbackReports,
+    [fallbackReports, historyQuery.data],
+  );
+  const reportsByDate = useMemo(() => latestReportByDate(reports), [reports]);
   const { visibleScans, contentState: historyContentState } = useMemo(
     () =>
       resolveHistoryView({
@@ -62,7 +83,12 @@ export function HistoryScreen() {
   );
   const groupedScans = useMemo(() => groupHistoryScans(visibleScans), [visibleScans]);
   const historySections = useMemo<HistorySection[]>(
-    () => groupedScans.map((group) => ({ title: group.label, data: group.items })),
+    () =>
+      groupedScans.map((group) => ({
+        title: group.label,
+        localDate: group.items[0] ? localDateFromScan(group.items[0]) : '',
+        data: group.items,
+      })),
     [groupedScans],
   );
 
@@ -74,8 +100,15 @@ export function HistoryScreen() {
     navigation.navigate('ScanResult', { scanId: scan.id });
   }
 
+  function startFirstScan() {
+    navigation.navigate('ScanCapture', {
+      scanCategory: selectedFilter,
+      initialMode: selectedFilter === 'grocery' ? 'barcode' : selectedFilter,
+    });
+  }
+
   return (
-    <View style={styles.screen}>
+    <AppScreen scroll={false} keyboardAvoiding={false} contentContainerStyle={styles.screenShell}>
       <SectionList
         sections={historyContentState === 'content' ? historySections : []}
         keyExtractor={(scan) => scan.id}
@@ -84,17 +117,17 @@ export function HistoryScreen() {
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={5}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.md, paddingBottom: 120 + insets.bottom },
-        ]}
+        style={styles.list}
+        contentContainerStyle={[styles.content, { paddingBottom: 120 + insets.bottom }]}
         ListHeaderComponent={
           <View style={styles.headerBlock}>
             <TabScreenHeader title="Scans" />
             <HistoryFilterRail selectedFilter={selectedFilter} onSelect={setSelectedFilter} />
           </View>
         }
-        renderSectionHeader={({ section }) => <Text style={styles.groupLabel}>{section.title}</Text>}
+        renderSectionHeader={({ section }) => (
+          <DayGroupHeader title={section.title} report={reportsByDate.get(section.localDate)} />
+        )}
         renderItem={({ item }) => (
           <HistoryCard
             scan={item}
@@ -107,7 +140,12 @@ export function HistoryScreen() {
           historyContentState === 'skeleton' ? (
             <HistorySkeletonList />
           ) : historyContentState === 'empty' ? (
-            <EmptyState title="Nothing here yet" subtitle={emptyCopy(selectedFilter)} />
+            <EmptyState
+              title="Nothing here yet"
+              subtitle={emptyCopy(selectedFilter)}
+              actionLabel={emptyActionLabel(selectedFilter)}
+              onAction={startFirstScan}
+            />
           ) : historyQuery.hasNextPage ? (
             <Pressable
               onPress={() => void historyQuery.fetchNextPage()}
@@ -119,8 +157,49 @@ export function HistoryScreen() {
           ) : null
         }
       />
+    </AppScreen>
+  );
+}
+
+/**
+ * A date group header that speaks the day's verdict: the label stays chrome,
+ * the band word + tone dot turn the scan list into evidence under a story.
+ */
+function DayGroupHeader({ title, report }: { title: string; report?: DailyGutReport }) {
+  const score = report ? dailyScoreValue(report) : undefined;
+  const band: DailyScoreBand | undefined = score !== undefined ? dailyScoreBand(score) : undefined;
+
+  return (
+    <View
+      style={styles.groupHeader}
+      accessible
+      accessibilityRole="header"
+      accessibilityLabel={band ? `${title}, ${band} day` : title}
+    >
+      <Text style={styles.groupLabel}>{title}</Text>
+      {band ? (
+        <View style={styles.groupBand}>
+          <View style={[styles.groupBandDot, { backgroundColor: bandTint(band) }]} />
+          <Text style={[styles.groupBandText, { color: bandForeground(band) }]}>{band} day</Text>
+        </View>
+      ) : null}
     </View>
   );
+}
+
+function latestReportByDate(reports: DailyGutReport[]) {
+  const byDate = new Map<string, DailyGutReport>();
+
+  for (const report of reports) {
+    const existing = byDate.get(report.localDate);
+    const isNewer =
+      !existing || new Date(report.updatedAt).getTime() >= new Date(existing.updatedAt).getTime();
+    if (isNewer) {
+      byDate.set(report.localDate, report);
+    }
+  }
+
+  return byDate;
 }
 
 function HistoryFilterRail({
@@ -135,6 +214,9 @@ function HistoryFilterRail({
       {filters.map((filter) => (
         <Pressable
           key={filter.id}
+          accessibilityRole="button"
+          accessibilityLabel={`Show ${filter.label.toLowerCase()} scans`}
+          accessibilityState={{ selected: selectedFilter === filter.id }}
           onPress={() => onSelect(filter.id)}
           style={({ pressed }) => [
             styles.filterChip,
@@ -162,6 +244,12 @@ function emptyCopy(filter: HistoryFilter) {
   return 'Take a photo or upload one to start building your food log.';
 }
 
+function emptyActionLabel(filter: HistoryFilter) {
+  if (filter === 'menu') return 'Scan a menu';
+  if (filter === 'grocery') return 'Scan a barcode';
+  return 'Scan your first meal';
+}
+
 function HistorySkeletonList() {
   return (
     <View style={styles.sectionBlock}>
@@ -181,16 +269,20 @@ function HistoryCardSkeleton() {
           <SkeletonBlock width="72%" height={18} radius={radii.sm} />
           <SkeletonBlock width="54%" height={13} radius={radii.sm} />
         </View>
-        <SkeletonBlock width={52} height={52} radius={26} />
+        <SkeletonBlock width={72} height={26} radius={radii.pill} />
       </View>
     </SectionCard>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  screenShell: {
+    paddingHorizontal: 0,
+    paddingBottom: 0,
+    gap: 0,
+  },
+  list: {
     flex: 1,
-    backgroundColor: palette.background,
   },
   content: {
     paddingHorizontal: spacing.lg,
@@ -204,10 +296,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     padding: 4,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: tokens.color.surface.frosted,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: tokens.color.border.subtle,
   },
   filterChip: {
     flex: 1,
@@ -217,19 +309,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   filterChipSelected: {
-    backgroundColor: palette.card,
+    backgroundColor: tokens.color.surface.card.default,
     borderWidth: 1,
-    borderColor: palette.outlineVariant,
+    borderColor: tokens.color.border.subtle,
     ...shadows.card,
   },
   filterChipText: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 15,
+    ...tokens.type.body.emphasis,
+    color: tokens.color.text.secondary,
   },
   filterChipTextSelected: {
-    color: palette.text,
-    fontFamily: type.body.semibold,
+    ...tokens.type.body.strong,
+    color: tokens.color.text.primary,
   },
   sectionBlock: {
     gap: spacing.md,
@@ -239,6 +330,33 @@ const styles = StyleSheet.create({
   },
   groupGap: {
     height: spacing.md,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  groupLabel: {
+    ...tokens.type.body.small,
+    fontFamily: type.body.bold,
+    color: tokens.color.text.tertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  groupBand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  groupBandDot: {
+    width: 7,
+    height: 7,
+    borderRadius: radii.pill,
+  },
+  groupBandText: {
+    ...tokens.type.body.small,
+    fontFamily: type.body.semibold,
   },
   historyCardSkeleton: {
     padding: spacing.md,
@@ -252,25 +370,17 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
   },
-  groupLabel: {
-    color: palette.textMuted,
-    fontFamily: type.body.bold,
-    fontSize: 13,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
   loadMoreButton: {
     minHeight: 50,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: 'rgba(255,255,255,0.86)',
+    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.frosted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadMoreLabel: {
-    color: palette.text,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
+    ...tokens.type.body.strong,
+    color: tokens.color.text.primary,
   },
 });

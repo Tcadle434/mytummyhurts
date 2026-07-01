@@ -9,8 +9,12 @@ import {
   signInWithGoogle,
 } from '../../services/auth';
 import { OnboardingStackParamList } from '../../navigation/types';
-import { radii } from '../../theme';
-import { AuthAccountContent, AuthProviderButton } from './AuthAccountContent';
+import {
+  AuthAccountContent,
+  AuthProviderButton,
+  PROVIDER_BUTTON_CORNER_RADIUS,
+  PROVIDER_BUTTON_HEIGHT,
+} from './AuthAccountContent';
 import { verifyExistingAccountSignIn } from './existingAccountGate';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingSignIn'>;
@@ -92,7 +96,7 @@ export function ExistingAccountSignInScreen({ navigation }: Props) {
             <AppleButton
               buttonStyle={AppleButton.Style.BLACK}
               buttonType={AppleButton.Type.SIGN_IN}
-              cornerRadius={radii.md}
+              cornerRadius={PROVIDER_BUTTON_CORNER_RADIUS}
               style={styles.appleButton}
               onPress={() => void handleProvider('apple')}
             />
@@ -110,7 +114,7 @@ export function ExistingAccountSignInScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   appleButton: {
-    height: 50,
-    borderRadius: radii.md,
+    height: PROVIDER_BUTTON_HEIGHT,
+    borderRadius: PROVIDER_BUTTON_CORNER_RADIUS,
   },
 });

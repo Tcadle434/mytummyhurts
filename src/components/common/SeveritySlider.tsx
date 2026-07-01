@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { AccessibilityActionEvent, LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolateColor,
@@ -18,11 +18,20 @@ type SeveritySliderProps = {
   onChange: (value: number) => void;
   min?: number;
   max?: number;
+  accessibilityLabel?: string;
 };
 
 const TRACK_HEIGHT = 14;
 const THUMB_SIZE = 30;
 const HORIZONTAL_PADDING = THUMB_SIZE / 2;
+const CONTROL_HEIGHT = THUMB_SIZE + 8;
+const BUBBLE_WIDTH = 44;
+const BUBBLE_HEIGHT = 30;
+const BUBBLE_GAP = 8;
+const WRAP_HEIGHT = BUBBLE_HEIGHT + BUBBLE_GAP + CONTROL_HEIGHT;
+const TRACK_BOTTOM = (CONTROL_HEIGHT - TRACK_HEIGHT) / 2;
+const THUMB_TOP = BUBBLE_HEIGHT + BUBBLE_GAP + (CONTROL_HEIGHT - THUMB_SIZE) / 2;
+const TICK_INSET = 3;
 const POSITION_SPRING = { damping: 18, stiffness: 220, mass: 0.7 } as const;
 const GRIP_TIMING = { duration: 140 } as const;
 const RELEASE_TIMING = { duration: 220 } as const;
@@ -32,7 +41,18 @@ const RELEASE_TIMING = { duration: 220 } as const;
 // pass through brown). 3/4 boundary lands at 0.35 (3.5/10) and 6/7 at 0.65.
 const COLOR_STOPS = [0, 0.34, 0.36, 0.64, 0.66, 1] as const;
 
-export function SeveritySlider({ value, onChange, min = 0, max = 10 }: SeveritySliderProps) {
+// The two boundaries above, marked on the track so "what's a 5?" has anchors.
+const BAND_BOUNDARY_RATIOS = [0.35, 0.65] as const;
+
+const ACCESSIBILITY_ACTIONS = [{ name: 'increment' as const }, { name: 'decrement' as const }];
+
+export function SeveritySlider({
+  value,
+  onChange,
+  min = 0,
+  max = 10,
+  accessibilityLabel = 'How your gut felt, from 0 no symptoms to 10 worst symptoms',
+}: SeveritySliderProps) {
   const [width, setWidth] = useState(0);
   const range = max - min;
   const usableWidth = Math.max(0, width - HORIZONTAL_PADDING * 2);
@@ -54,6 +74,16 @@ export function SeveritySlider({ value, onChange, min = 0, max = 10 }: SeverityS
 
   function fireHaptic() {
     void Haptics.selectionAsync();
+  }
+
+  function handleAccessibilityAction(event: AccessibilityActionEvent) {
+    const actionName = event.nativeEvent.actionName;
+    const direction = actionName === 'increment' ? 1 : actionName === 'decrement' ? -1 : 0;
+    if (direction === 0) return;
+    const next = Math.max(min, Math.min(max, value + direction));
+    if (next !== value) {
+      onChange(next);
+    }
   }
 
   const panGesture = Gesture.Pan()
@@ -136,16 +166,58 @@ export function SeveritySlider({ value, onChange, min = 0, max = 10 }: SeverityS
     };
   });
 
+  // The finger covers the thumb during a drag, so the live value floats above
+  // it. Ink surface + inverse text keeps the numeral readable in every band.
+  const bubbleStyle = useAnimatedStyle(() => ({
+    opacity: dragging.value,
+    transform: [
+      { translateX: position.value + HORIZONTAL_PADDING - BUBBLE_WIDTH / 2 },
+      { translateY: (1 - dragging.value) * 4 },
+    ],
+  }));
+
   return (
     <GestureDetector gesture={panGesture}>
-      <View style={styles.wrap} onLayout={handleLayout}>
+      <View
+        style={styles.wrap}
+        onLayout={handleLayout}
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityValue={{
+          min,
+          max,
+          now: value,
+          text: `${value} out of ${max}, ${severityBandWord(value)}`,
+        }}
+        accessibilityActions={ACCESSIBILITY_ACTIONS}
+        onAccessibilityAction={handleAccessibilityAction}
+      >
         <View style={styles.track} />
         <Animated.View style={[styles.fill, fillStyle]} pointerEvents="none" />
+        {usableWidth > 0
+          ? BAND_BOUNDARY_RATIOS.map((ratio) => (
+              <View
+                key={ratio}
+                pointerEvents="none"
+                style={[styles.tick, { left: HORIZONTAL_PADDING + ratio * usableWidth - 1 }]}
+              />
+            ))
+          : null}
         <Animated.View style={[styles.halo, haloStyle]} pointerEvents="none" />
         <Animated.View style={[styles.thumb, thumbStyle]} pointerEvents="none" />
+        <Animated.View style={[styles.bubble, bubbleStyle]} pointerEvents="none">
+          <Text style={styles.bubbleLabel}>{value}</Text>
+        </Animated.View>
       </View>
     </GestureDetector>
   );
+}
+
+function severityBandWord(value: number) {
+  if (value <= 3) return 'calm';
+  if (value <= 6) return 'mixed';
+  return 'rough';
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -162,13 +234,14 @@ function roundToInteger(position: number, usableWidth: number, min: number, rang
 const styles = StyleSheet.create({
   wrap: {
     width: '100%',
-    height: THUMB_SIZE + 8,
-    justifyContent: 'center',
+    height: WRAP_HEIGHT,
+    justifyContent: 'flex-end',
   },
   track: {
     position: 'absolute',
     left: HORIZONTAL_PADDING,
     right: HORIZONTAL_PADDING,
+    bottom: TRACK_BOTTOM,
     height: TRACK_HEIGHT,
     borderRadius: TRACK_HEIGHT / 2,
     backgroundColor: tokens.color.chart.track,
@@ -176,13 +249,23 @@ const styles = StyleSheet.create({
   fill: {
     position: 'absolute',
     left: HORIZONTAL_PADDING / 2,
+    bottom: TRACK_BOTTOM,
     height: TRACK_HEIGHT,
     borderRadius: TRACK_HEIGHT / 2,
+  },
+  tick: {
+    position: 'absolute',
+    bottom: TRACK_BOTTOM + TICK_INSET,
+    width: 2,
+    height: TRACK_HEIGHT - TICK_INSET * 2,
+    borderRadius: 1,
+    backgroundColor: tokens.color.utility.white,
+    opacity: 0.85,
   },
   thumb: {
     position: 'absolute',
     left: 0,
-    top: (THUMB_SIZE + 8 - THUMB_SIZE) / 2,
+    top: THUMB_TOP,
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
@@ -197,9 +280,24 @@ const styles = StyleSheet.create({
   halo: {
     position: 'absolute',
     left: 0,
-    top: (THUMB_SIZE + 8 - THUMB_SIZE) / 2,
+    top: THUMB_TOP,
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
+  },
+  bubble: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: BUBBLE_WIDTH,
+    height: BUBBLE_HEIGHT,
+    borderRadius: tokens.radius.sm,
+    backgroundColor: tokens.color.text.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bubbleLabel: {
+    ...tokens.type.label.chip,
+    color: tokens.color.text.inverse,
   },
 });

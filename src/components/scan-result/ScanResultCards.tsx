@@ -17,6 +17,7 @@ export {
 } from "./PersonalizedScanCard";
 export {
 	dietEvaluationTitle,
+	displaySignalLabel,
 	selectIngredientHistoryRows,
 	type IngredientHistoryRow,
 } from "./PersonalizedScanCard.helpers";

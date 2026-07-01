@@ -1,6 +1,6 @@
 import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 
-import { spacing, tokens, type } from '../../../theme';
+import { tokens, type } from '../../../theme';
 
 export type VerdictToneKey = keyof typeof tokens.color.status.verdict;
 

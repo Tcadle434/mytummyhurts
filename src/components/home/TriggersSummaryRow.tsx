@@ -1,10 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { verdictTone } from "../common/UI";
 import { palette, radii, spacing, tokens, type } from "../../theme";
 import type { TriggerCounts } from "../../features/insights/triggerProfile";
 
-// Compact entry point to the Trigger Profile: live counts, no narrative.
+// Compact entry point to the Trigger Profile: a one-glance pulse. Confirmed
+// triggers carry status weight; with nothing tracked yet it teases the first
+// foods instead of vanishing.
 export function TriggersSummaryRow({
 	counts,
 	onPress,
@@ -12,40 +15,57 @@ export function TriggersSummaryRow({
 	counts: TriggerCounts;
 	onPress: () => void;
 }) {
-	const parts: string[] = [];
-	if (counts.confirmed > 0) {
-		parts.push(`${counts.confirmed} confirmed`);
-	}
+	const confirmedTone = verdictTone("confirmed");
+	const confirmedPart = counts.confirmed > 0 ? `${counts.confirmed} confirmed` : "";
+
+	const restParts: string[] = [];
 	if (counts.suspects > 0) {
-		parts.push(`${counts.suspects} under review`);
+		restParts.push(`${counts.suspects} under review`);
 	}
 	if (counts.safe > 0) {
-		parts.push(`${counts.safe} looking safe`);
+		restParts.push(`${counts.safe} looking safe`);
 	}
 	if (counts.cleared > 0) {
-		parts.push(`${counts.cleared} cleared`);
+		restParts.push(`${counts.cleared} cleared`);
 	}
-	if (parts.length === 0 && counts.watching > 0) {
-		parts.push(`watching ${counts.watching} food${counts.watching === 1 ? "" : "s"}`);
+	if (!confirmedPart && restParts.length === 0 && counts.watching > 0) {
+		restParts.push(`watching ${counts.watching} food${counts.watching === 1 ? "" : "s"}`);
 	}
 
-	if (parts.length === 0) {
-		return null;
-	}
+	const isTeaser = !confirmedPart && restParts.length === 0;
+	const teaserDetail = "Pip is watching your first foods";
+	const detailText = isTeaser
+		? teaserDetail
+		: [confirmedPart, ...restParts].filter(Boolean).join(" · ");
 
 	return (
 		<Pressable
 			accessibilityRole="button"
-			accessibilityLabel={`Your triggers: ${parts.join(", ")}`}
+			accessibilityLabel={`Your triggers: ${detailText}`}
 			onPress={onPress}
 			style={({ pressed }) => [styles.row, pressed && { opacity: 0.88 }]}
 		>
-			<View style={styles.iconBubble}>
-				<Ionicons name="search" size={16} color={palette.primary} />
+			<View
+				style={[
+					styles.iconBubble,
+					counts.confirmed > 0 && { backgroundColor: confirmedTone.background },
+				]}
+			>
+				<Ionicons
+					name="search"
+					size={16}
+					color={counts.confirmed > 0 ? confirmedTone.foreground : palette.primary}
+				/>
 			</View>
 			<View style={styles.copy}>
 				<Text style={styles.title}>Your triggers</Text>
-				<Text style={styles.detail}>{parts.join(" · ")}</Text>
+				<Text style={styles.detail} numberOfLines={1}>
+					{confirmedPart ? (
+						<Text style={styles.detailConfirmed}>{confirmedPart}</Text>
+					) : null}
+					{confirmedPart && restParts.length > 0 ? " · " : ""}
+					{isTeaser ? teaserDetail : restParts.join(" · ")}
+				</Text>
 			</View>
 			<Ionicons name="chevron-forward" size={18} color={palette.textMuted} />
 		</Pressable>
@@ -84,9 +104,12 @@ const styles = StyleSheet.create({
 		lineHeight: 18,
 	},
 	detail: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+		...tokens.type.label.metric,
+		color: tokens.color.text.secondary,
+	},
+	detailConfirmed: {
+		...tokens.type.label.metric,
+		fontFamily: type.body.semibold,
+		color: tokens.color.status.verdict.confirmed.foreground,
 	},
 });

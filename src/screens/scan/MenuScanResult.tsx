@@ -1,7 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 
 import {
   MenuRankingCard,
@@ -10,11 +9,16 @@ import {
   type MenuTierItem,
 } from '../../components/scan-result/ScanResultCards';
 import { SkeletonImage } from '../../components/common/SkeletonImage';
-import { AppScreen, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
+import {
+  AppScreen,
+  PipAnalysisCard,
+  PrimaryButton,
+  ScreenHeader,
+  SectionCard,
+} from '../../components/common/UI';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, spacing, tokens } from '../../theme';
 import { ScanRecord } from '../../types/domain';
 import { DeleteAction, formatTimestamp, ResultImageFallback, sharedResultStyles as shared } from './resultShared';
 
@@ -73,34 +77,26 @@ export function MenuScanResult({
 
   return (
     <AppScreen>
-      <ScreenHeader eyebrow="Menu result" title="Menu risk ranking" />
+      <ScreenHeader
+        title={menu.menuTitle}
+        subtitle={`${menu.inputPageCount} page${menu.inputPageCount === 1 ? '' : 's'} analyzed • ${formatTimestamp(scan.createdAt)}`}
+      />
 
       <ScanHeroCard
-        title={menu.menuTitle}
-        meta={`${menu.inputPageCount} page${menu.inputPageCount === 1 ? '' : 's'} analyzed • ${formatTimestamp(scan.createdAt)}`}
         verdict={`We ranked ${menu.items.length} item${menu.items.length === 1 ? '' : 's'} for your gut — safest picks first.`}
         image={
           <SkeletonImage
             uri={scan.imageUri}
-            style={shared.heroSlotImage}
+            style={shared.heroImage}
             resizeMode="cover"
-            skeletonRadius={18}
+            skeletonRadius={0}
             accessibilityLabel={`${menu.menuTitle} photo`}
             fallback={<ResultImageFallback />}
           />
         }
       />
 
-      {menu.summary ? (
-        <SectionCard style={styles.menuSummaryCard}>
-          <View style={styles.menuSummaryIcon}>
-            <Ionicons name="restaurant-outline" size={22} color={palette.primary} />
-          </View>
-          <View style={styles.menuSummaryCopy}>
-            <Text style={shared.sectionBody}>{menu.summary}</Text>
-          </View>
-        </SectionCard>
-      ) : null}
+      {menu.summary ? <PipAnalysisCard body={menu.summary} /> : null}
 
       <MenuRankingCard
         items={rankedItems.map((item) => ({
@@ -240,23 +236,3 @@ function toMenuTierItem(item: NonNullable<ScanRecord['menuResult']>['items'][num
     saferSwap: item.gutRecommendation,
   };
 }
-
-const styles = StyleSheet.create({
-  menuSummaryCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  menuSummaryIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: tokens.color.status.success.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuSummaryCopy: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-});

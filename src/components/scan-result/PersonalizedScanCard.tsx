@@ -8,35 +8,46 @@ import {
 import {
 	dietEvaluationTitle,
 	displayIngredientName,
-	selectMainSignalLabels,
 	selectIngredientHistoryRows,
 	type IngredientHistoryRow,
 } from "./PersonalizedScanCard.helpers";
 import { palette, spacing, tokens, type } from "../../theme";
-import type { DietEvaluation, ScanIngredientRisk, ScoreContributor } from "../../types/domain";
+import type { DietEvaluation, ScanIngredientRisk } from "../../types/domain";
 
 export function PersonalizedScanCard({
 	dietEvaluations,
 	ingredientRisks,
-	contributors,
+	level,
+	impactSummary,
 }: {
 	dietEvaluations?: DietEvaluation[];
 	ingredientRisks?: ScanIngredientRisk[];
-	contributors?: ScoreContributor[];
 	level: RiskLevel;
 	impactSummary?: string;
 }) {
 	const safeDietEvaluations = dietEvaluations ?? [];
 	const historyRows = selectIngredientHistoryRows(ingredientRisks, 4);
-	const mainSignalLabels = selectMainSignalLabels(contributors, 4);
+	const impact = impactSummary?.trim();
 
-	if (!safeDietEvaluations.length && !historyRows.length && !mainSignalLabels.length) {
+	if (!safeDietEvaluations.length && !historyRows.length && !impact) {
 		return null;
 	}
+
+	const impactTone = tokens.color.status.risk[level];
 
 	return (
 		<View style={styles.resultCard}>
 			<Text style={styles.cardTitle}>Personalized for you</Text>
+
+			{impact ? (
+				<View style={styles.sectionBlock}>
+					<Text style={styles.sectionLabel}>Your Gut Score</Text>
+					<View style={[styles.impactRow, { backgroundColor: impactTone.background }]}>
+						<Ionicons name="pulse-outline" size={16} color={impactTone.foreground} />
+						<Text style={[styles.impactText, { color: impactTone.foreground }]}>{impact}</Text>
+					</View>
+				</View>
+			) : null}
 
 			{safeDietEvaluations.length ? (
 				<View style={styles.sectionBlock}>
@@ -49,13 +60,6 @@ export function PersonalizedScanCard({
 				<View style={styles.sectionBlock}>
 					<Text style={styles.sectionLabel}>Ingredient history</Text>
 					<IngredientHistoryRows rows={historyRows} />
-				</View>
-			) : null}
-
-			{mainSignalLabels.length ? (
-				<View style={styles.sectionBlock}>
-					<Text style={styles.sectionLabel}>Main signals</Text>
-					<MainSignalLabels labels={mainSignalLabels} />
 				</View>
 			) : null}
 		</View>
@@ -109,22 +113,6 @@ export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryRow[] }
 					</View>
 				);
 			})}
-		</View>
-	);
-}
-
-function MainSignalLabels({ labels }: { labels: string[] }) {
-	if (!labels.length) return null;
-
-	return (
-		<View style={styles.signalWrap}>
-			{labels.map((label) => (
-				<View key={label} style={styles.signalChip}>
-					<Text style={styles.signalChipText} numberOfLines={1}>
-						{label}
-					</Text>
-				</View>
-			))}
 		</View>
 	);
 }
@@ -232,24 +220,17 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 17,
 	},
-	signalWrap: {
+	impactRow: {
 		flexDirection: "row",
-		flexWrap: "wrap",
+		alignItems: "flex-start",
 		gap: spacing.xs,
-	},
-	signalChip: {
-		borderRadius: 999,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		borderRadius: 16,
 		paddingHorizontal: spacing.sm,
-		paddingVertical: 6,
-		maxWidth: "100%",
+		paddingVertical: spacing.sm,
 	},
-	signalChipText: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 17,
+	impactText: {
+		flex: 1,
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
 	},
 });

@@ -3,13 +3,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import {
+  displaySignalLabel,
   IngredientsBreakdownCard,
   PersonalizedScanCard,
   ScanHeroCard,
+  WhyThisScoreCard,
 } from '../../components/scan-result/ScanResultCards';
 import { ScanResultSkeleton } from '../../components/scan-result/ScanResultSkeleton';
 import { SkeletonImage } from '../../components/common/SkeletonImage';
-import { AppScreen, PrimaryButton, ScreenHeader, SectionCard } from '../../components/common/UI';
+import {
+  AppScreen,
+  PipAnalysisCard,
+  PrimaryButton,
+  ScreenHeader,
+  SectionCard,
+} from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useScanDetail } from '../../features/history/hooks';
 import { presentRisk, verdictForRisk } from '../../features/scan/riskPresentation';
@@ -17,7 +25,7 @@ import { formatConditionName } from '../../utils/conditionFormat';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { selectLatestScan, useAppStore } from '../../store/useAppStore';
-import { palette, spacing, type } from '../../theme';
+import { spacing } from '../../theme';
 import { MenuResultUnavailable, MenuScanResult } from './MenuScanResult';
 import { normalizeScanRecord, selectPreferredScan } from './resultSelection';
 import {
@@ -66,6 +74,19 @@ export function ScanResultScreen({ navigation, route }: Props) {
       })),
     [scan?.conditionRisks, scan?.conditionRiskScores],
   );
+  // Contributors reach the "why this score" receipts with readable labels
+  // ("Fried prep"), not machine keys ("Fried Or Crispy").
+  const readableContributors = useMemo(
+    () =>
+      (scan?.scoreContributors ?? []).map((contributor) => ({
+        ...contributor,
+        label: displaySignalLabel(contributor),
+      })),
+    [scan?.scoreContributors],
+  );
+  // Pip's take comes from the raw record: normalization backfills a legacy
+  // placeholder sentence that should never be voiced as an interpretation.
+  const interpretation = rawScan?.interpretation?.trim();
 
   useEffect(() => {
     trackEvent('scan_result_viewed', { scan_id: route.params.scanId });
@@ -143,38 +164,27 @@ export function ScanResultScreen({ navigation, route }: Props) {
 
   return (
     <AppScreen>
-      <ScreenHeader eyebrow="Result" title="Scan result" />
+      <ScreenHeader title={scan.dishName} subtitle={formatTimestamp(scan.createdAt)} />
 
       <ScanHeroCard
-        title={scan.dishName}
-        meta={formatTimestamp(scan.createdAt)}
+        verdict={verdictForRisk(scan.overallRiskScore, riskPresentation.cautionNote)}
         score={scan.overallRiskScore}
         level={scan.overallRiskLevel}
-        verdict={verdictForRisk(scan.overallRiskScore, riskPresentation.cautionNote)}
+        levelLabelOverride={riskPresentation.levelLabelOverride}
         conditionRows={conditionRows}
         image={
           <SkeletonImage
             uri={scan.groceryProduct?.imageUrl ?? scan.imageUri}
-            style={shared.heroSlotImage}
+            style={shared.heroImage}
             resizeMode="cover"
-            skeletonRadius={18}
+            skeletonRadius={0}
             accessibilityLabel={`${scan.dishName} photo`}
             fallback={<ResultImageFallback />}
           />
         }
       />
 
-      <IngredientsBreakdownCard
-        ingredients={ingredientRisks.map(toScanIngredient)}
-      />
-
-      <PersonalizedScanCard
-        dietEvaluations={scan.dietEvaluations}
-        ingredientRisks={ingredientRisks}
-        contributors={scan.scoreContributors}
-        level={scan.overallRiskLevel}
-        impactSummary={scan.gutScoreImpact?.summary}
-      />
+      {interpretation ? <PipAnalysisCard body={interpretation} /> : null}
 
       <SectionCard>
         <Text style={shared.sectionTitle}>Did you eat this?</Text>
@@ -202,6 +212,17 @@ export function ScanResultScreen({ navigation, route }: Props) {
           />
         </View>
       </SectionCard>
+
+      <WhyThisScoreCard contributors={readableContributors} level={scan.overallRiskLevel} />
+
+      <PersonalizedScanCard
+        dietEvaluations={scan.dietEvaluations}
+        ingredientRisks={ingredientRisks}
+        level={scan.overallRiskLevel}
+        impactSummary={scan.gutScoreImpact?.summary}
+      />
+
+      <IngredientsBreakdownCard ingredients={ingredientRisks.map(toScanIngredient)} />
 
       <Text style={shared.disclaimerText}>
         Informational guidance, not medical advice. For diagnosis or treatment, talk to a clinician.

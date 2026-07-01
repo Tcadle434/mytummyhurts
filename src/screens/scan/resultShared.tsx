@@ -1,9 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { palette, radii, spacing, tokens, type } from '../../theme';
-import { SkeletonBlock } from '../../components/common/UI';
 import type { ScanIngredient } from '../../components/scan-result/ScanResultCards';
 import type { ScanIngredientRisk } from '../../types/domain';
 
@@ -61,16 +60,22 @@ export function formatTimestamp(value: string) {
   });
 }
 
-// Placeholder shown while the result image loads (or when a scan has no image).
-// A calm skeleton fills the slot — better than a letter that flashes before the photo.
+// Placeholder shown when a scan has no image (or the photo fails to load).
+// A warm, intentional tile — not a skeleton that looks stuck loading forever.
 export function ResultImageFallback() {
-  return <SkeletonBlock width="100%" height="100%" radius={18} />;
+  return (
+    <View style={styles.imageFallback}>
+      <Ionicons name="restaurant-outline" size={28} color={tokens.color.icon.muted} />
+    </View>
+  );
 }
 
 export const sharedResultStyles = StyleSheet.create({
-  heroSlotImage: {
-    width: 64,
-    height: 64,
+  // Fills the hero card's full-bleed image slot — the meal photo is a real
+  // image moment now, not a 64px thumbnail.
+  heroImage: {
+    width: '100%',
+    height: '100%',
   },
   sectionTitle: {
     color: palette.text,
@@ -98,6 +103,13 @@ export const sharedResultStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  imageFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: tokens.color.surface.card.warm,
+  },
   consumeChoice: {
     flex: 1,
     flexDirection: 'row',

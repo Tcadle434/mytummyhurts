@@ -1,13 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Pip } from "../../components/common/Pip";
-import { PrimaryButton } from "../../components/common/UI";
+import { HeroMetric, PrimaryButton, Wordmark } from "../../components/common/UI";
 import { SubscriptionPlan } from "../../types/domain";
 import { RevenueCatPlanDisplay } from "../../services/billing/revenueCatMapping";
 import { palette, radii, spacing, tokens, type } from "../../theme";
-
-const MTH_TEXT_LOGO = require("../../../assets/mth_text_logo.png");
 
 const PLAN_COPY: Record<
 	SubscriptionPlan,
@@ -77,45 +75,38 @@ export function PaywallOfferContent({
 				) : (
 					<View style={styles.headerSide} />
 				)}
-				<View style={styles.logoWrap}>
-					<Image
-						source={MTH_TEXT_LOGO}
-						style={styles.logo}
-						resizeMode="contain"
-						accessibilityIgnoresInvertColors
-					/>
+				<View style={styles.brandWrap}>
+					<Wordmark />
 					<Text style={styles.tagline}>{"Know how you'll feel before you eat"}</Text>
-					<Pip state="joy" size={96} style={styles.pip} />
 				</View>
 				<View style={styles.headerSide} />
 			</View>
 
 			{caseFile ? (
-				<View style={styles.caseFileCard}>
-					<View style={styles.caseFileHeader}>
-						<Text style={styles.caseFileKicker}>Your case file</Text>
-						<View style={styles.caseScorePill}>
-							<Text style={styles.caseScoreValue}>{caseFile.startingScore}</Text>
-							<Text style={styles.caseScoreLabel}>starting Gut Score</Text>
-						</View>
+				<View style={styles.pictureCard}>
+					<Text style={styles.pictureKicker}>Your starting picture</Text>
+					<View style={styles.pictureRow}>
+						<HeroMetric
+							value={caseFile.startingScore}
+							unit="/100"
+							caption="starting Gut Score — higher means calmer"
+							style={styles.pictureMetric}
+						/>
+						<Pip state="joy" size={72} />
 					</View>
 					{caseFile.suspects.length > 0 ? (
-						<View style={styles.caseFileRow}>
-							<Ionicons name="search" size={14} color={palette.primaryDark} />
-							<Text style={styles.caseFileLine}>
-								Starting suspects: <Text style={styles.caseFileStrong}>{caseFile.suspects.join(", ")}</Text>
-							</Text>
-						</View>
-					) : null}
-					<View style={styles.caseFileRow}>
-						<Ionicons name="git-branch-outline" size={14} color={palette.primaryDark} />
-						<Text style={styles.caseFileLine}>
-							Your scans and daily check-ins confirm or clear each one over time.
+						<Text style={styles.pictureLine}>
+							{"Foods we'll watch first: "}
+							<Text style={styles.pictureStrong}>{caseFile.suspects.join(", ")}</Text>
 						</Text>
-					</View>
+					) : null}
+					<Text style={styles.pictureMeta}>
+						Built from your answers — every scan and check-in sharpens it.
+					</Text>
 				</View>
 			) : (
 				<View style={styles.trustBlock}>
+					<Pip state="joy" size={84} />
 					<Text style={styles.trustedText}>
 						Built on published gut-trigger research, tuned to your answers.
 					</Text>
@@ -123,7 +114,7 @@ export function PaywallOfferContent({
 			)}
 
 			<View style={styles.promiseBlock}>
-				<Text style={styles.promiseTitle}>Get your life back, start free today</Text>
+				<Text style={styles.promiseTitle}>Start free while Pip fills in the rest</Text>
 				<View style={styles.trialPill}>
 					<Ionicons name="sparkles" size={17} color={palette.primary} />
 					<Text style={styles.trialText}>7-day free trial</Text>
@@ -241,91 +232,61 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		backgroundColor: tokens.color.status.success.background,
 	},
-	logoWrap: {
+	brandWrap: {
 		flex: 1,
 		alignItems: "center",
-		gap: 0,
+		gap: 2,
 		paddingTop: 2,
-	},
-	logo: {
-		width: 178,
-		height: 34,
 	},
 	tagline: {
 		color: palette.textMuted,
 		fontFamily: type.body.regular,
-		fontSize: 15,
-		lineHeight: 22,
-	},
-	pip: {
-		marginTop: 12,
-		marginBottom: -32,
+		fontSize: 13,
+		lineHeight: 18,
 	},
 	trustBlock: {
 		alignItems: "center",
-		gap: 3,
-		marginTop: -2,
+		gap: spacing.xs,
 	},
-	caseFileCard: {
-		borderRadius: 20,
+	// The hero: the user's personalized starting picture. The serif numeral is
+	// the biggest thing on the screen — "Pip already started on you" is the
+	// reason to subscribe, not an infomercial headline.
+	pictureCard: {
+		borderRadius: radii.lg,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.md,
 		gap: spacing.xs,
 		...tokens.shadow.card,
 	},
-	caseFileHeader: {
+	pictureKicker: {
+		...tokens.type.label.eyebrow,
+		color: tokens.color.text.tertiary,
+		textTransform: "uppercase",
+	},
+	pictureRow: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.sm,
 	},
-	caseFileKicker: {
-		color: palette.textMuted,
-		fontFamily: type.body.bold,
-		fontSize: 11,
-		lineHeight: 14,
-		textTransform: "uppercase",
-		letterSpacing: 0.6,
-	},
-	caseScorePill: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.xs,
-		borderRadius: 999,
-		backgroundColor: tokens.color.status.success.background,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: 3,
-	},
-	caseScoreValue: {
-		color: palette.primaryDark,
-		fontFamily: type.body.bold,
-		fontSize: 16,
-		lineHeight: 20,
-	},
-	caseScoreLabel: {
-		color: palette.primaryDark,
-		fontFamily: type.body.medium,
-		fontSize: 11,
-		lineHeight: 14,
-	},
-	caseFileRow: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		gap: spacing.xs,
-	},
-	caseFileLine: {
+	pictureMetric: {
 		flex: 1,
-		color: palette.text,
-		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
 	},
-	caseFileStrong: {
+	pictureLine: {
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
+		color: tokens.color.text.primary,
+	},
+	pictureStrong: {
 		fontFamily: type.body.bold,
 		color: palette.primaryDark,
+	},
+	pictureMeta: {
+		...tokens.type.body.small,
+		color: tokens.color.text.tertiary,
 	},
 	trustedText: {
 		color: palette.textMuted,
@@ -339,10 +300,8 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 	},
 	promiseTitle: {
+		...tokens.type.title.card,
 		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 25,
-		lineHeight: 31,
 		textAlign: "center",
 	},
 	trialPill: {
@@ -371,7 +330,7 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
-		borderRadius: 20,
+		borderRadius: radii.md,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
@@ -416,7 +375,7 @@ const styles = StyleSheet.create({
 		lineHeight: 20,
 	},
 	planBadge: {
-		borderRadius: 999,
+		borderRadius: radii.pill,
 		backgroundColor: tokens.color.status.warning.background,
 		paddingHorizontal: spacing.xs,
 		paddingVertical: 3,
@@ -433,11 +392,13 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 16,
 	},
+	// Price scanning is the user's second job on a paywall — the price sits at
+	// plan-title weight and size, never smaller than the plan name.
 	planPrice: {
 		color: palette.primaryDark,
 		fontFamily: type.body.bold,
-		fontSize: 14,
-		lineHeight: 18,
+		fontSize: 16,
+		lineHeight: 20,
 	},
 	ctaBlock: {
 		gap: spacing.sm,
@@ -450,10 +411,9 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	statusText: {
-		color: tokens.color.status.danger.foreground,
+		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+		color: tokens.color.status.danger.foreground,
 		textAlign: "center",
 	},
 	legalLink: {
