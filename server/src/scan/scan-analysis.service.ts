@@ -8,6 +8,8 @@ import { TraceService } from '../trace/trace.service';
 import type { IngredientInsight, UserProfile } from './engine/domain';
 import { buildFoodCompletionInput, buildMenuCompletionInput } from './scan-payload';
 import { ScanCrudService } from './scan-crud.service';
+import type { ScanStageCallback } from './scan-progress';
+import { ScanProgressService } from './scan-progress.service';
 import { ScanReservationService } from './scan-reservation.service';
 import { ScanWorkflowService } from './workflow/scan-workflow.service';
 
@@ -61,7 +63,16 @@ export class ScanAnalysisService {
     private readonly insights: InsightsService,
     private readonly trace: TraceService,
     private readonly costCap: CostCapService,
+    private readonly progress: ScanProgressService,
   ) {}
+
+  // Fire-and-forget stage stamps: setStage never rejects, so progress can
+  // never slow down or fail the analysis itself.
+  private stageNotifier(userId: string, scanId: string): ScanStageCallback {
+    return (stage, detail) => {
+      void this.progress.setStage(userId, scanId, stage, detail);
+    };
+  }
 
   // Assemble the full AnalyzeResponse the app expects: the persisted scan plus
   // the user's current billing / profile / insights.
@@ -120,6 +131,8 @@ export class ScanAnalysisService {
     if (begin.deduped) {
       return this.buildResponse(req.userId, scanId, true, begin.tokens_remaining);
     }
+    const onStage = this.stageNotifier(req.userId, scanId);
+    onStage('received');
 
     try {
       const { profile, insights } = await this.loadContext(req.userId);
@@ -134,6 +147,7 @@ export class ScanAnalysisService {
         autoClassify: !req.scanCategory, // auto-detect food vs menu when unspecified
         profile,
         insights,
+        onStage,
       });
       const imageRole = wf.scanCategory === 'menu' ? 'menu_page' : 'meal';
       const inputRefs = keys.map((k, i) => ({
@@ -183,6 +197,8 @@ export class ScanAnalysisService {
     if (begin.deduped) {
       return this.buildResponse(req.userId, scanId, true, begin.tokens_remaining);
     }
+    const onStage = this.stageNotifier(req.userId, scanId);
+    onStage('received');
     try {
       const { profile, insights } = await this.loadContext(req.userId);
       const wf = await this.workflow.run({
@@ -193,6 +209,7 @@ export class ScanAnalysisService {
         scanCategory: 'grocery',
         profile,
         insights,
+        onStage,
       });
       await this.reservation.complete(buildFoodCompletionInput(req.userId, scanId, wf.finalResult));
       await this.learning.enqueue({ userId: req.userId, eventType: 'scan_analyzed', sourceType: 'scan', sourceId: scanId });

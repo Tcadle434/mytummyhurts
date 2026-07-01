@@ -25,6 +25,12 @@ import {
 import { LLM_PROVIDER, LlmProvider } from '../../llm/llm-provider.interface';
 import type { RankedCandidate } from '../../rag/reranker';
 import { RagRetrievalService } from '../../rag/retrieval.service';
+import {
+  ingredientsPreviewFromExtraction,
+  type ScanAnalysisStage,
+  type ScanStageCallback,
+  type ScanStageDetail,
+} from '../scan-progress';
 
 export interface ScanWorkflowInput {
   userId: string;
@@ -38,6 +44,8 @@ export interface ScanWorkflowInput {
   profile: UserProfile | null;
   insights: IngredientInsight[];
   context?: ExtractionContext;
+  /** Display-only progress reporting; must never affect the analysis. */
+  onStage?: ScanStageCallback;
 }
 
 export interface ScanWorkflowResult {
@@ -75,6 +83,16 @@ export class ScanWorkflowService {
       knownIngredients: profile?.knownIngredientSensitivities ?? [],
       dietPreferences: profile?.dietPreferences,
     };
+  }
+
+  // Progress is display-only: a throwing (or missing) callback must never
+  // break the deterministic graph.
+  private notifyStage(input: ScanWorkflowInput, stage: ScanAnalysisStage, detail?: ScanStageDetail) {
+    try {
+      input.onStage?.(stage, detail);
+    } catch {
+      // Best-effort by design.
+    }
   }
 
   private flag(name: string, fallback = false) {
@@ -173,6 +191,7 @@ export class ScanWorkflowService {
       .addNode('loadUserContext', (s: S) => ({ context: this.deriveContext(s.input) }))
       .addNode('generate', async (s: S) => {
         const { input, context } = s;
+        this.notifyStage(input, 'reading_ingredients');
         let kind = input.kind;
         // Auto food/menu classification for images without an explicit category.
         if (kind === 'image' && input.autoClassify && (input.imageUrls?.length ?? 0) > 0) {
@@ -205,7 +224,13 @@ export class ScanWorkflowService {
         };
       })
       .addNode('normalizeFoodFacts', (s: S) => {
-        const { extraction, scanCategory } = s;
+        const { input, extraction, scanCategory } = s;
+        // Extraction just finished: surface what was found while scoring runs.
+        if (extraction) {
+          this.notifyStage(input, 'scoring', {
+            ingredientsPreview: ingredientsPreviewFromExtraction(extraction),
+          });
+        }
         if (!extraction || !this.supportsRiskAdjudication(scanCategory)) {
           return {};
         }
@@ -299,6 +324,7 @@ export class ScanWorkflowService {
         return { baseResult };
       })
       .addNode('finalize', (s: S) => {
+        this.notifyStage(s.input, 'personalizing');
         const base = s.baseResult;
         if (!base) return { finalResult: base };
         const citations =

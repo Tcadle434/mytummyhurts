@@ -26,6 +26,8 @@ import {
   ScanGetResponse,
   ScanDeleteRequest,
   ScanDeleteResponse,
+  ScanProgressRequest,
+  ScanProgressResponse,
   TokensTopUpRequest,
   TokensTopUpResponse,
   ScanConsumptionUpdateRequest,
@@ -94,6 +96,12 @@ export const liveApiClient = {
 
   analyzeBarcode(request: AnalyzeBarcodeRequest) {
     return invokeFunction<AnalyzeResponse>('scan-analyze-barcode', request, { timeoutMs: 300_000 });
+  },
+
+  getScanProgress(request: ScanProgressRequest) {
+    // Display-only poll while an analyze request is in flight — keep the
+    // timeout short so a slow poll never outlives the next tick by much.
+    return invokeFunction<ScanProgressResponse>('scan-progress', request, { timeoutMs: 10_000 });
   },
 
   async deleteScan(request: ScanDeleteRequest) {

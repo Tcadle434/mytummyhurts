@@ -18,15 +18,32 @@ import {
   SectionCard,
 } from '../../components/common/UI';
 import { Pip } from '../../components/common/Pip';
+import { isLiveBackendConfigured } from '../../config/env';
 import { RootStackParamList } from '../../navigation/types';
+import { apiClient } from '../../services/api/client';
+import { ApiError } from '../../services/api/errors';
 import { useAppStore } from '../../store/useAppStore';
 import { palette, spacing, tokens, type } from '../../theme';
+import {
+  AnalyzingProgressState,
+  INITIAL_ANALYZING_PROGRESS,
+  applyProgressSnapshot,
+  formatIngredientsPreview,
+  liveStageCopy,
+} from './analyzingProgress';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanAnalyzing'>;
 
 // Staged reassurance: each honest step holds this long, then the copy moves
 // on. The last step holds until the result lands — no stopwatch counting up.
+// This timed track is the fallback whenever real progress is unavailable.
 const STAGE_STEP_SECONDS = 7;
+
+// Real progress: poll the server's stage stamps while the blocking analyze
+// request is in flight. Polling is display-only — it never completes or fails
+// the scan itself.
+const PROGRESS_POLL_INTERVAL_MS = 2500;
+const MAX_CONSECUTIVE_POLL_FAILURES = 2;
 
 const FOOD_STAGES = [
   'Reading the ingredients…',
@@ -48,6 +65,7 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
   const analyzeScanInput = useAppStore((state) => state.analyzeScanInput);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<AnalyzingProgressState>(INITIAL_ANALYZING_PROGRESS);
   const isMenuScan = route.params.payload.scanCategory === 'menu';
   const isGroceryScan = route.params.payload.scanCategory === 'grocery';
   const retryInitialMode = isGroceryScan || route.params.payload.sourceType === 'barcode'
@@ -62,8 +80,14 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
       ? 'Analyzing barcode…'
       : 'Analyzing your meal…';
 
+  const scanKind = isMenuScan ? 'menu' : isGroceryScan ? 'grocery' : 'food';
   const stages = isMenuScan ? MENU_STAGES : isGroceryScan ? GROCERY_STAGES : FOOD_STAGES;
-  const stageIndex = Math.min(Math.floor(elapsed / STAGE_STEP_SECONDS), stages.length - 1);
+  const timedStageIndex = Math.min(Math.floor(elapsed / STAGE_STEP_SECONDS), stages.length - 1);
+  // Real stage stamps take over the supporting line as soon as they arrive;
+  // until then (or if polling ever fails) the timed copy carries the wait.
+  const stageCopy =
+    progress.stageIndex !== null ? liveStageCopy(scanKind, progress.stageIndex) : stages[timedStageIndex];
+  const foundLine = formatIngredientsPreview(progress.ingredientsPreview);
 
   useEffect(() => {
     const ticker = setInterval(() => {
@@ -71,9 +95,50 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
     }, 1000);
 
     let active = true;
+    let analyzeSettled = false;
+
+    const requestId = route.params.payload.requestId;
+    let pollingStopped = !requestId || !isLiveBackendConfigured;
+    let pollInFlight = false;
+    let consecutivePollFailures = 0;
+
+    const poller = setInterval(() => {
+      if (!active || analyzeSettled || pollingStopped || pollInFlight || !requestId) {
+        return;
+      }
+      pollInFlight = true;
+      apiClient
+        .getScanProgress({ requestId })
+        .then((snapshot) => {
+          consecutivePollFailures = 0;
+          if (!active || analyzeSettled) {
+            return;
+          }
+          if (snapshot.status === 'completed' || snapshot.status === 'failed') {
+            // The blocking analyze request is the source of truth for
+            // completion — just stop asking.
+            pollingStopped = true;
+          }
+          setProgress((current) => applyProgressSnapshot(current, snapshot));
+        })
+        .catch((pollError) => {
+          // Progress is display-only: any trouble here quietly leaves the
+          // timed copy in charge. A 404 means the server predates the
+          // endpoint, so stop immediately; otherwise allow a brief hiccup.
+          consecutivePollFailures += 1;
+          const isEndpointMissing = pollError instanceof ApiError && pollError.status === 404;
+          if (isEndpointMissing || consecutivePollFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+            pollingStopped = true;
+          }
+        })
+        .finally(() => {
+          pollInFlight = false;
+        });
+    }, PROGRESS_POLL_INTERVAL_MS);
 
     void analyzeScanInput(route.params.payload)
       .then((result) => {
+        analyzeSettled = true;
         if (!active) {
           return;
         }
@@ -83,6 +148,7 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
         });
       })
       .catch((caughtError) => {
+        analyzeSettled = true;
         if (!active) {
           return;
         }
@@ -92,6 +158,7 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
     return () => {
       active = false;
       clearInterval(ticker);
+      clearInterval(poller);
     };
   }, [analyzeScanInput, navigation, route.params]);
 
@@ -143,8 +210,13 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
       <View style={styles.copy}>
         <Text style={styles.heroTitle}>{title}</Text>
         <Text style={styles.heroSubtitle} accessibilityLiveRegion="polite">
-          {stages[stageIndex]}
+          {stageCopy}
         </Text>
+        {foundLine ? (
+          <Text style={styles.foundLine} accessibilityLiveRegion="polite">
+            {foundLine}
+          </Text>
+        ) : null}
       </View>
     </AppScreen>
   );
@@ -242,6 +314,11 @@ const styles = StyleSheet.create({
     fontFamily: type.body.regular,
     fontSize: 17,
     lineHeight: 24,
+    textAlign: 'center',
+  },
+  foundLine: {
+    ...tokens.type.body.default,
+    color: tokens.color.text.secondary,
     textAlign: 'center',
   },
   ringWrap: {

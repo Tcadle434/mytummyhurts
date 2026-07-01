@@ -46,6 +46,21 @@ export interface AnalyzeResponse {
   conditionInsights?: ConditionIngredientInsight[];
 }
 
+export type ScanProgressStage = 'received' | 'reading_ingredients' | 'scoring' | 'personalizing';
+
+export type ScanProgressStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'not_found';
+
+export interface ScanProgressRequest {
+  requestId: string;
+}
+
+export interface ScanProgressResponse {
+  ok: true;
+  stage: ScanProgressStage | null;
+  ingredientsPreview: string[];
+  status: ScanProgressStatus;
+}
+
 export interface ScanDeleteRequest {
   scanId: string;
 }
