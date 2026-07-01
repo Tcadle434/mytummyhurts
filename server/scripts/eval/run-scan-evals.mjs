@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path, { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverRoot = join(here, '..', '..');
@@ -12,7 +12,7 @@ const defaultProfilesPath = join(datasetRoot, 'profiles.json');
 const defaultReportsDir = join(serverRoot, 'evals', 'reports');
 const defaultApi = process.env.API_URL || process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
-class ApiRequestError extends Error {
+export class ApiRequestError extends Error {
   constructor(endpoint, status, code, message) {
     super(`${endpoint} failed (${code}): ${message}`);
     this.endpoint = endpoint;
@@ -127,7 +127,7 @@ function parseArgs(argv) {
   return args;
 }
 
-async function readJson(filePath) {
+export async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'));
 }
 
@@ -143,7 +143,7 @@ function listCases(casesDoc, profilesDoc) {
   }
 }
 
-async function apiPost(apiBase, endpoint, body, token, timeoutMs = 360000) {
+export async function apiPost(apiBase, endpoint, body, token, timeoutMs = 360000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -174,7 +174,7 @@ async function apiPost(apiBase, endpoint, body, token, timeoutMs = 360000) {
   }
 }
 
-async function signInOrSignUp(api, email, password) {
+export async function signInOrSignUp(api, email, password) {
   try {
     return await apiPost(api, 'auth/email/sign-up', { email, password });
   } catch (err) {
@@ -183,7 +183,7 @@ async function signInOrSignUp(api, email, password) {
   }
 }
 
-function profileBody(profile, label) {
+export function profileBody(profile, label) {
   return {
     displayName: `Eval ${label}`,
     knownConditions: profile.knownConditions ?? [],
@@ -206,12 +206,12 @@ function mimeFromPath(filePath) {
   return 'image/png';
 }
 
-async function imageDataUrl(filePath) {
+export async function imageDataUrl(filePath) {
   const bytes = await readFile(filePath);
   return `data:${mimeFromPath(filePath)};base64,${bytes.toString('base64')}`;
 }
 
-function summarizeScan(response) {
+export function summarizeScan(response) {
   const scan = response.scan ?? {};
   const structured = scan.structuredAnalysis ?? {};
   const ingredients = [
@@ -303,7 +303,7 @@ function runScoreStats(runs) {
   };
 }
 
-function validateExpectation(expectation, runs, failures) {
+export function validateExpectation(expectation, runs, failures) {
   const errors = [];
   const completed = runs.filter((run) => !run.error);
   if (failures.length) {
@@ -578,7 +578,12 @@ async function main() {
   process.exitCode = summary.failed > 0 ? 1 : 0;
 }
 
-main().catch((err) => {
-  console.error(err?.stack || err?.message || err);
-  process.exitCode = 1;
-});
+// Only auto-run when invoked directly (`node run-scan-evals.mjs`); stay a pure
+// module when imported (e.g. by run-langsmith-evals.mjs) so main() doesn't fire.
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error(err?.stack || err?.message || err);
+    process.exitCode = 1;
+  });
+}
