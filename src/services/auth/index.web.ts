@@ -33,6 +33,11 @@ async function getGoogleIdToken(): Promise<string> {
     scopes: ['openid', 'email', 'profile'],
     redirectUri: redirectTo,
     responseType: AuthSession.ResponseType.IdToken,
+    // PKCE only applies to the authorization-code flow. AuthRequest defaults
+    // usePKCE=true, which appends code_challenge_method to the implicit
+    // id_token request — Google then rejects it ("Parameter not allowed for
+    // this message type: code_challenge_method"). Disable it for this flow.
+    usePKCE: false,
     extraParams: { nonce: createId('google') },
   });
   const result = await request.promptAsync(GOOGLE_DISCOVERY);

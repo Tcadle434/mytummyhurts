@@ -23,6 +23,15 @@ const redirectTo = makeRedirectUri({
   path: 'auth/callback',
 });
 
+// Google's OAuth policy for installed apps only accepts custom-scheme redirects
+// in reverse-DNS notation (the app's bundle id or the reversed client id). A bare
+// scheme like `mytummyhurts://` is rejected as "doesn't comply with Google's
+// OAuth 2.0 policy". The bundle-id scheme is already registered in Info.plist;
+// this mirrors what expo-auth-session's own Google provider uses natively.
+const googleRedirectUri = makeRedirectUri({
+  native: `${env.iosBundleId}:/oauthredirect`,
+});
+
 const GOOGLE_DISCOVERY: AuthSession.DiscoveryDocument = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -35,8 +44,13 @@ async function getGoogleIdToken(): Promise<string> {
   const request = new AuthSession.AuthRequest({
     clientId,
     scopes: ['openid', 'email', 'profile'],
-    redirectUri: redirectTo,
+    redirectUri: googleRedirectUri,
     responseType: AuthSession.ResponseType.IdToken,
+    // PKCE only applies to the authorization-code flow. AuthRequest defaults
+    // usePKCE=true, which appends code_challenge_method to the implicit
+    // id_token request — Google then rejects it ("Parameter not allowed for
+    // this message type: code_challenge_method"). Disable it for this flow.
+    usePKCE: false,
     extraParams: { nonce: createId('google') },
   });
   const result = await request.promptAsync(GOOGLE_DISCOVERY);
