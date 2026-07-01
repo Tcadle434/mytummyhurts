@@ -107,10 +107,13 @@ function getGutScoreZone(score: number): GutScoreZone {
 	return "high";
 }
 
+// Text-grade zone colors: the darker `foreground` tones keep the numeral
+// readable on cream (the mid-zone amber tint was the card's weakest contrast).
+// The arc keeps the brighter tints — fills and text are different jobs.
 function getGutScoreZoneColor(zone: GutScoreZone) {
-	if (zone === "low") return tokens.color.status.risk.high.tint;
-	if (zone === "medium") return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.low.tint;
+	if (zone === "low") return tokens.color.status.risk.high.foreground;
+	if (zone === "medium") return tokens.color.status.risk.medium.foreground;
+	return tokens.color.status.risk.low.foreground;
 }
 
 function getPipStateForScore(score: number): PipState {
@@ -200,10 +203,7 @@ const styles = StyleSheet.create({
 		alignItems: "flex-end",
 	},
 	scoreValue: {
-		fontFamily: type.body.bold,
-		fontSize: 44,
-		lineHeight: 48,
-		letterSpacing: -1,
+		...tokens.type.display.metric,
 	},
 	scoreScale: {
 		color: tokens.color.text.tertiary,

@@ -93,6 +93,37 @@ export const tokens = {
           tint: brand.status.red,
         },
       },
+      // The five caseboard verdict tones. Text on `background` always uses
+      // `foreground` (text-grade contrast); `tint` is for fills, meters, and
+      // dots only. Cleared is deliberately a deeper green than safe — the
+      // earned verdict outranks the hopeful one.
+      verdict: {
+        confirmed: {
+          foreground: '#A13B29',
+          background: '#FFE2DA',
+          tint: brand.status.red,
+        },
+        suspect: {
+          foreground: '#9A5E14',
+          background: brand.status.mediumBackground,
+          tint: brand.status.orange,
+        },
+        watching: {
+          foreground: neutral.cool[800],
+          background: neutral.warm[100],
+          tint: neutral.cool[600],
+        },
+        safe: {
+          foreground: '#3A7F63',
+          background: '#E5F3EA',
+          tint: '#67AD87',
+        },
+        cleared: {
+          foreground: '#1E5C42',
+          background: '#D3EBDC',
+          tint: '#2F8461',
+        },
+      },
       success: {
         foreground: '#2F6E54',
         background: '#E8F4EC',
@@ -139,6 +170,15 @@ export const tokens = {
         fontSize: 22,
         lineHeight: 26,
         letterSpacing: -0.4,
+      } satisfies TextStyle,
+      // Hero numerals — Gut Score, Daily Score, scan scores. The serif is the
+      // app's voice for anything it has concluded; numbers it stands behind
+      // get the display face, not another Jakarta weight.
+      metric: {
+        fontFamily: foundations.typography.family.display,
+        fontSize: 46,
+        lineHeight: 50,
+        letterSpacing: -1,
       } satisfies TextStyle,
     },
     title: {

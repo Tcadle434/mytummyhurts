@@ -71,6 +71,21 @@ export function ScreenLayout({ title, children, scroll = true, contentContainerS
   );
 }
 
+/**
+ * The ambient canvas the token file always designed but never shipped: two
+ * soft mint/peach ornament blobs behind the content. Subtle enough to keep
+ * every screen readable, present enough that screens stop feeling like flat
+ * cream sheets.
+ */
+function CanvasOrnaments() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={styles.ornamentMint} />
+      <View style={styles.ornamentPeach} />
+    </View>
+  );
+}
+
 export function AppScreen({
   children,
   scroll = true,
@@ -103,7 +118,7 @@ export function AppScreen({
 
   return (
     <View style={styles.screenFill}>
-      {background}
+      {background ?? <CanvasOrnaments />}
       <SafeAreaView edges={['bottom']} style={styles.safeArea}>
         {keyboardAvoiding ? (
           <KeyboardAvoidingView
@@ -247,12 +262,32 @@ export function Wordmark() {
   );
 }
 
-export function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
+export function EmptyState({
+  title,
+  subtitle,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  subtitle: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <SectionCard style={styles.emptyState}>
       <Pip state="waving" size={108} />
       <Text style={styles.emptyStateTitle}>{title}</Text>
       <Text style={styles.emptyStateSubtitle}>{subtitle}</Text>
+      {actionLabel && onAction ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={actionLabel}
+          onPress={onAction}
+          style={({ pressed }) => [styles.emptyStateAction, pressed && { opacity: 0.88 }]}
+        >
+          <Text style={styles.emptyStateActionLabel}>{actionLabel}</Text>
+        </Pressable>
+      ) : null}
     </SectionCard>
   );
 }
@@ -426,5 +461,38 @@ const styles = StyleSheet.create({
     ...tokens.type.body.default,
     color: tokens.color.text.tertiary,
     textAlign: 'center',
+  },
+  emptyStateAction: {
+    marginTop: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.xl,
+    borderRadius: tokens.radius.pill,
+    backgroundColor: tokens.color.action.primary.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateActionLabel: {
+    ...tokens.type.label.button,
+    color: tokens.color.action.primary.foreground,
+  },
+  ornamentMint: {
+    position: 'absolute',
+    top: -110,
+    right: -120,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: tokens.color.surface.app.ornamentMint,
+    opacity: 0.5,
+  },
+  ornamentPeach: {
+    position: 'absolute',
+    bottom: -140,
+    left: -130,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: tokens.color.surface.app.ornamentPeach,
+    opacity: 0.42,
   },
 });
