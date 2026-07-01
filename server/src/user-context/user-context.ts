@@ -54,7 +54,7 @@ export async function getUserContext(
         left join public.ingredient_taxonomy_classifications c
           on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
         where i.user_id = ${userId}
-        order by i.combined_risk_score desc nulls last limit ${opts.insightsLimit}`,
+        order by (i.supporting_evidence_count > 0) desc, i.combined_risk_score desc nulls last limit ${opts.insightsLimit}`,
     sql`select * from public.condition_ingredient_insights
         where user_id = ${userId} order by risk_score desc limit ${opts.conditionInsightsLimit}`,
     sql`select * from public.user_profiles where user_id = ${userId}`,

@@ -213,7 +213,14 @@ export class LearningRecomputeService {
 
       await this.persistInsights(sql, userId, insights, conditionInsights);
       try {
-        await this.taxonomy.ensureClassifications(sql, insights);
+        // Classify only evidence-backed insights: exposure-only watching rows
+        // (up to 100 per user) fall back to alias-based family grouping in the
+        // app, and classifying them here would queue that many sequential LLM
+        // calls inside a synchronous recompute.
+        await this.taxonomy.ensureClassifications(
+          sql,
+          insights.filter((insight) => insight.supportingEvidenceCount > 0),
+        );
       } catch (error) {
         this.logger.warn(`taxonomy classification skipped for user ${userId}: ${(error as Error).message}`);
       }

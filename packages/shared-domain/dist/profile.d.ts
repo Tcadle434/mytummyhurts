@@ -13,6 +13,12 @@ export interface InsightSourceBreakdown {
     personal: boolean;
     positiveEvidenceCount: number;
     negativeEvidenceCount: number;
+    /** Distinct neutral (severity 4-6) report days paired with this food. */
+    neutralDayCount?: number;
+    /** Distinct report days of any kind paired with this food. */
+    pairedDayCount?: number;
+    /** Distinct local dates this food appeared in the user's scans. */
+    exposureDayCount?: number;
 }
 export interface ProfileLearningSignal {
     ingredientName: string;

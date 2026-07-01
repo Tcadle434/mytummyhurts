@@ -38,7 +38,7 @@ export class InsightsService {
           left join public.ingredient_taxonomy_classifications c
             on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
           where i.user_id = ${userId} and i.ingredient_name ilike ${`%${search}%`}
-          order by i.combined_risk_score desc nulls last limit ${limit}`
+          order by (i.supporting_evidence_count > 0) desc, i.combined_risk_score desc nulls last limit ${limit}`
       : await sql`select i.*,
             c.primary_food_family_key as taxonomy_primary_food_family_key,
             c.digestive_pattern_keys as taxonomy_digestive_pattern_keys,
@@ -52,7 +52,7 @@ export class InsightsService {
           left join public.ingredient_taxonomy_classifications c
             on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
           where i.user_id = ${userId}
-          order by i.combined_risk_score desc nulls last limit ${limit}`;
+          order by (i.supporting_evidence_count > 0) desc, i.combined_risk_score desc nulls last limit ${limit}`;
     const conditionInsights = await sql`select * from public.condition_ingredient_insights
       where user_id = ${userId} order by risk_score desc limit ${limit}`;
     const [profileRow] = await sql`select * from public.user_profiles where user_id = ${userId}`;

@@ -1,59 +1,41 @@
+import { triggerVerdictStatusForBreakdown, TRIGGER_VERDICT_THRESHOLDS } from '@mth/shared-domain';
+
 import type { IngredientInsight } from '../../types/domain';
 import {
+  buildFamilyVerdictEntries,
   buildGroupedTriggerEntries,
   buildTrackedFoodFamilyEntries,
-  type GroupedTriggerEntry,
+  type TriggerProfileEntry,
   type TrackedFoodFamilyEntry,
 } from './triggerGroups';
 
-export type TriggerStatus = 'confirmed' | 'suspect' | 'cleared' | 'safe';
+// Every tracked food resolves to one of five verdict statuses — the caseboard
+// model. 'watching' is the honest cold-start home for foods without
+// directional evidence (previously they fell into a null dead zone and
+// vanished from the screen entirely).
+export type TriggerStatus = 'confirmed' | 'suspect' | 'watching' | 'cleared' | 'safe';
 
-// Core taxonomy for the Trigger Profile: every insight is bucketed by how much
-// outcome evidence backs it. "Suspect" covers declared/seeded entries, early
-// elevated patterns, and neutral paired evidence that is still under review.
-export function statusForInsight(insight: IngredientInsight): TriggerStatus | null {
-  const outcomeEvidence = insight.positiveEvidenceCount + insight.negativeEvidenceCount;
-  const neutralPersonalEvidence =
-    insight.sourceBreakdown.personal &&
-    insight.supportingEvidenceCount > 0 &&
-    outcomeEvidence === 0;
+export function statusForInsight(insight: IngredientInsight): TriggerStatus {
+  return triggerVerdictStatusForBreakdown(insight);
+}
 
-  if (
-    insight.combinedRiskScore >= 60 &&
-    (insight.confidenceLevel === 'high' || insight.negativeEvidenceCount >= 3)
-  ) {
-    return 'confirmed';
-  }
-
-  if (
-    insight.sourceBreakdown.declared &&
-    insight.positiveEvidenceCount >= 2 &&
-    insight.negativeEvidenceCount === 0
-  ) {
-    return 'cleared';
-  }
-
-  if (neutralPersonalEvidence) {
-    return 'suspect';
-  }
-
-  if (
-    insight.combinedRiskScore >= 52 ||
-    (insight.sourceBreakdown.declared && insight.combinedRiskScore >= 45)
-  ) {
-    return 'suspect';
-  }
-
-  if (insight.combinedRiskScore <= 44) {
-    return 'safe';
-  }
-
-  return null;
+// The verdict for a group/family row derives from its members' own verdicts —
+// never from a synthetic insight that mixes fields (max risk from one member,
+// confidence from another) into a status no member earned. Cleared requires
+// every member to have earned it; any confirmed member confirms the row.
+export function statusForMembers(members: IngredientInsight[]): TriggerStatus {
+  const statuses = members.map(statusForInsight);
+  if (statuses.includes('confirmed')) return 'confirmed';
+  if (statuses.includes('suspect')) return 'suspect';
+  if (statuses.length > 0 && statuses.every((status) => status === 'cleared')) return 'cleared';
+  if (statuses.includes('safe') || statuses.includes('cleared')) return 'safe';
+  return 'watching';
 }
 
 export type TriggerCounts = {
   confirmed: number;
   suspects: number;
+  watching: number;
   cleared: number;
   safe: number;
 };
@@ -64,54 +46,88 @@ function normalizeInsights(insights: OptionalInsights): IngredientInsight[] {
   return Array.isArray(insights) ? insights : [];
 }
 
+const EMPTY_COUNTS: TriggerCounts = { confirmed: 0, suspects: 0, watching: 0, cleared: 0, safe: 0 };
+
 export function summarizeTriggerCounts(insights: OptionalInsights): TriggerCounts {
-  const counts: TriggerCounts = { confirmed: 0, suspects: 0, cleared: 0, safe: 0 };
+  const counts: TriggerCounts = { ...EMPTY_COUNTS };
   for (const insight of normalizeInsights(insights)) {
     const status = statusForInsight(insight);
     if (status === 'confirmed') counts.confirmed += 1;
     else if (status === 'suspect') counts.suspects += 1;
+    else if (status === 'watching') counts.watching += 1;
     else if (status === 'cleared') counts.cleared += 1;
-    else if (status === 'safe') counts.safe += 1;
+    else counts.safe += 1;
   }
   return counts;
 }
 
-// Evidence line shown under each row: progress toward a verdict for suspects,
-// the supporting evidence for everything else.
-export function evidenceDetailForInsight(insight: IngredientInsight, status: TriggerStatus): string {
-  const negative = insight.negativeEvidenceCount;
-  const positive = insight.positiveEvidenceCount;
-  const outcomes = negative + positive;
+function pluralDays(count: number) {
+  return `${count} day${count === 1 ? '' : 's'}`;
+}
 
-  if (status === 'suspect') {
-    if (outcomes === 0 && insight.sourceBreakdown.personal && insight.supportingEvidenceCount > 0) {
-      const pairedDays = Math.max(1, insight.supportingEvidenceCount);
-      return `${pairedDays} paired day${pairedDays === 1 ? '' : 's'} logged — no clear reaction yet`;
-    }
-    if (outcomes === 0) {
-      return insight.sourceBreakdown.declared
-        ? 'From your profile — no outcomes logged yet'
-        : 'Early signal — no outcomes logged yet';
-    }
-    return `${Math.min(outcomes, 3)} of 3 paired outcomes logged`;
-  }
+function pairedDayCount(insight: IngredientInsight) {
+  return insight.sourceBreakdown.pairedDayCount ?? insight.supportingEvidenceCount;
+}
+
+function exposureDayCount(insight: IngredientInsight) {
+  return insight.sourceBreakdown.exposureDayCount ?? 0;
+}
+
+// One plain-language sentence per row: what the evidence says and what closes
+// the case. Counts are distinct report days, never weighted fractions.
+export function evidenceDetailForInsight(insight: IngredientInsight, status: TriggerStatus): string {
+  const calm = insight.positiveEvidenceCount;
+  const rough = insight.negativeEvidenceCount;
+  const paired = Math.max(pairedDayCount(insight), calm + rough);
+  const thresholds = TRIGGER_VERDICT_THRESHOLDS;
 
   if (status === 'confirmed') {
-    return `${negative} rough-day data point${negative === 1 ? '' : 's'}`;
+    return `Rough on ${rough} of ${paired} paired ${paired === 1 ? 'day' : 'days'} you ate this`;
+  }
+
+  if (status === 'suspect') {
+    if (rough > 0) {
+      const needed = Math.max(0, thresholds.confirmedReactiveDays - rough);
+      return needed > 0
+        ? `Rough on ${rough} of ${paired} paired ${paired === 1 ? 'day' : 'days'} — ${needed} more would confirm`
+        : `Rough on ${rough} of ${paired} paired days`;
+    }
+    return insight.sourceBreakdown.declared
+      ? 'From your answers — daily check-ins confirm or clear it'
+      : 'Early signal — no outcomes logged yet';
   }
 
   if (status === 'cleared') {
-    return `${positive} calm day${positive === 1 ? '' : 's'} since you flagged it`;
+    return `Calm on ${pluralDays(calm)} you ate this — no reactions`;
   }
 
-  return positive > 0 ? `${positive} calm-day data point${positive === 1 ? '' : 's'}` : 'Looking gentle so far';
+  if (status === 'safe') {
+    const target = insight.sourceBreakdown.declared
+      ? thresholds.clearedDeclaredCalmDays
+      : thresholds.clearedCalmDays;
+    const needed = Math.max(0, target - calm);
+    const base = `Calm on ${calm} of ${paired} paired ${paired === 1 ? 'day' : 'days'}`;
+    return needed > 0 ? `${base} — ${needed} more calm ${needed === 1 ? 'day' : 'days'} to cleared` : base;
+  }
+
+  // watching
+  if (paired > 0) {
+    return `${paired} paired ${paired === 1 ? 'day' : 'days'} logged — no clear pattern yet`;
+  }
+  const seen = exposureDayCount(insight);
+  if (seen > 0) {
+    return `Seen in scans on ${pluralDays(seen)} — no check-ins paired yet`;
+  }
+  return insight.sourceBreakdown.declared
+    ? 'From your answers — waiting on real-world evidence'
+    : 'Waiting on real-world evidence';
 }
 
 export type TriggerProfileSection = {
   status: TriggerStatus;
   title: string;
   subtitle: string;
-  entries: GroupedTriggerEntry[];
+  entries: TriggerProfileEntry[];
 };
 
 export type TriggerProfileViewState = {
@@ -120,15 +136,18 @@ export type TriggerProfileViewState = {
   totalTracked: number;
   allSeeded: boolean;
   trackedFamilies: TrackedFoodFamilyEntry[];
-  earlySignals: IngredientInsight[];
 };
 
-const SECTION_META: Record<TriggerStatus, { title: string; subtitle: string }> = {
-  confirmed: { title: 'Confirmed triggers', subtitle: 'Strong evidence from your check-ins.' },
-  suspect: { title: 'Under review', subtitle: 'Suspects your daily check-ins confirm or clear.' },
-  cleared: { title: 'Cleared', subtitle: 'You suspected these — the evidence says they sit fine.' },
-  safe: { title: 'Safe foods', subtitle: 'Consistently calm for your gut.' },
+const SECTION_META: Record<Exclude<TriggerStatus, 'watching'>, { title: string; subtitle: string }> = {
+  confirmed: { title: 'Confirmed triggers', subtitle: 'Strong repeated evidence from your check-ins.' },
+  suspect: { title: 'Under review', subtitle: 'Rough-day evidence is building — check-ins settle each case.' },
+  cleared: { title: 'Cleared', subtitle: 'Calm every time you ate them. You can stop worrying about these.' },
+  safe: { title: 'Looking safe', subtitle: 'Calm so far — a few more calm days earns cleared.' },
 };
+
+function outcomeCount(insight: IngredientInsight) {
+  return insight.positiveEvidenceCount + insight.negativeEvidenceCount;
+}
 
 export function buildTriggerProfileViewState(
   insights: OptionalInsights,
@@ -150,43 +169,67 @@ export function buildTriggerProfileViewState(
     return true;
   });
 
-  const { entries, earlySignals } = buildGroupedTriggerEntries(filtered);
-  const trackedFamilies = buildTrackedFoodFamilyEntries(filtered);
+  const byStatus: Record<TriggerStatus, IngredientInsight[]> = {
+    confirmed: [],
+    suspect: [],
+    watching: [],
+    cleared: [],
+    safe: [],
+  };
+  const counts: TriggerCounts = { ...EMPTY_COUNTS };
+  for (const insight of filtered) {
+    const status = statusForInsight(insight);
+    byStatus[status].push(insight);
+    if (status === 'confirmed') counts.confirmed += 1;
+    else if (status === 'suspect') counts.suspects += 1;
+    else if (status === 'watching') counts.watching += 1;
+    else if (status === 'cleared') counts.cleared += 1;
+    else counts.safe += 1;
+  }
 
-  const byStatus: Record<TriggerStatus, GroupedTriggerEntry[]> = {
+  const sectionsByStatus: Record<Exclude<TriggerStatus, 'watching'>, TriggerProfileEntry[]> = {
     confirmed: [],
     suspect: [],
     cleared: [],
     safe: [],
   };
-  for (const entry of entries) {
-    const status = statusForInsight(entry.insight);
-    if (status) {
-      byStatus[status].push(entry);
-    }
+
+  // Risk track (confirmed + suspect): mechanism groups, bucketed as one pool
+  // so a group lands in exactly one section — the verdict its own members
+  // earn — with family entries as the fallback so ungrouped foods with real
+  // evidence stay visible.
+  const riskInsights = [...byStatus.confirmed, ...byStatus.suspect];
+  const { entries: riskGroups, ungrouped: riskUngrouped } = buildGroupedTriggerEntries(riskInsights);
+  for (const entry of [...riskGroups, ...buildFamilyVerdictEntries(riskUngrouped)]) {
+    const status = statusForMembers(entry.members);
+    sectionsByStatus[status === 'confirmed' ? 'confirmed' : 'suspect'].push(entry);
   }
 
-  byStatus.confirmed.sort((l, r) => r.insight.combinedRiskScore - l.insight.combinedRiskScore);
-  byStatus.suspect.sort(
+  // Safety track (cleared + safe): food families — "rice & grains look safe"
+  // reads better than a mechanism label for reassurance. A family is cleared
+  // only when every member has earned it.
+  for (const entry of buildFamilyVerdictEntries([...byStatus.cleared, ...byStatus.safe])) {
+    const status = statusForMembers(entry.members);
+    sectionsByStatus[status === 'cleared' ? 'cleared' : 'safe'].push(entry);
+  }
+
+  sectionsByStatus.confirmed.sort((l, r) => r.insight.combinedRiskScore - l.insight.combinedRiskScore);
+  sectionsByStatus.suspect.sort(
     (l, r) =>
       r.insight.negativeEvidenceCount - l.insight.negativeEvidenceCount ||
       r.insight.combinedRiskScore - l.insight.combinedRiskScore,
   );
-  byStatus.cleared.sort((l, r) => r.insight.positiveEvidenceCount - l.insight.positiveEvidenceCount);
-  byStatus.safe.sort((l, r) => l.insight.combinedRiskScore - r.insight.combinedRiskScore);
+  sectionsByStatus.cleared.sort((l, r) => r.insight.positiveEvidenceCount - l.insight.positiveEvidenceCount);
+  sectionsByStatus.safe.sort(
+    (l, r) =>
+      r.insight.positiveEvidenceCount - l.insight.positiveEvidenceCount ||
+      l.insight.combinedRiskScore - r.insight.combinedRiskScore,
+  );
 
-  const order: TriggerStatus[] = ['confirmed', 'suspect', 'cleared', 'safe'];
+  const order: Array<Exclude<TriggerStatus, 'watching'>> = ['confirmed', 'suspect', 'cleared', 'safe'];
   const sections = order
-    .filter((status) => byStatus[status].length > 0)
-    .map((status) => ({ status, ...SECTION_META[status], entries: byStatus[status] }));
-
-  const counts: TriggerCounts = { confirmed: 0, suspects: 0, cleared: 0, safe: 0 };
-  for (const section of sections) {
-    if (section.status === 'confirmed') counts.confirmed = section.entries.length;
-    else if (section.status === 'suspect') counts.suspects = section.entries.length;
-    else if (section.status === 'cleared') counts.cleared = section.entries.length;
-    else counts.safe = section.entries.length;
-  }
+    .filter((status) => sectionsByStatus[status].length > 0)
+    .map((status) => ({ status, ...SECTION_META[status], entries: sectionsByStatus[status] }));
 
   return {
     counts,
@@ -195,17 +238,14 @@ export function buildTriggerProfileViewState(
     allSeeded:
       filtered.length > 0 &&
       filtered.every(
-        (insight) =>
-          !insight.sourceBreakdown.personal &&
-          insight.positiveEvidenceCount + insight.negativeEvidenceCount === 0,
+        (insight) => insight.sourceBreakdown.declared && outcomeCount(insight) === 0,
       ),
-    trackedFamilies,
-    earlySignals,
+    trackedFamilies: buildTrackedFoodFamilyEntries(byStatus.watching),
   };
 }
 
-export function entryDisplayName(entry: GroupedTriggerEntry): string {
-  return entry.group.label;
+export function entryDisplayName(entry: TriggerProfileEntry): string {
+  return entry.label;
 }
 
 export function buildTriggerProfileShareText(viewState: TriggerProfileViewState): string {

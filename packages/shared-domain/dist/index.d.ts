@@ -20,6 +20,7 @@ export * from './gut-score';
 export * from './profile';
 export * from './menu';
 export * from './scan';
+export * from './trigger-status';
 export * from './scoring-constants';
 export * from './scoring-utils';
 export * from './scoring-data';

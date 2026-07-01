@@ -6,7 +6,6 @@ import type {
   DailyGutReport,
   IngredientInsight,
   InsightConfidenceLevel,
-  PatternStrength,
   StructuredAnalysisV2,
   StructuredIngredient,
 } from './domain';
@@ -14,7 +13,12 @@ import type {
 // which is clamp(50 + trigger - safe). Learned insights previously applied a
 // 0.9 damping here, so seed and learned rows were compared on mismatched
 // scales. Import the shared function so both live on one scale.
-import { combinedRiskScore } from '@mth/shared-domain';
+import { combinedRiskScore, patternStrengthFromRisk } from '@mth/shared-domain';
+
+// Ingredients that were scanned but never paired with a daily report still get
+// a "watching" row (zero outcome evidence) so the Trigger Profile reflects
+// coverage. Capped so a scan-heavy user cannot flood the insight table.
+const MAX_EXPOSURE_ONLY_INSIGHTS = 100;
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -24,12 +28,6 @@ function insightConfidenceLevel(weightedEvidence: number): InsightConfidenceLeve
   if (weightedEvidence >= 6) return 'high';
   if (weightedEvidence >= 2) return 'medium';
   return 'low';
-}
-
-function patternStrength(value: number): PatternStrength {
-  if (value >= 70) return 'strong';
-  if (value >= 46) return 'moderate';
-  return 'weak';
 }
 
 function localDateMinusDays(value: string, days: number) {
@@ -45,23 +43,28 @@ function severityKind(value: number) {
   return 'reactive' as const;
 }
 
-function sourceBreakdown(
-  ingredientName: string,
-  declaredSensitivities: string[],
-  positiveEvidenceCount: number,
-  negativeEvidenceCount: number,
-  hasPersonalEvidence = positiveEvidenceCount + negativeEvidenceCount > 0,
-) {
-  const ingredientToken = ingredientName.toLowerCase();
+function sourceBreakdown(input: {
+  ingredientName: string;
+  declaredSensitivities: string[];
+  positiveEvidenceCount: number;
+  negativeEvidenceCount: number;
+  neutralDayCount: number;
+  pairedDayCount: number;
+  exposureDayCount: number;
+}) {
+  const ingredientToken = input.ingredientName.toLowerCase();
   return {
-    declared: declaredSensitivities.some((sensitivity) => {
+    declared: input.declaredSensitivities.some((sensitivity) => {
       const token = sensitivity.trim().toLowerCase();
       return token.length > 0 && (ingredientToken.includes(token) || token.includes(ingredientToken));
     }),
     science: false,
-    personal: hasPersonalEvidence,
-    positiveEvidenceCount,
-    negativeEvidenceCount,
+    personal: input.pairedDayCount > 0,
+    positiveEvidenceCount: input.positiveEvidenceCount,
+    negativeEvidenceCount: input.negativeEvidenceCount,
+    neutralDayCount: input.neutralDayCount,
+    pairedDayCount: input.pairedDayCount,
+    exposureDayCount: input.exposureDayCount,
   };
 }
 
@@ -105,15 +108,30 @@ export function buildDailyReportInsights(params: {
     scansByDate.set(scan.localDate, current);
   }
 
+  // Distinct scan dates per ingredient — the exposure denominator. Built from
+  // every scan (not just windowed ones) so unpaired foods still surface as
+  // "watching" coverage.
+  const exposure = new Map<string, { days: Set<string>; lastSeenAt: string }>();
+  for (const scan of params.scans) {
+    for (const ingredient of scan.ingredients) {
+      const name = ingredient.name.trim().toLowerCase();
+      if (!name) continue;
+      const current = exposure.get(name) ?? { days: new Set<string>(), lastSeenAt: scan.createdAt };
+      current.days.add(scan.localDate);
+      if (scan.createdAt > current.lastSeenAt) current.lastSeenAt = scan.createdAt;
+      exposure.set(name, current);
+    }
+  }
+
   const aggregate = new Map<
     string,
     {
       trigger: number;
       safe: number;
       weightedEvidence: number;
-      positiveEvidence: number;
-      negativeEvidence: number;
-      neutralEvidence: number;
+      calmDays: Set<string>;
+      reactiveDays: Set<string>;
+      neutralDays: Set<string>;
       conditions: Set<string>;
       lastSeenAt?: string;
       lastOutcomeAt?: string;
@@ -158,9 +176,9 @@ export function buildDailyReportInsights(params: {
           trigger: 6,
           safe: 6,
           weightedEvidence: 0,
-          positiveEvidence: 0,
-          negativeEvidence: 0,
-          neutralEvidence: 0,
+          calmDays: new Set<string>(),
+          reactiveDays: new Set<string>(),
+          neutralDays: new Set<string>(),
           conditions: new Set<string>(),
         };
 
@@ -168,14 +186,14 @@ export function buildDailyReportInsights(params: {
         if (reportKind === 'calm') {
           current.safe += weightedSignal * 28;
           current.trigger = Math.max(0, current.trigger - weightedSignal * 8);
-          current.positiveEvidence += weightedSignal;
+          current.calmDays.add(report.localDate);
         } else if (reportKind === 'reactive') {
           current.trigger += weightedSignal * 26 * severityFactor;
           current.safe = Math.max(0, current.safe - weightedSignal * 5);
-          current.negativeEvidence += weightedSignal;
+          current.reactiveDays.add(report.localDate);
           linkedConditions.forEach((condition) => current.conditions.add(condition));
         } else {
-          current.neutralEvidence += weightedSignal;
+          current.neutralDays.add(report.localDate);
         }
 
         current.lastSeenAt = ingredient.lastSeenAt;
@@ -185,15 +203,19 @@ export function buildDailyReportInsights(params: {
     }
   }
 
-  return [...aggregate.entries()]
+  const now = new Date().toISOString();
+  const paired = [...aggregate.entries()]
     .filter(([, current]) => current.weightedEvidence > 0)
     .map(([ingredientName, current], index): IngredientInsight => {
       const triggerScore = clampScore(current.trigger);
       const safeScore = clampScore(current.safe);
       const riskScore = combinedRiskScore(triggerScore, safeScore);
-      const positiveEvidenceCount = current.positiveEvidence > 0 ? Math.max(1, Math.round(current.positiveEvidence)) : 0;
-      const negativeEvidenceCount = current.negativeEvidence > 0 ? Math.max(1, Math.round(current.negativeEvidence)) : 0;
-      const supportingEvidenceCount = Math.max(1, Math.round(current.weightedEvidence));
+      // Evidence counts are DISTINCT report days, not rounded fractional
+      // weights — one calm check-in reads as exactly one calm day.
+      const positiveEvidenceCount = current.calmDays.size;
+      const negativeEvidenceCount = current.reactiveDays.size;
+      const pairedDayCount = new Set([...current.calmDays, ...current.reactiveDays, ...current.neutralDays]).size;
+      const exposureDayCount = exposure.get(ingredientName)?.days.size ?? 0;
       const dominatesTrigger = triggerScore >= safeScore;
 
       return {
@@ -203,28 +225,63 @@ export function buildDailyReportInsights(params: {
         safeScore,
         combinedRiskScore: riskScore,
         confidenceLevel: insightConfidenceLevel(current.weightedEvidence),
-        patternStrength: patternStrength(dominatesTrigger ? riskScore : 100 - riskScore),
+        patternStrength: patternStrengthFromRisk(riskScore, positiveEvidenceCount + negativeEvidenceCount),
         linkedConditions: [...current.conditions],
-        supportingEvidenceCount,
+        supportingEvidenceCount: pairedDayCount,
         positiveEvidenceCount,
         negativeEvidenceCount,
         lastSeenAt: current.lastSeenAt,
         lastOutcomeAt: current.lastOutcomeAt,
-        sourceBreakdown: sourceBreakdown(
+        sourceBreakdown: sourceBreakdown({
           ingredientName,
-          params.declaredSensitivities,
+          declaredSensitivities: params.declaredSensitivities,
           positiveEvidenceCount,
           negativeEvidenceCount,
-          current.weightedEvidence > 0,
-        ),
-        lastRecomputedAt: new Date().toISOString(),
+          neutralDayCount: current.neutralDays.size,
+          pairedDayCount,
+          exposureDayCount,
+        }),
+        lastRecomputedAt: now,
         summary: positiveEvidenceCount + negativeEvidenceCount === 0
           ? `${ingredientName} is paired with symptom reports but has no clear calm or reactive pattern yet.`
           : dominatesTrigger
-            ? `${ingredientName} is showing up more often around reactive gut-report days.`
-            : `${ingredientName} is showing up more often around calmer gut-report days.`,
+            ? `${ingredientName} showed up around ${negativeEvidenceCount} rough day${negativeEvidenceCount === 1 ? '' : 's'} out of ${pairedDayCount} paired.`
+            : `${ingredientName} has been calm on ${positiveEvidenceCount} of ${pairedDayCount} paired day${pairedDayCount === 1 ? '' : 's'}.`,
       } as unknown as IngredientInsight;
-    })
+    });
+
+  const pairedNames = new Set(paired.map((insight) => insight.ingredientName));
+  const exposureOnly = [...exposure.entries()]
+    .filter(([name]) => !pairedNames.has(name))
+    .sort((left, right) => right[1].days.size - left[1].days.size || left[0].localeCompare(right[0]))
+    .slice(0, MAX_EXPOSURE_ONLY_INSIGHTS)
+    .map(([ingredientName, seen], index): IngredientInsight => ({
+      id: `exposure-insight-${index}-${ingredientName}`,
+      ingredientName,
+      triggerScore: 6,
+      safeScore: 6,
+      combinedRiskScore: 50,
+      confidenceLevel: 'low',
+      patternStrength: 'weak',
+      linkedConditions: [],
+      supportingEvidenceCount: 0,
+      positiveEvidenceCount: 0,
+      negativeEvidenceCount: 0,
+      lastSeenAt: seen.lastSeenAt,
+      sourceBreakdown: sourceBreakdown({
+        ingredientName,
+        declaredSensitivities: params.declaredSensitivities,
+        positiveEvidenceCount: 0,
+        negativeEvidenceCount: 0,
+        neutralDayCount: 0,
+        pairedDayCount: 0,
+        exposureDayCount: seen.days.size,
+      }),
+      lastRecomputedAt: now,
+      summary: `${ingredientName} appeared in your scans on ${seen.days.size} day${seen.days.size === 1 ? '' : 's'} — no check-ins paired with it yet.`,
+    } as unknown as IngredientInsight));
+
+  return [...paired, ...exposureOnly]
     .sort((left, right) => right.combinedRiskScore - left.combinedRiskScore || right.supportingEvidenceCount - left.supportingEvidenceCount);
 }
 

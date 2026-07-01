@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildFamilyVerdictEntries,
   buildGroupSyntheticInsight,
   buildGroupedTriggerEntries,
   buildMemberSummary,
@@ -60,7 +61,7 @@ describe('groupForIngredient', () => {
 });
 
 describe('buildGroupSyntheticInsight', () => {
-  it('pools evidence and follows the strongest member with outcomes', () => {
+  it('follows the strongest member with outcomes and keeps its evidence counts honest', () => {
     const group = groupByKey('lactose_dairy')!;
     const synthetic = buildGroupSyntheticInsight(group, [
       insight('cheese', { combinedRiskScore: 66, negativeEvidenceCount: 2, positiveEvidenceCount: 0 }),
@@ -69,8 +70,10 @@ describe('buildGroupSyntheticInsight', () => {
     ]);
 
     expect(synthetic.combinedRiskScore).toBe(66);
-    expect(synthetic.negativeEvidenceCount).toBe(3);
-    expect(synthetic.confidenceLevel).toBe('medium');
+    // Representative member (cheese), not a sum — co-eaten members share the
+    // same report days, so pooling would double-count evidence.
+    expect(synthetic.negativeEvidenceCount).toBe(2);
+    expect(synthetic.confidenceLevel).toBe('low');
     expect(synthetic.ingredientName).toBe('Dairy & lactose');
   });
 
@@ -105,8 +108,8 @@ describe('buildGroupSyntheticInsight', () => {
 });
 
 describe('buildGroupedTriggerEntries', () => {
-  it('groups mapped digestive-pattern ingredients and leaves non-pattern foods out of pattern rows', () => {
-    const { entries, earlySignals } = buildGroupedTriggerEntries([
+  it('groups mapped digestive-pattern ingredients and returns non-pattern foods as ungrouped', () => {
+    const { entries, ungrouped } = buildGroupedTriggerEntries([
       insight('cheese', { negativeEvidenceCount: 2 }),
       insight('cream', { negativeEvidenceCount: 1 }),
       insight('salmon', { positiveEvidenceCount: 2, combinedRiskScore: 34 }),
@@ -114,12 +117,13 @@ describe('buildGroupedTriggerEntries', () => {
     ]);
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.group.key).toBe('lactose_dairy');
-    expect(earlySignals).toHaveLength(0);
+    expect(entries[0]!.key).toBe('lactose_dairy');
+    expect(entries[0]!.kind).toBe('group');
+    expect(ungrouped.map((entry) => entry.ingredientName)).toEqual(['salmon', 'parsley']);
   });
 
   it('uses taxonomy pattern metadata before fallback aliases', () => {
-    const { entries, earlySignals } = buildGroupedTriggerEntries([
+    const { entries, ungrouped } = buildGroupedTriggerEntries([
       insight('mystery sauce', {
         taxonomy: {
           primaryFoodFamilyKey: 'sauces_condiments',
@@ -131,8 +135,31 @@ describe('buildGroupedTriggerEntries', () => {
         },
       }),
     ]);
-    expect(entries.map((entry) => entry.group.key).sort()).toEqual(['fermented_aged_histamine', 'spicy_heat']);
-    expect(earlySignals).toHaveLength(0);
+    expect(entries.map((entry) => entry.key).sort()).toEqual(['fermented_aged_histamine', 'spicy_heat']);
+    expect(ungrouped).toHaveLength(0);
+  });
+});
+
+describe('buildFamilyVerdictEntries', () => {
+  it('buckets foods into family rows with a representative insight', () => {
+    const entries = buildFamilyVerdictEntries([
+      insight('rice', { positiveEvidenceCount: 3, combinedRiskScore: 34 }),
+      insight('oats', { positiveEvidenceCount: 1, combinedRiskScore: 42 }),
+      insight('salt', { positiveEvidenceCount: 1, combinedRiskScore: 46 }),
+    ]);
+
+    const grains = entries.find((entry) => entry.key === 'non_wheat_grains');
+    expect(grains).toBeDefined();
+    expect(grains!.kind).toBe('family');
+    expect(grains!.members).toHaveLength(2);
+    // Representative = most outcomes (rice), so the family row reads its evidence.
+    expect(grains!.insight.positiveEvidenceCount).toBe(3);
+    expect(grains!.insight.ingredientName).toBe('Rice & non-wheat grains');
+
+    // Unclassified foods get the 'Other foods' family instead of vanishing.
+    const other = entries.find((entry) => entry.key === 'unknown_unclassified');
+    expect(other).toBeDefined();
+    expect(other!.members.map((member) => member.ingredientName)).toEqual(['salt']);
   });
 });
 

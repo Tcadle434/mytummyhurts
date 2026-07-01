@@ -8,14 +8,21 @@ import {
 import { palette, radii, spacing, tokens, type } from "../../theme";
 import { IngredientInsight, InsightConfidenceLevel } from "../../types/domain";
 
+const WATCHING_TONE = {
+	background: tokens.color.chart.track,
+	foreground: tokens.color.text.secondary,
+	tint: tokens.color.text.tertiary,
+};
+
 export const STATUS_META: Record<
 	TriggerStatus,
 	{ pill: string; tone: { background: string; foreground: string; tint: string } }
 > = {
 	confirmed: { pill: "Confirmed", tone: tokens.color.status.risk.high },
 	suspect: { pill: "Reviewing", tone: tokens.color.status.risk.medium },
+	watching: { pill: "Watching", tone: WATCHING_TONE },
 	cleared: { pill: "Cleared", tone: tokens.color.status.risk.low },
-	safe: { pill: "Safe", tone: tokens.color.status.risk.low },
+	safe: { pill: "Looking safe", tone: tokens.color.status.risk.low },
 };
 
 function confidenceSegments(level: InsightConfidenceLevel) {

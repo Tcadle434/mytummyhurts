@@ -1,7 +1,6 @@
 import type {
   DigestivePatternKey,
   IngredientInsight,
-  InsightConfidenceLevel,
   TrackedFoodFamilyKey,
 } from '../../types/domain';
 
@@ -68,7 +67,7 @@ export const TRACKED_FOOD_FAMILIES: TrackedFoodFamily[] = [
   { key: 'alcoholic_drinks', label: 'Alcoholic drinks', emoji: '🍺', aliases: ['beer', 'wine', 'cocktail', 'liquor'] },
   { key: 'soups_stews_broths', label: 'Soups, stews & broths', emoji: '🍲', aliases: ['soup', 'stew', 'broth', 'curry'] },
   { key: 'mixed_dishes', label: 'Mixed dishes', emoji: '🍽️', aliases: ['sandwich', 'bowl', 'roll', 'taco', 'pizza', 'sushi'] },
-  { key: 'unknown_unclassified', label: 'Unclassified foods', emoji: '•', aliases: [] },
+  { key: 'unknown_unclassified', label: 'Other foods', emoji: '🍴', aliases: [] },
 ];
 
 function normalizeKey(value: string) {
@@ -138,54 +137,63 @@ export function familyForInsight(insight: IngredientInsight): TrackedFoodFamily 
   return familyForIngredient(insight.ingredientName);
 }
 
-function confidenceFromOutcomes(totalOutcomes: number): InsightConfidenceLevel {
-  if (totalOutcomes >= 6) return 'high';
-  if (totalOutcomes >= 3) return 'medium';
-  return 'low';
-}
-
 function outcomeCount(insight: IngredientInsight) {
   return insight.positiveEvidenceCount + insight.negativeEvidenceCount;
+}
+
+// The member whose evidence best represents the bucket: most rough-day
+// evidence first, then most outcomes, then most scan exposure. Pooling
+// (summing) member counts double-counted the same report day across co-eaten
+// foods and inflated confidence — a representative member keeps counts honest.
+function representativeMember(members: IngredientInsight[]): IngredientInsight {
+  return [...members].sort(
+    (left, right) =>
+      right.negativeEvidenceCount - left.negativeEvidenceCount ||
+      outcomeCount(right) - outcomeCount(left) ||
+      (right.sourceBreakdown.exposureDayCount ?? 0) - (left.sourceBreakdown.exposureDayCount ?? 0) ||
+      left.ingredientName.localeCompare(right.ingredientName),
+  )[0]!;
 }
 
 export function buildGroupSyntheticInsight(
   group: TriggerGroup,
   members: IngredientInsight[],
 ): IngredientInsight {
-  const positive = members.reduce((total, member) => total + member.positiveEvidenceCount, 0);
-  const negative = members.reduce((total, member) => total + member.negativeEvidenceCount, 0);
-  const supporting = members.reduce((total, member) => total + member.supportingEvidenceCount, 0);
+  const representative = representativeMember(members);
   const withOutcomes = members.filter((member) => outcomeCount(member) > 0);
   const scorePool = withOutcomes.length ? withOutcomes : members;
   const combinedRiskScore = Math.max(...scorePool.map((member) => member.combinedRiskScore));
   const declared = members.some((member) => member.sourceBreakdown.declared);
   const linkedConditions = [...new Set(members.flatMap((member) => member.linkedConditions))].slice(0, 3);
-  const lastSeenAt = latestDate(members.map((member) => member.lastSeenAt));
-  const lastOutcomeAt = latestDate(members.map((member) => member.lastOutcomeAt));
 
   return {
+    ...representative,
     id: `group-${group.key}`,
     ingredientName: group.label,
-    triggerScore: Math.max(...members.map((member) => member.triggerScore)),
-    safeScore: Math.max(...members.map((member) => member.safeScore)),
     combinedRiskScore,
-    confidenceLevel: confidenceFromOutcomes(positive + negative),
-    patternStrength: combinedRiskScore >= 70 ? 'strong' : combinedRiskScore >= 46 ? 'moderate' : 'weak',
     linkedConditions,
-    supportingEvidenceCount: supporting,
-    positiveEvidenceCount: positive,
-    negativeEvidenceCount: negative,
-    lastSeenAt,
-    lastOutcomeAt,
+    lastSeenAt: latestDate(members.map((member) => member.lastSeenAt)),
+    lastOutcomeAt: latestDate(members.map((member) => member.lastOutcomeAt)),
     sourceBreakdown: {
+      ...representative.sourceBreakdown,
       declared,
-      science: true,
-      personal: supporting > 0,
-      positiveEvidenceCount: positive,
-      negativeEvidenceCount: negative,
     },
-    lastRecomputedAt: latestDate(members.map((member) => member.lastRecomputedAt)) ?? members[0]!.lastRecomputedAt,
-    summary: `${group.label} pools evidence from ${members.length} ingredient${members.length === 1 ? '' : 's'} with the same mechanism (${group.subtitle.toLowerCase()}).`,
+    summary: `${group.label} tracks ${members.length} ingredient${members.length === 1 ? '' : 's'} with the same mechanism (${group.subtitle.toLowerCase()}).`,
+  };
+}
+
+export function buildFamilySyntheticInsight(
+  family: TrackedFoodFamily,
+  members: IngredientInsight[],
+): IngredientInsight {
+  const representative = representativeMember(members);
+  return {
+    ...representative,
+    id: `family-${family.key}`,
+    ingredientName: family.label,
+    lastSeenAt: latestDate(members.map((member) => member.lastSeenAt)),
+    lastOutcomeAt: latestDate(members.map((member) => member.lastOutcomeAt)),
+    summary: `${family.label} tracks ${members.length} food${members.length === 1 ? '' : 's'} from your scans.`,
   };
 }
 
@@ -200,9 +208,14 @@ export function buildMemberSummary(members: IngredientInsight[], limit = 3): str
   return parts.join(', ');
 }
 
-export type GroupedTriggerEntry = {
-  kind: 'group';
-  group: TriggerGroup;
+// A row on the Trigger Profile caseboard: either a mechanism group (risk
+// track) or a food family (safety track / watching block). `key` routes the
+// detail navigation by kind.
+export type TriggerProfileEntry = {
+  kind: 'group' | 'family';
+  key: string;
+  label: string;
+  emoji: string;
   insight: IngredientInsight;
   members: IngredientInsight[];
   memberSummary: string;
@@ -215,52 +228,74 @@ export type TrackedFoodFamilyEntry = {
   evidenceCount: number;
 };
 
-const PATTERN_DUPLICATE_FAMILIES = new Set<TrackedFoodFamilyKey>([
-  'dairy_foods',
-  'wheat_grains',
-  'legumes_soy_pulses',
-  'gassy_vegetables',
-  'allium_vegetables',
-  'tomato_citrus_fruit',
-  'sugar_free_diet',
-  'alcoholic_drinks',
-]);
-
 export function buildGroupedTriggerEntries(insights: IngredientInsight[]): {
-  entries: GroupedTriggerEntry[];
-  earlySignals: IngredientInsight[];
+  entries: TriggerProfileEntry[];
+  ungrouped: IngredientInsight[];
 } {
   const membersByGroup = new Map<string, IngredientInsight[]>();
+  const ungrouped: IngredientInsight[] = [];
 
   for (const insight of insights) {
-    for (const group of groupsForInsight(insight)) {
+    const groups = groupsForInsight(insight);
+    if (!groups.length) {
+      ungrouped.push(insight);
+      continue;
+    }
+    for (const group of groups) {
       const members = membersByGroup.get(group.key) ?? [];
       members.push(insight);
       membersByGroup.set(group.key, members);
     }
   }
 
-  const entries: GroupedTriggerEntry[] = [];
+  const entries: TriggerProfileEntry[] = [];
   for (const [key, members] of membersByGroup) {
     const group = groupByKey(key)!;
     entries.push({
       kind: 'group',
-      group,
+      key: group.key,
+      label: group.label,
+      emoji: group.emoji,
       insight: buildGroupSyntheticInsight(group, members),
       members,
       memberSummary: buildMemberSummary(members),
     });
   }
 
-  return { entries, earlySignals: [] };
+  return { entries, ungrouped };
 }
 
+export function buildFamilyVerdictEntries(insights: IngredientInsight[]): TriggerProfileEntry[] {
+  const membersByFamily = new Map<string, IngredientInsight[]>();
+  for (const insight of insights) {
+    const family = familyForInsight(insight);
+    const members = membersByFamily.get(family.key) ?? [];
+    members.push(insight);
+    membersByFamily.set(family.key, members);
+  }
+
+  return [...membersByFamily.entries()].map(([key, members]) => {
+    const family = familyByKey(key)!;
+    return {
+      kind: 'family' as const,
+      key: family.key,
+      label: family.label,
+      emoji: family.emoji,
+      insight: buildFamilySyntheticInsight(family, members),
+      members,
+      memberSummary: buildMemberSummary(members),
+    };
+  });
+}
+
+// The "still watching" block: foods without directional evidence, grouped by
+// family. Unclassified foods land in the 'Other foods' family instead of
+// disappearing (salt used to be invisible everywhere).
 export function buildTrackedFoodFamilyEntries(insights: IngredientInsight[]): TrackedFoodFamilyEntry[] {
   const membersByFamily = new Map<string, IngredientInsight[]>();
   const firstSeenOrder = new Map<string, number>();
   for (const insight of insights) {
     const family = familyForInsight(insight);
-    if (family.key === 'unknown_unclassified') continue;
     if (!firstSeenOrder.has(family.key)) {
       firstSeenOrder.set(family.key, firstSeenOrder.size);
     }
@@ -282,10 +317,6 @@ export function buildTrackedFoodFamilyEntries(insights: IngredientInsight[]): Tr
         memberSummary: buildMemberSummary(members, 4),
         evidenceCount,
       };
-    })
-    .filter((entry) => {
-      if (!PATTERN_DUPLICATE_FAMILIES.has(entry.family.key)) return true;
-      return entry.members.some((member) => groupsForInsight(member).length === 0);
     })
     .sort(
       (left, right) =>

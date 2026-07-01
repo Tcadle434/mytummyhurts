@@ -23,6 +23,7 @@ import {
 import {
   evidenceDetailForInsight,
   statusForInsight,
+  statusForMembers,
   type TriggerStatus,
 } from '../../features/insights/triggerProfile';
 import { RootStackParamList } from '../../navigation/types';
@@ -40,8 +41,17 @@ type MealExample = { id: string; mealTitle: string; note: string; severity?: num
 const STATUS_HEADLINE: Record<TriggerStatus, string> = {
   confirmed: 'Confirmed trigger',
   suspect: 'Under review',
+  watching: 'Watching',
   cleared: 'Cleared',
-  safe: 'Safe food',
+  safe: 'Looking safe',
+};
+
+const FAMILY_STATUS_DETAIL: Record<TriggerStatus, string> = {
+  confirmed: 'At least one food in this family is a confirmed trigger — check the members below.',
+  suspect: 'Rough-day evidence is building for a food in this family. Check-ins settle the case.',
+  watching: 'Foods seen in your scans — paired daily check-ins decide the verdict.',
+  cleared: 'Every food here has been calm each time you ate it. You can stop worrying about these.',
+  safe: 'Calm so far across this family — a few more calm days each earns cleared.',
 };
 
 export function InsightDetailScreen({ route, navigation }: Props) {
@@ -157,8 +167,9 @@ export function InsightDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const status: TriggerStatus =
-    statusForInsight(insight) ?? (insight.triggerScore >= insight.safeScore ? 'suspect' : 'safe');
+  // A group's verdict derives from its members (same rule as the caseboard
+  // list) so tapping a row never opens a detail page with a different status.
+  const status: TriggerStatus = group && members.length ? statusForMembers(members) : statusForInsight(insight);
   const meta = STATUS_META[status];
   const displayName = group
     ? group.label
@@ -210,13 +221,13 @@ export function InsightDetailScreen({ route, navigation }: Props) {
         <View style={styles.evidenceCounts}>
           <EvidenceCount
             value={insight.negativeEvidenceCount}
-            label="Rough-day data points"
+            label="Rough days"
             color={tokens.color.status.risk.high.tint}
           />
           <View style={styles.evidenceDivider} />
           <EvidenceCount
             value={insight.positiveEvidenceCount}
-            label="Calm-day data points"
+            label="Calm days"
             color={tokens.color.status.risk.low.tint}
           />
         </View>
@@ -338,21 +349,24 @@ function FamilyDetail({
     ...new Set(members.flatMap((member) => groupsForInsight(member).map((group) => group.label))),
   ];
 
+  const familyStatus = statusForMembers(members);
+  const familyMeta = STATUS_META[familyStatus];
+
   return (
     <AppScreen>
-      <DetailScreenHeader eyebrow="Foods we are tracking" title={family.label} />
+      <DetailScreenHeader eyebrow="Trigger Profile" title={family.label} />
 
       <SectionCard style={styles.verdictCard}>
         <View style={[styles.glyph, styles.familyGlyphLarge]}>
           <Text style={styles.glyphEmoji}>{family.emoji}</Text>
         </View>
         <Text style={styles.groupSubtitle}>Food family</Text>
-        <View style={styles.familyStatusPill}>
-          <Text style={styles.familyStatusPillText}>Tracking coverage</Text>
+        <View style={[styles.statusPill, { backgroundColor: familyMeta.tone.background }]}>
+          <Text style={[styles.statusPillText, { color: familyMeta.tone.tint }]}>
+            {STATUS_HEADLINE[familyStatus]}
+          </Text>
         </View>
-        <Text style={styles.verdictDetail}>
-          This organizes foods seen in your scans. It is not a trigger verdict unless evidence forms a Digestive Pattern.
-        </Text>
+        <Text style={styles.verdictDetail}>{FAMILY_STATUS_DETAIL[familyStatus]}</Text>
       </SectionCard>
 
       <SectionCard>
@@ -363,7 +377,7 @@ function FamilyDetail({
           <EvidenceCount value={evidenceCount} label="Paired evidence days" color={tokens.color.status.risk.medium.tint} />
         </View>
         <View style={styles.detailRows}>
-          <DetailRow label="Current role" value="Food history, not a verdict" />
+          <DetailRow label="Family verdict" value={STATUS_HEADLINE[familyStatus]} />
           <DetailRow
             label="Linked patterns"
             value={patternLabels.length ? patternLabels.slice(0, 3).join(', ') : 'None yet'}
@@ -382,12 +396,14 @@ function FamilyDetail({
               .sort((left, right) => left.ingredientName.localeCompare(right.ingredientName))
               .map((member) => {
                 const outcomes = member.positiveEvidenceCount + member.negativeEvidenceCount;
-                const meta =
+                const memberPill = STATUS_META[statusForInsight(member)].pill;
+                const counts =
                   outcomes > 0
                     ? `${member.negativeEvidenceCount} rough - ${member.positiveEvidenceCount} calm`
                     : member.supportingEvidenceCount > 0
                       ? `${member.supportingEvidenceCount} paired day${member.supportingEvidenceCount === 1 ? '' : 's'}`
                       : 'seen in scans';
+                const meta = `${memberPill} · ${counts}`;
                 return (
                   <MemberRow
                     key={member.id}
@@ -436,7 +452,7 @@ function FamilyDetail({
 
       <PipAnalysisCard
         title="How to read this"
-        body="Food families show what your history covers. Digestive Patterns decide whether that evidence becomes under review, confirmed, or cleared."
+        body="Each food in this family carries its own verdict. The family clears only when every food in it has earned it — one suspect keeps the case open."
       />
     </AppScreen>
   );
@@ -529,6 +545,10 @@ function buildSuggestion(name: string, status: TriggerStatus) {
 
   if (status === 'cleared') {
     return `You suspected ${name}, but your calm days say it sits fine. It can stay on the menu — we'll flag it again if the pattern shifts.`;
+  }
+
+  if (status === 'watching') {
+    return `The case on ${name} hasn't started yet. File a check-in on days you eat it and the evidence will begin ruling it in or out.`;
   }
 
   return `${capitalize(name)} has looked gentle for you. Pairing it with your other safe foods is a good base for rough weeks.`;

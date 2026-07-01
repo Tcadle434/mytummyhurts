@@ -13,17 +13,20 @@ export function TriggersSummaryRow({
 	onPress: () => void;
 }) {
 	const parts: string[] = [];
+	if (counts.confirmed > 0) {
+		parts.push(`${counts.confirmed} confirmed`);
+	}
 	if (counts.suspects > 0) {
 		parts.push(`${counts.suspects} under review`);
 	}
-	if (counts.confirmed > 0) {
-		parts.push(`${counts.confirmed} confirmed`);
+	if (counts.safe > 0) {
+		parts.push(`${counts.safe} looking safe`);
 	}
 	if (counts.cleared > 0) {
 		parts.push(`${counts.cleared} cleared`);
 	}
-	if (parts.length === 0 && counts.safe > 0) {
-		parts.push(`${counts.safe} safe food${counts.safe === 1 ? "" : "s"}`);
+	if (parts.length === 0 && counts.watching > 0) {
+		parts.push(`watching ${counts.watching} food${counts.watching === 1 ? "" : "s"}`);
 	}
 
 	if (parts.length === 0) {

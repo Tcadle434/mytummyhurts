@@ -13,6 +13,7 @@ import type {
   StructuredAnalysisV2,
   UserProfile,
 } from './domain';
+import { hasPairedEvidence } from '@mth/shared-domain';
 import type { MenuRiskModifierKey } from './menuRubric';
 import { normalize } from './text-utils';
 
@@ -587,9 +588,13 @@ function buildPersonalAdjustments(
 ): PersonalMechanismAdjustment[] {
   const out: PersonalMechanismAdjustment[] = [];
   const seen = new Set<string>();
+  // Exposure-only watching rows carry zero evidence; without this filter the
+  // fuzzy first-match could land on one and silently zero out the adjustment
+  // a real evidence-backed insight for the same food would have made.
+  const evidenceBacked = insights.filter(hasPairedEvidence);
 
   for (const exposure of exposures.filter((entry) => entry.points > 0)) {
-    const insight = insights.find((entry) => namesMatch(entry.ingredientName, exposure.ingredient));
+    const insight = evidenceBacked.find((entry) => namesMatch(entry.ingredientName, exposure.ingredient));
     if (insight) {
       const cap = personalCap(insight.supportingEvidenceCount);
       const net = insight.negativeEvidenceCount - insight.positiveEvidenceCount;

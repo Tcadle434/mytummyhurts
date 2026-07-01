@@ -77,6 +77,7 @@ export function InsightsScreen() {
 		trackEvent("trigger_profile_viewed", {
 			confirmed: viewState.counts.confirmed,
 			suspects: viewState.counts.suspects,
+			watching: viewState.counts.watching,
 			cleared: viewState.counts.cleared,
 			safe: viewState.counts.safe,
 		});
@@ -92,6 +93,19 @@ export function InsightsScreen() {
 	function openFamily(familyKey: string, label: string) {
 		trackEvent("tracked_food_family_detail_viewed", { family_key: familyKey, label });
 		navigation.navigate("InsightDetail", { familyKey });
+	}
+
+	function openEntry(entry: { kind: "group" | "family"; key: string; label: string }) {
+		if (entry.kind === "group") {
+			openGroup(entry.key, entry.label);
+		} else {
+			openFamily(entry.key, entry.label);
+		}
+	}
+
+	function openDailyCheckIn() {
+		trackEvent("trigger_profile_checkin_cta_tapped", {});
+		navigation.navigate("DailyGutReport", {});
 	}
 
 	let rowIndex = 0;
@@ -117,7 +131,7 @@ export function InsightsScreen() {
 
 				{!isWaitingForComputedData ? (
 					<View style={styles.countsBlock}>
-						<Text style={styles.countsTitle}>Digestive Patterns</Text>
+						<Text style={styles.countsTitle}>The caseboard</Text>
 						<View style={styles.heroCountsRow}>
 							<HeroCount
 								value={viewState.counts.confirmed}
@@ -130,11 +144,28 @@ export function InsightsScreen() {
 								color={tokens.color.status.risk.medium.tint}
 							/>
 							<HeroCount
-								value={viewState.counts.cleared}
-								label="Cleared"
+								value={viewState.counts.safe}
+								label="Looking safe"
 								color={tokens.color.status.risk.low.tint}
 							/>
+							<HeroCount
+								value={viewState.counts.cleared}
+								label="Cleared"
+								color={tokens.color.status.risk.low.foreground}
+							/>
 						</View>
+						<Pressable
+							accessibilityRole="button"
+							accessibilityLabel="File today's check-in"
+							onPress={openDailyCheckIn}
+							style={({ pressed }) => [styles.checkInCta, pressed && { opacity: 0.88 }]}
+						>
+							<Ionicons name="pulse-outline" size={16} color={palette.primary} />
+							<Text style={styles.checkInCtaText}>
+								{"File today's check-in — it moves every open case"}
+							</Text>
+							<Ionicons name="chevron-forward" size={14} color={palette.primary} />
+						</Pressable>
 					</View>
 				) : null}
 
@@ -167,6 +198,7 @@ export function InsightsScreen() {
 										{section.entries.length}
 									</Text>
 								</View>
+								<Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
 							</View>
 							<View style={styles.listStack}>
 								{section.entries.map((entry) => {
@@ -180,14 +212,9 @@ export function InsightsScreen() {
 											<TriggerProfileRow
 												insight={entry.insight}
 												status={section.status}
-												emoji={entry.group.emoji}
+												emoji={entry.emoji}
 												extraDetail={entry.memberSummary}
-												onPress={() =>
-													openGroup(
-														entry.group.key,
-														entry.group.label,
-													)
-												}
+												onPress={() => openEntry(entry)}
 											/>
 										</Animated.View>
 									);
@@ -214,12 +241,12 @@ export function InsightsScreen() {
 								color={palette.textMuted}
 							/>
 							<Text style={styles.familyToggleText}>
-								Foods we are tracking
+								Still watching
 							</Text>
 							<Text style={styles.familyToggleCount}>{viewState.trackedFamilies.length}</Text>
 						</Pressable>
 						<Text style={styles.familyIntro}>
-							Food coverage from your scans. These are not trigger verdicts yet.
+							Foods from your scans that need paired check-ins before a verdict.
 						</Text>
 						{familiesExpanded ? (
 							<View style={styles.familyList}>
@@ -593,14 +620,34 @@ const styles = StyleSheet.create({
 	},
 	heroCountValue: {
 		fontFamily: type.body.bold,
-		fontSize: 28,
-		lineHeight: 32,
+		fontSize: 24,
+		lineHeight: 28,
 	},
 	heroCountLabel: {
 		color: tokens.color.text.tertiary,
 		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+		fontSize: 11,
+		lineHeight: 14,
+		textAlign: "center",
+	},
+	checkInCta: {
+		minHeight: 44,
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		borderRadius: radii.lg,
+		borderWidth: 1,
+		borderColor: "rgba(91, 151, 123, 0.32)",
+		backgroundColor: palette.sageSoft,
+		paddingHorizontal: spacing.md,
+		marginTop: spacing.xs,
+	},
+	checkInCtaText: {
+		flex: 1,
+		color: palette.primary,
+		fontFamily: type.body.semibold,
+		fontSize: 13,
+		lineHeight: 17,
 	},
 	learningCue: {
 		minHeight: 42,
@@ -733,6 +780,12 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.bold,
 		fontSize: 13,
 		lineHeight: 17,
+	},
+	sectionSubtitle: {
+		color: tokens.color.text.tertiary,
+		fontFamily: type.body.medium,
+		fontSize: 12,
+		lineHeight: 16,
 	},
 	listStack: {
 		gap: spacing.xs,

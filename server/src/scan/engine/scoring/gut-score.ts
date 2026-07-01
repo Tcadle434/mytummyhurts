@@ -18,6 +18,7 @@ import {
   baselineSeverityPenalty,
   clamp,
   clampNumber,
+  hasPairedEvidence,
   ingredientConditionImpacts,
   normalizeKey,
   scoreEventTime,
@@ -379,15 +380,19 @@ export function computeGutScoreState(params: {
   const nowMs = scoreEventTime(updatedAt);
   const baselineScore = baselineGutScore(params.seed);
   const reportCount = params.dailyReports.length;
+  // Exposure-only "watching" rows (scanned, never paired with a check-in)
+  // carry no outcome evidence and must not move the score — their flat risk-50
+  // would otherwise shadow ingredientBaselineRisk for every unpaired scan.
+  const insights = params.insights.filter(hasPairedEvidence);
   const recentReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 7, nowMs));
   const monthReports = params.dailyReports.filter((report) => withinDays(report.updatedAt, 30, nowMs));
   const recentDailyOutcome = clamp(averageScore(
     (recentReports.length ? recentReports : monthReports).map((report) => report.dailyScore ?? symptomDailyScore(report.gutSeverity)),
     baselineScore,
   ));
-  const recentFoodLoad = recentFoodLoadComponent(params.seed, params.insights, params.scans, nowMs);
+  const recentFoodLoad = recentFoodLoadComponent(params.seed, insights, params.scans, nowMs);
   const symptomFreeConsistency = symptomFreeConsistencyComponent(recentReports, reportCount);
-  const personalizedIngredientEvidence = personalizedIngredientEvidenceComponent(params.insights);
+  const personalizedIngredientEvidence = personalizedIngredientEvidenceComponent(insights);
   const dataConfidence = dataConfidenceComponent(reportCount, recentReports);
 
   let currentScore = clamp(
@@ -414,7 +419,7 @@ export function computeGutScoreState(params: {
   const confidenceLevel = gutScoreConfidence(reportCount);
   const sourceHistory = params.history?.length ? params.history : params.previousGutScore?.history ?? [];
   const trendDelta7d = computeTrendDelta(currentScore, sourceHistory, nowMs);
-  const drivers = buildGutScoreDrivers(currentScore, phase, params.seed, params.insights, recentReports, dataConfidence);
+  const drivers = buildGutScoreDrivers(currentScore, phase, params.seed, insights, recentReports, dataConfidence);
 
   return {
     algorithmVersion: GUT_SCORE_ALGORITHM_VERSION,
@@ -433,7 +438,7 @@ export function computeGutScoreState(params: {
     },
     drivers,
     history: historyWithCurrent(sourceHistory, currentScore, updatedAt),
-    nextAction: nextGutScoreAction(phase, drivers, params.seed, params.insights),
+    nextAction: nextGutScoreAction(phase, drivers, params.seed, insights),
     updatedAt,
     recentEvent: params.previousGutScore?.recentEvent,
   };
