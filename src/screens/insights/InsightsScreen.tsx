@@ -1,5 +1,6 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { ComponentProps, useEffect, useMemo, useState } from "react";
+import { ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
@@ -29,7 +30,16 @@ import {
 } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
 import { components, palette, radii, spacing, tokens, type, type PipState } from "../../theme";
+import {
+	CELEBRATED_CLEARED_STORAGE_KEY,
+	nextClearedCelebration,
+	parseCelebratedKeys,
+	serializeCelebratedKeys,
+	type ClearedCelebrationCandidate,
+} from "./clearedCelebration";
+import { ClearedCelebrationModal } from "./ClearedCelebrationModal";
 import { ConditionsChipRow } from "./ConditionsChipRow";
+import { ClearedBand, SafeChipGarden } from "./SafetyTrack";
 import { STATUS_LABEL } from "./statusVisuals";
 import { TriggerProfileRow } from "./TriggerProfileRow";
 
@@ -51,6 +61,9 @@ export function InsightsScreen() {
 	const hasFallbackInsights = Boolean(fallbackProfile || fallbackInsights.length);
 	const [familiesExpanded, setFamiliesExpanded] = useState(true);
 	const [learningInfoVisible, setLearningInfoVisible] = useState(false);
+	const [celebratedKeys, setCelebratedKeys] = useState<Set<string> | null>(null);
+	const [celebration, setCelebration] = useState<ClearedCelebrationCandidate | null>(null);
+	const celebrationShownThisVisit = useRef(false);
 
 	const isWaitingForInitialRemoteData = Boolean(
 		isLiveBackendConfigured &&
@@ -119,6 +132,45 @@ export function InsightsScreen() {
 	function openDailyCheckIn() {
 		trackEvent("trigger_profile_checkin_cta_tapped", {});
 		navigation.navigate("DailyGutReport", {});
+	}
+
+	useEffect(() => {
+		let active = true;
+		AsyncStorage.getItem(CELEBRATED_CLEARED_STORAGE_KEY)
+			.then((raw) => {
+				if (active) setCelebratedKeys(parseCelebratedKeys(raw));
+			})
+			.catch(() => {
+				if (active) setCelebratedKeys(new Set());
+			});
+		return () => {
+			active = false;
+		};
+	}, []);
+
+	// The cleared celebration: the first time a food earns its verdict, it gets
+	// a moment — once per food, at most one per visit.
+	useEffect(() => {
+		if (isWaitingForComputedData || !celebratedKeys || celebrationShownThisVisit.current) {
+			return;
+		}
+		const clearedEntries =
+			viewState.sections.find((section) => section.status === "cleared")?.entries ?? [];
+		const candidate = nextClearedCelebration(clearedEntries, celebratedKeys);
+		if (candidate) {
+			celebrationShownThisVisit.current = true;
+			setCelebration(candidate);
+			trackEvent("cleared_celebration_shown", { label: candidate.label });
+		}
+	}, [celebratedKeys, isWaitingForComputedData, viewState]);
+
+	function closeCelebration() {
+		if (!celebration) return;
+		const nextKeys = new Set(celebratedKeys ?? []);
+		nextKeys.add(celebration.key);
+		setCelebratedKeys(nextKeys);
+		setCelebration(null);
+		void AsyncStorage.setItem(CELEBRATED_CLEARED_STORAGE_KEY, serializeCelebratedKeys(nextKeys));
 	}
 
 	const isEmptyBoard =
@@ -190,42 +242,66 @@ export function InsightsScreen() {
 							</SectionCard>
 						) : null}
 
-						{viewState.sections.map((section) => (
-							<View key={section.status} style={styles.section}>
-								<View style={styles.sectionHeader}>
-									<View style={styles.sectionTitleRow}>
-										<Text style={[styles.sectionTitle, { color: verdictTone(section.status).foreground }]}>
-											{section.title}
-										</Text>
-										<View style={styles.sectionTitleSpacer} />
-										<Text style={styles.sectionCountText}>
-											{section.entries.length}
-										</Text>
+						{viewState.sections.map((section) => {
+							// Silhouette alternation: risk verdicts read as open case
+							// files (detailed rows); cleared is one settled tinted band;
+							// looking-safe is a light chip garden. Same data, three
+							// shapes — the screen stops being a wall of identical rows.
+							if (section.status === "cleared") {
+								return (
+									<ClearedBand
+										key={section.status}
+										entries={section.entries}
+										onOpen={openEntry}
+									/>
+								);
+							}
+							if (section.status === "safe") {
+								return (
+									<SafeChipGarden
+										key={section.status}
+										entries={section.entries}
+										onOpen={openEntry}
+									/>
+								);
+							}
+							return (
+								<View key={section.status} style={styles.section}>
+									<View style={styles.sectionHeader}>
+										<View style={styles.sectionTitleRow}>
+											<Text style={[styles.sectionTitle, { color: verdictTone(section.status).foreground }]}>
+												{section.title}
+											</Text>
+											<View style={styles.sectionTitleSpacer} />
+											<Text style={styles.sectionCountText}>
+												{section.entries.length}
+											</Text>
+										</View>
+										<Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
 									</View>
-									<Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+									<View style={styles.listStack}>
+										{section.entries.map((entry) => {
+											const delay = ROW_STAGGER_MS * Math.min(rowIndex, 10);
+											rowIndex += 1;
+											return (
+												<Animated.View
+													key={entry.insight.id}
+													entering={FadeInUp.duration(300).delay(delay)}
+												>
+													<TriggerProfileRow
+														insight={entry.insight}
+														status={section.status}
+														emoji={entry.emoji}
+														extraDetail={entry.memberSummary}
+														onPress={() => openEntry(entry)}
+													/>
+												</Animated.View>
+											);
+										})}
+									</View>
 								</View>
-								<View style={styles.listStack}>
-									{section.entries.map((entry) => {
-										const delay = ROW_STAGGER_MS * Math.min(rowIndex, 10);
-										rowIndex += 1;
-										return (
-											<Animated.View
-												key={entry.insight.id}
-												entering={FadeInUp.duration(300).delay(delay)}
-											>
-												<TriggerProfileRow
-													insight={entry.insight}
-													status={section.status}
-													emoji={entry.emoji}
-													extraDetail={entry.memberSummary}
-													onPress={() => openEntry(entry)}
-												/>
-											</Animated.View>
-										);
-									})}
-								</View>
-							</View>
-						))}
+							);
+						})}
 
 						{viewState.trackedFamilies.length > 0 ? (
 							<View style={styles.familyBlock}>
@@ -295,6 +371,13 @@ export function InsightsScreen() {
 				visible={learningInfoVisible}
 				onClose={() => setLearningInfoVisible(false)}
 				learningProgress={learningProgress}
+			/>
+			<ClearedCelebrationModal
+				candidate={celebration}
+				onClose={closeCelebration}
+				onShare={() =>
+					trackEvent("cleared_celebration_shared", { label: celebration?.label ?? "" })
+				}
 			/>
 		</>
 	);
