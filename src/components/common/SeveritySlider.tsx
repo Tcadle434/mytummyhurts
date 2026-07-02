@@ -271,7 +271,8 @@ const styles = StyleSheet.create({
     borderRadius: THUMB_SIZE / 2,
     borderWidth: 3,
     borderColor: tokens.color.utility.white,
-    shadowColor: tokens.color.utility.shadow,
+    // Green-cast lift, matching the card shadow system.
+    shadowColor: tokens.shadow.card.shadowColor,
     shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },

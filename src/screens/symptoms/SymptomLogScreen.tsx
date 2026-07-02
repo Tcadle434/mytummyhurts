@@ -78,12 +78,12 @@ export function SymptomLogScreen() {
       <TabScreenHeader title="Symptoms" />
 
       {monthHeadline ? (
-        <View style={styles.monthSummary}>
+        <SectionCard style={styles.monthSummaryCard}>
           <Text style={styles.monthHeadline}>{monthHeadline}</Text>
           <Text style={styles.monthSubline}>
             from {monthReports.length} logged {monthReports.length === 1 ? 'day' : 'days'}
           </Text>
-        </View>
+        </SectionCard>
       ) : null}
 
       <SectionCard style={styles.calendarCard}>
@@ -195,15 +195,10 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
         style={({ pressed }) => [
           styles.dayCell,
           {
-            backgroundColor: bandColors ? bandColors.background : tokens.color.surface.card.default,
-            borderColor: cell.isToday
-              ? tokens.color.accent.brandStrong
-              : bandColors
-                ? bandColors.tint
-                : tokens.color.border.subtle,
-            borderWidth: cell.isToday ? 2 : 1,
+            backgroundColor: bandColors ? bandColors.background : tokens.color.surface.app.default,
             opacity: cell.isFuture ? 0.42 : pressed ? 0.82 : 1,
           },
+          cell.isToday && styles.dayCellToday,
         ]}
       >
         <Text style={[styles.dayNumber, bandColors ? { color: bandColors.foreground } : null]}>{cell.day}</Text>
@@ -391,17 +386,21 @@ function severityBandColors(value: number) {
 }
 
 const styles = StyleSheet.create({
-  monthSummary: {
+  // The screen's one evergreen block: the month spoken as a finding, in
+  // on-hero text. Everything below stays porcelain and white.
+  monthSummaryCard: {
     gap: spacing.xs,
+    backgroundColor: tokens.color.surface.hero.background,
+    ...shadows.lift,
   },
   monthHeadline: {
     ...tokens.type.display.section,
-    color: tokens.color.text.primary,
+    color: tokens.color.surface.hero.onHero,
   },
   monthSubline: {
     ...tokens.type.body.small,
     fontFamily: type.body.medium,
-    color: tokens.color.text.secondary,
+    color: tokens.color.surface.hero.onHeroMuted,
   },
   calendarCard: {
     gap: spacing.md,
@@ -418,18 +417,15 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: tokens.color.surface.card.default,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.app.default,
   },
   monthButtonDisabled: {
     opacity: 0.5,
   },
   monthTitle: {
+    ...tokens.type.title.card,
     flex: 1,
     color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 19,
     textAlign: 'center',
   },
   legendRow: {
@@ -478,8 +474,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: radii.md,
   },
+  // Today keeps the one functional ring on the calendar; every other cell is
+  // a borderless fill (pale band background or porcelain).
+  dayCellToday: {
+    borderWidth: 2,
+    borderColor: tokens.color.accent.brandStrong,
+  },
   dayNumber: {
-    color: tokens.color.text.primary,
+    color: tokens.color.text.secondary,
     fontFamily: type.body.semibold,
     fontSize: 13,
   },
@@ -490,9 +492,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   sectionTitle: {
+    ...tokens.type.title.card,
     color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 22,
   },
   sectionMeta: {
     color: tokens.color.text.tertiary,
@@ -516,7 +517,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.card,
   },
   reportMonth: {
     fontFamily: type.body.semibold,

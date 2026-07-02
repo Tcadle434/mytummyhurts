@@ -9,7 +9,7 @@ export function verdictTone(key: VerdictToneKey) {
 }
 
 /**
- * The hero numeral pattern from the Gut Score card, bottled: a serif metric
+ * The hero numeral pattern from the Gut Score card, bottled: a Bricolage metric
  * with an inline unit and a plain-words caption underneath. Rule 4 of the
  * design direction — every number answers its own next question inline.
  */

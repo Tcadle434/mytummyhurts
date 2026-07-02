@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
 		borderRadius: radii.pill,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
+		backgroundColor: tokens.color.utility.white,
 	},
 	editButtonLabel: {
 		...tokens.type.label.tab,

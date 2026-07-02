@@ -17,7 +17,7 @@ import { resolveHistoryView } from '../../features/history/viewState';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { radii, shadows, spacing, tokens, type } from '../../theme';
+import { components, radii, spacing, tokens, type } from '../../theme';
 import { DailyGutReport, ScanHistorySummary } from '../../types/domain';
 import {
   DailyScoreBand,
@@ -296,10 +296,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     padding: 4,
-    backgroundColor: tokens.color.surface.frosted,
+    backgroundColor: components.chip.segmented.backgroundColor,
     borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
+    borderWidth: components.chip.segmented.borderWidth,
+    borderColor: components.chip.segmented.borderColor,
   },
   filterChip: {
     flex: 1,
@@ -309,10 +309,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   filterChipSelected: {
-    backgroundColor: tokens.color.surface.card.default,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
-    ...shadows.card,
+    backgroundColor: components.chip.segmentedSelected.backgroundColor,
   },
   filterChipText: {
     ...tokens.type.body.emphasis,
@@ -320,7 +317,7 @@ const styles = StyleSheet.create({
   },
   filterChipTextSelected: {
     ...tokens.type.body.strong,
-    color: tokens.color.text.primary,
+    color: tokens.color.text.inverse,
   },
   sectionBlock: {
     gap: spacing.md,
@@ -374,8 +371,8 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
-    backgroundColor: tokens.color.surface.frosted,
+    borderColor: components.button.secondary.borderColor,
+    backgroundColor: components.button.secondary.backgroundColor,
     alignItems: 'center',
     justifyContent: 'center',
   },

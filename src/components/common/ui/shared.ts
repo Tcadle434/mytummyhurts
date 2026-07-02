@@ -3,6 +3,7 @@ import { ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { components, spacing, tokens } from '../../../theme';
+import { withAlpha } from '../../../theme/helpers';
 
 export const PICKER_PRESS_SPRING = { damping: 16, stiffness: 360, mass: 0.6 } as const;
 export const PICKER_RELEASE_SPRING = { damping: 14, stiffness: 220, mass: 0.7 } as const;
@@ -102,7 +103,7 @@ export function getPillStyle(tone: InfoPillTone) {
 export function getOnboardingPickerColorPair(variant: OnboardingPickerVariant) {
   if (variant === 'image') {
     return {
-      backgroundFrom: 'rgba(255,255,255,0.94)',
+      backgroundFrom: withAlpha(tokens.color.utility.white, 0.94),
       backgroundTo: tokens.color.accent.brand,
       borderFrom: tokens.color.border.subtle,
       borderTo: tokens.color.accent.brand,
@@ -120,12 +121,16 @@ export function getOnboardingPickerColorPair(variant: OnboardingPickerVariant) {
 export function getOnboardingPickerColors(variant: OnboardingPickerVariant, selected: boolean) {
   if (variant === 'image') {
     return {
-      background: selected ? tokens.color.accent.brand : 'rgba(255,255,255,0.94)',
+      background: selected ? tokens.color.accent.brand : withAlpha(tokens.color.utility.white, 0.94),
       border: selected ? tokens.color.accent.brand : tokens.color.border.subtle,
       text: selected ? tokens.color.text.inverse : tokens.color.text.primary,
       icon: selected ? tokens.color.text.inverse : tokens.color.icon.primary,
-      iconBackground: selected ? 'rgba(255,255,255,0.18)' : tokens.color.status.success.background,
-      badgeBackground: selected ? 'rgba(255,255,255,0.18)' : tokens.color.accent.brand,
+      iconBackground: selected
+        ? withAlpha(tokens.color.utility.white, 0.18)
+        : tokens.color.status.success.background,
+      badgeBackground: selected
+        ? withAlpha(tokens.color.utility.white, 0.18)
+        : tokens.color.accent.brand,
       badgeText: tokens.color.text.inverse,
     };
   }
@@ -135,7 +140,9 @@ export function getOnboardingPickerColors(variant: OnboardingPickerVariant, sele
     border: selected ? tokens.color.border.emphasis : tokens.color.border.subtle,
     text: selected ? tokens.color.status.success.foreground : tokens.color.text.primary,
     icon: selected ? tokens.color.status.success.foreground : tokens.color.icon.primary,
-    iconBackground: selected ? 'rgba(47,110,84,0.12)' : tokens.color.surface.card.warm,
+    iconBackground: selected
+      ? withAlpha(tokens.color.accent.brand, 0.12)
+      : tokens.color.surface.card.warm,
     badgeBackground: tokens.color.accent.brand,
     badgeText: tokens.color.text.inverse,
   };

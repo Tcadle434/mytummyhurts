@@ -51,7 +51,10 @@ export function StartingGutScoreComputeCard({
 	const circumference = 2 * Math.PI * radius;
 	const isRevealed = state === "revealed";
 	const isLoading = state === "loading";
+	// Tint drives the ring fill and loading dots; text always uses the darker
+	// text-grade foreground so the numeral stays readable on the white card.
 	const ringColor = isRevealed ? gutScoreTint(score) : palette.primary;
+	const scoreTextColor = isRevealed ? scoreForeground(score) : palette.primary;
 	const statusLabel = isRevealed
 		? "Starting Gut Score"
 		: isLoading
@@ -152,7 +155,7 @@ export function StartingGutScoreComputeCard({
 						isRevealed ? { backgroundColor: scoreBackground(score) } : null,
 					]}
 				>
-					<Text style={[styles.statusText, isRevealed ? { color: gutScoreTint(score) } : null]}>
+					<Text style={[styles.statusText, isRevealed ? { color: scoreForeground(score) } : null]}>
 						{statusLabel}
 					</Text>
 				</View>
@@ -185,7 +188,7 @@ export function StartingGutScoreComputeCard({
 					{isLoading ? (
 						<StartingScoreLoadingDots color={ringColor} />
 					) : (
-						<Text style={[styles.value, { color: ringColor }]}>
+						<Text style={[styles.value, { color: scoreTextColor }]}>
 							{isRevealed ? String(displayScore) : "--"}
 						</Text>
 					)}
@@ -287,6 +290,13 @@ function scoreBackground(score: number) {
 	if (score >= 67) return tokens.color.status.risk.low.background;
 	if (score >= 34) return tokens.color.status.risk.medium.background;
 	return tokens.color.status.risk.high.background;
+}
+
+// Text-grade partner to gutScoreTint: same banding, darker foreground colors.
+function scoreForeground(score: number) {
+	if (score >= 67) return tokens.color.status.risk.low.foreground;
+	if (score >= 34) return tokens.color.status.risk.medium.foreground;
+	return tokens.color.status.risk.high.foreground;
 }
 
 function healthTextForScore(score: number) {

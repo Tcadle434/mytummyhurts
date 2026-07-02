@@ -4,7 +4,7 @@ import Svg, { Path } from "react-native-svg";
 
 import { Pip } from "../../components/common/Pip";
 import { SectionCard } from "../../components/common/UI";
-import { palette, spacing, tokens, type, type PipState } from "../../theme";
+import { spacing, tokens, type, type PipState } from "../../theme";
 
 type GutScoreHomeCardProps = {
 	score: number;
@@ -33,7 +33,7 @@ export function GutScoreHomeCard({ score, trendDelta7d = 0, onInfoPress }: GutSc
 						<Ionicons
 							name="information-circle-outline"
 							size={19}
-							color={tokens.color.icon.accent}
+							color={tokens.color.surface.hero.onHeroMuted}
 						/>
 					</Pressable>
 				</View>
@@ -107,13 +107,11 @@ function getGutScoreZone(score: number): GutScoreZone {
 	return "high";
 }
 
-// Text-grade zone colors: the darker `foreground` tones keep the numeral
-// readable on cream (the mid-zone amber tint was the card's weakest contrast).
-// The arc keeps the brighter tints — fills and text are different jobs.
-function getGutScoreZoneColor(zone: GutScoreZone) {
-	if (zone === "low") return tokens.color.status.risk.high.foreground;
-	if (zone === "medium") return tokens.color.status.risk.medium.foreground;
-	return tokens.color.status.risk.low.foreground;
+// On the evergreen hero the numeral is always porcelain — maximal presence,
+// always readable. Zone state is carried by the arc segment and Pip's face
+// (the triple-encode), not by tinting the number.
+function getGutScoreZoneColor(_zone: GutScoreZone) {
+	return tokens.color.surface.hero.onHero;
 }
 
 function getPipStateForScore(score: number): PipState {
@@ -128,7 +126,7 @@ function getGutScoreTrend(delta: number) {
 		const magnitude = Math.abs(delta);
 		return {
 			iconName: "trending-down-outline" as const,
-			color: tokens.color.status.risk.high.tint,
+			color: tokens.color.accent.mascotAccent,
 			metricText: `-${magnitude} ${magnitude === 1 ? "pt" : "pts"}`,
 		};
 	}
@@ -136,14 +134,14 @@ function getGutScoreTrend(delta: number) {
 	if (delta > 0) {
 		return {
 			iconName: "trending-up-outline" as const,
-			color: palette.primary,
+			color: tokens.color.accent.mascot,
 			metricText: `+${delta} ${delta === 1 ? "pt" : "pts"}`,
 		};
 	}
 
 	return {
 		iconName: "remove-outline" as const,
-		color: palette.textMuted,
+		color: tokens.color.surface.hero.onHeroFaint,
 		metricText: "Steady",
 	};
 }
@@ -173,6 +171,8 @@ const styles = StyleSheet.create({
 		justifyContent: "space-between",
 		gap: spacing.sm,
 		paddingVertical: spacing.md,
+		backgroundColor: tokens.color.surface.hero.background,
+		...tokens.shadow.lift,
 	},
 	copyColumn: {
 		flex: 1,
@@ -187,13 +187,13 @@ const styles = StyleSheet.create({
 	},
 	title: {
 		...tokens.type.title.block,
-		color: tokens.color.text.primary,
+		color: tokens.color.surface.hero.onHero,
 	},
 	infoBadge: {
 		width: 26,
 		height: 26,
 		borderRadius: 13,
-		backgroundColor: tokens.color.status.success.background,
+		backgroundColor: tokens.color.surface.hero.raised,
 		alignItems: "center",
 		justifyContent: "center",
 		marginTop: -2,
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
 		...tokens.type.display.metric,
 	},
 	scoreScale: {
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroMuted,
 		fontFamily: type.body.semibold,
 		fontSize: 18,
 		lineHeight: 24,
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
 	},
 	explainerText: {
 		maxWidth: 160,
-		color: tokens.color.text.secondary,
+		color: tokens.color.surface.hero.onHeroMuted,
 		fontFamily: type.body.medium,
 		fontSize: 13,
 		lineHeight: 18,
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
 		lineHeight: 16,
 	},
 	trendContext: {
-		color: palette.textMuted,
+		color: tokens.color.surface.hero.onHeroFaint,
 		fontFamily: type.body.medium,
 		fontSize: 12,
 		lineHeight: 16,

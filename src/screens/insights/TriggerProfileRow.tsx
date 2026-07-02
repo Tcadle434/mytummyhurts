@@ -101,8 +101,6 @@ const styles = StyleSheet.create({
 		alignItems: "flex-start",
 		gap: spacing.sm,
 		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.md,

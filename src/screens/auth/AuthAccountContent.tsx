@@ -243,8 +243,8 @@ const styles = StyleSheet.create({
 		...tokens.type.label.eyebrow,
 		color: tokens.color.text.tertiary,
 	},
-	// Rule 2: the serif voices findings, never chrome. "Create your account"
-	// is an instruction, so it stays in the Jakarta screen-title face like
+	// The display faces voice findings, never chrome. "Create your account"
+	// is an instruction, so it stays in the shared screen-title token like
 	// every other screen title.
 	title: {
 		...tokens.type.title.screen,

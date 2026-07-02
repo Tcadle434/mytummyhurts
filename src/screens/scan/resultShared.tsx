@@ -77,11 +77,10 @@ export const sharedResultStyles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  // Card titles speak in Bricolage via the title tokens.
   sectionTitle: {
+    ...tokens.type.title.card,
     color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 22,
-    letterSpacing: -0.4,
   },
   sectionBody: {
     color: palette.textMuted,

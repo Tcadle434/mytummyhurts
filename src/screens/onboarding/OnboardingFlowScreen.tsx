@@ -25,6 +25,7 @@ import { trackEvent } from "../../services/analytics";
 import { computeGutScoreState } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
 import { palette, tokens } from "../../theme";
+import { withAlpha } from "../../theme/helpers";
 import { OnboardingStackParamList } from "../../navigation/types";
 import { type StartingScoreState } from "./components/StartingGutScoreComputeCard";
 import { WelcomeFoodScene } from "./components/WelcomeFoodScene";
@@ -117,7 +118,9 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	const hasImageBackground = step.backgroundVariant === "getStartedImage";
 	const backIconColor = hasImageBackground ? tokens.color.utility.white : palette.primary;
 	const titleColor = hasImageBackground ? tokens.color.utility.white : palette.primary;
-	const subtitleColor = hasImageBackground ? "rgba(255, 255, 255, 0.86)" : undefined;
+	const subtitleColor = hasImageBackground
+		? withAlpha(tokens.color.utility.white, 0.86)
+		: undefined;
 	const centerImageSource = getCenterImageSource(step.centerImage);
 	const centerImageHeight = Math.min(Math.max(windowHeight * 0.39, 290), 370);
 	const centerImageWidth = centerImageHeight * (1024 / 1535);

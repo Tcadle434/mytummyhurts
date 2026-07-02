@@ -13,11 +13,7 @@ import Animated, {
 
 import { Pip } from "../../components/common/Pip";
 import { AppScreen, DetailScreenHeader } from "../../components/common/UI";
-import {
-	bandForeground,
-	bandRiskColors,
-	pipStateForBand,
-} from "../../components/progress/bandStyle";
+import { bandRiskColors, pipStateForBand } from "../../components/progress/bandStyle";
 import { useHomeData } from "../../features/home/hooks";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { RootStackParamList } from "../../navigation/types";
@@ -137,8 +133,9 @@ export function WeeklyProgressScreen() {
 }
 
 /**
- * The screen's one hero: the week spoken as a finding, with Pip's face
- * agreeing with the band color (number + color + face, rule 3).
+ * The screen's one evergreen block: the week spoken as a finding in on-hero
+ * text, with Pip's face carrying the band (words + face; the day rows below
+ * carry the band colors).
  */
 function WeekHero({
 	headline,
@@ -152,12 +149,10 @@ function WeekHero({
 	band?: DailyScoreBand;
 }) {
 	return (
-		<View style={styles.heroRow} accessible accessibilityRole="summary">
+		<View style={styles.heroCard} accessible accessibilityRole="summary">
 			<Pip state={pipStateForBand(band)} size={72} />
 			<View style={styles.heroCopy}>
-				<Text style={[styles.heroHeadline, { color: bandForeground(band) }]}>
-					{headline}
-				</Text>
+				<Text style={styles.heroHeadline}>{headline}</Text>
 				<Text style={styles.heroDetail}>{detail}</Text>
 				{deltaLine ? <Text style={styles.heroDelta}>{deltaLine}</Text> : null}
 			</View>
@@ -372,35 +367,38 @@ const styles = StyleSheet.create({
 		borderRadius: radii.pill,
 		alignItems: "center",
 		justifyContent: "center",
-		backgroundColor: tokens.color.surface.frosted,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.card.default,
+		...tokens.shadow.card,
 	},
 	stepperButtonDisabled: {
 		opacity: 0.6,
 	},
-	heroRow: {
+	heroCard: {
+		...components.card.hero,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.md,
-		paddingVertical: spacing.sm,
+		padding: spacing.lg,
 	},
 	heroCopy: {
 		flex: 1,
 		gap: spacing.xs,
 	},
+	// display.section, not display.hero: the copy column sits beside a 72px
+	// Pip, and the wider Bricolage metrics need the smaller size to wrap well.
 	heroHeadline: {
-		...tokens.type.display.hero,
+		...tokens.type.display.section,
+		color: tokens.color.surface.hero.onHero,
 	},
 	heroDetail: {
 		...tokens.type.body.default,
 		fontFamily: type.body.medium,
-		color: tokens.color.text.secondary,
+		color: tokens.color.surface.hero.onHeroMuted,
 	},
 	heroDelta: {
 		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroFaint,
 	},
 	dayList: {
 		gap: spacing.sm,
@@ -419,9 +417,7 @@ const styles = StyleSheet.create({
 		borderRadius: radii.pill,
 		alignItems: "center",
 		justifyContent: "center",
-		backgroundColor: tokens.color.surface.frosted,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.app.default,
 	},
 	dayBadgeDay: {
 		...tokens.type.metric.value,

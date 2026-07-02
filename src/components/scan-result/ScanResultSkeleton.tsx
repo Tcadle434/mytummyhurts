@@ -5,7 +5,7 @@ import { SectionCard, SkeletonBlock } from '../common/UI';
 
 // Mirrors the real result layout so the verdict area is anticipated before it
 // loads: centered dish-name header, then the hero card — photo moment, level
-// pill, verdict lines, serif metric — then one evidence card.
+// pill, verdict lines, Bricolage metric — then one evidence card.
 export function ScanResultSkeleton() {
   return (
     <View style={styles.wrap}>

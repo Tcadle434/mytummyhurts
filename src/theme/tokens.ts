@@ -7,6 +7,8 @@ const brand = foundations.color.brand;
 const ink = brand.ink;
 const neutral = foundations.color.neutral;
 
+const evergreen = brand.evergreen;
+
 export const tokens = {
   color: {
     surface: {
@@ -15,59 +17,67 @@ export const tokens = {
         raised: neutral.warm[0],
         gradientStart: neutral.warm[50],
         gradientEnd: neutral.warm[100],
-        ornamentMint: withAlpha(brand.pip.base, 0.28),
-        ornamentPeach: withAlpha(brand.pip.accent, 0.24),
       },
       card: {
         default: brand.surface.default,
         warm: brand.surface.warm,
-        success: '#F1F9F3',
-        info: '#F2F8FC',
+        success: '#EAF4EC',
+        info: '#EFF6FA',
+      },
+      // Deep Garden hero blocks: the one dark surface per screen. Everything
+      // rendered on it uses the `on*` colors — never the light-theme text ramp.
+      hero: {
+        background: evergreen.base,
+        deep: evergreen.deep,
+        raised: withAlpha('#FFFFFF', 0.1),
+        onHero: evergreen.onDeep,
+        onHeroMuted: evergreen.onDeepMuted,
+        onHeroFaint: evergreen.onDeepFaint,
       },
       sheet: brand.surface.default,
-      frosted: withAlpha(foundations.color.neutral.white, 0.78),
+      frosted: withAlpha(foundations.color.neutral.white, 0.82),
     },
     text: {
       primary: ink,
       secondary: neutral.cool[700],
       tertiary: neutral.cool[600],
-      inverse: foundations.color.neutral.white,
-      accent: '#2F6953',
-      warm: '#845B23',
-      danger: '#9C3427',
+      inverse: evergreen.onDeep,
+      accent: evergreen.bright,
+      warm: '#8F5A16',
+      danger: '#A33B26',
     },
     border: {
-      subtle: withAlpha(ink, 0.08),
-      strong: withAlpha(ink, 0.14),
-      emphasis: withAlpha(brand.cta.scan, 0.24),
+      subtle: withAlpha(ink, 0.07),
+      strong: withAlpha(ink, 0.13),
+      emphasis: withAlpha(evergreen.bright, 0.28),
     },
     overlay: {
-      scrim: withAlpha('#161D21', 0.44),
+      scrim: withAlpha(evergreen.deep, 0.5),
     },
     accent: {
-      brand: brand.cta.scan,
-      brandStrong: '#478A70',
+      brand: evergreen.bright,
+      brandStrong: evergreen.base,
       mascot: brand.pip.base,
       mascotAccent: brand.pip.accent,
       warm: brand.status.yellow,
     },
     action: {
       primary: {
-        background: brand.cta.scan,
-        foreground: foundations.color.neutral.white,
+        background: evergreen.base,
+        foreground: evergreen.onDeep,
       },
       secondary: {
         background: foundations.color.neutral.white,
         foreground: ink,
       },
       quiet: {
-        background: withAlpha(brand.pip.base, 0.16),
-        foreground: '#2F6953',
+        background: withAlpha(brand.pip.base, 0.2),
+        foreground: evergreen.base,
       },
     },
     info: {
-      background: '#EAF5FB',
-      foreground: '#407BA0',
+      background: '#EAF3F9',
+      foreground: '#3D7397',
       tint: brand.info.blue,
     },
     chart: {
@@ -78,33 +88,33 @@ export const tokens = {
     status: {
       risk: {
         low: {
-          foreground: '#3A7F63',
-          background: '#E5F3EA',
-          tint: '#67AD87',
+          foreground: '#256B4A',
+          background: '#E3F2E8',
+          tint: '#3E9B6E',
         },
         medium: {
-          foreground: '#9A5E14',
+          foreground: '#8F5A16',
           background: brand.status.mediumBackground,
           tint: brand.status.orange,
         },
         high: {
-          foreground: '#A13B29',
-          background: '#FFE2DA',
+          foreground: '#A33B26',
+          background: '#FBE3DC',
           tint: brand.status.red,
         },
       },
       // The five caseboard verdict tones. Text on `background` always uses
       // `foreground` (text-grade contrast); `tint` is for fills, meters, and
-      // dots only. Cleared is deliberately a deeper green than safe — the
-      // earned verdict outranks the hopeful one.
+      // dots only. Cleared is deliberately the deepest green — the earned
+      // verdict outranks the hopeful one.
       verdict: {
         confirmed: {
-          foreground: '#A13B29',
-          background: '#FFE2DA',
+          foreground: '#A33B26',
+          background: '#FBE3DC',
           tint: brand.status.red,
         },
         suspect: {
-          foreground: '#9A5E14',
+          foreground: '#8F5A16',
           background: brand.status.mediumBackground,
           tint: brand.status.orange,
         },
@@ -114,35 +124,35 @@ export const tokens = {
           tint: neutral.cool[600],
         },
         safe: {
-          foreground: '#3A7F63',
-          background: '#E5F3EA',
-          tint: '#67AD87',
+          foreground: '#256B4A',
+          background: '#E3F2E8',
+          tint: '#3E9B6E',
         },
         cleared: {
-          foreground: '#1E5C42',
-          background: '#D3EBDC',
-          tint: '#2F8461',
+          foreground: evergreen.base,
+          background: '#D7EBDD',
+          tint: '#2E8058',
         },
       },
       success: {
-        foreground: '#2F6E54',
-        background: '#E8F4EC',
+        foreground: '#256B4A',
+        background: '#E3F2E8',
       },
       warning: {
-        foreground: '#8A6418',
-        background: '#FFF0CB',
+        foreground: '#8F5A16',
+        background: '#FCF0D3',
       },
       danger: {
-        foreground: '#A13B29',
-        background: '#FFE2DA',
+        foreground: '#A33B26',
+        background: '#FBE3DC',
       },
     },
     icon: {
       primary: ink,
       muted: neutral.cool[600],
-      inverse: foundations.color.neutral.white,
-      accent: '#2F6953',
-      info: '#407BA0',
+      inverse: evergreen.onDeep,
+      accent: evergreen.bright,
+      info: '#3D7397',
       danger: brand.status.red,
     },
     utility: {
@@ -152,53 +162,55 @@ export const tokens = {
     },
   },
   type: {
+    // Bricolage Grotesque owns anything with a voice — headlines, verdicts,
+    // numerals. Figtree carries the quiet interface. Two families, one clear
+    // hierarchy; no serifs.
     display: {
       hero: {
         fontFamily: foundations.typography.family.display,
-        fontSize: 38,
-        lineHeight: 44,
-        letterSpacing: -1,
+        fontSize: 34,
+        lineHeight: 40,
+        letterSpacing: -0.6,
       } satisfies TextStyle,
       section: {
         fontFamily: foundations.typography.family.display,
-        fontSize: 30,
-        lineHeight: 34,
-        letterSpacing: -0.6,
-      } satisfies TextStyle,
-      accent: {
-        fontFamily: foundations.typography.family.display,
-        fontSize: 22,
-        lineHeight: 26,
+        fontSize: 27,
+        lineHeight: 32,
         letterSpacing: -0.4,
       } satisfies TextStyle,
-      // Hero numerals — Gut Score, Daily Score, scan scores. The serif is the
-      // app's voice for anything it has concluded; numbers it stands behind
-      // get the display face, not another Jakarta weight.
+      accent: {
+        fontFamily: foundations.typography.family.displayBold,
+        fontSize: 21,
+        lineHeight: 26,
+        letterSpacing: -0.2,
+      } satisfies TextStyle,
+      // Hero numerals — Gut Score, Daily Score, scan scores. Chunky and
+      // confident; the number is the app's conclusion and stands like one.
       metric: {
         fontFamily: foundations.typography.family.display,
-        fontSize: 46,
-        lineHeight: 50,
+        fontSize: 48,
+        lineHeight: 52,
         letterSpacing: -1,
       } satisfies TextStyle,
     },
     title: {
       screen: {
-        fontFamily: foundations.typography.family.bodyBold,
+        fontFamily: foundations.typography.family.displayBold,
         fontSize: 24,
         lineHeight: 30,
-        letterSpacing: -0.4,
-      } satisfies TextStyle,
-      card: {
-        fontFamily: foundations.typography.family.bodyBold,
-        fontSize: 20,
-        lineHeight: 26,
         letterSpacing: -0.3,
       } satisfies TextStyle,
-      block: {
-        fontFamily: foundations.typography.family.bodyBold,
-        fontSize: 18,
-        lineHeight: 24,
+      card: {
+        fontFamily: foundations.typography.family.displayBold,
+        fontSize: 19,
+        lineHeight: 25,
         letterSpacing: -0.2,
+      } satisfies TextStyle,
+      block: {
+        fontFamily: foundations.typography.family.displaySemibold,
+        fontSize: 17,
+        lineHeight: 23,
+        letterSpacing: -0.1,
       } satisfies TextStyle,
     },
     body: {
@@ -266,26 +278,28 @@ export const tokens = {
   },
   space: foundations.space,
   radius: foundations.radius,
+  // Green-cast shadows: cards are borderless, so separation comes from a soft
+  // evergreen-tinted lift instead of hairlines + black smoke.
   shadow: {
     card: {
-      shadowColor: foundations.color.neutral.black,
-      shadowOpacity: 0.06,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 },
+      shadowColor: evergreen.deep,
+      shadowOpacity: 0.09,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 6 },
       elevation: 4,
     },
     lift: {
-      shadowColor: foundations.color.neutral.black,
-      shadowOpacity: 0.08,
-      shadowRadius: 24,
-      shadowOffset: { width: 0, height: 12 },
+      shadowColor: evergreen.deep,
+      shadowOpacity: 0.13,
+      shadowRadius: 22,
+      shadowOffset: { width: 0, height: 10 },
       elevation: 6,
     },
     modal: {
-      shadowColor: foundations.color.neutral.black,
-      shadowOpacity: 0.12,
-      shadowRadius: 32,
-      shadowOffset: { width: 0, height: 16 },
+      shadowColor: evergreen.deep,
+      shadowOpacity: 0.2,
+      shadowRadius: 30,
+      shadowOffset: { width: 0, height: 14 },
       elevation: 8,
     },
   },

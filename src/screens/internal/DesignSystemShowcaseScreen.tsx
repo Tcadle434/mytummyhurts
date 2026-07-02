@@ -5,7 +5,9 @@ import { Gauge } from '../../components/charts/Gauge';
 import { RiskBar } from '../../components/charts/RiskBar';
 import {
   AppScreen,
+  EvidenceMeter,
   GreenOutlineButton,
+  HeroMetric,
   InfoPill,
   InputField,
   OptionChip,
@@ -13,14 +15,18 @@ import {
   ScreenHeader,
   SectionCard,
   SecondaryButton,
+  VerdictPill,
+  type VerdictToneKey,
 } from '../../components/common/UI';
 import { Pip } from '../../components/common/Pip';
-import { foundations, pipStates, tokens } from '../../theme';
+import { components, foundations, pipStates, tokens } from '../../theme';
 
 const semanticSwatches = [
   { label: 'surface.app.default', value: tokens.color.surface.app.default, textColor: tokens.color.text.primary },
   { label: 'surface.card.default', value: tokens.color.surface.card.default, textColor: tokens.color.text.primary },
   { label: 'surface.card.warm', value: tokens.color.surface.card.warm, textColor: tokens.color.text.primary },
+  { label: 'surface.hero.background', value: tokens.color.surface.hero.background, textColor: tokens.color.surface.hero.onHero },
+  { label: 'surface.hero.deep', value: tokens.color.surface.hero.deep, textColor: tokens.color.surface.hero.onHero },
   { label: 'accent.brand', value: tokens.color.accent.brand, textColor: tokens.color.text.inverse },
   { label: 'info.background', value: tokens.color.info.background, textColor: tokens.color.info.foreground },
   { label: 'status.risk.low', value: tokens.color.status.risk.low.background, textColor: tokens.color.status.risk.low.foreground },
@@ -28,6 +34,16 @@ const semanticSwatches = [
   { label: 'status.risk.high', value: tokens.color.status.risk.high.background, textColor: tokens.color.status.risk.high.foreground },
   { label: 'status.danger', value: tokens.color.status.danger.background, textColor: tokens.color.status.danger.foreground },
 ] as const;
+
+// The five verdict tones. Pills always pair `foreground` text with the tone
+// background; `tint` only ever fills dots, meters, and rings.
+const verdictTones: { tone: VerdictToneKey; label: string }[] = [
+  { tone: 'confirmed', label: 'Confirmed' },
+  { tone: 'suspect', label: 'Suspect' },
+  { tone: 'watching', label: 'Watching' },
+  { tone: 'safe', label: 'Safe' },
+  { tone: 'cleared', label: 'Cleared' },
+];
 
 const foundationSwatches = [
   { label: 'brand.pip.base', value: foundations.color.brand.pip.base, textColor: tokens.color.text.primary },
@@ -91,16 +107,53 @@ export function DesignSystemShowcaseScreen() {
         </View>
       </SectionCard>
 
+      <View style={styles.heroCard}>
+        <Text style={styles.heroEyebrow}>SURFACE.HERO</Text>
+        <Text style={styles.heroTitle}>The one evergreen block per screen</Text>
+        <Text style={styles.heroBody}>
+          Everything on it uses the on-hero ramp — onHero, onHeroMuted, onHeroFaint — never the light-theme text colors.
+        </Text>
+        <HeroMetric
+          value={82}
+          color={tokens.color.surface.hero.onHero}
+        />
+        <Text style={styles.heroMuted}>onHeroMuted carries supporting copy.</Text>
+        <Text style={styles.heroFaint}>onHeroFaint is for whispers and metadata.</Text>
+        <View style={styles.heroRaisedChip}>
+          <Text style={styles.heroRaisedChipLabel}>hero.raised chip</Text>
+        </View>
+      </View>
+
+      <SectionCard>
+        <Text style={styles.sectionTitle}>Verdict tones</Text>
+        <Text style={styles.sectionBody}>
+          Text on a tone background is always the darker foreground grade. Tints fill dots and meters only.
+        </Text>
+        <View style={styles.tokenRow}>
+          {verdictTones.map(({ tone, label }) => (
+            <VerdictPill key={tone} tone={tone} label={label} />
+          ))}
+        </View>
+        <EvidenceMeter filled={2} total={3} label="2 of 3 calm days" tone="cleared" />
+      </SectionCard>
+
       <SectionCard>
         <Text style={styles.sectionTitle}>Typography</Text>
+        <Text style={styles.sectionBody}>
+          Bricolage Grotesque owns anything with a voice — headlines, verdicts, numerals — and only via the display/title tokens. Figtree carries the quiet interface.
+        </Text>
         <Text style={[styles.sampleText, tokens.type.display.hero]}>Display hero</Text>
         <Text style={[styles.sampleText, tokens.type.display.section]}>Display section</Text>
+        <Text style={[styles.sampleText, tokens.type.display.accent]}>Display accent voices findings.</Text>
+        <Text style={[styles.sampleText, tokens.type.display.metric]}>82</Text>
         <Text style={[styles.sampleText, tokens.type.title.screen]}>Screen title</Text>
         <Text style={[styles.sampleText, tokens.type.title.card]}>Card title</Text>
+        <Text style={[styles.sampleText, tokens.type.title.block]}>Block title</Text>
         <Text style={[styles.sampleText, tokens.type.body.default]}>
           Body default is for normal copy. It should carry most paragraphs and explanatory text in the app.
         </Text>
         <Text style={[styles.sampleText, tokens.type.body.strong]}>Body strong is for emphasis without jumping to a heading.</Text>
+        <Text style={[styles.sampleText, tokens.type.label.eyebrow]}>EYEBROW LABEL</Text>
         <Text style={[styles.sampleText, tokens.type.label.button]}>Button label</Text>
         <Text style={[styles.sampleText, tokens.type.label.chip]}>Chip label</Text>
         <Text style={[styles.sampleText, tokens.type.label.tab]}>Tab label</Text>
@@ -246,6 +299,44 @@ const styles = StyleSheet.create({
     color: tokens.color.text.primary,
     ...tokens.type.title.card,
   },
+  // The hero surface demo: the one dark block a screen is allowed, with the
+  // full on-hero text ramp so contrast rules stay visible in one place.
+  heroCard: {
+    ...components.card.hero,
+    padding: tokens.space.lg,
+    gap: tokens.space.sm,
+    alignItems: 'flex-start',
+  },
+  heroEyebrow: {
+    ...tokens.type.label.eyebrow,
+    color: tokens.color.surface.hero.onHeroFaint,
+  },
+  heroTitle: {
+    ...tokens.type.display.accent,
+    color: tokens.color.surface.hero.onHero,
+  },
+  heroBody: {
+    ...tokens.type.body.default,
+    color: tokens.color.surface.hero.onHeroMuted,
+  },
+  heroMuted: {
+    ...tokens.type.body.small,
+    color: tokens.color.surface.hero.onHeroMuted,
+  },
+  heroFaint: {
+    ...tokens.type.body.small,
+    color: tokens.color.surface.hero.onHeroFaint,
+  },
+  heroRaisedChip: {
+    borderRadius: tokens.radius.pill,
+    backgroundColor: tokens.color.surface.hero.raised,
+    paddingHorizontal: tokens.space.md,
+    paddingVertical: tokens.space.xs,
+  },
+  heroRaisedChipLabel: {
+    ...tokens.type.label.chip,
+    color: tokens.color.surface.hero.onHero,
+  },
   sectionBody: {
     color: tokens.color.text.secondary,
     ...tokens.type.body.default,
@@ -301,13 +392,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: tokens.space.sm,
   },
+  // Borderless on purpose: shadows are the separation system now, so the
+  // samples show the lift with nothing else helping.
   shadowSample: {
     width: 72,
     height: 72,
     borderRadius: tokens.radius.lg,
     backgroundColor: tokens.color.surface.card.default,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
   },
   shadowLabel: {
     color: tokens.color.text.secondary,
@@ -351,8 +442,6 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.surface.card.warm,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
   },
   pipLabel: {
     color: tokens.color.text.secondary,

@@ -11,6 +11,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { prepareCameraScanImage, prepareScanImageAsset } from '../../services/images/scanImage';
 import { palette, radii, shadows, spacing, tokens, type } from '../../theme';
+import { withAlpha } from '../../theme/helpers';
 import { createScanRequestId } from '../../utils/id';
 import { buildBarcodeScanPayload, buildImageScanPayload } from './scanPayload';
 import { ScanModeTabs, type ScanModeTab } from './ScanModeTabs';
@@ -336,7 +337,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
               onPress={() => void openLibrary()}
               style={({ pressed }) => [styles.addMoreButton, pressed && { opacity: 0.82 }]}
             >
-              <Ionicons name="add" size={16} color={palette.primary} />
+              <Ionicons name="add" size={16} color={tokens.color.action.quiet.foreground} />
               <Text style={styles.addMoreLabel}>Add</Text>
             </Pressable>
           </View>
@@ -372,38 +373,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  // Borderless white disc on porcelain — separation comes from the shadow.
   backButton: {
     width: 40,
     height: 40,
     borderRadius: radii.pill,
-    backgroundColor: tokens.color.surface.frosted,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.card.default,
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadows.card,
   },
   modeHint: {
     ...tokens.type.body.small,
     marginTop: spacing.sm,
-    color: palette.white,
+    color: tokens.color.surface.hero.onHero,
     fontFamily: type.body.medium,
     textAlign: 'center',
     textShadowColor: tokens.color.overlay.scrim,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 5,
   },
+  // The viewfinder is the dark block on the porcelain canvas: deep evergreen
+  // behind the feed, not raw black or an ink text token misused as a surface.
   cameraCard: {
     flex: 1,
     minHeight: 460,
-    borderRadius: 30,
+    borderRadius: radii.xxl,
     overflow: 'hidden',
-    backgroundColor: tokens.color.text.primary,
+    backgroundColor: tokens.color.surface.hero.deep,
     position: 'relative',
     ...shadows.lift,
   },
   cameraScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.12)',
+    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.12),
   },
   cameraTopBar: {
     position: 'absolute',
@@ -420,38 +423,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // Camera-overlay glass: evergreen-deep instead of neutral black smoke.
   previewControl: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: 'rgba(14, 18, 16, 0.58)',
+    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.58),
     alignItems: 'center',
     justifyContent: 'center',
   },
   previewControlActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    backgroundColor: withAlpha(tokens.color.utility.white, 0.92),
   },
   shutterOuter: {
     width: 78,
     height: 78,
     borderRadius: 39,
     borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.92)',
+    borderColor: withAlpha(tokens.color.utility.white, 0.92),
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(27, 28, 30, 0.28)',
+    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.28),
   },
   shutterInner: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: withAlpha(tokens.color.utility.white, 0.92),
   },
   uploadOverlayButton: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: 'rgba(14, 18, 16, 0.72)',
+    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.72),
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -525,7 +529,7 @@ const styles = StyleSheet.create({
     fontFamily: type.body.bold,
     fontSize: 15,
     textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.32)',
+    textShadowColor: tokens.color.overlay.scrim,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 5,
   },
@@ -555,29 +559,28 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
+  // Card titles speak in Bricolage via the title tokens.
   uploadTrayTitle: {
+    ...tokens.type.title.block,
     color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 18,
   },
   uploadTraySubtitle: {
     color: palette.textMuted,
     fontFamily: type.body.medium,
     fontSize: 13,
   },
+  // Quiet action pill: mint wash, no hairline — borderless is the system.
   addMoreButton: {
     minHeight: 36,
     borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: palette.pillGreenBorder,
-    backgroundColor: palette.pillGreen,
+    backgroundColor: tokens.color.action.quiet.background,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
   },
   addMoreLabel: {
-    color: palette.primary,
+    color: tokens.color.action.quiet.foreground,
     fontFamily: type.body.bold,
     fontSize: 13,
   },
@@ -602,7 +605,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(14,18,16,0.72)',
+    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.72),
     alignItems: 'center',
     justifyContent: 'center',
   },

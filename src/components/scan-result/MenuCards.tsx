@@ -40,10 +40,12 @@ function topPickEyebrow(level: RiskLevel): string {
 	return "Gentlest option — still risky";
 }
 
-// The answer to "what do I order?" — the top-ranked dish gets hero weight:
-// serif dish name, a one-line why, and the consumption affordance right on
-// the card instead of two taps deep. The tone surface + eyebrow word + level
-// word triple-encode the state.
+// The answer to "what do I order?" — the menu screen's one evergreen hero.
+// The top-ranked dish sits on the deep garden surface with porcelain text;
+// the worded tone pill carries the risk state, and the honest eyebrow keeps
+// a rough menu's "gentlest option" from reading like a celebration. The
+// expanded breakdown drops onto a white inset so the light-ramp evidence
+// components keep their contrast.
 export function MenuTopPickCard({
 	item,
 	expanded,
@@ -55,23 +57,27 @@ export function MenuTopPickCard({
 	onToggle: () => void;
 	onConsume?: (item: MenuTierItem) => void;
 }) {
-	const tone = tokens.color.status.risk[item.level];
 	const meta = [item.section, item.price].filter(Boolean).join(" • ");
 	return (
-		<View style={[resultCardStyle, { backgroundColor: tone.background }]}>
+		<View style={styles.topPickCard}>
 			<View style={styles.topPickHeader}>
-				<Text style={[styles.topPickEyebrow, { color: tone.foreground }]}>
-					{topPickEyebrow(item.level)} · {riskLevelLabel(item.level)}
-				</Text>
+				<View style={styles.topPickEyebrowRow}>
+					<Text style={styles.topPickEyebrow}>{topPickEyebrow(item.level)}</Text>
+					<VerdictPill
+						label={riskLevelLabel(item.level)}
+						tone={riskToneKeyForLevel(item.level)}
+						size="sm"
+					/>
+				</View>
 				<Text style={styles.topPickName}>{item.name}</Text>
 				{meta ? <Text style={styles.topPickMeta}>{meta}</Text> : null}
 			</View>
 			<Text style={styles.topPickWhy}>{item.reason}</Text>
 			{onConsume ? (
 				<View style={styles.topPickConsume}>
-					<ConsumeMenuItemButton item={item} onConsume={onConsume} onTint />
+					<ConsumeMenuItemButton item={item} onConsume={onConsume} onHero />
 					{!item.consumed ? (
-						<Text style={[styles.consumeHint, { color: tone.foreground }]}>
+						<Text style={styles.consumeHint}>
 							Logging what you order counts toward your triggers.
 						</Text>
 					) : null}
@@ -83,21 +89,25 @@ export function MenuTopPickCard({
 				onPress={onToggle}
 				style={({ pressed }) => [styles.breakdownToggle, pressed && styles.pressedDim]}
 			>
-				<Text style={[styles.breakdownToggleLabel, { color: tone.foreground }]}>
+				<Text style={styles.breakdownToggleLabel}>
 					{expanded ? "Hide the breakdown" : "See the full breakdown"}
 				</Text>
 				<Ionicons
 					name={expanded ? "chevron-up" : "chevron-down"}
 					size={16}
-					color={tone.foreground}
+					color={tokens.color.accent.mascot}
 				/>
 			</Pressable>
-			{expanded ? <MenuItemDetails item={item} /> : null}
+			{expanded ? (
+				<View style={styles.topPickDetailsInset}>
+					<MenuItemDetails item={item} />
+				</View>
+			) : null}
 		</View>
 	);
 }
 
-// A worded, toned band: serif title in the band's risk foreground over a
+// A worded, toned band: Bricolage title in the band's risk foreground over a
 // stack of plain rows on the canvas — the same section idiom the trigger
 // profile uses, so grouped verdict-ish content reads the same everywhere.
 export function MenuBandSection({
@@ -306,11 +316,11 @@ function MenuItemDetails({
 function ConsumeMenuItemButton({
 	item,
 	onConsume,
-	onTint = false,
+	onHero = false,
 }: {
 	item: MenuTierItem;
 	onConsume: (item: MenuTierItem) => void;
-	onTint?: boolean;
+	onHero?: boolean;
 }) {
 	const done = Boolean(item.consumed);
 	return (
@@ -324,8 +334,8 @@ function ConsumeMenuItemButton({
 			onPress={() => onConsume(item)}
 			style={({ pressed }) => [
 				styles.consumeButton,
-				onTint && styles.consumeButtonOnTint,
-				done && (onTint ? styles.consumeButtonDoneOnTint : styles.consumeButtonDone),
+				onHero && styles.consumeButtonOnHero,
+				done && styles.consumeButtonDone,
 				pressed && !done && styles.pressedDim,
 			]}
 		>
@@ -345,26 +355,43 @@ const styles = StyleSheet.create({
 	pressedDim: {
 		opacity: 0.88,
 	},
-	// --- top-pick spotlight ---
+	// --- top-pick spotlight (the menu screen's evergreen hero) ---
+	topPickCard: {
+		width: "100%",
+		borderRadius: tokens.radius.xl,
+		backgroundColor: tokens.color.surface.hero.background,
+		padding: spacing.lg,
+		gap: spacing.md,
+		...tokens.shadow.lift,
+	},
 	topPickHeader: {
 		gap: tokens.space.xxs,
 	},
+	topPickEyebrowRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: spacing.sm,
+	},
+	// Pip's mint is the accent that glows against the evergreen.
 	topPickEyebrow: {
 		...tokens.type.label.eyebrow,
 		fontFamily: type.body.semibold,
 		textTransform: "uppercase",
+		color: tokens.color.accent.mascot,
+		flexShrink: 1,
 	},
 	topPickName: {
 		...tokens.type.display.section,
-		color: tokens.color.text.primary,
+		color: tokens.color.surface.hero.onHero,
 	},
 	topPickMeta: {
 		...tokens.type.label.metric,
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroFaint,
 	},
 	topPickWhy: {
 		...tokens.type.body.emphasis,
-		color: tokens.color.text.secondary,
+		color: tokens.color.surface.hero.onHeroMuted,
 	},
 	topPickConsume: {
 		gap: spacing.xs,
@@ -372,6 +399,7 @@ const styles = StyleSheet.create({
 	consumeHint: {
 		...tokens.type.body.small,
 		fontFamily: type.body.medium,
+		color: tokens.color.surface.hero.onHeroMuted,
 	},
 	breakdownToggle: {
 		flexDirection: "row",
@@ -383,6 +411,14 @@ const styles = StyleSheet.create({
 	breakdownToggleLabel: {
 		...tokens.type.body.small,
 		fontFamily: type.body.semibold,
+		color: tokens.color.accent.mascot,
+	},
+	// White receipt inset: the expanded evidence keeps its light-ramp contrast
+	// instead of restyling every evidence component for the dark surface.
+	topPickDetailsInset: {
+		borderRadius: tokens.radius.lg,
+		backgroundColor: tokens.color.surface.card.default,
+		padding: spacing.md,
 	},
 	// --- worded bands ---
 	bandSection: {
@@ -423,14 +459,15 @@ const styles = StyleSheet.create({
 		...tokens.type.display.accent,
 	},
 	// --- rows ---
+	// Borderless: white rows lift off the porcelain band on the soft
+	// green-cast shadow, matching the card system.
 	menuRow: {
 		borderRadius: tokens.radius.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.sm,
 		gap: spacing.sm,
+		...tokens.shadow.card,
 	},
 	menuRowTop: {
 		flexDirection: "row",
@@ -540,18 +577,13 @@ const styles = StyleSheet.create({
 		backgroundColor: tokens.color.action.quiet.background,
 		paddingHorizontal: spacing.md,
 	},
-	consumeButtonOnTint: {
+	// On the evergreen hero the button reads as a solid white pill — no
+	// hairline needed against the dark surface.
+	consumeButtonOnHero: {
 		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 	},
 	consumeButtonDone: {
 		backgroundColor: tokens.color.status.risk.low.background,
-	},
-	consumeButtonDoneOnTint: {
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.emphasis,
 	},
 	consumeButtonText: {
 		...tokens.type.label.chip,

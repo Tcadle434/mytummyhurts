@@ -2,27 +2,22 @@ import { StyleSheet } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../theme";
 
-// Shared style objects extracted from the scan-result card components. These
-// were previously copy-pasted byte-for-byte across HeroCards, MenuCards,
-// ScoreDrivers, and IngredientCards. Values are preserved exactly as they were
-// (notably borderRadius: 28, which is a hardcoded literal rather than a theme
-// token — see the design note in the refactor report before changing it).
+// Shared style objects for the scan-result card components. Deep Garden
+// cards are borderless: pure white on porcelain, separated by the soft
+// green-cast shadow instead of hairlines. Titles speak in Bricolage via the
+// title tokens.
 const shared = StyleSheet.create({
 	resultCard: {
 		width: "100%",
-		borderRadius: 28,
+		borderRadius: tokens.radius.xl,
 		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 		padding: spacing.lg,
 		gap: spacing.md,
 		...tokens.shadow.card,
 	},
 	cardTitle: {
+		...tokens.type.title.card,
 		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
 	},
 	sectionLabel: {
 		color: palette.textMuted,

@@ -54,7 +54,9 @@ export function TriggersSummaryRow({
 				<Ionicons
 					name="search"
 					size={16}
-					color={counts.confirmed > 0 ? confirmedTone.foreground : palette.primary}
+					color={
+						counts.confirmed > 0 ? confirmedTone.foreground : tokens.color.accent.brand
+					}
 				/>
 			</View>
 			<View style={styles.copy}>

@@ -106,7 +106,6 @@ const styles = StyleSheet.create({
   },
   clearedCard: {
     gap: spacing.xs,
-    borderColor: 'transparent',
   },
   clearedHeader: {
     flexDirection: 'row',
@@ -130,13 +129,15 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     gap: spacing.xs,
   },
+  // Pure white rows on the tinted band — crisp against the cleared green,
+  // no translucency.
   clearedRow: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     borderRadius: radii.md,
-    backgroundColor: tokens.color.surface.frosted,
+    backgroundColor: tokens.color.utility.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },

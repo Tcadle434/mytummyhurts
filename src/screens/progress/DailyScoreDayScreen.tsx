@@ -20,7 +20,7 @@ import {
 	PrimaryButton,
 	SectionCard,
 } from "../../components/common/UI";
-import { bandForeground, pipStateForBand } from "../../components/progress/bandStyle";
+import { pipStateForBand } from "../../components/progress/bandStyle";
 import { DailyScoreRing } from "../../components/progress/DailyScoreRing";
 import { SkeletonImage } from "../../components/common/SkeletonImage";
 import { useHomeData } from "../../features/home/hooks";
@@ -160,9 +160,10 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 }
 
 /**
- * The screen's one hero: the day spoken as a finding. Serif verdict, ring
- * numeral, Pip's face, and a one-sentence evidence story built from what was
- * actually logged.
+ * The screen's one evergreen block: the day spoken as a finding. Bricolage
+ * verdict, on-hero ring numeral, Pip's face, and a one-sentence evidence
+ * story built from what was actually logged. The band lives in the ring tint
+ * and Pip's face; the copy stays porcelain-on-evergreen.
  */
 function DailyScoreHero({ day }: { day: WeeklyProgressDay }) {
 	const hasScore = day.hasReport && day.dailyScore !== undefined;
@@ -187,14 +188,12 @@ function DailyScoreHero({ day }: { day: WeeklyProgressDay }) {
 	return (
 		<SectionCard style={styles.heroCard}>
 			<Animated.View style={ringAnimatedStyle}>
-				<DailyScoreRing score={score} size={156} strokeWidth={14} />
+				<DailyScoreRing score={score} size={156} strokeWidth={14} variant="hero" />
 			</Animated.View>
 			<View style={styles.heroCopy}>
 				<View style={styles.heroVerdictRow}>
 					<Pip state={pipStateForBand(story.band)} size={44} />
-					<Text style={[styles.heroVerdict, { color: bandForeground(story.band) }]}>
-						{story.headline}
-					</Text>
+					<Text style={styles.heroVerdict}>{story.headline}</Text>
 				</View>
 				<Text style={styles.heroStory}>{story.story}</Text>
 				{story.profileNote ? (
@@ -280,6 +279,8 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		paddingVertical: spacing.lg,
 		gap: spacing.md,
+		backgroundColor: tokens.color.surface.hero.background,
+		...tokens.shadow.lift,
 	},
 	heroCopy: {
 		alignItems: "center",
@@ -295,17 +296,18 @@ const styles = StyleSheet.create({
 		...tokens.type.display.section,
 		flexShrink: 1,
 		textAlign: "center",
+		color: tokens.color.surface.hero.onHero,
 	},
 	heroStory: {
 		...tokens.type.body.default,
 		fontFamily: type.body.medium,
-		color: tokens.color.text.secondary,
+		color: tokens.color.surface.hero.onHeroMuted,
 		textAlign: "center",
 	},
 	heroProfileNote: {
 		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroFaint,
 		textAlign: "center",
 		marginTop: spacing.xs,
 	},

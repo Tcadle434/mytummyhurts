@@ -8,6 +8,7 @@ export {
 	type ScanIngredient,
 } from "./common";
 export { ScoreDriversList, WhyThisScoreCard } from "./ScoreDrivers";
+export { PipTakePanel } from "./PipTakePanel";
 export { RiskHeroCard, ScanHeroCard } from "./HeroCards";
 export { DietFitCard, IngredientsBreakdownCard } from "./IngredientCards";
 export {

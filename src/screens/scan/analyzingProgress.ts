@@ -11,8 +11,8 @@ const STAGE_ORDER: ScanProgressStage[] = [
   'personalizing',
 ];
 
-// Honest copy for each real stage, per scan kind. The serif hero title stays
-// untouched; these are the sans supporting line.
+// Honest copy for each real stage, per scan kind. The Bricolage hero title
+// stays untouched; these are the quiet Figtree supporting line.
 const LIVE_STAGE_COPY: Record<AnalyzingScanKind, Record<ScanProgressStage, string>> = {
   food: {
     received: 'Got your photo — taking a look…',

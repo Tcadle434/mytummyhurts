@@ -6,7 +6,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 
 import { Pip } from '../../components/common/Pip';
 import { AppScreen, DetailScreenHeader, PrimaryButton, SectionCard } from '../../components/common/UI';
-import { bandForeground, pipStateForBand } from '../../components/progress/bandStyle';
+import { pipStateForBand } from '../../components/progress/bandStyle';
 import { buildReportPayoff, resolvePayoffLoading, type PayoffEvidenceChange, type ReportPayoff } from '../../features/home/reportPayoff';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
@@ -116,9 +116,7 @@ export function DailyReportPayoffScreen({ navigation, route }: Props) {
                   size={44}
                   accessibilityLabel={`Pip reflecting ${dailyScoreBandPhrase(dailyScore).toLowerCase()}`}
                 />
-                <Text style={[styles.heroVerdict, { color: dailyScoreBandColor(dailyScore) }]}>
-                  {dailyScoreBandPhrase(dailyScore)}
-                </Text>
+                <Text style={styles.heroVerdict}>{dailyScoreBandPhrase(dailyScore)}</Text>
               </View>
               <Text style={styles.heroCaption}>
                 From your {report.gutSeverity}/10 check-in · higher = calmer
@@ -203,11 +201,13 @@ function EvidenceChangeRow({ change }: { change: PayoffEvidenceChange }) {
       : change.kind === 'safe_strengthened'
         ? 'leaf-outline'
         : 'eye-outline';
+  // Text-grade band colors: the icons sit on porcelain chips, where the
+  // brighter fill tints wash out at glyph size.
   const color =
     change.kind === 'trigger_strengthened'
-      ? tokens.color.status.risk.high.tint
+      ? tokens.color.status.risk.high.foreground
       : change.kind === 'safe_strengthened'
-        ? tokens.color.status.risk.low.tint
+        ? tokens.color.status.risk.low.foreground
         : palette.primary;
 
   return <PayoffRow icon={icon} color={color} text={change.detail} />;
@@ -269,13 +269,6 @@ function dailyScoreBandPhrase(score: number | undefined) {
   return `A ${dailyScoreBand(score)} day`;
 }
 
-// Text-grade band color for the verdict phrase — the darker foreground tone,
-// never the bar-fill tint.
-function dailyScoreBandColor(score: number | undefined) {
-  if (typeof score !== 'number') return tokens.color.text.tertiary;
-  return bandForeground(dailyScoreBand(score));
-}
-
 function dailyScorePipState(score: number | undefined): PipState {
   if (typeof score !== 'number') return 'thinking';
   return pipStateForBand(dailyScoreBand(score));
@@ -302,14 +295,18 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: 'center',
   },
+  // The screen's one evergreen block: the reveal is the moment, so the ring,
+  // numeral, and band phrase live on the hero surface in on-hero colors.
   heroCard: {
     alignItems: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.lg,
+    backgroundColor: tokens.color.surface.hero.background,
+    ...tokens.shadow.lift,
   },
   heroKicker: {
     ...tokens.type.label.eyebrow,
-    color: palette.textMuted,
+    color: tokens.color.surface.hero.onHeroMuted,
     textTransform: 'uppercase',
   },
   heroVerdictRow: {
@@ -319,11 +316,12 @@ const styles = StyleSheet.create({
   },
   heroVerdict: {
     ...tokens.type.display.section,
+    color: tokens.color.surface.hero.onHero,
   },
   heroCaption: {
     ...tokens.type.body.small,
     fontFamily: type.body.medium,
-    color: palette.textMuted,
+    color: tokens.color.surface.hero.onHeroFaint,
     textAlign: 'center',
   },
   summaryCard: {

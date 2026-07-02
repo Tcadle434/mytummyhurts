@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedProps, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
-import { bandForeground } from '../../components/progress/bandStyle';
 import { tokens, type } from '../../theme';
 import { gutScoreTint } from '../../utils/risk';
 import { dailyScoreBand } from '../../utils/weeklyProgress';
@@ -21,9 +20,11 @@ type PayoffScoreRingProps = {
 };
 
 /**
- * The payoff moment's single score presentation: an animated ring sweep with
- * the serif hero numeral inside. The stroke uses the band tint (a fill), the
- * numeral uses the darker text-grade band foreground.
+ * The payoff moment's single score presentation, drawn on the evergreen hero
+ * block: an animated ring sweep with the Bricolage hero numeral inside. The
+ * stroke uses the band tint (a fill that pops on the dark surface), the track
+ * is the raised-on-hero white, and the numeral is always porcelain — band
+ * state is carried by the ring color, the band phrase, and Pip's face.
  */
 export function PayoffScoreRing({ score, revealed, size = 150, strokeWidth = 12 }: PayoffScoreRingProps) {
   const hasScore = typeof score === 'number';
@@ -50,8 +51,8 @@ export function PayoffScoreRing({ score, revealed, size = 150, strokeWidth = 12 
   }));
 
   const numeralColor = hasScore
-    ? bandForeground(dailyScoreBand(clampedScore))
-    : tokens.color.text.tertiary;
+    ? tokens.color.surface.hero.onHero
+    : tokens.color.surface.hero.onHeroFaint;
 
   return (
     <View
@@ -68,10 +69,9 @@ export function PayoffScoreRing({ score, revealed, size = 150, strokeWidth = 12 
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={tokens.color.chart.track}
+          stroke={tokens.color.surface.hero.raised}
           strokeWidth={strokeWidth}
           fill="none"
-          opacity={hasScore ? 0.58 : 0.78}
         />
         {hasScore ? (
           <AnimatedCircle
@@ -92,7 +92,7 @@ export function PayoffScoreRing({ score, revealed, size = 150, strokeWidth = 12 
       <View style={styles.center} pointerEvents="none">
         <View style={styles.valueRow}>
           <Text style={[styles.value, { color: numeralColor }]}>{hasScore ? clampedScore : '—'}</Text>
-          {hasScore ? <Text style={[styles.unit, { color: numeralColor }]}>%</Text> : null}
+          {hasScore ? <Text style={styles.unit}>%</Text> : null}
         </View>
       </View>
     </View>
@@ -122,5 +122,6 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     paddingBottom: 5,
     marginLeft: 2,
+    color: tokens.color.surface.hero.onHeroMuted,
   },
 });

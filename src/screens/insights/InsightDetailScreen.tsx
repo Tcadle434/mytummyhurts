@@ -210,17 +210,18 @@ export function InsightDetailScreen({ route, navigation }: Props) {
 
       <SectionCard>
         <Text style={styles.sectionTitle}>Evidence</Text>
+        {/* Numerals are text: the darker text-grade foreground, never the bar-fill tint. */}
         <View style={styles.evidenceCounts}>
           <EvidenceCount
             value={insight.negativeEvidenceCount}
             label="Rough days"
-            color={tokens.color.status.risk.high.tint}
+            color={tokens.color.status.danger.foreground}
           />
           <View style={styles.evidenceDivider} />
           <EvidenceCount
             value={insight.positiveEvidenceCount}
             label="Calm days"
-            color={tokens.color.status.risk.low.tint}
+            color={tokens.color.status.success.foreground}
           />
         </View>
         {!hasOutcomes ? (
@@ -583,7 +584,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: tokens.color.surface.frosted,
+    backgroundColor: tokens.color.utility.white,
   },
   glyphEmoji: {
     fontSize: 28,
@@ -628,7 +629,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     borderRadius: tokens.radius.pill,
-    backgroundColor: tokens.color.surface.frosted,
+    backgroundColor: tokens.color.utility.white,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
   },
@@ -651,10 +652,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
+  // Evidence counts are verdict-grade numerals — Bricolage, like every number
+  // the app stands behind.
   evidenceCountValue: {
-    fontFamily: type.body.bold,
-    fontSize: 28,
-    lineHeight: 34,
+    ...tokens.type.display.section,
   },
   evidenceCountLabel: {
     ...tokens.type.metric.label,

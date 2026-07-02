@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { navigationRef } from './navigationRef';
 import { trackEvent } from '../services/analytics';
-import { components, palette, shadows, spacing, tokens, type } from '../theme';
+import { components, shadows, spacing, tokens, type } from '../theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 type TabRoute = BottomTabBarProps['state']['routes'][number];
@@ -79,7 +79,9 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           <Ionicons
             name={isFocused ? config.iconFocused : config.icon}
             size={22}
-            color={isFocused ? components.tabBar.activeTint : components.tabBar.inactiveTint}
+            color={
+              isFocused ? tokens.color.action.primary.foreground : components.tabBar.inactiveTint
+            }
           />
           {isFocused ? (
             <Animated.Text
@@ -160,14 +162,15 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 4,
   },
+  // Active pill sits on the one anchor color; its icon + label flip to
+  // porcelain (action foreground), never the light text ramp.
   tabFocused: {
-    backgroundColor: tokens.color.status.success.background,
+    backgroundColor: tokens.color.accent.brand,
   },
   tabLabelFocused: {
     ...tokens.type.label.tab,
-    color: components.tabBar.activeTint,
+    color: tokens.color.action.primary.foreground,
     fontFamily: type.body.bold,
-    fontSize: 11,
   },
   scanSlot: {
     width: SCAN_SLOT_WIDTH,
@@ -178,7 +181,7 @@ const styles = StyleSheet.create({
     width: SCAN_BUTTON_DIAMETER,
     height: SCAN_BUTTON_DIAMETER,
     borderRadius: SCAN_BUTTON_DIAMETER / 2,
-    backgroundColor: palette.primary,
+    backgroundColor: tokens.color.accent.brand,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 4,

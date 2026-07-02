@@ -42,7 +42,7 @@ export function Gauge({ score, label, labelText }: GaugeProps) {
             rotation={-90}
             origin={`${center}, ${center}`}
           />
-          <Circle cx={center} cy={center} r={radius - 16} fill={tokens.color.surface.frosted} />
+          <Circle cx={center} cy={center} r={radius - 16} fill={tokens.color.surface.card.default} />
         </Svg>
         <View style={styles.centerContent}>
           <Text style={styles.score}>{score}</Text>
@@ -73,10 +73,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // The score is a number the app stands behind, not a percentage — the
-  // serif metric face owns the ring instead of a timid Jakarta 22.
+  // The score is a number the app stands behind — the Bricolage metric face
+  // owns the ring, sized down so a three-digit score still sits inside the
+  // fixed 132px gauge instead of spilling onto the stroke.
   score: {
     ...tokens.type.display.metric,
+    fontSize: 38,
+    lineHeight: 42,
+    letterSpacing: -0.8,
     color: tokens.color.text.primary,
   },
   badge: {

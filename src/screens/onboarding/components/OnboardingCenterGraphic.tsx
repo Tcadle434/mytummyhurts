@@ -133,7 +133,14 @@ function GutScoreScaleGraphic() {
 					<Text style={styles.educationEyebrow}>Gut Score</Text>
 					<Text style={styles.educationCardTitle}>Overall rating</Text>
 				</View>
-				<Text style={[styles.educationScoreValue, { color: tokens.color.status.risk.medium.tint }]}>
+				<Text
+					style={[
+						styles.educationScoreValue,
+						// Text-grade foreground, never the tint: the tint is a fill color
+						// and fails contrast as text on the white card.
+						{ color: tokens.color.status.risk.medium.foreground },
+					]}
+				>
 					42
 					<Text style={styles.educationScoreScale}>/100</Text>
 				</Text>

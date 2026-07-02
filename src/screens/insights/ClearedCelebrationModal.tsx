@@ -11,7 +11,7 @@ import Animated, {
 
 import { Pip } from '../../components/common/Pip';
 import { verdictTone } from '../../components/common/UI';
-import { radii, spacing, tokens, type } from '../../theme';
+import { radii, spacing, tokens } from '../../theme';
 import {
   buildCelebrationShareText,
   type ClearedCelebrationCandidate,

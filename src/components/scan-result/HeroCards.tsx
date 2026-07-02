@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { colorForLevel, type RiskLevel } from "./common";
+import { type RiskLevel } from "./common";
 import { resultCardStyle } from "./styles";
 import { HeroMetric } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
@@ -14,10 +14,10 @@ function toneForLevel(level: RiskLevel) {
 }
 
 // The scan payoff, verdict-first: the meal photo as a real image moment, the
-// level word on its tone surface, the verdict sentence in the display serif,
-// and the score as a supporting serif metric. Identity (dish name, timestamp)
-// lives in the screen header — this card carries only the judgment. Menu
-// results omit the score and lead with the ranking verdict.
+// level word on its tone pill, the verdict sentence in Bricolage, and the
+// chunky score numeral in the tone's text-grade foreground. Identity (dish
+// name, timestamp) lives in the screen header — this card carries only the
+// judgment. Menu results omit the score and lead with the ranking verdict.
 export function ScanHeroCard({
 	verdict,
 	image,
@@ -88,18 +88,20 @@ export function RiskHeroCard({
 	levelLabelOverride?: string;
 	cautionNote?: string;
 }) {
-	const color = colorForLevel(level);
+	const tone = toneForLevel(level);
 	const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
 	const clampedScore = Math.max(0, Math.min(100, score));
 	return (
-		<View style={styles.riskHeroCard}>
+		<View style={[resultCardStyle, styles.riskHeroCard]}>
 			<Text style={styles.kicker}>{eyebrow}</Text>
 			{title ? <Text style={styles.riskTitle}>{title}</Text> : null}
 			<View style={styles.heroScoreRow}>
-				<Text style={[styles.heroScore, { color }]}>{score}</Text>
+				{/* Score and level word are text — text-grade foreground; the tint
+				    stays on the meter fill. */}
+				<Text style={[styles.heroScore, { color: tone.foreground }]}>{score}</Text>
 				<View style={styles.heroScoreTrailing}>
 					<Text style={styles.heroScale}>/ 100</Text>
-					<Text style={[styles.heroLevelWord, { color }]}>
+					<Text style={[styles.heroLevelWord, { color: tone.foreground }]}>
 						{levelLabelOverride ?? `${levelLabel} risk`}
 					</Text>
 				</View>
@@ -108,11 +110,11 @@ export function RiskHeroCard({
 				<View
 					style={[
 						styles.meterFill,
-						{ width: `${clampedScore}%`, backgroundColor: color },
+						{ width: `${clampedScore}%`, backgroundColor: tone.tint },
 					]}
 				/>
 				<View
-					style={[styles.meterMarker, { left: `${clampedScore}%`, borderColor: color }]}
+					style={[styles.meterMarker, { left: `${clampedScore}%`, borderColor: tone.tint }]}
 				/>
 			</View>
 			<View style={styles.meterScale}>
@@ -169,14 +171,7 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 	},
 	riskHeroCard: {
-		width: "100%",
-		borderRadius: 28,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
-		padding: spacing.lg,
 		gap: spacing.xs,
-		...tokens.shadow.card,
 	},
 	kicker: {
 		color: palette.textMuted,
@@ -187,10 +182,8 @@ const styles = StyleSheet.create({
 		letterSpacing: 0.4,
 	},
 	riskTitle: {
+		...tokens.type.title.card,
 		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 22,
-		lineHeight: 28,
 	},
 	heroScoreRow: {
 		flexDirection: "row",
@@ -198,11 +191,9 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 		marginTop: spacing.xs,
 	},
+	// Score numerals are Bricolage — the display metric face, not the body ramp.
 	heroScore: {
-		fontFamily: type.body.bold,
-		fontSize: 56,
-		lineHeight: 60,
-		letterSpacing: -1.5,
+		...tokens.type.display.metric,
 	},
 	heroScoreTrailing: {
 		flex: 1,

@@ -71,21 +71,6 @@ export function ScreenLayout({ title, children, scroll = true, contentContainerS
   );
 }
 
-/**
- * The ambient canvas the token file always designed but never shipped: two
- * soft mint/peach ornament blobs behind the content. Subtle enough to keep
- * every screen readable, present enough that screens stop feeling like flat
- * cream sheets.
- */
-function CanvasOrnaments() {
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={styles.ornamentMint} />
-      <View style={styles.ornamentPeach} />
-    </View>
-  );
-}
-
 export function AppScreen({
   children,
   scroll = true,
@@ -118,7 +103,7 @@ export function AppScreen({
 
   return (
     <View style={styles.screenFill}>
-      {background ?? <CanvasOrnaments />}
+      {background}
       <SafeAreaView edges={['bottom']} style={styles.safeArea}>
         {keyboardAvoiding ? (
           <KeyboardAvoidingView
@@ -436,18 +421,16 @@ const styles = StyleSheet.create({
     color: tokens.color.text.tertiary,
     textAlign: 'center',
   },
+  // Brand wordmark: Bricolage in two evergreen weights — one voice, one color.
   wordmarkWrap: {
-    fontSize: 20,
+    ...tokens.type.title.card,
+    color: tokens.color.accent.brandStrong,
   },
   wordmarkStrong: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 20,
+    color: tokens.color.accent.brandStrong,
   },
   wordmarkSoft: {
-    color: tokens.color.text.accent,
-    fontFamily: type.display.fontFamily,
-    fontSize: 22,
+    color: tokens.color.accent.brand,
   },
   emptyState: {
     alignItems: 'center',
@@ -474,25 +457,5 @@ const styles = StyleSheet.create({
   emptyStateActionLabel: {
     ...tokens.type.label.button,
     color: tokens.color.action.primary.foreground,
-  },
-  ornamentMint: {
-    position: 'absolute',
-    top: -110,
-    right: -120,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: tokens.color.surface.app.ornamentMint,
-    opacity: 0.5,
-  },
-  ornamentPeach: {
-    position: 'absolute',
-    bottom: -140,
-    left: -130,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: tokens.color.surface.app.ornamentPeach,
-    opacity: 0.42,
   },
 });

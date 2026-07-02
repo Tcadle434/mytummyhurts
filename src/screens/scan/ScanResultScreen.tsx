@@ -6,6 +6,7 @@ import {
   displaySignalLabel,
   IngredientsBreakdownCard,
   PersonalizedScanCard,
+  PipTakePanel,
   ScanHeroCard,
   WhyThisScoreCard,
 } from '../../components/scan-result/ScanResultCards';
@@ -13,7 +14,6 @@ import { ScanResultSkeleton } from '../../components/scan-result/ScanResultSkele
 import { SkeletonImage } from '../../components/common/SkeletonImage';
 import {
   AppScreen,
-  PipAnalysisCard,
   PrimaryButton,
   ScreenHeader,
   SectionCard,
@@ -184,7 +184,9 @@ export function ScanResultScreen({ navigation, route }: Props) {
         }
       />
 
-      {interpretation ? <PipAnalysisCard body={interpretation} /> : null}
+      {/* The screen's one evergreen statement: Pip's take on the deep garden
+          surface, right under the white verdict card. */}
+      {interpretation ? <PipTakePanel body={interpretation} /> : null}
 
       <SectionCard>
         <Text style={shared.sectionTitle}>Did you eat this?</Text>

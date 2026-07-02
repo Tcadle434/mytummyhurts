@@ -991,14 +991,13 @@ function openDeleteConfirmation(onConfirm: () => void) {
 }
 
 const styles = StyleSheet.create({
-  // The screen's hero: what Pip knows about you, stated warmly in the serif
-  // accent face on the warm card surface. Everything below it recedes into
-  // utility lists.
+  // The screen's hero: what Pip knows about you, stated warmly in the
+  // Bricolage accent face on the warm card surface. Borderless like every
+  // Deep Garden card — separation comes from the green-cast lift. Everything
+  // below it recedes into utility lists.
   profileCard: {
     borderRadius: radii.lg,
     backgroundColor: tokens.color.surface.card.warm,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
     padding: spacing.md,
     gap: spacing.sm,
     ...tokens.shadow.card,
@@ -1040,9 +1039,7 @@ const styles = StyleSheet.create({
   groupCard: {
     borderRadius: radii.lg,
     backgroundColor: tokens.color.surface.card.default,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
-    overflow: 'hidden',
+    ...tokens.shadow.card,
   },
   row: {
     minHeight: 56,

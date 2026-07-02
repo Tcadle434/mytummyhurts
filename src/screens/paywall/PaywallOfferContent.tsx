@@ -86,12 +86,18 @@ export function PaywallOfferContent({
 				<View style={styles.pictureCard}>
 					<Text style={styles.pictureKicker}>Your starting picture</Text>
 					<View style={styles.pictureRow}>
-						<HeroMetric
-							value={caseFile.startingScore}
-							unit="/100"
-							caption="starting Gut Score — higher means calmer"
-							style={styles.pictureMetric}
-						/>
+						<View style={styles.pictureMetric}>
+							<View style={styles.pictureMetricRow}>
+								<HeroMetric
+									value={caseFile.startingScore}
+									color={tokens.color.surface.hero.onHero}
+								/>
+								<Text style={styles.pictureMetricUnit}>/100</Text>
+							</View>
+							<Text style={styles.pictureMetricCaption}>
+								starting Gut Score — higher means calmer
+							</Text>
+						</View>
 						<Pip state="joy" size={72} />
 					</View>
 					{caseFile.suspects.length > 0 ? (
@@ -248,22 +254,21 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.xs,
 	},
-	// The hero: the user's personalized starting picture. The serif numeral is
-	// the biggest thing on the screen — "Pip already started on you" is the
-	// reason to subscribe, not an infomercial headline.
+	// The hero: the user's personalized starting picture, stated on the one
+	// evergreen block this screen gets. The Bricolage numeral is the biggest
+	// thing on the screen — "Pip already started on you" is the reason to
+	// subscribe, not an infomercial headline.
 	pictureCard: {
-		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
+		borderRadius: radii.xl,
+		backgroundColor: tokens.color.surface.hero.background,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.md,
 		gap: spacing.xs,
-		...tokens.shadow.card,
+		...tokens.shadow.lift,
 	},
 	pictureKicker: {
 		...tokens.type.label.eyebrow,
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroFaint,
 		textTransform: "uppercase",
 	},
 	pictureRow: {
@@ -275,18 +280,36 @@ const styles = StyleSheet.create({
 	pictureMetric: {
 		flex: 1,
 	},
+	pictureMetricRow: {
+		flexDirection: "row",
+		alignItems: "flex-end",
+	},
+	pictureMetricUnit: {
+		color: tokens.color.surface.hero.onHeroMuted,
+		fontFamily: type.body.semibold,
+		fontSize: 17,
+		lineHeight: 23,
+		paddingBottom: 5,
+		marginLeft: 4,
+	},
+	pictureMetricCaption: {
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
+		color: tokens.color.surface.hero.onHeroMuted,
+		marginTop: 2,
+	},
 	pictureLine: {
 		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		color: tokens.color.text.primary,
+		color: tokens.color.surface.hero.onHeroMuted,
 	},
 	pictureStrong: {
 		fontFamily: type.body.bold,
-		color: palette.primaryDark,
+		color: tokens.color.surface.hero.onHero,
 	},
 	pictureMeta: {
 		...tokens.type.body.small,
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroFaint,
 	},
 	trustedText: {
 		color: palette.textMuted,

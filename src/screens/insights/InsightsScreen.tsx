@@ -29,7 +29,7 @@ import {
 	type ProfileLearningProgress,
 } from "../../services/ai/scoring";
 import { useAppStore } from "../../store/useAppStore";
-import { components, palette, radii, spacing, tokens, type, type PipState } from "../../theme";
+import { components, radii, spacing, tokens, type, type PipState } from "../../theme";
 import {
 	CELEBRATED_CLEARED_STORAGE_KEY,
 	nextClearedCelebration,
@@ -317,7 +317,7 @@ export function InsightsScreen() {
 									<Ionicons
 										name={familiesExpanded ? "chevron-down" : "chevron-forward"}
 										size={15}
-										color={palette.textMuted}
+										color={tokens.color.text.secondary}
 									/>
 									<Text style={styles.familyToggleText}>
 										Still watching
@@ -396,7 +396,7 @@ type CaseboardStory = {
 	pip: PipState;
 };
 
-// The hero answers "what's triggering me?" first: a serif verdict sentence,
+// The hero answers "what's triggering me?" first: a Bricolage verdict sentence,
 // the confirmed names, then the five caseboard counts. Honest at every stage —
 // no verdicts yet reads as an open case, not a celebration.
 function caseboardStory(viewState: TriggerProfileViewState): CaseboardStory {
@@ -455,6 +455,9 @@ function caseboardCountForStatus(viewState: TriggerProfileViewState, status: Tri
 	return viewState.counts.cleared;
 }
 
+// The screen's one evergreen block: the verdict statement lives on the dark
+// hero surface, and the five verdict-tone count cells pin to it like case
+// tabs — light chips that stay legible against the deep green.
 function CaseboardHero({ viewState }: { viewState: TriggerProfileViewState }) {
 	const story = caseboardStory(viewState);
 
@@ -625,7 +628,7 @@ function LearningModalStat({
 }) {
 	return (
 		<View style={styles.learningModalStat}>
-			<Ionicons name={icon} size={20} color={palette.primary} />
+			<Ionicons name={icon} size={20} color={tokens.color.accent.brand} />
 			<Text style={styles.learningModalStatValue}>{value}</Text>
 			<Text style={styles.learningModalStatLabel}>{label}</Text>
 		</View>
@@ -644,7 +647,7 @@ function LearningModalStep({
 	return (
 		<View style={styles.learningModalStep}>
 			<View style={styles.learningModalStepIcon}>
-				<Ionicons name={icon} size={18} color={palette.primary} />
+				<Ionicons name={icon} size={18} color={tokens.color.accent.brand} />
 			</View>
 			<View style={styles.learningModalStepCopy}>
 				<Text style={styles.learningModalStepTitle}>{title}</Text>
@@ -698,6 +701,8 @@ const styles = StyleSheet.create({
 	},
 	heroCard: {
 		gap: spacing.md,
+		backgroundColor: tokens.color.surface.hero.background,
+		...tokens.shadow.lift,
 	},
 	heroTopRow: {
 		flexDirection: "row",
@@ -710,21 +715,21 @@ const styles = StyleSheet.create({
 	},
 	heroEyebrow: {
 		...tokens.type.label.eyebrow,
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroFaint,
 		textTransform: "uppercase",
 	},
 	heroHeadline: {
 		...tokens.type.display.hero,
-		color: tokens.color.text.primary,
+		color: tokens.color.surface.hero.onHero,
 	},
 	heroNames: {
 		...tokens.type.display.accent,
-		color: tokens.color.status.verdict.confirmed.foreground,
+		color: tokens.color.surface.hero.onHero,
 	},
 	heroSupport: {
 		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		color: tokens.color.text.secondary,
+		color: tokens.color.surface.hero.onHeroMuted,
 	},
 	heroPip: {
 		width: 80,
@@ -756,8 +761,11 @@ const styles = StyleSheet.create({
 		lineHeight: 14,
 		textAlign: "center",
 	},
+	// The CTA sits right under the evergreen hero, so it takes the brighter
+	// accent.brand pill — an action, never a second dark block.
 	checkInCta: {
 		...components.button.primary,
+		backgroundColor: tokens.color.accent.brand,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
@@ -779,11 +787,10 @@ const styles = StyleSheet.create({
 	learningCard: {
 		gap: spacing.xs,
 		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
+		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.sm,
+		...tokens.shadow.card,
 	},
 	learningHeader: {
 		flexDirection: "row",
@@ -835,6 +842,8 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 		marginTop: spacing.sm,
 	},
+	// Porcelain tiles inside the white modal sheet — quiet separation without
+	// hairlines or translucency.
 	learningModalStat: {
 		flex: 1,
 		minHeight: 94,
@@ -842,9 +851,7 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		gap: 4,
 		borderRadius: radii.md,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
+		backgroundColor: tokens.color.surface.app.default,
 		paddingHorizontal: spacing.xs,
 		paddingVertical: spacing.sm,
 	},
@@ -872,9 +879,7 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 		alignItems: "flex-start",
 		borderRadius: radii.md,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
+		backgroundColor: tokens.color.surface.app.default,
 		padding: spacing.sm,
 	},
 	learningModalStepIcon: {
@@ -883,7 +888,7 @@ const styles = StyleSheet.create({
 		borderRadius: 17,
 		alignItems: "center",
 		justifyContent: "center",
-		backgroundColor: palette.sageSoft,
+		backgroundColor: tokens.color.status.success.background,
 	},
 	learningModalStepCopy: {
 		flex: 1,
@@ -912,7 +917,7 @@ const styles = StyleSheet.create({
 		borderRadius: 18,
 		alignItems: "center",
 		justifyContent: "center",
-		backgroundColor: tokens.color.surface.frosted,
+		backgroundColor: tokens.color.utility.white,
 	},
 	seedBannerText: {
 		...tokens.type.body.small,
@@ -956,11 +961,10 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.sm,
 		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.sm,
+		...tokens.shadow.card,
 	},
 	skeletonCopy: {
 		flex: 1,
@@ -978,7 +982,7 @@ const styles = StyleSheet.create({
 	},
 	familyToggleText: {
 		flex: 1,
-		color: palette.textMuted,
+		color: tokens.color.text.secondary,
 		fontFamily: type.body.bold,
 		fontSize: 13,
 		lineHeight: 18,
@@ -986,13 +990,13 @@ const styles = StyleSheet.create({
 		letterSpacing: 0.6,
 	},
 	familyToggleCount: {
-		color: palette.textMuted,
+		color: tokens.color.text.secondary,
 		fontFamily: type.body.bold,
 		fontSize: 13,
 		lineHeight: 18,
 	},
 	familyIntro: {
-		color: palette.textMuted,
+		color: tokens.color.text.secondary,
 		fontFamily: type.body.regular,
 		fontSize: 12,
 		lineHeight: 16,
@@ -1007,8 +1011,6 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.sm,
 		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.sm,
@@ -1031,13 +1033,13 @@ const styles = StyleSheet.create({
 	},
 	familyRowName: {
 		flexShrink: 1,
-		color: palette.text,
+		color: tokens.color.text.primary,
 		fontFamily: type.body.semibold,
 		fontSize: 13,
 		lineHeight: 18,
 	},
 	familyRowMeta: {
-		color: palette.textMuted,
+		color: tokens.color.text.secondary,
 		fontFamily: type.body.regular,
 		fontSize: 11,
 		lineHeight: 15,

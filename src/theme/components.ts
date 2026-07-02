@@ -9,49 +9,51 @@ const space = tokens.space;
 export const components = {
   appScreen: {
     gradient: [color.surface.app.gradientStart, color.surface.app.default, color.surface.app.gradientEnd] as const,
-    ornament: {
-      topRight: color.surface.app.ornamentMint,
-      bottomLeft: color.surface.app.ornamentPeach,
-      midLeft: withAlpha(color.accent.warm, 0.12),
-      dotMint: withAlpha(color.accent.mascot, 0.42),
-      dotPeach: withAlpha(color.accent.mascotAccent, 0.5),
-    },
   },
+  // Borderless cards: pure white on porcelain with a soft green-cast lift.
+  // Separation comes from color and shadow, never hairlines.
   card: {
     default: {
       backgroundColor: color.surface.card.default,
-      borderColor: color.border.subtle,
+      borderColor: 'transparent',
       borderRadius: radius.xl,
-      borderWidth: 1,
+      borderWidth: 0,
       ...shadow.card,
     },
     warm: {
       backgroundColor: color.surface.card.warm,
-      borderColor: color.border.subtle,
+      borderColor: 'transparent',
       borderRadius: radius.xl,
-      borderWidth: 1,
+      borderWidth: 0,
       ...shadow.card,
     },
     frosted: {
       backgroundColor: color.surface.frosted,
-      borderColor: color.border.subtle,
+      borderColor: 'transparent',
       borderRadius: radius.xl,
-      borderWidth: 1,
+      borderWidth: 0,
       ...shadow.card,
     },
     success: {
       backgroundColor: color.surface.card.success,
-      borderColor: color.border.subtle,
+      borderColor: 'transparent',
       borderRadius: radius.xl,
-      borderWidth: 1,
+      borderWidth: 0,
       ...shadow.card,
     },
     info: {
       backgroundColor: color.surface.card.info,
-      borderColor: color.border.subtle,
+      borderColor: 'transparent',
       borderRadius: radius.xl,
-      borderWidth: 1,
+      borderWidth: 0,
       ...shadow.card,
+    },
+    hero: {
+      backgroundColor: color.surface.hero.background,
+      borderColor: 'transparent',
+      borderRadius: radius.xl,
+      borderWidth: 0,
+      ...shadow.lift,
     },
   },
   button: {
@@ -79,14 +81,12 @@ export const components = {
       paddingHorizontal: space.lg,
     },
   },
+  // The scan CTA is a flat bright-evergreen pill now (no gradient, no
+  // decorative overlays) — only the text/arrow colors live here.
   scanCta: {
-    gradient: [color.accent.mascot, color.accent.brand, color.accent.brandStrong] as const,
-    ornamentLeft: withAlpha(color.utility.white, 0.06),
-    ornamentRight: withAlpha(color.utility.white, 0.08),
-    title: color.text.inverse,
-    subtitle: withAlpha(color.utility.white, 0.84),
-    arrowBackground: withAlpha(color.utility.white, 0.92),
-    arrowForeground: color.text.primary,
+    title: color.surface.hero.onHero,
+    arrowBackground: withAlpha(color.utility.white, 0.94),
+    arrowForeground: color.accent.brandStrong,
   },
   chip: {
     option: {
@@ -154,12 +154,13 @@ export const components = {
       paddingHorizontal: space.lg,
       ...shadow.lift,
     },
-    activeTint: color.accent.brand,
+    // Focused tabs flip to porcelain-on-brand (action.primary.foreground);
+    // only the inactive state is a tint.
     inactiveTint: color.text.tertiary,
   },
   avatar: {
-    background: color.info.background,
-    foreground: color.text.primary,
+    background: withAlpha(color.accent.mascot, 0.28),
+    foreground: color.accent.brandStrong,
   },
   premiumBadge: {
     background: color.status.warning.background,

@@ -112,9 +112,7 @@ const styles = StyleSheet.create({
 		width: 34,
 		height: 34,
 		borderRadius: 17,
-		backgroundColor: tokens.color.surface.frosted,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.card.warm,
 		alignItems: "center",
 		justifyContent: "center",
 	},
@@ -122,7 +120,7 @@ const styles = StyleSheet.create({
 		marginBottom: spacing.xs,
 	},
 	// The modal exists to explain something the app concluded — the title is a
-	// finding, so it gets the serif accent face.
+	// finding, so it gets the Bricolage accent face.
 	title: {
 		...tokens.type.display.accent,
 		color: tokens.color.text.primary,

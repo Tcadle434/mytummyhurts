@@ -1,3 +1,11 @@
+// Deep Garden — the app's design language.
+//
+// One anchor: deep evergreen, used as SURFACES (hero cards, primary actions),
+// not just text. Porcelain canvas, pure white cards, and Pip's own mint/peach
+// as the accents that glow against the dark green. Type is Bricolage Grotesque
+// for anything with a voice (headlines, verdicts, numerals) and Figtree for
+// the quiet interface around it. No decorative extras — depth comes from
+// color-blocking.
 export const foundations = {
   color: {
     brand: {
@@ -5,48 +13,59 @@ export const foundations = {
         base: '#96C8AE',
         accent: '#FDA38B',
       },
-      ink: '#212B32',
-      canvas: '#FDF7F1',
+      // Green-cast ink: reads near-black but belongs to the garden.
+      ink: '#1A2E26',
+      evergreen: {
+        deep: '#0C2E22',
+        base: '#12402F',
+        bright: '#1B5A40',
+        onDeep: '#F7F6F2',
+        onDeepMuted: 'rgba(247, 246, 242, 0.72)',
+        onDeepFaint: 'rgba(247, 246, 242, 0.45)',
+      },
+      canvas: '#F7F6F2',
       surface: {
-        default: '#FDFAF6',
-        warm: '#FEF5EA',
+        default: '#FFFFFF',
+        warm: '#F4F0E7',
       },
       cta: {
-        scan: '#5BA687',
+        scan: '#12402F',
       },
       info: {
-        blue: '#9FCBE6',
+        blue: '#8FBFDD',
       },
       status: {
-        red: '#F5634A',
-        yellow: '#F9C872',
-        orange: '#FB913A',
-        mediumBackground: '#FEEACB',
+        red: '#D95B43',
+        yellow: '#F2C14E',
+        orange: '#E8973F',
+        mediumBackground: '#FCEFD9',
       },
     },
     neutral: {
       white: '#FFFFFF',
       black: '#000000',
       warm: {
-        0: '#FFFDF9',
-        50: '#FDF9F4',
-        100: '#FBF3EA',
-        200: '#ECE4D9',
+        0: '#FFFFFF',
+        50: '#FAF9F6',
+        100: '#F2F1EC',
+        200: '#E4E2DA',
       },
       cool: {
-        600: '#7E878D',
-        700: '#727375',
-        800: '#5E676D',
+        600: '#6E7A74',
+        700: '#57635D',
+        800: '#3E4A44',
       },
     },
   },
   typography: {
     family: {
-      display: 'InstrumentSerif_400Regular',
-      bodyRegular: 'PlusJakartaSans_400Regular',
-      bodyMedium: 'PlusJakartaSans_500Medium',
-      bodySemibold: 'PlusJakartaSans_600SemiBold',
-      bodyBold: 'PlusJakartaSans_700Bold',
+      display: 'BricolageGrotesque_800ExtraBold',
+      displayBold: 'BricolageGrotesque_700Bold',
+      displaySemibold: 'BricolageGrotesque_600SemiBold',
+      bodyRegular: 'Figtree_400Regular',
+      bodyMedium: 'Figtree_500Medium',
+      bodySemibold: 'Figtree_600SemiBold',
+      bodyBold: 'Figtree_700Bold',
     },
   },
   space: {
@@ -61,10 +80,10 @@ export const foundations = {
   },
   radius: {
     sm: 12,
-    md: 18,
-    lg: 24,
-    xl: 30,
-    xxl: 38,
+    md: 16,
+    lg: 22,
+    xl: 28,
+    xxl: 34,
     pill: 999,
   },
   motion: {

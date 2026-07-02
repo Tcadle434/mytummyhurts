@@ -23,7 +23,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { apiClient } from '../../services/api/client';
 import { ApiError } from '../../services/api/errors';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, spacing, tokens, type } from '../../theme';
+import { spacing, tokens, type } from '../../theme';
 import {
   AnalyzingProgressState,
   INITIAL_ANALYZING_PROGRESS,
@@ -271,17 +271,18 @@ function IndeterminateRing() {
             cx={center}
             cy={center}
             r={radius}
-            stroke={palette.primary}
+            stroke={tokens.color.accent.brand}
             strokeWidth={strokeWidth}
             strokeDasharray={`${arcLength} ${gapLength}`}
             strokeLinecap="round"
             fill="transparent"
           />
+          {/* Pip's disc is crisp white on porcelain — no frosted haze. */}
           <Circle
             cx={center}
             cy={center}
             r={radius - 20}
-            fill={tokens.color.surface.frosted}
+            fill={tokens.color.surface.card.default}
           />
         </Svg>
       </Animated.View>

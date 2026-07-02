@@ -11,6 +11,7 @@ import {
 	selectIngredientHistoryRows,
 	type IngredientHistoryRow,
 } from "./PersonalizedScanCard.helpers";
+import { cardTitleStyle, resultCardStyle, sectionLabelStyle } from "./styles";
 import { palette, spacing, tokens, type } from "../../theme";
 import type { DietEvaluation, ScanIngredientRisk } from "../../types/domain";
 
@@ -36,12 +37,12 @@ export function PersonalizedScanCard({
 	const impactTone = tokens.color.status.risk[level];
 
 	return (
-		<View style={styles.resultCard}>
-			<Text style={styles.cardTitle}>Personalized for you</Text>
+		<View style={resultCardStyle}>
+			<Text style={cardTitleStyle}>Personalized for you</Text>
 
 			{impact ? (
 				<View style={styles.sectionBlock}>
-					<Text style={styles.sectionLabel}>Your Gut Score</Text>
+					<Text style={sectionLabelStyle}>Your Gut Score</Text>
 					<View style={[styles.impactRow, { backgroundColor: impactTone.background }]}>
 						<Ionicons name="pulse-outline" size={16} color={impactTone.foreground} />
 						<Text style={[styles.impactText, { color: impactTone.foreground }]}>{impact}</Text>
@@ -51,14 +52,14 @@ export function PersonalizedScanCard({
 
 			{safeDietEvaluations.length ? (
 				<View style={styles.sectionBlock}>
-					<Text style={styles.sectionLabel}>Diet fit</Text>
+					<Text style={sectionLabelStyle}>Diet fit</Text>
 					<DietEvaluationRows evaluations={safeDietEvaluations} />
 				</View>
 			) : null}
 
 			{historyRows.length ? (
 				<View style={styles.sectionBlock}>
-					<Text style={styles.sectionLabel}>Ingredient history</Text>
+					<Text style={sectionLabelStyle}>Ingredient history</Text>
 					<IngredientHistoryRows rows={historyRows} />
 				</View>
 			) : null}
@@ -136,44 +137,20 @@ function historyIconName(riskLevel: NonNullable<ScanIngredientRisk["personalHist
 }
 
 const styles = StyleSheet.create({
-	resultCard: {
-		width: "100%",
-		borderRadius: 28,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.card,
-	},
-	cardTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
-	},
 	sectionBlock: {
 		gap: spacing.sm,
-	},
-	sectionLabel: {
-		color: palette.textMuted,
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
-		textTransform: "uppercase",
-		letterSpacing: 0.4,
 	},
 	rowStack: {
 		gap: spacing.xs,
 	},
+	// Inner rows sit on the warm surface instead of white-with-hairline —
+	// borderless separation, same idiom as the other evidence cards.
 	dietRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.sm,
-		borderRadius: 16,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		borderRadius: tokens.radius.md,
+		backgroundColor: tokens.color.surface.card.warm,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.sm,
 	},
@@ -187,10 +164,8 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.sm,
-		borderRadius: 16,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		borderRadius: tokens.radius.md,
+		backgroundColor: tokens.color.surface.card.warm,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.sm,
 	},
