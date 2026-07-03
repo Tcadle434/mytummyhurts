@@ -3,8 +3,31 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SectionCard, verdictTone } from '../../components/common/UI';
 import type { TriggerProfileEntry } from '../../features/insights/triggerGroups';
-import { evidenceDetailForInsight } from '../../features/insights/triggerProfile';
+import { evidenceDetailForInsight, statusForInsight } from '../../features/insights/triggerProfile';
 import { radii, spacing, tokens, type } from '../../theme';
+
+// Families appear once on the board, so a "looking safe" family can contain
+// members still waiting on evidence. The chip counts FOODS when coverage is
+// partial ("2/6 calm") and days only when every member has calm evidence.
+function safeChipBadge(entry: TriggerProfileEntry): { label: string; accessibility: string } {
+  const total = entry.members.length;
+  const calmFoods = entry.members.filter((member) => {
+    const status = statusForInsight(member);
+    return status === 'safe' || status === 'cleared';
+  }).length;
+
+  if (total > 1 && calmFoods < total) {
+    return {
+      label: `${calmFoods}/${total} calm`,
+      accessibility: `${calmFoods} of ${total} foods calm so far`,
+    };
+  }
+  const calmDays = entry.insight.positiveEvidenceCount;
+  return {
+    label: `${calmDays} calm`,
+    accessibility: evidenceDetailForInsight(entry.insight, 'safe'),
+  };
+}
 
 // The safety track deliberately breaks the case-file row silhouette (rule 1 +
 // the Home alternation principle): cleared verdicts live in one tinted band —
@@ -74,12 +97,12 @@ export function SafeChipGarden({
       <Text style={styles.safeSubtitle}>Calm so far — a few more calm days each earns cleared.</Text>
       <View style={styles.chipWrap}>
         {entries.map((entry) => {
-          const calm = entry.insight.positiveEvidenceCount;
+          const badge = safeChipBadge(entry);
           return (
             <Pressable
               key={`${entry.kind}-${entry.key}`}
               accessibilityRole="button"
-              accessibilityLabel={`${entry.label}, looking safe. ${evidenceDetailForInsight(entry.insight, 'safe')}`}
+              accessibilityLabel={`${entry.label}, looking safe. ${badge.accessibility}`}
               onPress={() => onOpen(entry)}
               style={({ pressed }) => [styles.chip, pressed && { opacity: 0.85 }]}
             >
@@ -89,7 +112,7 @@ export function SafeChipGarden({
               </Text>
               <View style={[styles.chipCount, { backgroundColor: tone.background }]}>
                 <Text style={[styles.chipCountLabel, { color: tone.foreground }]}>
-                  {calm} calm
+                  {badge.label}
                 </Text>
               </View>
             </Pressable>

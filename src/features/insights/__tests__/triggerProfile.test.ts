@@ -374,6 +374,54 @@ describe('evidenceDetailForInsight', () => {
   });
 });
 
+describe('one home per family', () => {
+  it('shows a family split across safe and watching exactly once, as looking safe', () => {
+    const viewState = buildTriggerProfileViewState([
+      // bread: one calm day → safe; flour: scanned only → watching. Same family.
+      insight({ ingredientName: 'bread', combinedRiskScore: 40, positiveEvidenceCount: 1 }),
+      insight({
+        ingredientName: 'flour',
+        combinedRiskScore: 50,
+        positiveEvidenceCount: 0,
+        supportingEvidenceCount: 0,
+        sourceBreakdown: breakdown({ exposureDayCount: 2 }),
+      }),
+    ]);
+
+    const safe = viewState.sections.find((section) => section.status === 'safe')!;
+    const safeFamilies = safe.entries.map((entry) => entry.key);
+    expect(safeFamilies).toEqual(['wheat_grains']);
+    // Both members ride along in the single entry; nothing shows in watching.
+    expect(safe.entries[0]!.members.map((member) => member.ingredientName).sort()).toEqual([
+      'bread',
+      'flour',
+    ]);
+    expect(viewState.trackedFamilies).toEqual([]);
+  });
+
+  it('suppresses a family from the food zone when its story lives in the risk zone', () => {
+    const viewState = buildTriggerProfileViewState([
+      // cheese: rough evidence → suspect (risk zone, dairy mechanism group).
+      insight({
+        ingredientName: 'cheese',
+        combinedRiskScore: 56,
+        negativeEvidenceCount: 1,
+        sourceBreakdown: breakdown({ personal: true, negativeEvidenceCount: 1, pairedDayCount: 2 }),
+      }),
+      // milk: calm evidence — visible inside the dairy case file, not as a
+      // second contradictory board row.
+      insight({ ingredientName: 'milk', combinedRiskScore: 40, positiveEvidenceCount: 2 }),
+    ]);
+
+    const suspects = viewState.sections.find((section) => section.status === 'suspect')!;
+    expect(suspects.entries.map((entry) => entry.label)).toEqual(['Dairy & lactose']);
+    // No dairy family row anywhere in the food zone or watching block.
+    const safeSection = viewState.sections.find((section) => section.status === 'safe');
+    expect(safeSection).toBeUndefined();
+    expect(viewState.trackedFamilies).toEqual([]);
+  });
+});
+
 describe('condition lens sorting', () => {
   // Two seeded suspects with identical evidence (zero rough days): the one
   // whose mechanism matches the user's declared condition leads.

@@ -209,10 +209,13 @@ export function buildTriggerProfileViewState(
     safe: [],
   };
 
-  // Risk track (confirmed + suspect): mechanism groups, bucketed as one pool
-  // so a group lands in exactly one section — the verdict its own members
-  // earn — with family entries as the fallback so ungrouped foods with real
-  // evidence stay visible.
+  // ONE HOME PER THING. The board's contract is: every category appears
+  // exactly once, in the section its own verdict earns. Two zones, two
+  // vocabularies, no overlap:
+  //
+  // Risk zone (confirmed + suspect): MECHANISM groups — the actionable unit
+  // ("Fried & crispy" pools evidence across families), with family entries as
+  // the fallback for ungrouped foods with real evidence.
   const riskInsights = [...byStatus.confirmed, ...byStatus.suspect];
   const { entries: riskGroups, ungrouped: riskUngrouped } = buildGroupedTriggerEntries(riskInsights);
   for (const entry of [...riskGroups, ...buildFamilyVerdictEntries(riskUngrouped)]) {
@@ -220,12 +223,21 @@ export function buildTriggerProfileViewState(
     sectionsByStatus[status === 'confirmed' ? 'confirmed' : 'suspect'].push(entry);
   }
 
-  // Safety track (cleared + safe): food families — "rice & grains look safe"
-  // reads better than a mechanism label for reassurance. A family is cleared
-  // only when every member has earned it.
-  for (const entry of buildFamilyVerdictEntries([...byStatus.cleared, ...byStatus.safe])) {
-    const status = statusForMembers(entry.members);
-    sectionsByStatus[status === 'cleared' ? 'cleared' : 'safe'].push(entry);
+  // Food zone (cleared / safe / watching): FAMILIES, computed over ALL tracked
+  // foods so each family resolves to a single verdict and a single placement.
+  // A family with any suspect member belongs to the risk zone's story and is
+  // suppressed here entirely — its calm members stay visible inside the case
+  // file, never as a second row that contradicts the first.
+  const watchingInsights: IngredientInsight[] = [];
+  for (const entry of buildFamilyVerdictEntries(filtered)) {
+    const familyStatus = statusForMembers(entry.members);
+    if (familyStatus === 'cleared') {
+      sectionsByStatus.cleared.push(entry);
+    } else if (familyStatus === 'safe') {
+      sectionsByStatus.safe.push(entry);
+    } else if (familyStatus === 'watching') {
+      watchingInsights.push(...entry.members);
+    }
   }
 
   sectionsByStatus.confirmed.sort(
@@ -260,7 +272,7 @@ export function buildTriggerProfileViewState(
       filtered.every(
         (insight) => insight.sourceBreakdown.declared && outcomeCount(insight) === 0,
       ),
-    trackedFamilies: buildTrackedFoodFamilyEntries(byStatus.watching),
+    trackedFamilies: buildTrackedFoodFamilyEntries(watchingInsights),
   };
 }
 
