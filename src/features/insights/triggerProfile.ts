@@ -5,6 +5,9 @@ import {
   buildFamilyVerdictEntries,
   buildGroupedTriggerEntries,
   buildTrackedFoodFamilyEntries,
+  conditionLensFromKnownConditions,
+  groupByKey,
+  groupConditionTie,
   type TriggerProfileEntry,
   type TrackedFoodFamilyEntry,
 } from './triggerGroups';
@@ -152,9 +155,21 @@ function outcomeCount(insight: IngredientInsight) {
 export function buildTriggerProfileViewState(
   insights: OptionalInsights,
   filters: { search?: string; condition?: string } = {},
+  context: { knownConditions?: string[] } = {},
 ): TriggerProfileViewState {
   const search = filters.search?.trim().toLowerCase() ?? '';
   const condition = filters.condition?.trim().toLowerCase() ?? '';
+  const lens = conditionLensFromKnownConditions(context.knownConditions ?? []);
+
+  // 1 when the entry's mechanism is clinically tied to a condition the user
+  // declared. Evidence always sorts first; the lens breaks ties — so a
+  // reflux user's caseboard leads with reflux-type suspects without ever
+  // hiding a strong signal elsewhere.
+  const lensRelevance = (entry: TriggerProfileEntry) => {
+    if (entry.kind !== 'group') return 0;
+    const group = groupByKey(entry.key);
+    return group && groupConditionTie(group, lens) ? 1 : 0;
+  };
 
   const filtered = normalizeInsights(insights).filter((insight) => {
     if (search && !insight.ingredientName.toLowerCase().includes(search)) {
@@ -213,10 +228,15 @@ export function buildTriggerProfileViewState(
     sectionsByStatus[status === 'cleared' ? 'cleared' : 'safe'].push(entry);
   }
 
-  sectionsByStatus.confirmed.sort((l, r) => r.insight.combinedRiskScore - l.insight.combinedRiskScore);
+  sectionsByStatus.confirmed.sort(
+    (l, r) =>
+      r.insight.combinedRiskScore - l.insight.combinedRiskScore ||
+      lensRelevance(r) - lensRelevance(l),
+  );
   sectionsByStatus.suspect.sort(
     (l, r) =>
       r.insight.negativeEvidenceCount - l.insight.negativeEvidenceCount ||
+      lensRelevance(r) - lensRelevance(l) ||
       r.insight.combinedRiskScore - l.insight.combinedRiskScore,
   );
   sectionsByStatus.cleared.sort((l, r) => r.insight.positiveEvidenceCount - l.insight.positiveEvidenceCount);

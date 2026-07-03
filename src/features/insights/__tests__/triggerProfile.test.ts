@@ -374,6 +374,50 @@ describe('evidenceDetailForInsight', () => {
   });
 });
 
+describe('condition lens sorting', () => {
+  // Two seeded suspects with identical evidence (zero rough days): the one
+  // whose mechanism matches the user's declared condition leads.
+  const seededSuspects = [
+    insight({ ingredientName: 'garlic', combinedRiskScore: 62, sourceBreakdown: breakdown({ declared: true }) }),
+    insight({ ingredientName: 'tomato', combinedRiskScore: 62, sourceBreakdown: breakdown({ declared: true }) }),
+  ];
+
+  it('leads with the reflux pattern for a reflux user', () => {
+    const viewState = buildTriggerProfileViewState(seededSuspects, {}, {
+      knownConditions: ['GERD / Acid reflux'],
+    });
+    const suspects = viewState.sections.find((section) => section.status === 'suspect')!;
+    expect(suspects.entries[0]!.label).toBe('Acidic & pickled foods');
+  });
+
+  it('leads with the fructan pattern for an IBS user', () => {
+    const viewState = buildTriggerProfileViewState(seededSuspects, {}, {
+      knownConditions: ['IBS'],
+    });
+    const suspects = viewState.sections.find((section) => section.status === 'suspect')!;
+    expect(suspects.entries[0]!.label).toBe('Garlic & onion');
+  });
+
+  it('never lets the lens outrank real evidence', () => {
+    const viewState = buildTriggerProfileViewState(
+      [
+        ...seededSuspects,
+        insight({
+          ingredientName: 'coffee',
+          combinedRiskScore: 55,
+          negativeEvidenceCount: 2,
+          sourceBreakdown: breakdown({ personal: true, negativeEvidenceCount: 2, pairedDayCount: 3 }),
+        }),
+      ],
+      {},
+      { knownConditions: ['IBS'] },
+    );
+    const suspects = viewState.sections.find((section) => section.status === 'suspect')!;
+    // Coffee has actual rough-day evidence; it leads regardless of lens order.
+    expect(suspects.entries[0]!.label).toBe('Caffeine');
+  });
+});
+
 describe('buildTriggerProfileShareText', () => {
   it('lists section names with up to five entries each', () => {
     const text = buildTriggerProfileShareText(

@@ -12,9 +12,12 @@ import {
   verdictTone,
 } from '../../components/common/UI';
 import {
+  CONDITION_LENS_LABEL,
+  conditionLensFromKnownConditions,
   familyByKey,
   familyForInsight,
   groupByKey,
+  groupConditionTie,
   groupsForInsight,
 } from '../../features/insights/triggerGroups';
 import {
@@ -54,11 +57,17 @@ type CaseSubject = {
 // stats, taxonomy links, and meta-explanations earned no place here.
 export function InsightDetailScreen({ route, navigation }: Props) {
   const fallbackInsights = useAppStore((state) => state.insights);
+  const fallbackProfile = useAppStore((state) => state.profile);
   const scans = useAppStore((state) => state.scans);
   const dailyReports = useAppStore((state) => state.dailyReports);
   const insightsQuery = useInsightsData('');
 
   const allInsights = insightsQuery.data?.insights ?? fallbackInsights;
+  const profileForLens = insightsQuery.data?.profile ?? fallbackProfile;
+  const knownConditions = useMemo(
+    () => profileForLens?.knownConditions ?? [],
+    [profileForLens?.knownConditions],
+  );
   const group = route.params.groupKey ? groupByKey(route.params.groupKey) : null;
   const family = route.params.familyKey ? familyByKey(route.params.familyKey) : null;
   const ingredientName = route.params.ingredientName;
@@ -74,11 +83,18 @@ export function InsightDetailScreen({ route, navigation }: Props) {
       };
     }
     if (group) {
+      // Name the clinical tie when the mechanism matches a condition the user
+      // declared — this is where "personalized" becomes visible: the same
+      // group reads "Acid load · a known reflux pattern for you" only for
+      // reflux users.
+      const tie = groupConditionTie(group, conditionLensFromKnownConditions(knownConditions));
       return {
         kind: 'group',
         label: group.label,
         emoji: group.emoji,
-        context: group.subtitle,
+        context: tie
+          ? `${group.subtitle} · a known ${CONDITION_LENS_LABEL[tie]} pattern for you`
+          : group.subtitle,
         members: allInsights.filter((entry) =>
           groupsForInsight(entry).some((candidate) => candidate.key === group.key),
         ),
@@ -94,7 +110,7 @@ export function InsightDetailScreen({ route, navigation }: Props) {
       context: insightFamily.label,
       members: [insight],
     };
-  }, [allInsights, family, group, ingredientName]);
+  }, [allInsights, family, group, ingredientName, knownConditions]);
 
   const status: TriggerStatus = subject?.members.length
     ? statusForMembers(subject.members)

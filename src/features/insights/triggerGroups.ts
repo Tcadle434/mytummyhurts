@@ -4,12 +4,27 @@ import type {
   TrackedFoodFamilyKey,
 } from '../../types/domain';
 
+// The app's declared-condition vocabulary, canonicalized for the lens. A group
+// "ties" to a condition when clinical evidence links the mechanism to it:
+// FODMAP subgroups → IBS (Monash reintroduction data), the LES-relaxation set
+// (fat, chocolate, mint, carbonation, acid, caffeine, alcohol) → reflux,
+// lactose → lactose intolerance, wheat → gluten sensitivity + IBS fructans.
+export type TriggerConditionKey = 'ibs' | 'reflux' | 'lactose' | 'gluten';
+
+export const CONDITION_LENS_LABEL: Record<TriggerConditionKey, string> = {
+  ibs: 'IBS',
+  reflux: 'reflux',
+  lactose: 'lactose intolerance',
+  gluten: 'gluten sensitivity',
+};
+
 export type TriggerGroup = {
   key: DigestivePatternKey;
   label: string;
   subtitle: string;
   emoji: string;
   aliases: string[];
+  relevantConditions: TriggerConditionKey[];
 };
 
 export type TrackedFoodFamily = {
@@ -20,25 +35,46 @@ export type TrackedFoodFamily = {
 };
 
 export const TRIGGER_GROUPS: TriggerGroup[] = [
-  { key: 'lactose_dairy', label: 'Dairy & lactose', subtitle: 'Lactose/dairy load', emoji: '🥛', aliases: ['dairy', 'lactose', 'milk', 'cheese', 'yogurt', 'yoghurt', 'cream', 'ice cream', 'butter'] },
-  { key: 'allium_fructans', label: 'Garlic & onion', subtitle: 'Fructans/alliums', emoji: '🧄', aliases: ['garlic', 'onion', 'shallot', 'leek', 'scallion', 'green onion', 'chive'] },
-  { key: 'wheat_fructan_gluten', label: 'Wheat & gluten', subtitle: 'Wheat fructans/gluten', emoji: '🍞', aliases: ['wheat', 'gluten', 'bread', 'pasta', 'flour', 'bun', 'ramen', 'rye', 'tortilla', 'cracker', 'noodle'] },
-  { key: 'legume_gos', label: 'Beans & legumes', subtitle: 'GOS/legume fermentation', emoji: '🫘', aliases: ['beans', 'bean', 'lentil', 'chickpea', 'edamame', 'hummus', 'falafel', 'tofu'] },
-  { key: 'excess_fructose', label: 'High-fructose foods', subtitle: 'Excess fructose', emoji: '🍎', aliases: ['apple', 'pear', 'mango', 'honey', 'agave', 'fruit juice'] },
-  { key: 'polyol_sweeteners', label: 'Sugar alcohols & polyols', subtitle: 'Polyols', emoji: '🧃', aliases: ['sorbitol', 'mannitol', 'xylitol', 'maltitol', 'erythritol', 'sugar-free', 'sugar free', 'diet soda'] },
-  { key: 'gassy_high_fiber_plants', label: 'Gassy high-fiber plants', subtitle: 'Fiber/fermentation load', emoji: '🥦', aliases: ['broccoli', 'cabbage', 'cauliflower', 'mushroom', 'mushrooms', 'bran'] },
-  { key: 'high_fat_rich', label: 'Rich & high-fat foods', subtitle: 'Fat load', emoji: '🥑', aliases: ['mayo', 'mayonnaise', 'aioli', 'butter', 'avocado', 'olive oil', 'pesto', 'loaded toppings', 'burger', 'ribs', 'pork belly'] },
-  { key: 'fried_crispy', label: 'Fried & crispy foods', subtitle: 'Fried prep/fat load', emoji: '🍟', aliases: ['fried', 'fries', 'tempura', 'battered', 'breaded', 'crispy', 'deep-fried'] },
-  { key: 'acidic_pickled', label: 'Acidic & pickled foods', subtitle: 'Acid load', emoji: '🍅', aliases: ['tomato', 'citrus', 'lemon', 'lime', 'orange', 'vinegar', 'pickle', 'pickled', 'mustard', 'salsa', 'ketchup'] },
-  { key: 'spicy_heat', label: 'Spicy heat', subtitle: 'Capsaicin/pepper heat', emoji: '🌶️', aliases: ['spicy', 'chili', 'chilli', 'hot sauce', 'jalapeno', 'sriracha', 'gochujang', 'cayenne'] },
-  { key: 'caffeine_stimulants', label: 'Caffeine', subtitle: 'Stimulants', emoji: '☕', aliases: ['coffee', 'espresso', 'latte', 'tea', 'matcha', 'energy drink'] },
-  { key: 'carbonation', label: 'Carbonation', subtitle: 'Gas/reflux/bloating', emoji: '🥤', aliases: ['soda', 'sparkling water', 'seltzer', 'tonic', 'cola', 'fizzy'] },
-  { key: 'alcohol', label: 'Alcohol', subtitle: 'Reflux/irritation', emoji: '🍺', aliases: ['beer', 'wine', 'cocktail', 'liquor', 'vodka', 'whiskey', 'tequila', 'rum', 'sake'] },
-  { key: 'chocolate_cocoa', label: 'Chocolate & cocoa', subtitle: 'Cocoa/chocolate', emoji: '🍫', aliases: ['chocolate', 'cocoa', 'mocha', 'brownie', 'fudge'] },
-  { key: 'mint', label: 'Mint', subtitle: 'Peppermint/spearmint', emoji: '🌿', aliases: ['mint', 'peppermint', 'spearmint', 'mint tea'] },
-  { key: 'fermented_aged_histamine', label: 'Fermented & aged foods', subtitle: 'Histamine/fermentation', emoji: '🥬', aliases: ['kimchi', 'sauerkraut', 'miso', 'soy sauce', 'kombucha', 'aged cheese', 'gochujang'] },
-  { key: 'ultra_processed_additives', label: 'Processed/additive-heavy foods', subtitle: 'Additives/processing', emoji: '🥨', aliases: ['emulsifier', 'emulsifiers', 'gums', 'preservatives', 'ultra-processed'] },
+  { key: 'lactose_dairy', label: 'Dairy & lactose', subtitle: 'Lactose/dairy load', emoji: '🥛', relevantConditions: ['lactose', 'ibs'], aliases: ['dairy', 'lactose', 'milk', 'cheese', 'yogurt', 'yoghurt', 'cream', 'ice cream', 'butter'] },
+  { key: 'allium_fructans', label: 'Garlic & onion', subtitle: 'Fructans/alliums', emoji: '🧄', relevantConditions: ['ibs'], aliases: ['garlic', 'onion', 'shallot', 'leek', 'scallion', 'green onion', 'chive'] },
+  { key: 'wheat_fructan_gluten', label: 'Wheat & gluten', subtitle: 'Wheat fructans/gluten', emoji: '🍞', relevantConditions: ['gluten', 'ibs'], aliases: ['wheat', 'gluten', 'bread', 'pasta', 'flour', 'bun', 'ramen', 'rye', 'tortilla', 'cracker', 'noodle'] },
+  { key: 'legume_gos', label: 'Beans & legumes', subtitle: 'GOS/legume fermentation', emoji: '🫘', relevantConditions: ['ibs'], aliases: ['beans', 'bean', 'lentil', 'chickpea', 'edamame', 'hummus', 'falafel', 'tofu'] },
+  { key: 'excess_fructose', label: 'High-fructose foods', subtitle: 'Excess fructose', emoji: '🍎', relevantConditions: ['ibs'], aliases: ['apple', 'pear', 'mango', 'honey', 'agave', 'fruit juice'] },
+  { key: 'polyol_sweeteners', label: 'Sugar alcohols & polyols', subtitle: 'Polyols', emoji: '🧃', relevantConditions: ['ibs'], aliases: ['sorbitol', 'mannitol', 'xylitol', 'maltitol', 'erythritol', 'sugar-free', 'sugar free', 'diet soda'] },
+  { key: 'gassy_high_fiber_plants', label: 'Gassy high-fiber plants', subtitle: 'Fiber/fermentation load', emoji: '🥦', relevantConditions: ['ibs'], aliases: ['broccoli', 'cabbage', 'cauliflower', 'mushroom', 'mushrooms', 'bran'] },
+  { key: 'high_fat_rich', label: 'Rich & high-fat foods', subtitle: 'Fat load', emoji: '🥑', relevantConditions: ['reflux', 'ibs'], aliases: ['mayo', 'mayonnaise', 'aioli', 'butter', 'avocado', 'olive oil', 'pesto', 'loaded toppings', 'burger', 'ribs', 'pork belly'] },
+  { key: 'fried_crispy', label: 'Fried & crispy foods', subtitle: 'Fried prep/fat load', emoji: '🍟', relevantConditions: ['reflux', 'ibs'], aliases: ['fried', 'fries', 'tempura', 'battered', 'breaded', 'crispy', 'deep-fried'] },
+  { key: 'acidic_pickled', label: 'Acidic & pickled foods', subtitle: 'Acid load', emoji: '🍅', relevantConditions: ['reflux'], aliases: ['tomato', 'citrus', 'lemon', 'lime', 'orange', 'vinegar', 'pickle', 'pickled', 'mustard', 'salsa', 'ketchup'] },
+  { key: 'spicy_heat', label: 'Spicy heat', subtitle: 'Capsaicin/pepper heat', emoji: '🌶️', relevantConditions: ['reflux', 'ibs'], aliases: ['spicy', 'chili', 'chilli', 'hot sauce', 'jalapeno', 'sriracha', 'gochujang', 'cayenne'] },
+  { key: 'caffeine_stimulants', label: 'Caffeine', subtitle: 'Stimulants', emoji: '☕', relevantConditions: ['reflux', 'ibs'], aliases: ['coffee', 'espresso', 'latte', 'tea', 'matcha', 'energy drink'] },
+  { key: 'carbonation', label: 'Carbonation', subtitle: 'Gas/reflux/bloating', emoji: '🥤', relevantConditions: ['reflux', 'ibs'], aliases: ['soda', 'sparkling water', 'seltzer', 'tonic', 'cola', 'fizzy'] },
+  { key: 'alcohol', label: 'Alcohol', subtitle: 'Reflux/irritation', emoji: '🍺', relevantConditions: ['reflux', 'ibs'], aliases: ['beer', 'wine', 'cocktail', 'liquor', 'vodka', 'whiskey', 'tequila', 'rum', 'sake'] },
+  { key: 'chocolate_cocoa', label: 'Chocolate & cocoa', subtitle: 'Cocoa/chocolate', emoji: '🍫', relevantConditions: ['reflux'], aliases: ['chocolate', 'cocoa', 'mocha', 'brownie', 'fudge'] },
+  { key: 'mint', label: 'Mint', subtitle: 'Peppermint/spearmint', emoji: '🌿', relevantConditions: ['reflux'], aliases: ['mint', 'peppermint', 'spearmint', 'mint tea'] },
+  { key: 'fermented_aged_histamine', label: 'Fermented & aged foods', subtitle: 'Histamine/fermentation', emoji: '🥬', relevantConditions: [], aliases: ['kimchi', 'sauerkraut', 'miso', 'soy sauce', 'kombucha', 'aged cheese', 'gochujang'] },
+  { key: 'ultra_processed_additives', label: 'Processed/additive-heavy foods', subtitle: 'Additives/processing', emoji: '🥨', relevantConditions: ['ibs'], aliases: ['emulsifier', 'emulsifiers', 'gums', 'preservatives', 'ultra-processed'] },
 ];
+
+// Declared conditions are free text ("GERD / Acid reflux", "Ibs", custom
+// entries) — canonicalize by keyword so the lens survives spelling.
+export function conditionLensFromKnownConditions(knownConditions: string[]): TriggerConditionKey[] {
+  const joined = knownConditions.map((condition) => condition.toLowerCase());
+  const has = (pattern: RegExp) => joined.some((condition) => pattern.test(condition));
+  const lens: TriggerConditionKey[] = [];
+  if (has(/\bibs\b|irritable/)) lens.push('ibs');
+  if (has(/gerd|reflux|heartburn/)) lens.push('reflux');
+  if (has(/lactose/)) lens.push('lactose');
+  if (has(/gluten|celiac|coeliac/)) lens.push('gluten');
+  return lens;
+}
+
+/** The first of the user's conditions this group is clinically tied to, if any. */
+export function groupConditionTie(
+  group: TriggerGroup,
+  lens: TriggerConditionKey[],
+): TriggerConditionKey | null {
+  return lens.find((condition) => group.relevantConditions.includes(condition)) ?? null;
+}
 
 export const TRACKED_FOOD_FAMILIES: TrackedFoodFamily[] = [
   { key: 'lean_poultry_meat', label: 'Lean poultry & meats', emoji: '🍗', aliases: ['turkey', 'chicken', 'lean beef'] },

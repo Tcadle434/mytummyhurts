@@ -19,6 +19,10 @@ import { isLiveBackendConfigured } from "../../config/env";
 import { useInsightsData } from "../../features/insights/hooks";
 import { resolveTriggerProfileLearningProgress } from "../../features/insights/learningProgress";
 import {
+	CONDITION_LENS_LABEL,
+	conditionLensFromKnownConditions,
+} from "../../features/insights/triggerGroups";
+import {
 	buildTriggerProfileViewState,
 	type TriggerProfileViewState,
 	type TriggerStatus,
@@ -86,8 +90,12 @@ export function InsightsScreen() {
 		[fallbackInsights, insightsQuery.data?.insights, isWaitingForComputedData],
 	);
 
-	const viewState = useMemo(() => buildTriggerProfileViewState(insights), [insights]);
-	const conditions = profile?.knownConditions ?? [];
+	const conditions = useMemo(() => profile?.knownConditions ?? [], [profile?.knownConditions]);
+	const viewState = useMemo(
+		() => buildTriggerProfileViewState(insights, {}, { knownConditions: conditions }),
+		[conditions, insights],
+	);
+	const conditionLens = useMemo(() => conditionLensFromKnownConditions(conditions), [conditions]);
 	const learningProgress = useMemo(
 		() =>
 			resolveTriggerProfileLearningProgress({
@@ -210,6 +218,17 @@ export function InsightsScreen() {
 				) : (
 					<>
 						<CaseboardHero viewState={viewState} />
+
+						{conditionLens.length > 0 ? (
+							<View style={styles.lensRow}>
+								<Ionicons name="eye-outline" size={13} color={tokens.color.text.tertiary} />
+								<Text style={styles.lensText}>
+									Tuned to your{" "}
+									{conditionLens.map((key) => CONDITION_LENS_LABEL[key]).join(" + ")} — those
+									patterns surface first
+								</Text>
+							</View>
+						) : null}
 
 						<Pressable
 							accessibilityRole="button"
@@ -1002,6 +1021,18 @@ const styles = StyleSheet.create({
 		lineHeight: 16,
 		paddingHorizontal: spacing.sm,
 		marginTop: -spacing.xs,
+	},
+	lensRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		paddingHorizontal: spacing.sm,
+		marginTop: -spacing.xs,
+	},
+	lensText: {
+		...tokens.type.body.small,
+		flex: 1,
+		color: tokens.color.text.tertiary,
 	},
 	familyList: {
 		gap: spacing.xs,

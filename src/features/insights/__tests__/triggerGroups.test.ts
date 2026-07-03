@@ -6,7 +6,9 @@ import {
   buildGroupedTriggerEntries,
   buildMemberSummary,
   buildTrackedFoodFamilyEntries,
+  conditionLensFromKnownConditions,
   groupByKey,
+  groupConditionTie,
   groupForIngredient,
 } from '../triggerGroups';
 import type { IngredientInsight } from '../../../types/domain';
@@ -182,6 +184,25 @@ describe('buildTrackedFoodFamilyEntries', () => {
       'pickled_fermented',
       'nuts_seeds',
     ]);
+  });
+});
+
+describe('condition lens', () => {
+  it('canonicalizes the declared-condition free text', () => {
+    expect(conditionLensFromKnownConditions(['IBS', 'GERD / Acid reflux'])).toEqual(['ibs', 'reflux']);
+    expect(conditionLensFromKnownConditions(['heartburn (self-diagnosed)'])).toEqual(['reflux']);
+    expect(conditionLensFromKnownConditions(['Lactose Intolerance', 'celiac'])).toEqual(['lactose', 'gluten']);
+    expect(conditionLensFromKnownConditions(['Unsure, just general discomfort'])).toEqual([]);
+  });
+
+  it('ties a group to the first matching declared condition', () => {
+    const acidic = groupByKey('acidic_pickled')!;
+    expect(groupConditionTie(acidic, ['reflux'])).toBe('reflux');
+    expect(groupConditionTie(acidic, ['ibs'])).toBeNull();
+
+    const dairy = groupByKey('lactose_dairy')!;
+    expect(groupConditionTie(dairy, ['ibs', 'lactose'])).toBe('ibs');
+    expect(groupConditionTie(dairy, ['lactose'])).toBe('lactose');
   });
 });
 
