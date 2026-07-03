@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { DatabaseService } from '../database/database.service';
+import { estimateOpenAiCost } from '../scan/engine/openaiPricing';
 import type { OpenAiAuditLog } from '../scan/engine/openai';
 
 export const WORKFLOW_VERSION = 'scan_workflow_v1';
@@ -116,6 +117,42 @@ export class TraceService {
     }
   }
 
+  /**
+   * Ledger row for a standalone embedding call (RAG retrieval/ingestion).
+   * These run outside any scan trace, so trace_id/node_trace_id stay null;
+   * userId is recorded when the caller has one. Best-effort like all traces.
+   */
+  async recordEmbeddingCostEvent(input: {
+    model: string;
+    inputTokens: number | null;
+    totalTokens: number | null;
+    userId?: string | null;
+  }): Promise<void> {
+    try {
+      const snapshot = estimateOpenAiCost(input.model, {
+        responseId: null,
+        inputTokens: input.inputTokens,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: input.totalTokens ?? input.inputTokens,
+      });
+      if (!snapshot.billable) return;
+      await this.db.service(async (sql) => {
+        await sql`
+          insert into public.ai_cost_events
+            (user_id, operation, provider, model, input_tokens, output_tokens,
+             total_tokens, estimated_cost_usd_micros, pricing_snapshot, billable)
+          values (${input.userId ?? null}, 'embedding', 'openai', ${input.model},
+                  ${snapshot.usage.inputTokens}, 0, ${snapshot.usage.totalTokens},
+                  ${snapshot.estimatedCostUsdMicros ?? 0},
+                  ${sql.json(snapshot.pricingSnapshot as never)}, true)`;
+      });
+    } catch (err) {
+      this.logger.warn(`embedding cost event write failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   private async ensureVersions(): Promise<void> {
     if (this.versionsEnsured) return;
     this.versionsEnsured = true;
@@ -132,7 +169,7 @@ export class TraceService {
         for (const [role, model] of [
           ['extraction', process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini'],
           ['menu', process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini'],
-          ['normalization', process.env.OPENAI_NORMALIZATION_MODEL ?? 'gpt-4.1-mini'],
+          ['classification', process.env.OPENAI_CLASSIFICATION_MODEL ?? 'gpt-5-nano'],
           ['embedding', process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small'],
         ] as const) {
           const kind = role === 'embedding' ? 'embedding' : 'llm';

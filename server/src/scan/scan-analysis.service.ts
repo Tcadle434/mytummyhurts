@@ -6,6 +6,7 @@ import { LearningJobService } from '../learning/learning-job.service';
 import { StorageService } from '../storage/storage.service';
 import { TraceService } from '../trace/trace.service';
 import type { IngredientInsight, UserProfile } from './engine/domain';
+import type { OpenAiAuditLog } from './engine/openai';
 import { buildFoodCompletionInput, buildMenuCompletionInput } from './scan-payload';
 import { ScanCrudService } from './scan-crud.service';
 import type { ScanStageCallback } from './scan-progress';
@@ -31,6 +32,8 @@ export interface AnalyzeBarcodeRequest {
   localDate?: string | null;
   timezone?: string | null;
 }
+
+const EXTRACTION_PROMPT_VERSION = process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3';
 
 export interface AnalyzeResult {
   scanId: string;
@@ -72,6 +75,36 @@ export class ScanAnalysisService {
     return (stage, detail) => {
       void this.progress.setStage(userId, scanId, stage, detail);
     };
+  }
+
+  // A failed scan must still leave a trace. Errors thrown inside the workflow
+  // carry the failed stage's audit(s) on the error object; persist them with a
+  // failed ai_traces row so failures are debuggable instead of vanishing.
+  // recordScanTrace is best-effort and never throws.
+  private async recordFailedScanTrace(
+    userId: string,
+    scanId: string,
+    requestId: string,
+    scanCategory: 'food' | 'menu' | 'grocery',
+    err: unknown,
+  ): Promise<void> {
+    const carrier = (err ?? {}) as { audit?: OpenAiAuditLog; audits?: OpenAiAuditLog[] };
+    const audits = [
+      ...(Array.isArray(carrier.audits) ? carrier.audits : []),
+      ...(carrier.audit ? [carrier.audit] : []),
+    ];
+    await this.trace.recordScanTrace({
+      userId,
+      scanId,
+      requestId,
+      operation: 'scan_extract',
+      scanCategory,
+      promptVersion: EXTRACTION_PROMPT_VERSION,
+      baseScore: 0,
+      finalScore: 0,
+      audits,
+      status: 'failed',
+    });
   }
 
   // Assemble the full AnalyzeResponse the app expects: the persisted scan plus
@@ -168,13 +201,14 @@ export class ScanAnalysisService {
         requestId: req.requestId,
         operation: 'scan_extract',
         scanCategory: wf.scanCategory,
-        promptVersion: process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3',
+        promptVersion: EXTRACTION_PROMPT_VERSION,
         baseScore: wf.baseResult.overallRiskScore,
         finalScore: wf.finalResult.overallRiskScore,
         audits: wf.audits,
       });
       return this.buildResponse(req.userId, scanId, false, begin.tokens_remaining);
     } catch (err) {
+      await this.recordFailedScanTrace(req.userId, scanId, req.requestId, req.scanCategory ?? 'food', err);
       await this.reservation.fail(req.userId, scanId, 'analysis_failed', (err as Error).message, true);
       throw err;
     }
@@ -219,13 +253,14 @@ export class ScanAnalysisService {
         requestId: req.requestId,
         operation: 'scan_extract',
         scanCategory: wf.scanCategory,
-        promptVersion: process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3',
+        promptVersion: EXTRACTION_PROMPT_VERSION,
         baseScore: wf.baseResult.overallRiskScore,
         finalScore: wf.finalResult.overallRiskScore,
         audits: wf.audits,
       });
       return this.buildResponse(req.userId, scanId, false, begin.tokens_remaining);
     } catch (err) {
+      await this.recordFailedScanTrace(req.userId, scanId, req.requestId, 'grocery', err);
       await this.reservation.fail(req.userId, scanId, 'analysis_failed', (err as Error).message, true);
       throw err;
     }

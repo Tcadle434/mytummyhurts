@@ -3,10 +3,12 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 /**
- * Per-user monthly AI cost ceiling. Aggregates ai_cost_events (+ the legacy
- * scan_ai_audit_logs) for the calendar month and blocks new scans once the cap
- * is exceeded. Complements the daily scan-count caps in the reservation RPC.
- * Set MONTHLY_COST_CAP_USD_MICROS=0 to disable.
+ * Per-user monthly AI cost ceiling. Aggregates ai_cost_events — the single
+ * billable ledger — for the calendar month and blocks new scans once the cap
+ * is exceeded. (scan_ai_audit_logs stores the same micros per stage for audit
+ * purposes; summing both would double-count every scan.) Complements the daily
+ * scan-count caps in the reservation RPC. Set MONTHLY_COST_CAP_USD_MICROS=0 to
+ * disable.
  */
 @Injectable()
 export class CostCapService {
@@ -19,13 +21,9 @@ export class CostCapService {
   async monthToDateMicros(userId: string): Promise<number> {
     return this.db.service(async (sql) => {
       const [row] = await sql`
-        select coalesce((
-          select sum(estimated_cost_usd_micros) from public.ai_cost_events
-          where user_id = ${userId} and created_at >= date_trunc('month', now())
-        ), 0) + coalesce((
-          select sum(estimated_cost_usd_micros) from public.scan_ai_audit_logs
-          where user_id = ${userId} and created_at >= date_trunc('month', now()) and billable
-        ), 0) as total`;
+        select coalesce(sum(estimated_cost_usd_micros), 0) as total
+        from public.ai_cost_events
+        where user_id = ${userId} and created_at >= date_trunc('month', now())`;
       return Number(row?.total ?? 0);
     });
   }

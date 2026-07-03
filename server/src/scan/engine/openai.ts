@@ -52,16 +52,24 @@ import { fallbackExtractionFromImage, fallbackExtractionFromText } from './scori
 import { withRetry } from './retry';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
+// Demo fallbacks (fabricated dish-library extractions) are opt-in only: without
+// this flag a missing OPENAI_API_KEY fails at startup (see core/env.validation)
+// and these entry points throw instead of inventing meals.
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
 const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
 const IMAGE_EXTRACTION_MODEL = process.env.OPENAI_IMAGE_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
 const MENU_EXTRACTION_MODEL = process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini';
-const NORMALIZATION_MODEL = process.env.OPENAI_NORMALIZATION_MODEL ?? 'gpt-4.1-mini';
+// Cheap dedicated router for the food-vs-menu decision; low detail + a small
+// output cap keep it a fraction of an extraction call.
+const CLASSIFICATION_MODEL = process.env.OPENAI_CLASSIFICATION_MODEL ?? 'gpt-5-nano';
 const RISK_ADJUDICATION_MODEL = process.env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-4.1-mini';
 const PROMPT_VERSION = process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3';
 // Determinism lever. GPT-5-family models often reject a non-default temperature,
 // so this is OPT-IN: only sent when OPENAI_EXTRACTION_TEMPERATURE is set to a
-// number. The hard "same input -> same score" guarantee comes from the scoring
-// cache, not temperature. Set to "0" once a model is confirmed to accept it.
+// number. Note there is NO extraction cache: repeat submissions are deduped by
+// requestId idempotency in the reservation layer, but a genuinely new scan of
+// the same food re-runs extraction and may vary. Set to "0" once a model is
+// confirmed to accept it.
 const EXTRACTION_TEMPERATURE = (() => {
   const raw = process.env.OPENAI_EXTRACTION_TEMPERATURE;
   if (raw === undefined || raw.trim() === '') {
@@ -77,17 +85,22 @@ function extractionSamplingFields(): Record<string, number> {
 }
 const IMAGE_DETAIL = (process.env.OPENAI_IMAGE_DETAIL ?? 'high') === 'low' ? 'low' : 'high';
 const MENU_IMAGE_DETAIL = (process.env.OPENAI_MENU_IMAGE_DETAIL ?? 'high') === 'low' ? 'low' : 'high';
-const OPENAI_TIMEOUT_MS = positiveNumberEnv('OPENAI_TIMEOUT_MS', 65_000);
+const OPENAI_TIMEOUT_MS = positiveNumberEnv('OPENAI_TIMEOUT_MS', 30_000);
 const OPENAI_MENU_TIMEOUT_MS = positiveNumberEnv('OPENAI_MENU_TIMEOUT_MS', 115_000);
 const OPENAI_MENU_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_MENU_MAX_OUTPUT_TOKENS', 12_000);
-const OPENAI_TEXT_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_TEXT_MAX_OUTPUT_TOKENS', 4_000);
-const OPENAI_IMAGE_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_IMAGE_MAX_OUTPUT_TOKENS', 4_000);
+const OPENAI_TEXT_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_TEXT_MAX_OUTPUT_TOKENS', 6_000);
+const OPENAI_IMAGE_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_IMAGE_MAX_OUTPUT_TOKENS', 6_000);
+const OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS', 300);
 const OPENAI_RISK_ADJUDICATION_TIMEOUT_MS = positiveNumberEnv('OPENAI_RISK_ADJUDICATION_TIMEOUT_MS', 30_000);
 const OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS', 3_000);
 const MENU_ITEM_LIMIT = 100;
 // When off, menu extraction skips per-condition LLM bands and the engine falls
 // back to mechanism-only scoring for menus (revert lever for cost/latency).
 const MENU_LLM_BANDS = (process.env.MENU_LLM_BANDS ?? 'on') !== 'off';
+// Same lever for food scans. Effective only when the caller will actually
+// consume bands (see ExtractionContext.requestConditionBands); the mechanism
+// scoring path discards extraction bands, so it turns the request off.
+const FOOD_LLM_BANDS = (process.env.FOOD_LLM_BANDS ?? 'on') !== 'off';
 
 export type OpenAiAuditLog = {
   stage: string;
@@ -128,7 +141,18 @@ export type ExtractionContext = {
   knownConditions: string[];
   knownIngredients: string[];
   dietPreferences?: DietPreference[];
+  /**
+   * Set false when the active scoring engine will discard extraction
+   * conditionSeverities (mechanism-only scoring); the food prompts then ask
+   * for an empty array instead of paying for bands nobody reads. Defaults to
+   * true, and FOOD_LLM_BANDS=off force-disables it (mirrors MENU_LLM_BANDS).
+   */
+  requestConditionBands?: boolean;
 };
+
+function shouldRequestFoodBands(context: ExtractionContext) {
+  return FOOD_LLM_BANDS && (context.requestConditionBands ?? true);
+}
 
 type ResponseAuditDescriptor = {
   stage: string;
@@ -1102,7 +1126,10 @@ function coerceMenuExtraction(payload: RawMenuPayload, inputPageCount: number, k
   };
 }
 
-function coerceExtraction(payload: RawExtractionPayload, meta: { model: string; imageDetail: ExtractionImageDetail }): ExtractionResult {
+function coerceExtraction(
+  payload: RawExtractionPayload,
+  meta: { model: string; imageDetail: ExtractionImageDetail; includeConditionBands?: boolean },
+): ExtractionResult {
   const dishName = String(payload.dishName ?? '').trim() || 'Unknown meal';
   const components = Array.isArray(payload.components)
     ? payload.components
@@ -1158,7 +1185,8 @@ function coerceExtraction(payload: RawExtractionPayload, meta: { model: string; 
     notes,
     baseFoodCategory,
     riskModifiers: resolvedRiskModifiers,
-    conditionSeverities: coerceConditionSeverities(payload.conditionSeverities),
+    conditionSeverities:
+      meta.includeConditionBands === false ? [] : coerceConditionSeverities(payload.conditionSeverities),
     dietFitHypotheses: coerceDietFitHypotheses(payload.dietFitHypotheses),
     model: meta.model,
     promptVersion: PROMPT_VERSION,
@@ -1353,8 +1381,20 @@ async function runResponsesRequestWithAudit<TPayload extends object>(
   };
 }
 
+// Non-HTTP failure codes worth one more try: timeouts and malformed/truncated
+// model output are usually transient. Attempts stay capped by withRetry.
+const RETRYABLE_OPENAI_ERROR_CODES = new Set([
+  'openai_timeout',
+  'openai_invalid_json',
+  'openai_incomplete_output',
+]);
+
 function isTransientOpenAiError(error: unknown) {
   if (!(error instanceof Error)) {
+    return true;
+  }
+
+  if (RETRYABLE_OPENAI_ERROR_CODES.has(error.message)) {
     return true;
   }
 
@@ -1393,31 +1433,44 @@ function conditionPromptText(knownConditions: string[] | undefined) {
   ].join('\n');
 }
 
-function buildImageSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what is actually there: report only ingredients you can see or that are defining, standard components of the identified dish (e.g. rice, rice vinegar, and nori for sushi). Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". If a dish does not contain something by definition (e.g. plain vegetable sushi has no garlic or onion), do not list it. For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+const FOOD_BANDS_ON_SYSTEM_LINE =
+  'Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt.';
+const FOOD_BANDS_OFF_SYSTEM_LINE = 'Return conditionSeverities as an empty array.';
+const FOOD_BANDS_OFF_USER_LINE = 'Return an empty conditionSeverities array.';
+
+function foodBandsSystemLine(includeBands: boolean) {
+  return includeBands ? FOOD_BANDS_ON_SYSTEM_LINE : FOOD_BANDS_OFF_SYSTEM_LINE;
+}
+
+function foodBandsUserLine(includeBands: boolean, knownConditions: string[]) {
+  return includeBands ? conditionPromptText(knownConditions) : FOOD_BANDS_OFF_USER_LINE;
+}
+
+function buildImageSystemPrompt(includeBands: boolean) {
+  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what is actually there: report only ingredients you can see or that are defining, standard components of the identified dish (e.g. rice, rice vinegar, and nori for sushi). Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". If a dish does not contain something by definition (e.g. plain vegetable sushi has no garlic or onion), do not list it. For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. ${foodBandsSystemLine(includeBands)} Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
 
-function buildImageUserPrompt(context: ExtractionContext) {
+function buildImageUserPrompt(context: ExtractionContext, includeBands: boolean) {
   return [
     'Analyze this single meal photo for structured food recognition.',
     'Represent multi-item plates in the components array.',
     'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
-    conditionPromptText(context.knownConditions),
+    foodBandsUserLine(includeBands, context.knownConditions),
     dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching this exact schema.',
     JSON.stringify(extractionSchema),
   ].join('\n');
 }
 
-function buildMultiImageUserPrompt(context: ExtractionContext & { imageCount: number }) {
+function buildMultiImageUserPrompt(context: ExtractionContext & { imageCount: number }, includeBands: boolean) {
   return [
     `Analyze these ${context.imageCount} food images as one scan.`,
     'They may show multiple angles, a receipt-like food list, or multiple items from the same meal. Combine them into one structured food recognition result.',
     'Represent multi-item meals in the components array.',
     'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
-    conditionPromptText(context.knownConditions),
+    foodBandsUserLine(includeBands, context.knownConditions),
     dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching this exact schema.',
     JSON.stringify(extractionSchema),
@@ -1473,32 +1526,21 @@ function buildMenuUserPrompt(context: ExtractionContext & { pageCount: number })
   ].join('\n');
 }
 
-function buildTextSystemPrompt() {
-  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what the description actually states or what is a defining, standard component of the named dish. Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. Also provide a conditionSeverities array: one per-condition severity band as instructed in the user prompt. Do not provide medical advice or a final numeric risk score.
+function buildTextSystemPrompt(includeBands: boolean) {
+  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what the description actually states or what is a defining, standard component of the named dish. Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. ${foodBandsSystemLine(includeBands)} Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
 
-function buildTextUserPrompt(text: string, context: ExtractionContext) {
+function buildTextUserPrompt(text: string, context: ExtractionContext, includeBands: boolean) {
   return [
     'Analyze this meal description for structured food recognition.',
     'Represent multi-item meals in the components array when needed.',
-    conditionPromptText(context.knownConditions),
+    foodBandsUserLine(includeBands, context.knownConditions),
     dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching this exact schema.',
     JSON.stringify(extractionSchema),
     `Meal description: ${text}`,
-  ].join('\n');
-}
-
-function buildNormalizationPrompt(extraction: RawExtractionPayload) {
-  return [
-    'Normalize this meal extraction JSON for storage.',
-    'Merge duplicates, canonicalize ingredient names, keep visible and inferred ingredients separate, preserve conservative uncertainty, preserve ingredient role/prominence/amountEstimate/amountBasis, and preserve or correct the controlled baseFoodCategory/riskModifiers.',
-    'Preserve the conditionSeverities array exactly as provided; do not re-judge, drop, or add any severity band.',
-    'Return JSON matching the exact same schema.',
-    JSON.stringify(extractionSchema),
-    JSON.stringify(extraction),
   ].join('\n');
 }
 
@@ -1570,55 +1612,6 @@ function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
   ].join('\n');
 }
 
-async function normalizeExtractionWithAudit(
-  payload: RawExtractionPayload,
-  imageDetail: ExtractionImageDetail,
-  inputRefs: unknown[] = [],
-) {
-  const systemPrompt = 'You normalize meal extraction JSON for storage. Return only valid JSON that matches the provided schema. Do not add commentary.';
-  const userPrompt = buildNormalizationPrompt(payload);
-  const request = {
-    model: NORMALIZATION_MODEL,
-    input: [
-      {
-        role: 'system',
-        content: [{ type: 'input_text', text: systemPrompt }],
-      },
-      {
-        role: 'user',
-        content: [{ type: 'input_text', text: userPrompt }],
-      },
-    ],
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'meal_extraction_normalized',
-        schema: extractionSchema,
-        strict: true,
-      },
-    },
-  };
-  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
-    stage: 'normalization',
-    model: NORMALIZATION_MODEL,
-    systemPrompt,
-    userPrompt,
-    jsonSchema: extractionSchema,
-    schemaVersion: 'meal_extraction_v2',
-    requestMetadata: { imageDetail },
-    inputRefs,
-  });
-
-  const result = coerceExtraction(parsed, { model: NORMALIZATION_MODEL, imageDetail });
-  return {
-    result,
-    audit: {
-      ...audit,
-      normalizedResponseJson: result,
-    },
-  };
-}
-
 export async function adjudicateScanRiskWithAudit(
   input: RiskAdjudicationRequest,
 ): Promise<ExtractionWithAudit<RiskAdjudicationPayload>> {
@@ -1687,16 +1680,27 @@ export async function adjudicateScanRiskWithAudit(
   };
 }
 
+// No OPENAI_API_KEY is only survivable in explicit demo mode; anywhere else it
+// must fail loudly rather than fabricate a meal (startup validation should have
+// crashed the server long before this point).
+function assertDemoFallbackAllowed(stage: string) {
+  if (!DEMO_MODE) {
+    throw new Error(`openai_api_key_missing:${stage}`);
+  }
+}
+
 export async function extractMealFromTextWithAudit(
   text: string,
   context: ExtractionContext,
 ): Promise<ExtractionWithAudit<ExtractionResult>> {
   if (!OPENAI_API_KEY) {
+    assertDemoFallbackAllowed('food_text_extraction');
     return { result: fallbackExtractionFromText(text), audits: [] };
   }
 
-  const systemPrompt = buildTextSystemPrompt();
-  const userPrompt = buildTextUserPrompt(text, context);
+  const includeBands = shouldRequestFoodBands(context);
+  const systemPrompt = buildTextSystemPrompt(includeBands);
+  const userPrompt = buildTextUserPrompt(text, context, includeBands);
   const request = {
     model: EXTRACTION_MODEL,
     ...extractionSamplingFields(),
@@ -1712,6 +1716,7 @@ export async function extractMealFromTextWithAudit(
     ],
     max_output_tokens: OPENAI_TEXT_MAX_OUTPUT_TOKENS,
     text: {
+      verbosity: 'low',
       format: {
         type: 'json_schema',
         name: 'meal_extraction_text',
@@ -1719,6 +1724,7 @@ export async function extractMealFromTextWithAudit(
         strict: true,
       },
     },
+    reasoning: { effort: 'low' },
   };
 
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
@@ -1728,14 +1734,18 @@ export async function extractMealFromTextWithAudit(
     userPrompt,
     jsonSchema: extractionSchema,
     schemaVersion: 'meal_extraction_v2',
-    requestMetadata: { source: 'text' },
+    requestMetadata: { source: 'text', includeConditionBands: includeBands },
     inputRefs: [{ inputKind: 'text' }],
   });
-  const normalized = await normalizeExtractionWithAudit(parsed, 'not_applicable', [{ inputKind: 'text' }]);
+  const result = coerceExtraction(parsed, {
+    model: EXTRACTION_MODEL,
+    imageDetail: 'not_applicable',
+    includeConditionBands: includeBands,
+  });
 
   return {
-    result: normalized.result,
-    audits: [audit, normalized.audit],
+    result,
+    audits: [{ ...audit, normalizedResponseJson: result }],
   };
 }
 
@@ -1757,8 +1767,8 @@ export async function classifyScanImagesWithAudit(
   const systemPrompt = buildScanClassificationSystemPrompt();
   const userPrompt = buildScanClassificationUserPrompt(imageUrls.length);
   const request = {
-    model: IMAGE_EXTRACTION_MODEL,
-    max_output_tokens: OPENAI_IMAGE_MAX_OUTPUT_TOKENS,
+    model: CLASSIFICATION_MODEL,
+    max_output_tokens: OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS,
     input: [
       {
         role: 'system',
@@ -1771,12 +1781,14 @@ export async function classifyScanImagesWithAudit(
           ...imageUrls.map((imageUrl) => ({
             type: 'input_image',
             image_url: imageUrl,
-            detail: IMAGE_DETAIL,
+            // Routing needs the gist, not the detail; low keeps the router cheap.
+            detail: 'low',
           })),
         ],
       },
     ],
     text: {
+      verbosity: 'low',
       format: {
         type: 'json_schema',
         name: 'scan_category_classification',
@@ -1784,6 +1796,9 @@ export async function classifyScanImagesWithAudit(
         strict: true,
       },
     },
+    // Reasoning tokens count against max_output_tokens; minimal effort keeps
+    // the small classification cap from being eaten before the JSON is emitted.
+    reasoning: { effort: 'minimal' },
   };
 
   const inputRefs = imageUrls.map((imageUrl, index) => ({
@@ -1793,12 +1808,12 @@ export async function classifyScanImagesWithAudit(
   }));
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawScanCategoryClassificationPayload>(request, {
     stage: 'scan_category_classification',
-    model: IMAGE_EXTRACTION_MODEL,
+    model: CLASSIFICATION_MODEL,
     systemPrompt,
     userPrompt,
     jsonSchema: scanCategoryClassificationSchema,
     schemaVersion: 'scan_category_classification_v1',
-    requestMetadata: { imageCount: imageUrls.length, imageDetail: IMAGE_DETAIL },
+    requestMetadata: { imageCount: imageUrls.length, imageDetail: 'low' },
     inputRefs,
   });
   const result = coerceScanCategoryClassification(parsed);
@@ -1819,11 +1834,13 @@ export async function extractMealFromImageWithAudit(
   context: ExtractionContext,
 ): Promise<ExtractionWithAudit<ExtractionResult>> {
   if (!imageUrl || !OPENAI_API_KEY) {
+    assertDemoFallbackAllowed('food_image_extraction');
     return { result: fallbackExtractionFromImage(), audits: [] };
   }
 
-  const systemPrompt = buildImageSystemPrompt();
-  const userPrompt = buildImageUserPrompt(context);
+  const includeBands = shouldRequestFoodBands(context);
+  const systemPrompt = buildImageSystemPrompt(includeBands);
+  const userPrompt = buildImageUserPrompt(context, includeBands);
   const request = {
     model: IMAGE_EXTRACTION_MODEL,
     ...extractionSamplingFields(),
@@ -1846,6 +1863,7 @@ export async function extractMealFromImageWithAudit(
       },
     ],
     text: {
+      verbosity: 'low',
       format: {
         type: 'json_schema',
         name: 'meal_extraction_image',
@@ -1853,6 +1871,7 @@ export async function extractMealFromImageWithAudit(
         strict: true,
       },
     },
+    reasoning: { effort: 'low' },
   };
 
   const inputRefs = [{ inputKind: 'image', imageRef: imageRefKind(imageUrl) }];
@@ -1863,14 +1882,18 @@ export async function extractMealFromImageWithAudit(
     userPrompt,
     jsonSchema: extractionSchema,
     schemaVersion: 'meal_extraction_v2',
-    requestMetadata: { imageDetail: IMAGE_DETAIL },
+    requestMetadata: { imageDetail: IMAGE_DETAIL, includeConditionBands: includeBands },
     inputRefs,
   });
-  const normalized = await normalizeExtractionWithAudit(parsed, IMAGE_DETAIL, inputRefs);
+  const result = coerceExtraction(parsed, {
+    model: IMAGE_EXTRACTION_MODEL,
+    imageDetail: IMAGE_DETAIL,
+    includeConditionBands: includeBands,
+  });
 
   return {
-    result: normalized.result,
-    audits: [audit, normalized.audit],
+    result,
+    audits: [{ ...audit, normalizedResponseJson: result }],
   };
 }
 
@@ -1883,11 +1906,13 @@ export async function extractMealFromImagesWithAudit(
   }
 
   if (!OPENAI_API_KEY) {
+    assertDemoFallbackAllowed('food_multi_image_extraction');
     return { result: fallbackExtractionFromImage(), audits: [] };
   }
 
-  const systemPrompt = buildImageSystemPrompt();
-  const userPrompt = buildMultiImageUserPrompt({ ...context, imageCount: imageUrls.length });
+  const includeBands = shouldRequestFoodBands(context);
+  const systemPrompt = buildImageSystemPrompt(includeBands);
+  const userPrompt = buildMultiImageUserPrompt({ ...context, imageCount: imageUrls.length }, includeBands);
   const request = {
     model: IMAGE_EXTRACTION_MODEL,
     ...extractionSamplingFields(),
@@ -1910,6 +1935,7 @@ export async function extractMealFromImagesWithAudit(
       },
     ],
     text: {
+      verbosity: 'low',
       format: {
         type: 'json_schema',
         name: 'meal_extraction_images',
@@ -1917,6 +1943,7 @@ export async function extractMealFromImagesWithAudit(
         strict: true,
       },
     },
+    reasoning: { effort: 'low' },
   };
 
   const inputRefs = imageUrls.map((imageUrl, index) => ({
@@ -1932,14 +1959,18 @@ export async function extractMealFromImagesWithAudit(
     userPrompt,
     jsonSchema: extractionSchema,
     schemaVersion: 'meal_extraction_v2',
-    requestMetadata: { imageDetail: IMAGE_DETAIL, imageCount: imageUrls.length },
+    requestMetadata: { imageDetail: IMAGE_DETAIL, imageCount: imageUrls.length, includeConditionBands: includeBands },
     inputRefs,
   });
-  const normalized = await normalizeExtractionWithAudit(parsed, IMAGE_DETAIL, inputRefs);
+  const result = coerceExtraction(parsed, {
+    model: IMAGE_EXTRACTION_MODEL,
+    imageDetail: IMAGE_DETAIL,
+    includeConditionBands: includeBands,
+  });
 
   return {
-    result: normalized.result,
-    audits: [audit, normalized.audit],
+    result,
+    audits: [{ ...audit, normalizedResponseJson: result }],
   };
 }
 
@@ -2171,6 +2202,7 @@ export async function extractMenuFromImagesWithAudit(
   }
 
   if (!OPENAI_API_KEY) {
+    assertDemoFallbackAllowed('menu_image_extraction');
     return {
       result: coerceMenuExtraction(
       {

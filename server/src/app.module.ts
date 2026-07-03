@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
+import { validateEnv } from './core/env.validation';
 import { OpsModule } from './ops/ops.module';
 import { PushModule } from './push/push.module';
 
@@ -30,7 +31,9 @@ import { TraceModule } from './trace/trace.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // Fail fast on misconfiguration: a server without an OpenAI key must crash
+    // at boot (or run with an explicit DEMO_MODE=true opt-in), never fabricate.
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     // Structured logging with PII/secret redaction — never log tokens, passwords,
     // base64 image data, prompts, or auth identity tokens.
     LoggerModule.forRoot({

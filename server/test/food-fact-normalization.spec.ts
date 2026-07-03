@@ -170,6 +170,105 @@ describe('food fact normalization', () => {
     expect(normalized.visibleIngredients[0]).toMatchObject({ rawName: 'sub roll', canonicalName: 'bread' });
   });
 
+  it('merges duplicate ingredients within a list, keeping the strongest confidence and backfilling detail fields', () => {
+    const normalized = normalizeStructuredFoodFacts(
+      baseAnalysis({
+        visibleIngredients: [
+          {
+            rawName: 'cheddar',
+            canonicalName: 'cheese',
+            confidence: 'medium',
+            evidence: 'visible',
+          },
+          {
+            rawName: 'cheese slices',
+            canonicalName: 'cheese',
+            confidence: 'high',
+            evidence: 'visible',
+            role: 'main',
+            prominence: 'secondary',
+            amountEstimate: 'small',
+            amountBasis: 'two slices',
+          },
+          {
+            rawName: 'tomato',
+            canonicalName: 'tomato',
+            confidence: 'high',
+            evidence: 'visible',
+            role: 'garnish',
+            prominence: 'secondary',
+          },
+        ],
+        inferredIngredients: [],
+      }),
+    );
+
+    expect(normalized.visibleIngredients.map((ingredient) => ingredient.canonicalName)).toEqual(['cheese', 'tomato']);
+    expect(normalized.visibleIngredients[0]).toMatchObject({
+      rawName: 'cheddar',
+      canonicalName: 'cheese',
+      confidence: 'high',
+      role: 'main',
+      prominence: 'secondary',
+      amountEstimate: 'small',
+      amountBasis: 'two slices',
+    });
+  });
+
+  it('merges ingredients whose aliases resolve to the same canonical name', () => {
+    const normalized = normalizeStructuredFoodFacts(
+      baseAnalysis({
+        visibleIngredients: [
+          {
+            rawName: 'mozzarella',
+            canonicalName: 'mozzarella',
+            confidence: 'medium',
+            evidence: 'visible',
+          },
+          {
+            rawName: 'cheese slices',
+            canonicalName: 'cheese',
+            confidence: 'medium',
+            evidence: 'visible',
+          },
+        ],
+        inferredIngredients: [],
+      }),
+    );
+
+    expect(normalized.visibleIngredients).toHaveLength(1);
+    expect(normalized.visibleIngredients[0]?.canonicalName).toBe('cheese');
+  });
+
+  it('drops inferred ingredients that duplicate a visible ingredient', () => {
+    const normalized = normalizeStructuredFoodFacts(
+      baseAnalysis({
+        inferredIngredients: [
+          {
+            rawName: 'sliced tomato',
+            canonicalName: 'tomato',
+            confidence: 'medium',
+            evidence: 'inferred',
+          },
+          {
+            rawName: 'mayonnaise',
+            canonicalName: 'mayonnaise',
+            confidence: 'low',
+            evidence: 'inferred',
+            role: 'condiment',
+            prominence: 'trace',
+          },
+        ],
+      }),
+    );
+
+    expect(normalized.inferredIngredients.map((ingredient) => ingredient.canonicalName)).toEqual(['mayonnaise']);
+    // The visible copy stays authoritative.
+    expect(
+      normalized.visibleIngredients.filter((ingredient) => ingredient.canonicalName === 'tomato'),
+    ).toHaveLength(1);
+  });
+
   it('produces stable modifiers for equivalent food facts even when raw LLM modifier guesses drift', () => {
     const conservative = baseAnalysis({
       riskModifiers: [

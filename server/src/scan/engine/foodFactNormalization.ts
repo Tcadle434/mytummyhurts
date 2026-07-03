@@ -155,6 +155,57 @@ function normalizeIngredient(ingredient: ExtractedIngredient): ExtractedIngredie
   };
 }
 
+function ingredientMergeKey(ingredient: ExtractedIngredient) {
+  return normalizeText(ingredient.canonicalName) || normalizeText(ingredient.rawName);
+}
+
+// Two rows for the same canonical ingredient collapse into one: the first
+// occurrence keeps its position and rawName, confidence upgrades to the
+// strongest duplicate, and missing detail fields are backfilled from later
+// duplicates. (This replaces the duplicate-merge the LLM normalization pass
+// used to perform.)
+function mergeIngredientPair(existing: ExtractedIngredient, duplicate: ExtractedIngredient): ExtractedIngredient {
+  return {
+    ...existing,
+    confidence: higherConfidence(existing.confidence, duplicate.confidence),
+    component: existing.component ?? duplicate.component,
+    role: existing.role ?? duplicate.role,
+    prominence: existing.prominence ?? duplicate.prominence,
+    amountEstimate: existing.amountEstimate ?? duplicate.amountEstimate,
+    amountBasis: existing.amountBasis ?? duplicate.amountBasis,
+  };
+}
+
+function mergeDuplicateIngredients(ingredients: readonly ExtractedIngredient[]): ExtractedIngredient[] {
+  const merged = new Map<string, ExtractedIngredient>();
+
+  for (const ingredient of ingredients) {
+    const key = ingredientMergeKey(ingredient);
+    if (!key) {
+      merged.set(`__unkeyed_${merged.size}`, ingredient);
+      continue;
+    }
+
+    const existing = merged.get(key);
+    merged.set(key, existing ? mergeIngredientPair(existing, ingredient) : ingredient);
+  }
+
+  return [...merged.values()];
+}
+
+// An inferred row that duplicates a visible ingredient adds no information;
+// the visible copy is the authoritative one.
+function withoutVisibleDuplicates(
+  inferred: readonly ExtractedIngredient[],
+  visible: readonly ExtractedIngredient[],
+): ExtractedIngredient[] {
+  const visibleKeys = new Set(visible.map(ingredientMergeKey).filter(Boolean));
+  return inferred.filter((ingredient) => {
+    const key = ingredientMergeKey(ingredient);
+    return !key || !visibleKeys.has(key);
+  });
+}
+
 function termMatch(text: string, terms: readonly string[]) {
   return terms.map(normalizeText).filter(Boolean).find((term) => text.includes(term));
 }
@@ -433,8 +484,11 @@ function derivedBaseFoodCategory(analysis: StructuredAnalysisV2, ingredients: re
 }
 
 export function normalizeStructuredFoodFacts(analysis: StructuredAnalysisV2): StructuredAnalysisV2 {
-  const visibleIngredients = analysis.visibleIngredients.map(normalizeIngredient);
-  const inferredIngredients = analysis.inferredIngredients.map(normalizeIngredient);
+  const visibleIngredients = mergeDuplicateIngredients(analysis.visibleIngredients.map(normalizeIngredient));
+  const inferredIngredients = withoutVisibleDuplicates(
+    mergeDuplicateIngredients(analysis.inferredIngredients.map(normalizeIngredient)),
+    visibleIngredients,
+  );
   const ingredients = [...visibleIngredients, ...inferredIngredients];
   const baseFoodCategory = derivedBaseFoodCategory(
     { ...analysis, visibleIngredients, inferredIngredients },

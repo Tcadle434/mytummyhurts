@@ -82,6 +82,10 @@ export class ScanWorkflowService {
       knownConditions: profile?.knownConditions ?? [],
       knownIngredients: profile?.knownIngredientSensitivities ?? [],
       dietPreferences: profile?.dietPreferences,
+      // Mechanism-only scoring discards extraction conditionSeverities, so do
+      // not pay the extractor to produce them on that path (FOOD_LLM_BANDS in
+      // the engine can also force this off globally).
+      requestConditionBands: !this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false),
     };
   }
 
