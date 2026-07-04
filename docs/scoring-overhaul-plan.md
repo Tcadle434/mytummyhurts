@@ -80,6 +80,16 @@ Files: server/evals/golden/cases.json, scripts/eval/*, src/eval/*, .github/workf
    as provisional expectations (founder reviews later). Read-only against prod;
    writes only to eval tables.
 
+## Phase 3b — unified eval telemetry (founder request, lands right after Phase 3)
+Merge the two runners: `run-scan-evals.mjs` gains inline LangSmith reporting —
+when LANGSMITH_API_KEY is present, every pass pushes an experiment to the
+`mth-golden-scans` dataset AS IT RUNS (per-case results streamed or pushed at
+pass end), tagged with a `context` (`triage` | `ci-gate` | `nightly` |
+`baseline`) plus the existing model/prompt-version tags; silently skipped when
+no key. `run-langsmith-evals.mjs` becomes a thin alias (or is deleted) so there
+is exactly one way to run evals and observability is never opt-in. CI gate and
+nightly cron collapse onto the unified runner with `--context` flags.
+
 ## Phase 2 — prompt upgrades (through the Phase 3 gate)
 Files: engine/openai.ts, menuRubric.ts, riskAdjudication.ts.
 1. Band anchors: five one-line anchors + none-vs-mild rule + "any band above

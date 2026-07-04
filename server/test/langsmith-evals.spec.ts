@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EVAL_CONTEXTS,
   bandMatch,
   bandMeansFromOutcomes,
   bandOrdinal,
   buildExamples,
+  buildExperimentMetadata,
+  buildExperimentName,
+  createExperimentReporter,
   evaluateDriftAlarm,
   expectationPass,
+  langsmithKeyPresent,
   meanBandDrift,
+  normalizeContext,
   overallRiskScore,
   scoreInRange,
-} from '../scripts/eval/run-langsmith-evals.mjs';
+} from '../scripts/eval/langsmith-lib.mjs';
 
 const profilesDoc = {
   profiles: {
@@ -89,6 +95,105 @@ describe('deterministic evaluators', () => {
     const fail = expectationPass({ outputs: { level: 'low', score: 20 }, referenceOutputs: ref });
     expect(fail.score).toBe(0);
     expect(fail.comment).toMatch(/band|score/i);
+  });
+});
+
+describe('context tagging', () => {
+  it('defaults to triage when no context is given', () => {
+    expect(normalizeContext(undefined)).toBe('triage');
+    expect(normalizeContext(null)).toBe('triage');
+    expect(normalizeContext('')).toBe('triage');
+  });
+
+  it('accepts every known context unchanged', () => {
+    expect(EVAL_CONTEXTS).toEqual(['triage', 'ci-gate', 'nightly', 'baseline']);
+    for (const context of EVAL_CONTEXTS) {
+      expect(normalizeContext(context)).toBe(context);
+    }
+  });
+
+  it('rejects unknown contexts loudly instead of polluting the dataset', () => {
+    expect(() => normalizeContext('deploy')).toThrow(/--context must be one of/);
+    expect(() => normalizeContext('CI-GATE')).toThrow(/got "CI-GATE"/);
+  });
+});
+
+describe('experiment naming', () => {
+  it('derives the head from the extraction model and appends context + suffix', () => {
+    // Arrange / Act
+    const name = buildExperimentName({
+      extractionModel: 'gpt-5.4-mini',
+      context: 'ci-gate',
+      suffix: '20260703T211500-ab12cd34',
+    });
+
+    // Assert
+    expect(name).toBe('mth-golden-gpt-5.4-mini-ci-gate-20260703T211500-ab12cd34');
+  });
+
+  it('an explicit prefix replaces the derived head', () => {
+    const name = buildExperimentName({
+      prefix: 'custom-run',
+      extractionModel: 'gpt-5.4-mini',
+      context: 'nightly',
+      suffix: 'x1',
+    });
+    expect(name).toBe('custom-run-nightly-x1');
+  });
+
+  it('skips empty parts so partial identities still form a valid name', () => {
+    expect(buildExperimentName({ prefix: 'p', context: 'triage' })).toBe('p-triage');
+    expect(buildExperimentName({ prefix: '  ', extractionModel: 'm', context: 'triage' })).toBe('mth-golden-m-triage');
+  });
+});
+
+describe('experiment metadata', () => {
+  it('tags context, api, and model/prompt versions from env', () => {
+    // Arrange
+    const env = {
+      OPENAI_EXTRACTION_MODEL: 'gpt-x',
+      OPENAI_MENU_EXTRACTION_MODEL: 'gpt-menu',
+      OPENAI_EXTRACTION_PROMPT_VERSION: 'v9',
+    };
+
+    // Act
+    const metadata = buildExperimentMetadata({ api: 'http://localhost:3000', context: 'nightly', env });
+
+    // Assert
+    expect(metadata).toMatchObject({
+      api: 'http://localhost:3000',
+      context: 'nightly',
+      extractionModel: 'gpt-x',
+      menuModel: 'gpt-menu',
+      extractionPromptVersion: 'v9',
+    });
+  });
+
+  it('falls back to the current defaults with an empty env', () => {
+    const metadata = buildExperimentMetadata({ api: 'x', context: 'triage', env: {} });
+    expect(metadata.extractionModel).toBe('gpt-5.4-mini');
+    expect(metadata.menuModel).toBe('gpt-5-mini');
+    expect(metadata.extractionPromptVersion).toBe('n/a');
+  });
+});
+
+describe('key-absent skip', () => {
+  it('langsmithKeyPresent treats missing and blank keys as absent', () => {
+    expect(langsmithKeyPresent({})).toBe(false);
+    expect(langsmithKeyPresent({ LANGSMITH_API_KEY: '' })).toBe(false);
+    expect(langsmithKeyPresent({ LANGSMITH_API_KEY: '   ' })).toBe(false);
+    expect(langsmithKeyPresent({ LANGSMITH_API_KEY: 'ls-key' })).toBe(true);
+  });
+
+  it('createExperimentReporter resolves null without a key (no SDK import, no network)', async () => {
+    const reporter = await createExperimentReporter({
+      env: {},
+      api: 'http://localhost:3000',
+      examples: [],
+      context: 'triage',
+      suffix: 's1',
+    });
+    expect(reporter).toBeNull();
   });
 });
 

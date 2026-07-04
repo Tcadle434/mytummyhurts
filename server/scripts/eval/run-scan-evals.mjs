@@ -1,8 +1,30 @@
 #!/usr/bin/env node
+// Unified golden scan-eval runner (Phase 3b): the ONE way to run scan evals.
+//
+// Every pass validates the golden expectations deterministically AND — when
+// LANGSMITH_API_KEY is set — streams the pass to LangSmith as an experiment on
+// the shared dataset, tagged with a --context (triage | ci-gate | nightly |
+// baseline) plus model/prompt-version metadata. No key -> one-line notice,
+// local-only pass. `--context nightly` (the crontab path, via
+// run-langsmith-evals.mjs) also arms the >1-band mean-drift alarm.
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path, { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import {
+  DEFAULT_DATASET,
+  MAX_MEAN_BAND_DRIFT,
+  bandMeansFromOutcomes,
+  buildExamples,
+  createExperimentReporter,
+  defaultDriftBaselinePath,
+  evaluateDriftAlarm,
+  normalizeContext,
+  readDriftBaseline,
+  validateExpectation,
+  writeDriftBaseline,
+} from './langsmith-lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverRoot = join(here, '..', '..');
@@ -35,12 +57,25 @@ Options:
   --password <password>       Password for reused eval user
   --judge                     Run optional LLM-as-judge generation checks
   --judge-blocking            Treat failed judge verdicts as eval failures
+  --context <name>            Why this pass ran: triage | ci-gate | nightly | baseline.
+                              Tags the LangSmith experiment; "nightly" also arms the
+                              >1-band mean-drift alarm. Default: triage
+  --dataset <name>            LangSmith dataset name. Default: mth-golden-scans
+  --experiment <prefix>       LangSmith experiment name prefix. Default: mth-golden-<extraction model>
+  --drift-baseline <path>     Baseline file for the nightly drift alarm.
+                              Default: server/evals/reports/langsmith-drift-baseline.json
+  --update-drift-baseline     Rewrite the drift baseline from this run (full, unfiltered runs only)
   --list                      List available cases and profiles, then exit
   --help                      Show this help
+
+Env:
+  LANGSMITH_API_KEY           When set, every pass records a LangSmith experiment on the
+                              golden dataset. Absent -> one-line notice, local-only pass.
 
 Examples:
   npm --prefix server run eval:scans -- --api https://api.mytummyhurts.app --case chicken_curry_001 --repeat 5
   npm --prefix server run eval:scans -- --profile ibs_gerd --repeat 1
+  npm --prefix server run eval:scans -- --api http://localhost:3000 --context ci-gate --repeat 2
 `);
 }
 
@@ -61,6 +96,10 @@ function parseArgs(argv) {
     password: process.env.SCAN_EVAL_PASSWORD,
     judge: false,
     judgeBlocking: false,
+    context: 'triage',
+    dataset: DEFAULT_DATASET,
+    driftBaselinePath: defaultDriftBaselinePath,
+    updateDriftBaseline: false,
   };
 
   for (let index = 2; index < argv.length; index += 1) {
@@ -118,12 +157,37 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (token === '--context') {
+      args.context = next;
+      index += 1;
+      continue;
+    }
+    if (token === '--dataset') {
+      args.dataset = next;
+      index += 1;
+      continue;
+    }
+    if (token === '--experiment') {
+      args.experiment = next;
+      index += 1;
+      continue;
+    }
+    if (token === '--drift-baseline') {
+      args.driftBaselinePath = path.resolve(next);
+      index += 1;
+      continue;
+    }
+    if (token === '--update-drift-baseline') {
+      args.updateDriftBaseline = true;
+      continue;
+    }
     throw new Error(`Unknown argument: ${token}`);
   }
 
   if (args.repeat !== undefined && (!Number.isInteger(args.repeat) || args.repeat < 1)) {
     throw new Error('--repeat must be a positive integer');
   }
+  args.context = normalizeContext(args.context);
   return args;
 }
 
@@ -265,95 +329,8 @@ export function summarizeScan(response) {
   };
 }
 
-function valuesForRun(run, field) {
-  if (field === 'mechanisms') {
-    return new Set([
-      ...(run.mechanismExposures ?? []).map((entry) => entry.mechanismKey),
-      ...(run.scoreContributors ?? []).map((entry) => entry.key),
-    ]);
-  }
-  if (field === 'scoreContributors') {
-    return new Set((run.scoreContributors ?? []).map((entry) => entry.key));
-  }
-  if (field === 'ingredients') {
-    return new Set((run.ingredients ?? []).flatMap((entry) => [entry.rawName, entry.canonicalName].filter(Boolean).map((value) => String(value).toLowerCase())));
-  }
-  return new Set();
-}
-
-function countRunsWith(runs, field, expected) {
-  const needle = String(expected).toLowerCase();
-  return runs.filter((run) => {
-    const values = valuesForRun(run, field);
-    return [...values].some((value) => String(value).toLowerCase().includes(needle));
-  }).length;
-}
-
-function runScoreStats(runs) {
-  const scores = runs.map((run) => run.score).filter((score) => typeof score === 'number');
-  if (!scores.length) return { count: 0, min: null, max: null, range: null, mean: null };
-  const min = Math.min(...scores);
-  const max = Math.max(...scores);
-  return {
-    count: scores.length,
-    min,
-    max,
-    range: max - min,
-    mean: Number((scores.reduce((total, score) => total + score, 0) / scores.length).toFixed(2)),
-  };
-}
-
-export function validateExpectation(expectation, runs, failures) {
-  const errors = [];
-  const completed = runs.filter((run) => !run.error);
-  if (failures.length) {
-    errors.push(`${failures.length} request failure(s): ${failures.map((failure) => `${failure.code}:${failure.message}`).join('; ')}`);
-  }
-  if (!completed.length) {
-    errors.push('no completed scan runs');
-    return { passed: false, errors, stats: runScoreStats(completed) };
-  }
-
-  const stats = runScoreStats(completed);
-  const expectedBands = expectation.expectedBands ?? (expectation.expectedBand ? [expectation.expectedBand] : []);
-  if (expectedBands.length) {
-    const bad = completed.filter((run) => !expectedBands.includes(run.level));
-    if (bad.length) errors.push(`unexpected band(s): ${bad.map((run) => `${run.level}:${run.score}`).join(', ')}`);
-  }
-  if (expectation.expectedScoreRange) {
-    const [min, max] = expectation.expectedScoreRange;
-    const bad = completed.filter((run) => run.score < min || run.score > max);
-    if (bad.length) errors.push(`score(s) outside ${min}-${max}: ${bad.map((run) => run.score).join(', ')}`);
-  }
-  if (typeof expectation.maxRunScoreRange === 'number' && stats.range > expectation.maxRunScoreRange) {
-    errors.push(`score range ${stats.range} exceeds maxRunScoreRange ${expectation.maxRunScoreRange}`);
-  }
-
-  for (const mechanism of expectation.requiredMechanisms ?? []) {
-    const required = expectation.requiredMechanismMinRuns ?? completed.length;
-    const hitCount = countRunsWith(completed, 'mechanisms', mechanism);
-    if (hitCount < required) errors.push(`required mechanism "${mechanism}" appeared in ${hitCount}/${completed.length} runs; required ${required}`);
-  }
-  for (const mechanism of expectation.forbiddenMechanisms ?? []) {
-    const hitCount = countRunsWith(completed, 'mechanisms', mechanism);
-    if (hitCount > 0) errors.push(`forbidden mechanism "${mechanism}" appeared in ${hitCount}/${completed.length} runs`);
-  }
-  for (const contributor of expectation.forbiddenScoreContributors ?? []) {
-    const hitCount = countRunsWith(completed, 'scoreContributors', contributor);
-    if (hitCount > 0) errors.push(`forbidden score contributor "${contributor}" appeared in ${hitCount}/${completed.length} runs`);
-  }
-  for (const ingredient of expectation.requiredIngredients ?? []) {
-    const required = expectation.requiredIngredientMinRuns ?? completed.length;
-    const hitCount = countRunsWith(completed, 'ingredients', ingredient);
-    if (hitCount < required) errors.push(`required ingredient "${ingredient}" appeared in ${hitCount}/${completed.length} runs; required ${required}`);
-  }
-  for (const ingredient of expectation.forbiddenIngredients ?? []) {
-    const hitCount = countRunsWith(completed, 'ingredients', ingredient);
-    if (hitCount > 0) errors.push(`forbidden ingredient "${ingredient}" appeared in ${hitCount}/${completed.length} runs`);
-  }
-
-  return { passed: errors.length === 0, errors, stats };
-}
+// Expectation validation (validateExpectation) lives in langsmith-lib.mjs so
+// the local gate and the LangSmith expectation_pass feedback share one truth.
 
 // ---- LLM-as-judge (openevals JudgeService — the one implementation) ----
 // The judge checks explanation quality only; numeric gates stay deterministic.
@@ -428,12 +405,13 @@ async function runSingleScan(args, accessToken, imageUrl, caseId, expectation, r
   }, accessToken);
 }
 
-async function runExpectation(args, auth, profile, scanCase, expectation, runId) {
+async function runExpectation(args, auth, profile, scanCase, expectation, runId, reporter) {
   await apiPost(args.api, 'profile-update', profileBody(profile, `${scanCase.id} ${expectation.profile}`), auth.accessToken);
 
   const imagePath = path.resolve(datasetRoot, scanCase.image);
   const imageUrl = await imageDataUrl(imagePath);
   const repeat = args.repeat ?? expectation.repeat ?? scanCase.repeat ?? args.defaultRepeat;
+  const exampleKey = `${scanCase.id}::${expectation.profile}`;
   const runs = [];
   const failures = [];
 
@@ -441,11 +419,15 @@ async function runExpectation(args, auth, profile, scanCase, expectation, runId)
     let attempt = 0;
     const maxAttempts = expectation.allowTimeoutRetry === false ? 1 : 3;
     for (;;) {
+      const startTime = Date.now();
       try {
         const response = await runSingleScan(args, auth.accessToken, imageUrl, scanCase.id, expectation, index, runId, attempt);
         const summary = summarizeScan(response);
         runs.push(summary);
         console.log(`${scanCase.id} [${expectation.profile}] ${index + 1}/${repeat}: ${summary.score} ${summary.level} "${summary.dishName}"`);
+        // Stream this case to LangSmith as it lands (only the counted outcome,
+        // not the retries the runner absorbed).
+        await reporter?.logRun({ key: exampleKey, outputs: summary, startTime, endTime: Date.now() });
         break;
       } catch (err) {
         attempt += 1;
@@ -467,6 +449,7 @@ async function runExpectation(args, auth, profile, scanCase, expectation, runId)
         failures.push(failure);
         runs.push({ error: failure });
         console.error(`${scanCase.id} [${expectation.profile}] ${index + 1}/${repeat}: FAILED ${failure.message}`);
+        await reporter?.logRun({ key: exampleKey, error: failure.message, startTime, endTime: Date.now() });
         break;
       }
     }
@@ -512,6 +495,7 @@ function markdownReport(output) {
     '',
     `API: \`${output.api}\``,
     `User: \`${output.user.email}\``,
+    `Context: \`${output.context}\`${output.langsmithExperiment ? ` — LangSmith experiment \`${output.langsmithExperiment}\`` : ''}`,
     `Passed: **${output.summary.passed}/${output.summary.total}**`,
     '',
     '| Case | Profile | Result | Scores | Bands | Notes |',
@@ -527,8 +511,87 @@ function markdownReport(output) {
   return `${lines.join('\n')}\n`;
 }
 
-async function main() {
-  const args = parseArgs(process.argv);
+/**
+ * Phase 3b: every pass reports to LangSmith when LANGSMITH_API_KEY is set —
+ * observability is never opt-in, and never a hard dependency: no key prints a
+ * one-line notice, and a LangSmith outage degrades to a local-only pass.
+ */
+async function connectLangsmith(args, examples, runId) {
+  try {
+    const reporter = await createExperimentReporter({
+      api: args.api,
+      dataset: args.dataset,
+      examples,
+      experimentPrefix: args.experiment,
+      context: args.context,
+      suffix: runId.replace(/^scan-eval-/, ''),
+    });
+    if (!reporter) {
+      console.log('langsmith: LANGSMITH_API_KEY not set — skipping experiment telemetry for this pass.');
+      return null;
+    }
+    console.log(
+      `langsmith: recording experiment "${reporter.experimentName}" [context=${args.context}] ` +
+        `(dataset "${args.dataset}": ${reporter.sync.added} new example(s), ${reporter.sync.total} total)`,
+    );
+    return reporter;
+  } catch (err) {
+    console.warn(`langsmith: telemetry disabled for this pass — ${err?.message ?? err}`);
+    return null;
+  }
+}
+
+// ---- Nightly calibration-drift alarm (armed by --context nightly) ----
+// Point-in-time gates can't see slow drift; the nightly pass compares this
+// run's per-example mean band against the committed baseline and returns exit
+// code 1 past one whole band. Pure local math — no LangSmith dependency.
+
+const DRIFT_WORST_MOVERS_SHOWN = 10;
+
+async function runDriftCheck(args, results, experimentName) {
+  if (args.caseIds?.length || args.profileKeys?.length) {
+    console.warn('drift: skipped — a filtered run (--case/--profile) must not seed, update, or judge the full-suite baseline.');
+    return 0;
+  }
+  const outcomes = results.flatMap((result) =>
+    result.runs
+      .filter((run) => !run.error)
+      .map((run) => ({ key: `${result.caseId}::${result.profile}`, level: run.level })),
+  );
+  const current = { experiment: experimentName, ...bandMeansFromOutcomes(outcomes) };
+  const baseline = await readDriftBaseline(args.driftBaselinePath);
+  if (!baseline) {
+    await writeDriftBaseline(args.driftBaselinePath, current);
+    console.log(`Drift baseline seeded at ${args.driftBaselinePath} (${Object.keys(current.perKey).length} example keys).`);
+    return 0;
+  }
+
+  const alarm = evaluateDriftAlarm(baseline, current);
+  console.log(
+    `Band drift vs baseline (${baseline.updatedAt ?? 'unknown date'}): mean ${alarm.meanDrift} over ${alarm.sharedKeys} shared example(s).`,
+  );
+  if (alarm.exitCode !== 0) {
+    const worst = Object.entries(alarm.perKeyDrift)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+      .slice(0, DRIFT_WORST_MOVERS_SHOWN)
+      .map(([key, drift]) => `  ${key}: ${drift > 0 ? '+' : ''}${drift}`)
+      .join('\n');
+    console.error(
+      `\nDRIFT ALARM: mean band drift ${alarm.meanDrift} exceeds ±${MAX_MEAN_BAND_DRIFT} band.\n` +
+        `The suite reads ${alarm.meanDrift > 0 ? 'riskier' : 'safer'} than the committed baseline — investigate before shipping.\n` +
+        `Worst movers:\n${worst}`,
+    );
+    return 1;
+  }
+  if (args.updateDriftBaseline) {
+    await writeDriftBaseline(args.driftBaselinePath, current);
+    console.log(`Drift baseline updated at ${args.driftBaselinePath}.`);
+  }
+  return 0;
+}
+
+export async function runScanEvals(argv = process.argv) {
+  const args = parseArgs(argv);
   if (args.help) {
     usage();
     return;
@@ -554,6 +617,10 @@ async function main() {
   if (args.api.includes('api.mytummyhurts.app') && (!args.email || !args.password)) {
     throw new Error('Production scan evals require SCAN_EVAL_EMAIL/SCAN_EVAL_PASSWORD or --email/--password for an active eval account.');
   }
+
+  const examples = buildExamples(casesDoc, profilesDoc, args.caseIds?.length ? new Set(args.caseIds) : undefined);
+  const reporter = await connectLangsmith(args, examples, runId);
+
   const email = args.email || `codex-scan-eval+${runId}@mytummyhurts.app`;
   const password = args.password || `Codex-${runId}-pass!`;
   const auth = await signInOrSignUp(args.api, email, password);
@@ -564,8 +631,13 @@ async function main() {
       if (args.profileKeys?.length && !args.profileKeys.includes(expectation.profile)) continue;
       const profile = profilesDoc.profiles?.[expectation.profile];
       if (!profile) throw new Error(`Unknown profile "${expectation.profile}" in case ${scanCase.id}`);
-      results.push(await runExpectation(args, auth, profile, scanCase, expectation, runId));
+      results.push(await runExpectation(args, auth, profile, scanCase, expectation, runId, reporter));
     }
+  }
+
+  if (reporter) {
+    await reporter.finish();
+    console.log(`langsmith: experiment recorded: ${reporter.experimentName}`);
   }
 
   const summary = {
@@ -576,6 +648,8 @@ async function main() {
   const output = {
     runId,
     api: args.api,
+    context: args.context,
+    langsmithExperiment: reporter?.experimentName ?? null,
     dataset: {
       casesPath: path.relative(serverRoot, args.casesPath),
       profilesPath: path.relative(serverRoot, args.profilesPath),
@@ -597,14 +671,20 @@ async function main() {
   console.log(`\n${summary.passed}/${summary.total} expectation(s) passed`);
   console.log(`json=${jsonPath}`);
   console.log(`md=${mdPath}`);
-  process.exitCode = summary.failed > 0 ? 1 : 0;
+
+  const driftExitCode =
+    args.context === 'nightly' || args.updateDriftBaseline
+      ? await runDriftCheck(args, results, reporter?.experimentName ?? null)
+      : 0;
+
+  process.exitCode = summary.failed > 0 || driftExitCode !== 0 ? 1 : 0;
 }
 
 // Only auto-run when invoked directly (`node run-scan-evals.mjs`); stay a pure
-// module when imported (e.g. by run-langsmith-evals.mjs) so main() doesn't fire.
+// module when imported (e.g. by the run-langsmith-evals.mjs nightly alias).
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
-  main().catch((err) => {
+  runScanEvals().catch((err) => {
     console.error(err?.stack || err?.message || err);
     process.exitCode = 1;
   });

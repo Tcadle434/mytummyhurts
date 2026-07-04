@@ -9,6 +9,9 @@
 # Cost note: a full run is ~130 real image extractions (~$0.50–$1.50 with
 # gpt-5.4-mini at repeat 2). Triggered manually or from a deploy workflow via
 # workflow_call — never on every push.
+#
+# Telemetry: with the optional LANGSMITH_API_KEY secret configured, each run
+# is also recorded as a LangSmith experiment tagged context=ci-gate (Phase 3b).
 name: scan-evals
 
 on:
@@ -26,6 +29,11 @@ on:
     secrets:
       OPENAI_API_KEY:
         required: true
+      # Optional: when present the run is also recorded as a LangSmith
+      # experiment tagged context=ci-gate. Absent -> the runner prints a
+      # one-line skip notice and the gate still works.
+      LANGSMITH_API_KEY:
+        required: false
 
 concurrency:
   group: scan-evals
@@ -66,6 +74,9 @@ jobs:
       S3_BUCKET: meal-images
       S3_FORCE_PATH_STYLE: 'true'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # Empty when the secret is not configured — the eval runner then skips
+      # LangSmith telemetry with a notice instead of failing (Phase 3b).
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       # Keep the eval server lean and deterministic: no background learning
       # churn, no RAG retrieval cost. DEMO_MODE stays unset on purpose.
       LEARNING_WORKER_ENABLED: 'false'
@@ -103,6 +114,7 @@ jobs:
           if [ -n "${{ github.event.inputs.cases }}" ]; then CASE_ARG="--case ${{ github.event.inputs.cases }}"; fi
           node scripts/eval/run-scan-evals.mjs \
             --api http://localhost:3000 \
+            --context ci-gate \
             --email scan-evals@ci.local --password 'Eval-ci-pass-1!' \
             --repeat "${{ github.event.inputs.repeat || '2' }}" \
             $CASE_ARG

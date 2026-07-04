@@ -5,7 +5,7 @@ MyTummyHurts uses these eval layers:
 1. **Golden scan image evals**: blocking score/mechanism checks for real food images.
 2. **Retrieval evals**: checks whether RAG retrieves the right nutrition concepts.
 3. **Generation judge evals**: optional LLM-as-judge checks for grounded, non-invented explanations, using the [openevals](https://github.com/langchain-ai/openevals) package (see below).
-4. **LangSmith experiment tracking**: records golden-scan runs as LangSmith experiments so you can watch score/band/mechanism trends across model and prompt bumps.
+4. **Unified LangSmith telemetry**: every golden-scan pass records itself as a LangSmith experiment when `LANGSMITH_API_KEY` is set, tagged with **why it ran** (`--context`), so score/band/mechanism trends across model and prompt bumps are never opt-in.
 
 ## Golden Scan Images
 
@@ -80,17 +80,25 @@ ranges at or under ~45 points wide; when you tighten or re-band a case, record
 the reason in the expectation's `notes` field (documentation only — the runner
 ignores unknown fields).
 
+With `LANGSMITH_API_KEY` in the environment, **any** of the runs above is also
+recorded as a LangSmith experiment tagged with `--context` (default `triage`) —
+see [Unified LangSmith telemetry](#unified-langsmith-telemetry). Without the
+key the runner prints a one-line notice and runs local-only.
+
 ### Deploy gate (CI)
 
 `.github/workflows/scan-evals.yml` is the blocking gate: it boots the server
 from the checkout (pgvector + MinIO services, `OPENAI_API_KEY` from repo
 secrets, `DEMO_MODE` deliberately unset) and runs the full golden suite against
-`http://localhost:3000` with `--repeat 2`. A red suite exits 1 and fails the
-job.
+`http://localhost:3000` with `--context ci-gate --repeat 2`. A red suite exits
+1 and fails the job.
 
 - Manual: Actions -> scan-evals -> Run workflow (optional `repeat` / `cases` inputs).
 - Pre-deploy: call it from a deploy workflow via `workflow_call` (pass the
   `OPENAI_API_KEY` secret). Deploys must not proceed on a red suite.
+- Telemetry: configure the optional `LANGSMITH_API_KEY` secret and each gate
+  run shows up in LangSmith tagged `context=ci-gate`; with the secret absent
+  the runner prints a skip notice and the gate is unaffected.
 - Cost: ~130 real extractions per run (~$0.50-$1.50), so it is dispatch/call
   only — never on every push. Reports upload as the `scan-eval-reports` artifact.
 
@@ -160,42 +168,70 @@ labels.
 > workflow's `@langchain/langgraph` was upgraded to 1.x to match — its
 > `Annotation`/`StateGraph` API is unchanged, so the graph is behavior-identical.
 
-## LangSmith Experiment Tracking
+## Unified LangSmith telemetry
 
 Point-in-time reports can't show whether calibration drifts when you bump a model
-(`gpt-5.4-mini` / `gpt-5-mini` / `gpt-4.1-mini`) or a prompt version. This layer
-records each golden-scan run as a LangSmith **experiment** on a shared dataset, so
-you can compare experiments over time in the LangSmith UI.
+(`gpt-5.4-mini` / `gpt-5-mini`) or a prompt version. Since Phase 3b there is
+exactly **one** runner (`run-scan-evals.mjs`, npm `eval:scans`): when
+`LANGSMITH_API_KEY` is present in the environment, **every pass** streams itself
+to LangSmith as an experiment on the shared `mth-golden-scans` dataset — each
+case is pushed as it completes, with deterministic evaluator feedback attached.
+No key → a one-line notice and a local-only pass (never a failure). Shared
+machinery lives in `server/scripts/eval/langsmith-lib.mjs`.
 
 ```bash
 LANGSMITH_API_KEY=... \
 SCAN_EVAL_EMAIL='codex-scan-stability@mytummyhurts.app' SCAN_EVAL_PASSWORD='...' \
-npm --prefix server run eval:langsmith -- --api https://api.mytummyhurts.app
+npm --prefix server run eval:scans -- --api https://api.mytummyhurts.app --context triage
 ```
+
+### Context tags
+
+Every experiment is tagged with **why it ran** (`--context`, default `triage`),
+in its name and metadata, so a red `ci-gate` experiment (blocked deploy) is never
+confused with a red `triage` experiment (routine local poking):
+
+| Context    | Who sets it                                         | Extra behavior |
+|------------|-----------------------------------------------------|----------------|
+| `triage`   | default for local/manual runs                       | none |
+| `ci-gate`  | `.github/workflows/scan-evals.yml`                  | none (exit 1 already blocks the deploy) |
+| `nightly`  | `eval:langsmith` alias / `nightly-langsmith.sh` cron | arms the >1-band drift alarm |
+| `baseline` | manual, when intentionally recalibrating            | pair with `--update-drift-baseline` |
+
+Experiments are named `mth-golden-<extraction model>-<context>-<run id>`
+(override the head with `--experiment <prefix>`; pick another dataset with
+`--dataset <name>`), and metadata carries the extraction/menu model + prompt
+version from env so runs stay groupable across bumps.
 
 - Uses **only** the curated goldens in `evals/golden/` (no real user PII), so
   shipping inputs to LangSmith is safe.
-- Syncs a LangSmith dataset (`mth-golden-scans` by default) from
-  `evals/golden/cases.json` — additive, so new golden cases show up automatically.
-- Deterministic evaluators only: `expectation_pass`, `band_match`,
-  `score_in_range`, and the raw `overall_risk_score` (tracked per case for drift).
-  Numeric gates stay the source of truth; this layer visualizes them over time.
-- Each experiment is tagged with the extraction/menu/normalization model + prompt
-  version (from env) so runs are groupable and comparable.
-- Runs sequentially (the eval user's profile is rewritten per case) and requires
-  `LANGSMITH_API_KEY` — with no key it prints a notice and exits 0.
+- Syncs the LangSmith dataset from `evals/golden/cases.json` — additive, so new
+  golden cases show up automatically.
+- Deterministic evaluators only: `expectation_pass` (mirrors the canonical
+  `validateExpectation` gate), `band_match`, `score_in_range`, and the raw
+  `overall_risk_score` (tracked per case for drift). Numeric gates stay the
+  source of truth; this layer visualizes them over time.
+- Telemetry is best-effort by design: a LangSmith outage degrades to warnings,
+  never a red suite.
 
 ### Nightly drift alarm
 
-The runner also compares this run's per-example **mean band** against a stored
-baseline (`server/evals/reports/langsmith-drift-baseline.json`, auto-seeded on
-the first run) and exits 1 loudly when the mean drift exceeds **one whole
-band** — a suite that silently moved from low to medium is product-breaking.
-Flags: `--drift-baseline <path>`, `--update-drift-baseline` (refresh after an
-intentional calibration change).
+A `--context nightly` pass also compares the run's per-example **mean band**
+against a stored baseline (`server/evals/reports/langsmith-drift-baseline.json`,
+auto-seeded on the first nightly run) and exits 1 loudly when the mean drift
+exceeds **one whole band** — a suite that silently moved from low to medium is
+product-breaking. Flags: `--drift-baseline <path>`, `--update-drift-baseline`
+(refresh after an intentional calibration change; also works outside nightly).
+Filtered runs (`--case`/`--profile`) never seed, update, or judge the baseline.
+
+`npm --prefix server run eval:langsmith` is now a thin alias over the unified
+runner: it defaults `--context nightly` and the historical `--repeat 1`, and
+keeps the old contract that a missing `LANGSMITH_API_KEY` is a free no-op
+(notice + exit 0) rather than a paid local-only pass. All of its old flags
+still work.
 
 `server/scripts/eval/nightly-langsmith.sh` wraps the run for cron (it refuses
-to no-op when `LANGSMITH_API_KEY` is missing). VPS crontab entry:
+to no-op when `LANGSMITH_API_KEY` is missing). VPS crontab entry (unchanged):
 
 ```cron
 15 9 * * * cd /root/app && LANGSMITH_API_KEY=... SCAN_EVAL_EMAIL=codex-scan-stability@mytummyhurts.app SCAN_EVAL_PASSWORD=... bash server/scripts/eval/nightly-langsmith.sh >> /var/log/mth-nightly-evals.log 2>&1
