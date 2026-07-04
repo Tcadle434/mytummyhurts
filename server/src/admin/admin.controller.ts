@@ -5,6 +5,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { DatabaseService } from '../database/database.service';
 import { EvalRunnerService } from '../eval/eval-runner.service';
 import { GOLDEN_CASES } from '../eval/golden-dataset';
+import { ValidityRecomputeService } from '../learning/validity-recompute.service';
 import { RagIngestionService } from '../rag/ingestion.service';
 import { InternalSecretGuard } from './internal-secret.guard';
 
@@ -32,7 +33,14 @@ export class AdminController {
     private readonly ingestion: RagIngestionService,
     private readonly evals: EvalRunnerService,
     private readonly db: DatabaseService,
+    private readonly validity: ValidityRecomputeService,
   ) {}
+
+  // Nightly predictive-validity sweep (VPS crontab — docs/predictive-validity.md).
+  @Post('validity/sweep')
+  validitySweep() {
+    return this.validity.sweep();
+  }
 
   @Post('rag/documents')
   ingest(@Body() dto: IngestDocumentDto) {

@@ -46,6 +46,24 @@ export interface StomachProfileIngredientScore {
     lastSeenAt?: string;
     lastOutcomeAt?: string;
 }
+/**
+ * Predictive validity (scoring overhaul Phase 5): the scorer scored by
+ * reality. Window-scoped agreement between consumed-scan risk bands and the
+ * daily check-ins that followed (same local day or the next). Absent until
+ * the first validity recompute lands for the user; rates are null until at
+ * least one decisive (rough or calm) pair exists. Data only in this phase —
+ * the future UI reads "your scores have predicted your rough days N of M
+ * times". Metric definitions: server/src/learning/validity.ts and
+ * docs/predictive-validity.md.
+ */
+export interface PredictiveValidityStats {
+    windowDays: number;
+    nPairs: number;
+    highHitRate: number | null;
+    safeHitRate: number | null;
+    calibrationScore: number | null;
+    computedAt: string;
+}
 export interface StomachProfile {
     version: number;
     conditions: Array<{
@@ -72,6 +90,7 @@ export interface StomachProfile {
         declaredSensitivities: string[];
         recentLearningEvent?: ProfileLearningEvent;
         gutScore?: GutScoreState;
+        predictiveValidity?: PredictiveValidityStats;
     };
 }
 export interface DietPreference {

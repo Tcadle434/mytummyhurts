@@ -5,6 +5,7 @@ import { BillingService } from '../billing/billing.service';
 import { DatabaseService } from '../database/database.service';
 import { LearningJobService } from '../learning/learning-job.service';
 import { LearningRecomputeService } from '../learning/learning-recompute.service';
+import { PRIMARY_VALIDITY_WINDOW_DAYS, validityStatsFromRow } from '../learning/validity';
 import {
   buildLearningProgressFromRows,
   buildProfileFromRow,
@@ -73,6 +74,12 @@ export class InsightsService {
       select id, local_date, created_at
       from public.daily_gut_reports
       where user_id = ${userId}`;
+    // Predictive validity (Phase 5): latest primary-window stats, additive
+    // metadata for a future UI. Absent until the first validity recompute.
+    const [validityRow] = await sql`
+      select window_days, n_pairs, high_hit_rate, safe_hit_rate, calibration_score, computed_at
+      from public.scan_validity_stats
+      where user_id = ${userId} and window_days = ${PRIMARY_VALIDITY_WINDOW_DAYS}`;
     const learningProgress = buildLearningProgressFromRows(learningScanRows, learningReportRows);
     const mappedInsights = insights.map(mapInsight);
     return {
@@ -82,6 +89,7 @@ export class InsightsService {
         learningProgress,
         reportCount: learningReportRows.length,
         dietPreferences: mapDietPreferenceRows(dietRows),
+        predictiveValidity: validityRow ? validityStatsFromRow(validityRow) : undefined,
       }),
       insights: mappedInsights,
       conditionInsights: conditionInsights.map(mapConditionInsight),

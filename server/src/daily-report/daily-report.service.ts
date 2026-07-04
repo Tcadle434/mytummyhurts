@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { DatabaseService } from '../database/database.service';
 import { LearningJobService } from '../learning/learning-job.service';
@@ -16,6 +16,8 @@ const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 @Injectable()
 export class DailyReportService {
+  private readonly logger = new Logger('DailyReport');
+
   constructor(
     private readonly db: DatabaseService,
     private readonly learning: LearningJobService,
@@ -52,6 +54,22 @@ export class DailyReportService {
         sourceType: 'daily_report',
         sourceId: row.id,
       });
+      // A fresh check-in is the moment reality scores the scorer: ask the
+      // worker for a predictive-validity pass too. The queue coalesces to one
+      // pending job per user, so this rides the job enqueued above — the
+      // metadata flag survives even if a later event overwrites event_type.
+      // Best-effort: a queue hiccup here must never break the report flow.
+      try {
+        await this.learning.enqueue({
+          userId,
+          eventType: 'validity_recompute',
+          sourceType: 'daily_report',
+          sourceId: row.id,
+          metadata: { validityRecompute: true },
+        });
+      } catch (err) {
+        this.logger.warn(`validity enqueue failed for user ${userId}: ${(err as Error).message}`);
+      }
       return { ok: true as const, report: mapDailyReport(row), learningSyncStatus: 'queued' as const };
     });
   }
