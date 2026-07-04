@@ -370,12 +370,6 @@ function confidenceRank(confidence: IngredientConfidence | undefined) {
   return 1;
 }
 
-function statusRank(status: DietFitStatus) {
-  if (status === 'does_not_fit') return 3;
-  if (status === 'caution') return 2;
-  if (status === 'fits') return 1;
-  return 0;
-}
 
 function dietStatusFromSignals(params: {
   strictConflictCount: number;
@@ -507,20 +501,30 @@ function evaluateDietFact(preference: DietPreference, facts: DietFacts): DietEva
     ...((modifierKeys.has('unknown_sauce_or_marinade') || baseKey === 'unknown') ? ['unclear ingredients or sauce'] : []),
   ]);
   const hasUnknown = baseKey === 'unknown' || modifierKeys.has('unknown_sauce_or_marinade') || Boolean(hypothesis?.missingInfo?.length);
-  const status = dietStatusFromSignals({
-    strictConflictCount: strictConflicts.length,
-    conflictCount: conflicts.length,
-    cautionCount: cautionFactors.length,
-    supportCount: supportingFactors.length,
-    hasUnknown,
-    hypothesis,
-    rule,
-  });
-  const acceptedModelStatus = hypothesis ? statusRank(hypothesis.status) === statusRank(status) : false;
+  // Diet fit is the LLM's verdict (founder decision 2026-07-04). The model
+  // sees the whole dish and reads nuance the term lists structurally cannot —
+  // the old signal precedence flipped "salmon avocado sushi" to does_not_fit
+  // for anti-inflammatory (avocado carries high_fat_or_rich) over a correct
+  // model "fits". Rubric signals remain as displayed factors and as the
+  // fallback verdict when no hypothesis exists (no diet goals in the prompt,
+  // no-key fallback, legacy scans).
+  const usingModelVerdict = Boolean(hypothesis);
+  const status = hypothesis
+    ? hypothesis.status
+    : dietStatusFromSignals({
+        strictConflictCount: strictConflicts.length,
+        conflictCount: conflicts.length,
+        cautionCount: cautionFactors.length,
+        supportCount: supportingFactors.length,
+        hasUnknown,
+        hypothesis,
+        rule,
+      });
+  const acceptedModelStatus = usingModelVerdict;
   const missingInfo = dedupe([...(hypothesis?.missingInfo ?? []), ...(status === 'unknown' ? ['Not enough ingredient detail to verify this diet.'] : [])], 4);
   const primaryConflict = conflicts[0] ?? cautionFactors[0];
   const primarySupport = supportingFactors[0];
-  const reason =
+  const fallbackReason =
     status === 'does_not_fit'
       ? `${facts.entityName} does not fit ${rule.label} because of ${primaryConflict ?? 'a clear conflict'}.`
       : status === 'caution'
@@ -528,12 +532,15 @@ function evaluateDietFact(preference: DietPreference, facts: DietFacts): DietEva
         : status === 'fits'
           ? `${facts.entityName} appears to fit ${rule.label}${primarySupport ? ` based on ${primarySupport}` : ''}.`
           : `${facts.entityName} cannot be verified for ${rule.label} from the available details.`;
+  const reason = usingModelVerdict && hypothesis?.reason?.trim() ? hypothesis.reason.trim() : fallbackReason;
 
   return {
     dietKey: preference.key,
     dietLabel: rule.label,
     status,
-    confidence: statusConfidence(status, conflicts.length + supportingFactors.length + cautionFactors.length, hypothesis),
+    confidence: usingModelVerdict
+      ? (hypothesis?.confidence ?? 'medium')
+      : statusConfidence(status, conflicts.length + supportingFactors.length + cautionFactors.length, hypothesis),
     reason,
     supportingFactors,
     conflicts,

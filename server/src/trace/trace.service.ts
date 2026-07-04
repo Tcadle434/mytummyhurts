@@ -12,6 +12,7 @@ import {
   type OpenAiAuditLog,
 } from '../scan/engine/openai';
 import { RISK_ADJUDICATION_PROMPT_VERSION } from '../scan/engine/riskAdjudication';
+import { LangsmithScanForwarder } from './langsmith-forwarder';
 
 export const WORKFLOW_VERSION = 'scan_workflow_v1';
 const GRAPH_NODES = [
@@ -48,10 +49,17 @@ export interface ScanTraceInput {
 export class TraceService {
   private readonly logger = new Logger('Trace');
   private versionsEnsured = false;
+  // Plain member (not DI) — it has no dependencies beyond env, and keeping it
+  // out of the module graph means test harnesses constructing TraceService
+  // directly are unaffected.
+  private readonly langsmith = new LangsmithScanForwarder();
 
   constructor(private readonly db: DatabaseService) {}
 
   async recordScanTrace(input: ScanTraceInput): Promise<string | null> {
+    // Best-effort mirror to LangSmith before the DB write so a DB failure
+    // cannot suppress the trace either. Fire-and-forget, never throws.
+    this.langsmith.forward(input);
     try {
       await this.ensureVersions();
       return await this.db.service(async (sql) => {
