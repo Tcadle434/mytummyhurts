@@ -244,6 +244,32 @@ const MECHANISMS: readonly MechanismDefinition[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Name-only mechanism matching (day-load support). Prior consumed meals come
+// back from scan_ingredient_risks as bare canonical names — no roles, amounts,
+// or prep context — so this matches names against the same MECHANISMS term
+// table the scorer uses, risk (non-protective) mechanisms only.
+// ---------------------------------------------------------------------------
+
+/** Risk mechanism keys present in any of the given food names. */
+export function riskMechanismKeysForIngredientNames(names: readonly string[]): Set<string> {
+  const keys = new Set<string>();
+  for (const name of names) {
+    const text = normalize(name);
+    if (!text) continue;
+    for (const def of MECHANISMS) {
+      if (def.protective) continue;
+      if (textHasTerm(text, def.terms)) keys.add(def.key);
+    }
+  }
+  return keys;
+}
+
+/** Human label for a mechanism key ('creamy_or_lactose' -> 'Dairy/lactose'). */
+export function mechanismLabelForKey(key: string): string | undefined {
+  return MECHANISMS.find((def) => def.key === key)?.label;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }

@@ -1,6 +1,7 @@
 import {
   BillingState,
   ConditionIngredientInsight,
+  ConsumptionPortion,
   DailyGutReport,
   IngredientInsight,
   ScanHistorySummary,
@@ -95,11 +96,14 @@ export interface ScanConsumptionUpdateRequest {
   scanId: string;
   consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
   consumedMenuItemSourceIds?: string[];
+  // Additive (Phase 4): the one-tap portion answer. Absent = leave stored value.
+  consumptionPortion?: ConsumptionPortion;
 }
 
 export interface ScanConsumptionUpdateResponse {
   ok: true;
   consumptionStatus: 'unknown' | 'consumed' | 'skipped';
+  consumptionPortion?: ConsumptionPortion;
   consumedMenuItemSourceIds: string[];
   learningSyncStatus: 'queued' | 'failed';
 }

@@ -3,7 +3,9 @@
 // attribution) + condition insights. Pure functions; no DB / Deno / network.
 import type {
   ConditionIngredientInsight,
+  ConsumptionPortion,
   DailyGutReport,
+  IngredientAmountEstimate,
   IngredientInsight,
   InsightConfidenceLevel,
   StructuredAnalysisV2,
@@ -13,7 +15,23 @@ import type {
 // which is clamp(50 + trigger - safe). Learned insights previously applied a
 // 0.9 damping here, so seed and learned rows were compared on mismatched
 // scales. Import the shared function so both live on one scale.
-import { combinedRiskScore, patternStrengthFromRisk } from '@mth/shared-domain';
+import { combinedRiskScore, doseEvidenceWeight, patternStrengthFromRisk } from '@mth/shared-domain';
+
+/** One scan's exposure ingredient, optionally carrying the extraction's
+ *  amount read for dose weighting. */
+export type LearningExposureIngredient = StructuredIngredient & {
+  amountEstimate?: IngredientAmountEstimate | null;
+};
+
+/** A scan as the learning engine sees it: ingredients plus the user's
+ *  confirmed portion (null/undefined for pre-portion-capture scans). */
+export interface LearningExposureScan {
+  id: string;
+  localDate: string;
+  createdAt: string;
+  portion?: ConsumptionPortion | null;
+  ingredients: LearningExposureIngredient[];
+}
 
 // Ingredients that were scanned but never paired with a daily report still get
 // a "watching" row (zero outcome evidence) so the Trigger Profile reflects
@@ -96,7 +114,7 @@ export function structuredAnalysisFromIngredientRows(
 }
 
 export function buildDailyReportInsights(params: {
-  scans: Array<{ id: string; localDate: string; createdAt: string; ingredients: StructuredIngredient[] }>;
+  scans: LearningExposureScan[];
   reports: DailyGutReport[];
   declaredSensitivities: string[];
   activeConditions: string[];
@@ -154,13 +172,23 @@ export function buildDailyReportInsights(params: {
     for (const window of windows) {
       const exposureDate = localDateMinusDays(report.localDate, window.daysPrior);
       const scans = scansByDate.get(exposureDate) ?? [];
-      const ingredients = new Map<string, { name: string; lastSeenAt: string }>();
+      const ingredients = new Map<string, { name: string; lastSeenAt: string; doseWeight: number }>();
 
+      // Dose per (ingredient, exposure date) is the MAX across that day's
+      // scans, not the sum: an ingredient still contributes at most once per
+      // day (same as before dose weighting), so duplicate scans of one meal
+      // cannot inflate evidence — the day's strongest exposure sets its dose.
       for (const scan of scans) {
         for (const ingredient of scan.ingredients) {
           const name = ingredient.name.trim().toLowerCase();
           if (!name) continue;
-          ingredients.set(name, { name, lastSeenAt: scan.createdAt });
+          const dose = doseEvidenceWeight(scan.portion, ingredient.amountEstimate);
+          const previous = ingredients.get(name);
+          ingredients.set(name, {
+            name,
+            lastSeenAt: scan.createdAt,
+            doseWeight: Math.max(previous?.doseWeight ?? 0, dose),
+          });
         }
       }
 
@@ -182,14 +210,19 @@ export function buildDailyReportInsights(params: {
           conditions: new Set<string>(),
         };
 
+        // Dose scales the SCORE movement only (Phase 4): a heavy portion of a
+        // dominant ingredient moves trigger/safe further than a light portion
+        // of a trace garnish. weightedEvidence (confidence) and the day sets
+        // (displayed evidence counts) stay dose-neutral — a day is a day.
+        const doseSignal = weightedSignal * ingredient.doseWeight;
         current.weightedEvidence += weightedSignal;
         if (reportKind === 'calm') {
-          current.safe += weightedSignal * 28;
-          current.trigger = Math.max(0, current.trigger - weightedSignal * 8);
+          current.safe += doseSignal * 28;
+          current.trigger = Math.max(0, current.trigger - doseSignal * 8);
           current.calmDays.add(report.localDate);
         } else if (reportKind === 'reactive') {
-          current.trigger += weightedSignal * 26 * severityFactor;
-          current.safe = Math.max(0, current.safe - weightedSignal * 5);
+          current.trigger += doseSignal * 26 * severityFactor;
+          current.safe = Math.max(0, current.safe - doseSignal * 5);
           current.reactiveDays.add(report.localDate);
           linkedConditions.forEach((condition) => current.conditions.add(condition));
         } else {

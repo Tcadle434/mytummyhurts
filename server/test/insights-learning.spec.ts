@@ -2,13 +2,22 @@ import { describe, expect, it } from 'vitest';
 
 import { triggerVerdictStatusForBreakdown } from '@mth/shared-domain';
 
-import { buildDailyReportInsights } from '../src/scan/engine/insights-learning';
+import {
+  buildDailyReportInsights,
+  type LearningExposureScan,
+} from '../src/scan/engine/insights-learning';
 import {
   buildDeclaredSeedInsights,
   computeGutScoreState,
   mergeSeedAndLearnedInsights,
 } from '../src/scan/engine/scoring';
-import type { DailyGutReport, ProfileSeed, StructuredIngredient } from '../src/scan/engine/domain';
+import type {
+  ConsumptionPortion,
+  DailyGutReport,
+  IngredientAmountEstimate,
+  ProfileSeed,
+  StructuredIngredient,
+} from '../src/scan/engine/domain';
 
 function ingredient(name: string): StructuredIngredient {
   return { name, confidence: 'high' };
@@ -32,6 +41,20 @@ function scan(localDate: string, ingredients: string[]) {
     localDate,
     createdAt: `${localDate}T12:00:00.000Z`,
     ingredients: ingredients.map(ingredient),
+  };
+}
+
+function dosedScan(
+  localDate: string,
+  name: string,
+  options: { portion?: ConsumptionPortion; amountEstimate?: IngredientAmountEstimate } = {},
+): LearningExposureScan {
+  return {
+    id: `scan-${localDate}-${name}-${options.portion ?? 'unset'}-${options.amountEstimate ?? 'unset'}`,
+    localDate,
+    createdAt: `${localDate}T12:00:00.000Z`,
+    portion: options.portion,
+    ingredients: [{ name, confidence: 'high', amountEstimate: options.amountEstimate }],
   };
 }
 
@@ -167,6 +190,106 @@ describe('daily report ingredient learning', () => {
     expect(bread.positiveEvidenceCount).toBe(1);
     expect(bread.patternStrength).toBe('weak');
     expect(bread.sourceBreakdown.neutralDayCount).toBe(1);
+  });
+
+  // --- dose-weighted learning (Phase 4) ---
+
+  function insightFor(scans: LearningExposureScan[], gutSeverity: number, name: string) {
+    const insights = buildDailyReportInsights({
+      scans,
+      reports: [report('2026-06-23', gutSeverity)],
+      declaredSensitivities: [],
+      activeConditions: ['IBS'],
+    });
+    return insights.find((insight) => insight.ingredientName === name)!;
+  }
+
+  it('moves learned scores further for heavier confirmed portions', () => {
+    const light = insightFor([dosedScan('2026-06-23', 'garlic', { portion: 'light' })], 8, 'garlic');
+    const normal = insightFor([dosedScan('2026-06-23', 'garlic', { portion: 'normal' })], 8, 'garlic');
+    const heavy = insightFor([dosedScan('2026-06-23', 'garlic', { portion: 'heavy' })], 8, 'garlic');
+
+    expect(heavy.combinedRiskScore).toBeGreaterThan(normal.combinedRiskScore);
+    expect(normal.combinedRiskScore).toBeGreaterThan(light.combinedRiskScore);
+
+    // Calm evidence scales the same way: a heavy portion that sat fine is
+    // stronger safety evidence than a light one.
+    const calmLight = insightFor([dosedScan('2026-06-23', 'rice', { portion: 'light' })], 2, 'rice');
+    const calmHeavy = insightFor([dosedScan('2026-06-23', 'rice', { portion: 'heavy' })], 2, 'rice');
+    expect(calmHeavy.combinedRiskScore).toBeLessThan(calmLight.combinedRiskScore);
+  });
+
+  it('treats a missing portion exactly like normal (pre-Phase-4 scans keep their weight)', () => {
+    const unset = insightFor([dosedScan('2026-06-23', 'garlic')], 8, 'garlic');
+    const normal = insightFor([dosedScan('2026-06-23', 'garlic', { portion: 'normal' })], 8, 'garlic');
+
+    expect(unset.combinedRiskScore).toBe(normal.combinedRiskScore);
+    expect(unset.safeScore).toBe(normal.safeScore);
+    expect(unset.triggerScore).toBe(normal.triggerScore);
+  });
+
+  it('barely moves scores for trace ingredient amounts', () => {
+    const trace = insightFor(
+      [dosedScan('2026-06-23', 'parmesan', { amountEstimate: 'trace' })],
+      8,
+      'parmesan',
+    );
+    const standard = insightFor(
+      [dosedScan('2026-06-23', 'parmesan', { amountEstimate: 'standard' })],
+      8,
+      'parmesan',
+    );
+    const dominant = insightFor(
+      [dosedScan('2026-06-23', 'parmesan', { amountEstimate: 'dominant' })],
+      8,
+      'parmesan',
+    );
+
+    expect(trace.combinedRiskScore).toBeLessThan(standard.combinedRiskScore);
+    expect(standard.combinedRiskScore).toBeLessThan(dominant.combinedRiskScore);
+    // A trace sprinkle around one rough day stays near neutral instead of
+    // reading like a real suspect.
+    expect(trace.combinedRiskScore).toBeLessThanOrEqual(58);
+    expect(standard.combinedRiskScore).toBeGreaterThanOrEqual(65);
+  });
+
+  it('keeps evidence day counts identical across doses — a day is a day', () => {
+    const light = insightFor(
+      [dosedScan('2026-06-23', 'garlic', { portion: 'light', amountEstimate: 'trace' })],
+      8,
+      'garlic',
+    );
+    const heavy = insightFor(
+      [dosedScan('2026-06-23', 'garlic', { portion: 'heavy', amountEstimate: 'dominant' })],
+      8,
+      'garlic',
+    );
+
+    expect(light.negativeEvidenceCount).toBe(heavy.negativeEvidenceCount);
+    expect(light.positiveEvidenceCount).toBe(heavy.positiveEvidenceCount);
+    expect(light.supportingEvidenceCount).toBe(heavy.supportingEvidenceCount);
+    expect(light.confidenceLevel).toBe(heavy.confidenceLevel);
+  });
+
+  it('uses the day\'s strongest exposure when one ingredient appears in several same-day scans', () => {
+    const heavyPlusTrace = insightFor(
+      [
+        dosedScan('2026-06-23', 'garlic', { portion: 'heavy', amountEstimate: 'dominant' }),
+        dosedScan('2026-06-23', 'garlic', { portion: 'light', amountEstimate: 'trace' }),
+      ],
+      8,
+      'garlic',
+    );
+    const heavyOnly = insightFor(
+      [dosedScan('2026-06-23', 'garlic', { portion: 'heavy', amountEstimate: 'dominant' })],
+      8,
+      'garlic',
+    );
+
+    // Max, not sum: the trace second helping neither dilutes nor inflates the
+    // day's evidence, and day counts still read as one day.
+    expect(heavyPlusTrace.combinedRiskScore).toBe(heavyOnly.combinedRiskScore);
+    expect(heavyPlusTrace.negativeEvidenceCount).toBe(1);
   });
 
   it('surfaces scanned-but-unpaired ingredients as zero-outcome watching rows', () => {

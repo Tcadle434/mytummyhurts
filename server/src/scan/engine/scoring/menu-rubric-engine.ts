@@ -105,6 +105,9 @@ export function buildIngredientRiskRows(
       componentName: ingredient.component,
       reason: '',
       displayOrder: rows.length,
+      // Persisted for dose-weighted learning: how much of this ingredient the
+      // extraction saw in the meal.
+      amountEstimate: ingredient.amountEstimate,
     });
   }
 

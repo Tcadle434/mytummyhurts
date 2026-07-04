@@ -2,7 +2,11 @@
 // from src/services/ai/scoring.ts (Expo) and server/src/scan/engine/scoring.ts
 // (NestJS). Both scoring.ts files import these so behavior is unchanged.
 import type { ProfileLearningStage } from './profile';
-import type { ConditionSeverityBand } from './scan';
+import type {
+  ConditionSeverityBand,
+  ConsumptionPortion,
+  IngredientAmountEstimate,
+} from './scan';
 
 export const GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
 
@@ -84,3 +88,43 @@ export const DAILY_ATTRIBUTION_WINDOWS = [
   { daysPrior: 1, weight: 0.3 },
   { daysPrior: 2, weight: 0.15 },
 ];
+
+// ---------------------------------------------------------------------------
+// Dose-weighted learning (scoring overhaul Phase 4). FODMAP tolerance is
+// dose-dependent: a heavy portion is stronger evidence (either way) than a
+// light one, and a trace garnish is barely evidence at all. These weights
+// scale an exposure's trigger/safe score contribution ONLY — evidence day
+// counts stay distinct days, the honest display unit.
+// ---------------------------------------------------------------------------
+
+/** How much the user's confirmed portion size scales that scan's evidence. */
+export const PORTION_EVIDENCE_WEIGHTS: Record<ConsumptionPortion, number> = {
+  light: 0.6,
+  normal: 1.0,
+  heavy: 1.4,
+};
+
+export const DEFAULT_CONSUMPTION_PORTION: ConsumptionPortion = 'normal';
+
+/** How much the extraction's per-ingredient amount scales its evidence. */
+export const AMOUNT_EVIDENCE_WEIGHTS: Record<IngredientAmountEstimate, number> = {
+  trace: 0.3,
+  small: 0.6,
+  standard: 1.0,
+  large: 1.2,
+  dominant: 1.4,
+};
+
+/**
+ * Combined dose weight for one ingredient exposure within one scan.
+ * Missing data defaults to 1.0 (normal portion, standard amount) so scans
+ * recorded before portion capture keep their exact pre-Phase-4 weight.
+ */
+export function doseEvidenceWeight(
+  portion?: ConsumptionPortion | null,
+  amountEstimate?: IngredientAmountEstimate | null,
+): number {
+  const portionWeight = portion ? PORTION_EVIDENCE_WEIGHTS[portion] : PORTION_EVIDENCE_WEIGHTS.normal;
+  const amountWeight = amountEstimate ? AMOUNT_EVIDENCE_WEIGHTS[amountEstimate] : AMOUNT_EVIDENCE_WEIGHTS.standard;
+  return portionWeight * amountWeight;
+}

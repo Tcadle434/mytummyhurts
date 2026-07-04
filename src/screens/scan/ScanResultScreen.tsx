@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
@@ -10,6 +11,7 @@ import {
   ScanHeroCard,
   WhyThisScoreCard,
 } from '../../components/scan-result/ScanResultCards';
+import { PortionChoiceRow } from '../../components/scan-result/PortionChoice';
 import { ScanResultSkeleton } from '../../components/scan-result/ScanResultSkeleton';
 import { SkeletonImage } from '../../components/common/SkeletonImage';
 import {
@@ -20,12 +22,18 @@ import {
 } from '../../components/common/UI';
 import { isLiveBackendConfigured } from '../../config/env';
 import { useScanDetail } from '../../features/history/hooks';
+import {
+  initialPortionForScan,
+  scanConsumptionUpdate,
+  shouldShowPortionChoice,
+} from '../../features/scan/consumptionPortions';
 import { presentRisk, verdictForRisk } from '../../features/scan/riskPresentation';
 import { formatConditionName } from '../../utils/conditionFormat';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { selectLatestScan, useAppStore } from '../../store/useAppStore';
-import { spacing } from '../../theme';
+import { spacing, tokens, type } from '../../theme';
+import type { ConsumptionPortion } from '../../types/domain';
 import { MenuResultUnavailable, MenuScanResult } from './MenuScanResult';
 import { normalizeScanRecord, selectPreferredScan } from './resultSelection';
 import {
@@ -55,6 +63,26 @@ export function ScanResultScreen({ navigation, route }: Props) {
   const [consumptionStatus, setConsumptionStatus] = useState<'unknown' | 'consumed' | 'skipped'>(
     rawScan?.consumptionStatus ?? 'unknown',
   );
+  const [portion, setPortion] = useState<ConsumptionPortion>(initialPortionForScan(rawScan ?? {}));
+
+  // History entry point: the record often arrives after first render (detail
+  // fetch), so sync the confirm state to what the server already knows.
+  useEffect(() => {
+    if (rawScan?.consumptionStatus) {
+      setConsumptionStatus(rawScan.consumptionStatus);
+    }
+    if (rawScan?.consumptionStatus === 'consumed' && rawScan.consumptionPortion) {
+      setPortion(rawScan.consumptionPortion);
+    }
+  }, [rawScan?.consumptionStatus, rawScan?.consumptionPortion]);
+
+  function handlePortionSelect(nextPortion: ConsumptionPortion) {
+    if (!scan) {
+      return;
+    }
+    setPortion(nextPortion);
+    void updateScanConsumption(scanConsumptionUpdate(scan.id, 'consumed', nextPortion));
+  }
   const riskPresentation = useMemo(() => (scan ? presentRisk(scan) : {}), [scan]);
   const conditionRows = useMemo(
     () =>
@@ -184,6 +212,16 @@ export function ScanResultScreen({ navigation, route }: Props) {
         }
       />
 
+      {/* One quiet line under the verdict when this meal repeats a same-day
+          mechanism ("Second dairy-heavy meal today — effects stack."). Display
+          only — the score above it is unchanged. */}
+      {scan.dayLoad?.note ? (
+        <View style={styles.dayLoadRow}>
+          <Ionicons name="layers-outline" size={14} color={tokens.color.text.tertiary} />
+          <Text style={styles.dayLoadText}>{scan.dayLoad.note}</Text>
+        </View>
+      ) : null}
+
       {/* The screen's one evergreen statement: Pip's take on the deep garden
           surface, right under the white verdict card. */}
       {interpretation ? <PipTakePanel body={interpretation} /> : null}
@@ -200,7 +238,7 @@ export function ScanResultScreen({ navigation, route }: Props) {
             active={consumptionStatus === 'consumed'}
             onPress={() => {
               setConsumptionStatus('consumed');
-              void updateScanConsumption({ scanId: scan.id, consumptionStatus: 'consumed' });
+              void updateScanConsumption(scanConsumptionUpdate(scan.id, 'consumed', portion));
             }}
           />
           <ConsumeChoice
@@ -209,10 +247,15 @@ export function ScanResultScreen({ navigation, route }: Props) {
             active={consumptionStatus === 'skipped'}
             onPress={() => {
               setConsumptionStatus('skipped');
-              void updateScanConsumption({ scanId: scan.id, consumptionStatus: 'skipped' });
+              void updateScanConsumption(scanConsumptionUpdate(scan.id, 'skipped'));
             }}
           />
         </View>
+        {/* Portion refinement (Phase 4): appears once the meal is confirmed,
+            normal preselected — ignoring it is a valid answer. */}
+        {shouldShowPortionChoice(consumptionStatus) ? (
+          <PortionChoiceRow value={portion} onSelect={handlePortionSelect} />
+        ) : null}
       </SectionCard>
 
       <WhyThisScoreCard contributors={readableContributors} level={scan.overallRiskLevel} />
@@ -244,5 +287,19 @@ const styles = StyleSheet.create({
   consumeRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  // Quiet metadata line — deliberately not a card. It sits on the porcelain
+  // canvas between the verdict and Pip's take.
+  dayLoadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  dayLoadText: {
+    ...tokens.type.body.small,
+    fontFamily: type.body.medium,
+    color: tokens.color.text.secondary,
+    flex: 1,
   },
 });

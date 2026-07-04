@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DAILY_ATTRIBUTION_WINDOWS = exports.EXTREME_STACK_SCORE_CAP = exports.UNGATED_HIGH_BAND_CEILING = exports.CONDITION_BAND_ORDER = exports.CONDITION_BAND_RANGES = exports.RISK_LEVEL_MILD_MAX = exports.RISK_LEVEL_HIGH_MIN = exports.RISK_LEVEL_MEDIUM_MIN = exports.PROFILE_LEARNING_STAGE_THRESHOLDS = exports.GUT_SCORE_ALGORITHM_VERSION = void 0;
+exports.AMOUNT_EVIDENCE_WEIGHTS = exports.DEFAULT_CONSUMPTION_PORTION = exports.PORTION_EVIDENCE_WEIGHTS = exports.DAILY_ATTRIBUTION_WINDOWS = exports.EXTREME_STACK_SCORE_CAP = exports.UNGATED_HIGH_BAND_CEILING = exports.CONDITION_BAND_ORDER = exports.CONDITION_BAND_RANGES = exports.RISK_LEVEL_MILD_MAX = exports.RISK_LEVEL_HIGH_MIN = exports.RISK_LEVEL_MEDIUM_MIN = exports.PROFILE_LEARNING_STAGE_THRESHOLDS = exports.GUT_SCORE_ALGORITHM_VERSION = void 0;
 exports.conditionBandForScore = conditionBandForScore;
+exports.doseEvidenceWeight = doseEvidenceWeight;
 exports.GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
 exports.PROFILE_LEARNING_STAGE_THRESHOLDS = {
     growing: {
@@ -60,3 +61,35 @@ exports.DAILY_ATTRIBUTION_WINDOWS = [
     { daysPrior: 1, weight: 0.3 },
     { daysPrior: 2, weight: 0.15 },
 ];
+// ---------------------------------------------------------------------------
+// Dose-weighted learning (scoring overhaul Phase 4). FODMAP tolerance is
+// dose-dependent: a heavy portion is stronger evidence (either way) than a
+// light one, and a trace garnish is barely evidence at all. These weights
+// scale an exposure's trigger/safe score contribution ONLY — evidence day
+// counts stay distinct days, the honest display unit.
+// ---------------------------------------------------------------------------
+/** How much the user's confirmed portion size scales that scan's evidence. */
+exports.PORTION_EVIDENCE_WEIGHTS = {
+    light: 0.6,
+    normal: 1.0,
+    heavy: 1.4,
+};
+exports.DEFAULT_CONSUMPTION_PORTION = 'normal';
+/** How much the extraction's per-ingredient amount scales its evidence. */
+exports.AMOUNT_EVIDENCE_WEIGHTS = {
+    trace: 0.3,
+    small: 0.6,
+    standard: 1.0,
+    large: 1.2,
+    dominant: 1.4,
+};
+/**
+ * Combined dose weight for one ingredient exposure within one scan.
+ * Missing data defaults to 1.0 (normal portion, standard amount) so scans
+ * recorded before portion capture keep their exact pre-Phase-4 weight.
+ */
+function doseEvidenceWeight(portion, amountEstimate) {
+    const portionWeight = portion ? exports.PORTION_EVIDENCE_WEIGHTS[portion] : exports.PORTION_EVIDENCE_WEIGHTS.normal;
+    const amountWeight = amountEstimate ? exports.AMOUNT_EVIDENCE_WEIGHTS[amountEstimate] : exports.AMOUNT_EVIDENCE_WEIGHTS.standard;
+    return portionWeight * amountWeight;
+}

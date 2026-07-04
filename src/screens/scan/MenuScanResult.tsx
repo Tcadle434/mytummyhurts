@@ -17,10 +17,14 @@ import {
   ScreenHeader,
   SectionCard,
 } from '../../components/common/UI';
+import {
+  DEFAULT_PORTION,
+  menuItemConsumptionUpdate,
+} from '../../features/scan/consumptionPortions';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
-import { MenuRecommendationTier, RiskLevel, ScanRecord } from '../../types/domain';
+import { ConsumptionPortion, MenuRecommendationTier, RiskLevel, ScanRecord } from '../../types/domain';
 import { DeleteAction, formatTimestamp, ResultImageFallback, sharedResultStyles as shared } from './resultShared';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanResult'>;
@@ -69,6 +73,7 @@ export function MenuScanResult({
   const deleteScanRecord = useAppStore((state) => state.deleteScanRecord);
   const updateScanConsumption = useAppStore((state) => state.updateScanConsumption);
   const [consumedItemIds, setConsumedItemIds] = useState<Set<string>>(new Set());
+  const [itemPortions, setItemPortions] = useState<Record<string, ConsumptionPortion>>({});
   const [isDeleting, setIsDeleting] = useState(false);
   const menu = scan.menuResult!;
   const rankedItems = rankedMenuItems(menu);
@@ -79,21 +84,24 @@ export function MenuScanResult({
     item: {
       ...toMenuTierItem(item),
       consumed: Boolean(item.consumedAt) || consumedItemIds.has(item.sourceItemId),
+      portion: itemPortions[item.sourceItemId] ?? item.consumedPortion,
     },
   }));
   const topPick = rankedEntries[0];
   const remainingEntries = rankedEntries.slice(1);
   const easierCount = rankedEntries.filter((entry) => entry.tier === 'best_for_you').length;
 
-  function handleConsume(item: MenuTierItem) {
+  // Logging an item and refining its portion share one path: the first tap
+  // records a normal portion, a portion-chip tap re-sends with the choice.
+  function handleConsume(item: MenuTierItem, portion?: ConsumptionPortion) {
     if (!item.sourceItemId) {
       return;
     }
-    setConsumedItemIds((current) => new Set(current).add(item.sourceItemId!));
-    void updateScanConsumption({
-      scanId: scan.id,
-      consumedMenuItemSourceIds: [item.sourceItemId],
-    });
+    const sourceItemId = item.sourceItemId;
+    const nextPortion = portion ?? itemPortions[sourceItemId] ?? item.portion ?? DEFAULT_PORTION;
+    setConsumedItemIds((current) => new Set(current).add(sourceItemId));
+    setItemPortions((current) => ({ ...current, [sourceItemId]: nextPortion }));
+    void updateScanConsumption(menuItemConsumptionUpdate(scan.id, sourceItemId, nextPortion));
   }
 
   function confirmDelete() {

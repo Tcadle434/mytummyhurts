@@ -62,6 +62,8 @@ import type {
   IngredientRole,
   IngredientProminence,
   IngredientAmountEstimate,
+  ConsumptionPortion,
+  ScanDayLoad,
   ExtractedIngredient,
   ConditionSeverityBand,
   ConditionSeverity,
@@ -140,6 +142,8 @@ export type {
   IngredientRole,
   IngredientProminence,
   IngredientAmountEstimate,
+  ConsumptionPortion,
+  ScanDayLoad,
   ExtractedIngredient,
   ConditionSeverityBand,
   ConditionSeverity,
@@ -318,6 +322,11 @@ export type ScanConsumptionStatus = 'unknown' | 'consumed' | 'skipped';
 export interface ScanRecord extends ScanResult {
   id: string;
   consumptionStatus?: ScanConsumptionStatus;
+  // One-tap portion answer from the consumed confirm ('light'/'normal'/'heavy').
+  consumptionPortion?: ConsumptionPortion;
+  // Additive day-load context: this meal repeats a same-day risk mechanism
+  // from an earlier consumed meal ("Second dairy-heavy meal today…").
+  dayLoad?: ScanDayLoad;
   requestId?: string;
   sourceType: ScanSourceType;
   scanCategory: ScanCategory;

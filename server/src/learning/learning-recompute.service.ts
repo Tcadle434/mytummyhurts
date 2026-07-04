@@ -4,15 +4,17 @@ import type { Sql } from 'postgres';
 import { DatabaseService } from '../database/database.service';
 import type {
   ConditionIngredientInsight,
+  ConsumptionPortion,
   DailyGutReport,
+  IngredientAmountEstimate,
   IngredientInsight,
   ProfileSeed,
-  StructuredIngredient,
 } from '../scan/engine/domain';
 import {
   buildDailyConditionInsights,
   buildDailyReportInsights,
   structuredAnalysisFromIngredientRows,
+  type LearningExposureIngredient,
 } from '../scan/engine/insights-learning';
 import {
   GUT_SCORE_ALGORITHM_VERSION,
@@ -44,6 +46,15 @@ const calibrationRatings = (v: unknown): Record<string, 'fine' | 'unsure' | 'bad
 const toLocalDate = (v: unknown): string =>
   v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? '').slice(0, 10);
 const toIso = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v ?? ''));
+
+// Dose inputs (Phase 4) — coerce stored text to the typed unions; anything
+// unexpected reads as undefined, which the engine weighs as normal/standard.
+const consumptionPortion = (v: unknown): ConsumptionPortion | undefined =>
+  v === 'light' || v === 'normal' || v === 'heavy' ? v : undefined;
+const amountEstimate = (v: unknown): IngredientAmountEstimate | undefined =>
+  v === 'trace' || v === 'small' || v === 'standard' || v === 'large' || v === 'dominant'
+    ? v
+    : undefined;
 
 type GutScoreMovementSource = 'scan' | 'daily_report' | 'profile' | 'backfill';
 
@@ -123,25 +134,32 @@ export class LearningRecomputeService {
       if (!profileRow) return { insights: 0, conditionInsights: 0, dailyReports: 0 };
 
       const scanRows = await sql`
-        select id, scan_category, local_date, title, overall_risk_score, created_at, consumption_status
+        select id, scan_category, local_date, title, overall_risk_score, created_at,
+               consumption_status, consumption_portion
         from public.scans where user_id = ${userId} and analysis_status = 'completed'`;
       const reportRows = await sql`select * from public.daily_gut_reports where user_id = ${userId}`;
       const ingredientRows = await sql`
-        select scan_id, canonical_name, confidence, menu_item_source_id
+        select scan_id, canonical_name, confidence, menu_item_source_id, amount_estimate
         from public.scan_ingredient_risks where user_id = ${userId}`;
       const dietRows = await sql`
         select diet_key, diet_label, strictness, source, priority, status
         from public.user_diet_preferences where user_id = ${userId} and status = 'active'`;
 
       // ingredients per scan (non-menu) — used as the food exposure signal.
-      const scanIngredients = new Map<string, StructuredIngredient[]>();
+      // amount_estimate rides along for dose-weighted learning; null on rows
+      // saved before Phase 4 (treated as 'standard' weight downstream).
+      const scanIngredients = new Map<string, LearningExposureIngredient[]>();
       for (const r of ingredientRows) {
         if (r.menu_item_source_id) continue;
         const name = String(r.canonical_name ?? '').trim().toLowerCase();
         if (!name) continue;
         const conf = r.confidence === 'high' || r.confidence === 'low' ? r.confidence : 'medium';
         const list = scanIngredients.get(String(r.scan_id)) ?? [];
-        list.push({ name, confidence: conf } as StructuredIngredient);
+        list.push({
+          name,
+          confidence: conf,
+          amountEstimate: amountEstimate(r.amount_estimate),
+        } as LearningExposureIngredient);
         scanIngredients.set(String(r.scan_id), list);
       }
 
@@ -181,6 +199,7 @@ export class LearningRecomputeService {
             createdAt: toIso(s.created_at),
             localDate: s.local_date ? toLocalDate(s.local_date) : toLocalDate(s.created_at),
             scanCategory: 'food' as const,
+            portion: consumptionPortion(s.consumption_portion),
           };
         });
 
@@ -203,7 +222,13 @@ export class LearningRecomputeService {
       );
 
       const learned = buildDailyReportInsights({
-        scans: foodScans.map((s) => ({ id: s.id, localDate: s.localDate, createdAt: s.createdAt, ingredients: s.ingredients })),
+        scans: foodScans.map((s) => ({
+          id: s.id,
+          localDate: s.localDate,
+          createdAt: s.createdAt,
+          ingredients: s.ingredients,
+          portion: s.portion,
+        })),
         reports: scoredReports,
         declaredSensitivities: seed.knownIngredientSensitivities,
         activeConditions: seed.knownConditions,

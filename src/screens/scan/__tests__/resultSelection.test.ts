@@ -130,4 +130,47 @@ describe("normalizeScanRecord", () => {
 		expect(item?.dietEvaluations).toEqual([]);
 		expect(item?.scoreContributors).toEqual([]);
 	});
+
+	it("preserves the Phase 4 additive fields (portion, day-load, item portions)", () => {
+		const dosedScan = scan({
+			consumptionStatus: "consumed",
+			consumptionPortion: "heavy",
+			dayLoad: {
+				mechanismKey: "creamy_or_lactose",
+				priorMealCount: 1,
+				note: "Second dairy-heavy meal today — effects stack.",
+			},
+			menuResult: {
+				menuTitle: "Menu",
+				inputPageCount: 1,
+				summary: "",
+				items: [
+					{
+						id: "item-1",
+						sourceItemId: "item-1",
+						consumedAt: "2026-07-03T12:00:00.000Z",
+						consumedPortion: "light",
+						tier: "best_for_you",
+						tierRank: 1,
+						displayOrder: 0,
+						name: "Salad",
+						riskScore: 12,
+						riskLevel: "low",
+						confidence: "medium",
+						scoringConfidence: "medium",
+						whyThisScore: "Gentle.",
+					} as unknown as NonNullable<ScanRecord["menuResult"]>["items"][number],
+				],
+				bestForYou: [],
+				eatWithCaution: [],
+				tryToAvoid: [],
+			},
+		});
+
+		const normalized = normalizeScanRecord(dosedScan);
+
+		expect(normalized.consumptionPortion).toBe("heavy");
+		expect(normalized.dayLoad?.note).toBe("Second dairy-heavy meal today — effects stack.");
+		expect(normalized.menuResult?.items[0]?.consumedPortion).toBe("light");
+	});
 });

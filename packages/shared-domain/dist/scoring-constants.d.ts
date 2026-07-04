@@ -1,5 +1,5 @@
 import type { ProfileLearningStage } from './profile';
-import type { ConditionSeverityBand } from './scan';
+import type { ConditionSeverityBand, ConsumptionPortion, IngredientAmountEstimate } from './scan';
 export declare const GUT_SCORE_ALGORITHM_VERSION = "gut-score-v2";
 export declare const PROFILE_LEARNING_STAGE_THRESHOLDS: {
     readonly growing: {
@@ -37,3 +37,14 @@ export declare const DAILY_ATTRIBUTION_WINDOWS: {
     daysPrior: number;
     weight: number;
 }[];
+/** How much the user's confirmed portion size scales that scan's evidence. */
+export declare const PORTION_EVIDENCE_WEIGHTS: Record<ConsumptionPortion, number>;
+export declare const DEFAULT_CONSUMPTION_PORTION: ConsumptionPortion;
+/** How much the extraction's per-ingredient amount scales its evidence. */
+export declare const AMOUNT_EVIDENCE_WEIGHTS: Record<IngredientAmountEstimate, number>;
+/**
+ * Combined dose weight for one ingredient exposure within one scan.
+ * Missing data defaults to 1.0 (normal portion, standard amount) so scans
+ * recorded before portion capture keep their exact pre-Phase-4 weight.
+ */
+export declare function doseEvidenceWeight(portion?: ConsumptionPortion | null, amountEstimate?: IngredientAmountEstimate | null): number;

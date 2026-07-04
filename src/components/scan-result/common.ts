@@ -1,7 +1,13 @@
 import { LayoutAnimation, Platform, UIManager } from "react-native";
 
 import { tokens } from "../../theme";
-import type { DietEvaluation, DietFitStatus, ScanIngredientRisk, ScoreContributor } from "../../types/domain";
+import type {
+	ConsumptionPortion,
+	DietEvaluation,
+	DietFitStatus,
+	ScanIngredientRisk,
+	ScoreContributor,
+} from "../../types/domain";
 
 if (
 	Platform.OS === "android" &&
@@ -34,6 +40,8 @@ export type MenuTierItem = {
 	saferSwap?: string;
 	sourceItemId?: string;
 	consumed?: boolean;
+	// Portion answer for a logged item; shown as the selected chip.
+	portion?: ConsumptionPortion;
 };
 
 export function colorForLevel(level: RiskLevel) {

@@ -5,7 +5,8 @@ import { InsightsService } from '../insights/insights.service';
 import { LearningJobService } from '../learning/learning-job.service';
 import { StorageService } from '../storage/storage.service';
 import { TraceService } from '../trace/trace.service';
-import type { IngredientInsight, UserProfile } from './engine/domain';
+import { buildDayLoadContext } from './engine/day-load';
+import type { IngredientInsight, ScanDayLoad, ScanResult, UserProfile } from './engine/domain';
 import { PROMPT_VERSION as EXTRACTION_PROMPT_VERSION, type OpenAiAuditLog } from './engine/openai';
 import { buildFoodCompletionInput, buildMenuCompletionInput } from './scan-payload';
 import { ScanCrudService } from './scan-crud.service';
@@ -140,6 +141,46 @@ export class ScanAnalysisService {
     };
   }
 
+  // Day-load context (Phase 4): does this meal repeat a risk mechanism from an
+  // earlier consumed meal today? Display + data only — never moves the score —
+  // and strictly best-effort: any failure logs and the scan completes without it.
+  private async computeDayLoad(
+    userId: string,
+    scanId: string,
+    result: ScanResult,
+  ): Promise<ScanDayLoad | undefined> {
+    try {
+      const ingredients = result.ingredientRisks
+        .filter((row) => !row.menuItemSourceId)
+        .map((row) => ({
+          name: row.canonicalName || row.rawName,
+          amountEstimate: row.amountEstimate,
+        }));
+      if (!ingredients.length) return undefined;
+      const priorMeals = await this.crud.priorConsumedSameDayMeals(userId, scanId);
+      return buildDayLoadContext(ingredients, priorMeals);
+    } catch (err) {
+      this.logger.warn(`day-load skipped for scan ${scanId}: ${(err as Error).message}`);
+      return undefined;
+    }
+  }
+
+  // The dayLoad rides inside analysis_metadata so scan-get can return it
+  // without a schema change; absent when nothing stacked.
+  private withDayLoad<T extends { analysisMetadata?: unknown }>(
+    completion: T,
+    dayLoad: ScanDayLoad | undefined,
+  ): T {
+    if (!dayLoad) return completion;
+    return {
+      ...completion,
+      analysisMetadata: {
+        ...((completion.analysisMetadata as Record<string, unknown>) ?? {}),
+        dayLoad,
+      },
+    };
+  }
+
   async analyzeImage(req: AnalyzeImageRequest): Promise<AnalyzeResult> {
     await this.costCap.assertWithinCap(req.userId);
     // Store inline images first so we have stable keys for input_refs + signed URLs.
@@ -197,10 +238,15 @@ export class ScanAnalysisService {
         storage_path: k,
         page_index: i,
       }));
+      // Menu results rank a menu rather than describe one eaten meal, so
+      // day-load applies to food/grocery scans only (v1).
       const completion =
         wf.scanCategory === 'menu'
           ? { ...buildMenuCompletionInput(req.userId, scanId, wf.finalResult), inputRefs }
-          : buildFoodCompletionInput(req.userId, scanId, wf.finalResult, inputRefs);
+          : this.withDayLoad(
+              buildFoodCompletionInput(req.userId, scanId, wf.finalResult, inputRefs),
+              await this.computeDayLoad(req.userId, scanId, wf.finalResult),
+            );
       await this.reservation.complete(completion);
       await this.learning.enqueue({ userId: req.userId, eventType: 'scan_analyzed', sourceType: 'scan', sourceId: scanId });
       await this.trace.recordScanTrace({
@@ -253,7 +299,12 @@ export class ScanAnalysisService {
         insights,
         onStage,
       });
-      await this.reservation.complete(buildFoodCompletionInput(req.userId, scanId, wf.finalResult));
+      await this.reservation.complete(
+        this.withDayLoad(
+          buildFoodCompletionInput(req.userId, scanId, wf.finalResult),
+          await this.computeDayLoad(req.userId, scanId, wf.finalResult),
+        ),
+      );
       await this.learning.enqueue({ userId: req.userId, eventType: 'scan_analyzed', sourceType: 'scan', sourceId: scanId });
       await this.trace.recordScanTrace({
         userId: req.userId,

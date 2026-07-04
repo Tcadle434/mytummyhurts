@@ -4,10 +4,17 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colorForLevel, prioritizeScoreContributors, type MenuTierItem, type RiskLevel } from "./common";
 import { selectIngredientHistoryRows } from "./PersonalizedScanCard.helpers";
 import { DietEvaluationRows, IngredientHistoryRows } from "./PersonalizedScanCard";
+import { PortionChoiceRow } from "./PortionChoice";
 import { ScoreDriversList } from "./ScoreDrivers";
 import { resultCardStyle, sectionLabelStyle } from "./styles";
 import { InfoPill, VerdictPill, type VerdictToneKey } from "../common/UI";
+import { DEFAULT_PORTION } from "../../features/scan/consumptionPortions";
 import { palette, spacing, tokens, type } from "../../theme";
+import type { ConsumptionPortion } from "../../types/domain";
+
+// "I ordered this" taps and portion-chip taps share one callback: portion is
+// omitted on the initial log (the handler applies the normal default).
+export type MenuItemConsumeHandler = (item: MenuTierItem, portion?: ConsumptionPortion) => void;
 
 const MIN_TOUCH_TARGET = 44;
 
@@ -55,7 +62,7 @@ export function MenuTopPickCard({
 	item: MenuTierItem;
 	expanded: boolean;
 	onToggle: () => void;
-	onConsume?: (item: MenuTierItem) => void;
+	onConsume?: MenuItemConsumeHandler;
 }) {
 	const meta = [item.section, item.price].filter(Boolean).join(" • ");
 	return (
@@ -125,7 +132,7 @@ export function MenuBandSection({
 	items: MenuTierItem[];
 	expandedId: string | null;
 	onToggle: (id: string) => void;
-	onConsume?: (item: MenuTierItem) => void;
+	onConsume?: MenuItemConsumeHandler;
 }) {
 	if (items.length === 0) {
 		return null;
@@ -201,7 +208,7 @@ function MenuRow({
 	item: MenuTierItem;
 	expanded: boolean;
 	onToggle: () => void;
-	onConsume?: (item: MenuTierItem) => void;
+	onConsume?: MenuItemConsumeHandler;
 }) {
 	return (
 		<Pressable
@@ -257,7 +264,7 @@ function MenuItemDetails({
 	onConsume,
 }: {
 	item: MenuTierItem;
-	onConsume?: (item: MenuTierItem) => void;
+	onConsume?: MenuItemConsumeHandler;
 }) {
 	const tone = tokens.color.status.risk[item.level];
 	const scoreDrivers = prioritizeScoreContributors(item.scoreContributors, 4);
@@ -312,42 +319,52 @@ function MenuItemDetails({
 
 // "I ordered this" is the input that feeds trigger learning, so it reads as a
 // real button — full width, comfortable target — and the done state says what
-// the tap earned.
+// the tap earned. Once logged, the portion chips appear in place (Phase 4):
+// normal is preselected, so ignoring them costs nothing.
 function ConsumeMenuItemButton({
 	item,
 	onConsume,
 	onHero = false,
 }: {
 	item: MenuTierItem;
-	onConsume: (item: MenuTierItem) => void;
+	onConsume: MenuItemConsumeHandler;
 	onHero?: boolean;
 }) {
 	const done = Boolean(item.consumed);
 	return (
-		<Pressable
-			accessibilityRole="button"
-			accessibilityState={{ disabled: done }}
-			accessibilityLabel={
-				done ? `${item.name} logged — counts toward your triggers` : `I ordered this: ${item.name}`
-			}
-			disabled={done}
-			onPress={() => onConsume(item)}
-			style={({ pressed }) => [
-				styles.consumeButton,
-				onHero && styles.consumeButtonOnHero,
-				done && styles.consumeButtonDone,
-				pressed && !done && styles.pressedDim,
-			]}
-		>
-			<Ionicons
-				name={done ? "checkmark-circle" : "restaurant-outline"}
-				size={16}
-				color={done ? tokens.color.status.risk.low.foreground : tokens.color.action.quiet.foreground}
-			/>
-			<Text style={[styles.consumeButtonText, done && styles.consumeButtonTextDone]}>
-				{done ? "Logged — counts toward your triggers" : "I ordered this"}
-			</Text>
-		</Pressable>
+		<View style={styles.consumeStack}>
+			<Pressable
+				accessibilityRole="button"
+				accessibilityState={{ disabled: done }}
+				accessibilityLabel={
+					done ? `${item.name} logged — counts toward your triggers` : `I ordered this: ${item.name}`
+				}
+				disabled={done}
+				onPress={() => onConsume(item)}
+				style={({ pressed }) => [
+					styles.consumeButton,
+					onHero && styles.consumeButtonOnHero,
+					done && styles.consumeButtonDone,
+					pressed && !done && styles.pressedDim,
+				]}
+			>
+				<Ionicons
+					name={done ? "checkmark-circle" : "restaurant-outline"}
+					size={16}
+					color={done ? tokens.color.status.risk.low.foreground : tokens.color.action.quiet.foreground}
+				/>
+				<Text style={[styles.consumeButtonText, done && styles.consumeButtonTextDone]}>
+					{done ? "Logged — counts toward your triggers" : "I ordered this"}
+				</Text>
+			</Pressable>
+			{done ? (
+				<PortionChoiceRow
+					value={item.portion ?? DEFAULT_PORTION}
+					onSelect={(portion) => onConsume(item, portion)}
+					onHero={onHero}
+				/>
+			) : null}
+		</View>
 	);
 }
 
@@ -567,6 +584,9 @@ const styles = StyleSheet.create({
 		color: palette.primaryDark,
 	},
 	// --- consumption affordance ---
+	consumeStack: {
+		gap: spacing.xs,
+	},
 	consumeButton: {
 		flexDirection: "row",
 		alignItems: "center",

@@ -47,6 +47,12 @@ class ConsumptionDto {
     | 'consumed'
     | 'skipped';
   @IsOptional() @IsArray() consumedMenuItemSourceIds?: string[];
+  // Additive (Phase 4): one-tap portion on the consumed confirm. Optional so
+  // older clients keep working; absent means "leave the stored answer alone".
+  @IsOptional() @IsIn(['light', 'normal', 'heavy']) consumptionPortion?:
+    | 'light'
+    | 'normal'
+    | 'heavy';
 }
 
 class HistoryDto {
@@ -133,6 +139,7 @@ export class ScanController {
       dto.scanId,
       dto.consumptionStatus,
       dto.consumedMenuItemSourceIds ?? [],
+      dto.consumptionPortion,
     );
   }
 
