@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colorForLevel, prioritizeScoreContributors, type MenuTierItem, type RiskLevel } from "./common";
-import { selectIngredientHistoryRows } from "./PersonalizedScanCard.helpers";
+import { buildIngredientHistoryModel } from "./PersonalizedScanCard.helpers";
 import { DietEvaluationRows, IngredientHistoryRows } from "./PersonalizedScanCard";
 import { PortionChoiceRow } from "./PortionChoice";
 import { ScoreDriversList } from "./ScoreDrivers";
@@ -268,7 +268,7 @@ function MenuItemDetails({
 }) {
 	const tone = tokens.color.status.risk[item.level];
 	const scoreDrivers = prioritizeScoreContributors(item.scoreContributors, 4);
-	const ingredientHistoryRows = selectIngredientHistoryRows(item.ingredientRisks, 3);
+	const ingredientHistoryRows = buildIngredientHistoryModel(item.ingredientRisks, 3).rows;
 	return (
 		<View style={styles.detailsBlock}>
 			<View style={styles.detailsSection}>

@@ -6,12 +6,13 @@ import {
 	type RiskLevel,
 } from "./common";
 import {
+	buildIngredientHistoryModel,
 	dietEvaluationTitle,
-	displayIngredientName,
-	selectIngredientHistoryRows,
-	type IngredientHistoryRow,
+	newIngredientsLine,
+	type IngredientHistoryDisplayRow,
 } from "./PersonalizedScanCard.helpers";
 import { cardTitleStyle, resultCardStyle, sectionLabelStyle } from "./styles";
+import { verdictTone } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
 import type { DietEvaluation, ScanIngredientRisk } from "../../types/domain";
 
@@ -27,10 +28,10 @@ export function PersonalizedScanCard({
 	impactSummary?: string;
 }) {
 	const safeDietEvaluations = dietEvaluations ?? [];
-	const historyRows = selectIngredientHistoryRows(ingredientRisks, 4);
+	const history = buildIngredientHistoryModel(ingredientRisks, 4);
 	const impact = impactSummary?.trim();
 
-	if (!safeDietEvaluations.length && !historyRows.length && !impact) {
+	if (!safeDietEvaluations.length && !history.rows.length && !history.newCount && !impact) {
 		return null;
 	}
 
@@ -57,10 +58,16 @@ export function PersonalizedScanCard({
 				</View>
 			) : null}
 
-			{historyRows.length ? (
+			{history.rows.length || history.newCount ? (
 				<View style={styles.sectionBlock}>
 					<Text style={sectionLabelStyle}>Ingredient history</Text>
-					<IngredientHistoryRows rows={historyRows} />
+					<IngredientHistoryRows rows={history.rows} />
+					{history.newCount ? (
+						<View style={styles.newFoodsRow}>
+							<Ionicons name="leaf-outline" size={14} color={tokens.color.text.tertiary} />
+							<Text style={styles.newFoodsText}>{newIngredientsLine(history.newCount)}</Text>
+						</View>
+					) : null}
 				</View>
 			) : null}
 		</View>
@@ -88,27 +95,26 @@ export function DietEvaluationRows({ evaluations }: { evaluations: DietEvaluatio
 	);
 }
 
-export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryRow[] }) {
+// Rows carry real verdicts only (the model already filtered filler into the
+// newCount line), so the icon bubble's tone always MEANS something.
+export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryDisplayRow[] }) {
 	if (!rows.length) return null;
 
 	return (
 		<View style={styles.rowStack}>
-			{rows.map(({ ingredient, history }) => {
-				const tone = historyTone(history.riskLevel);
+			{rows.map(({ ingredient, title, line, status }) => {
+				const tone = verdictTone(status);
 				return (
 					<View key={`${ingredient.id ?? ingredient.canonicalName}-${ingredient.displayOrder}`} style={styles.historyRow}>
 						<View style={[styles.historyIcon, { backgroundColor: tone.background }]}>
-							<Ionicons name={historyIconName(history.riskLevel)} size={14} color={tone.foreground} />
+							<Ionicons name={historyIconName(status)} size={14} color={tone.foreground} />
 						</View>
 						<View style={styles.rowBody}>
 							<Text style={styles.rowTitle} numberOfLines={1}>
-								{displayIngredientName(ingredient)}
+								{title}
 							</Text>
 							<Text style={styles.rowDetail} numberOfLines={2}>
-								{history.summary}
-								{history.matchType === "family" && history.matchedLabel
-									? ` · related to ${history.matchedLabel}`
-									: ""}
+								{line}
 							</Text>
 						</View>
 					</View>
@@ -118,22 +124,12 @@ export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryRow[] }
 	);
 }
 
-function historyTone(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"]>["riskLevel"]) {
-	if (riskLevel === "high") return tokens.color.status.risk.high;
-	if (riskLevel === "low") return tokens.color.status.risk.low;
-	if (riskLevel === "medium" || riskLevel === "inconsistent") return tokens.color.status.risk.medium;
-	return {
-		background: tokens.color.surface.card.info,
-		foreground: palette.textMuted,
-		tint: palette.textMuted,
-	};
-}
-
-function historyIconName(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"]>["riskLevel"]) {
-	if (riskLevel === "high") return "alert-circle-outline";
-	if (riskLevel === "low") return "checkmark-circle-outline";
-	if (riskLevel === "medium" || riskLevel === "inconsistent") return "analytics-outline";
-	return "time-outline";
+function historyIconName(status: IngredientHistoryDisplayRow["status"]) {
+	if (status === "confirmed") return "alert-circle-outline" as const;
+	if (status === "suspect") return "analytics-outline" as const;
+	if (status === "cleared") return "checkmark-done-circle-outline" as const;
+	if (status === "safe") return "checkmark-circle-outline" as const;
+	return "time-outline" as const;
 }
 
 const styles = StyleSheet.create({
@@ -143,16 +139,15 @@ const styles = StyleSheet.create({
 	rowStack: {
 		gap: spacing.xs,
 	},
-	// Inner rows sit on the warm surface instead of white-with-hairline —
-	// borderless separation, same idiom as the other evidence cards.
+	// Flat rows on the white card — no tinted slabs. Beige panels inside a
+	// white card reintroduce the surface mush Deep Garden killed, and a tint
+	// that doesn't encode a verdict is a tint that lies. Color lives only in
+	// the status dot / icon bubble, where it means something.
 	dietRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.sm,
-		borderRadius: tokens.radius.md,
-		backgroundColor: tokens.color.surface.card.warm,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.xs,
 	},
 	statusDot: {
 		width: 10,
@@ -164,10 +159,7 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.sm,
-		borderRadius: tokens.radius.md,
-		backgroundColor: tokens.color.surface.card.warm,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.xs,
 	},
 	historyIcon: {
 		width: 28,
@@ -207,5 +199,18 @@ const styles = StyleSheet.create({
 		flex: 1,
 		...tokens.type.body.small,
 		fontFamily: type.body.medium,
+	},
+	newFoodsRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		paddingVertical: spacing.xs,
+	},
+	newFoodsText: {
+		flex: 1,
+		color: tokens.color.text.tertiary,
+		fontFamily: type.body.regular,
+		fontSize: 12,
+		lineHeight: 17,
 	},
 });

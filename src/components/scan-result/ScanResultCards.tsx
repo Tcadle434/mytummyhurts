@@ -17,10 +17,12 @@ export {
 	PersonalizedScanCard,
 } from "./PersonalizedScanCard";
 export {
+	buildIngredientHistoryModel,
 	dietEvaluationTitle,
 	displaySignalLabel,
-	selectIngredientHistoryRows,
-	type IngredientHistoryRow,
+	newIngredientsLine,
+	type IngredientHistoryDisplayRow,
+	type IngredientHistoryModel,
 } from "./PersonalizedScanCard.helpers";
 export {
 	MenuBandSection,

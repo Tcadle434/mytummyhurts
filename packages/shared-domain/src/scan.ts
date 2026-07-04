@@ -7,7 +7,12 @@
 // domain.ts. The pieces below are the parts that are byte-for-byte identical.
 
 import type { RiskLevel } from './index';
-import type { IngredientConfidence, InsightConfidenceLevel, DietEvaluation } from './profile';
+import type {
+  IngredientConfidence,
+  InsightConfidenceLevel,
+  DietEvaluation,
+  TrackedFoodFamilyKey,
+} from './profile';
 import type {
   MenuBaseFoodCategory,
   MenuRiskModifier,
@@ -138,6 +143,9 @@ export interface ScanIngredientPersonalHistory {
   lastSeenAt?: string;
   matchType: ScanIngredientPersonalHistoryMatchType;
   matchedLabel?: string;
+  /** Food family behind a 'family' match — clients render the family, never a
+   *  sibling ingredient ("related to mayonnaise" was a leak of this join). */
+  matchedFamilyKey?: TrackedFoodFamilyKey;
   riskLevel: ScanIngredientPersonalHistoryRiskLevel;
   riskScore?: number;
   confidenceLevel?: InsightConfidenceLevel;
