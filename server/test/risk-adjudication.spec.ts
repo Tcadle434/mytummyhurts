@@ -230,11 +230,13 @@ describe('risk adjudication validation', () => {
   });
 });
 
-// Regression for the live 2026-07-04 sushi scan: the vision model's GERD prior
-// was mild, but the adjudicator re-derived genericBand=moderate citing a
-// histamine-tagged chunk (soy sauce) — wrong condition — lifting the score
-// 31→55. The adjudicator adjusts the vision prior; it does not overrule it.
-describe('generic band is clamped to the vision prior', () => {
+// Regression for the live 2026-07-04 sushi scans: the text-only adjudicator
+// first re-derived GERD genericBand=moderate over the vision model's mild
+// (citing a histamine chunk — wrong condition), lifting 31->55. A ±1-with-
+// citation allowance was tried and inflated everything (the corpus has a
+// raises chunk for nearly every trigger). Final rule: the generic band IS the
+// vision prior; the adjudicator's only band lever is personal evidence.
+describe('generic band is pinned to the vision prior', () => {
   const gerdChunk = {
     chunkId: 'chunk-gerd',
     title: 'Fat and Fried Foods — Reflux',
@@ -293,23 +295,19 @@ describe('generic band is clamped to the vision prior', () => {
     });
   }
 
-  it('rejects an upward move justified only by a wrong-condition citation (the sushi bug)', () => {
+  it('rejects an upward move justified by a wrong-condition citation (the sushi bug)', () => {
     const result = validateRiskAdjudication(gerdPayload('moderate', ['chunk-hist']), gerdRequest([histamineChunk]));
     expect(result?.conditionSeverities[0].band).toBe('mild');
     expect(result?.metadata.warnings?.some((w) => w.startsWith('genericBandClamped'))).toBe(true);
   });
 
-  it('allows a one-band upward move with a condition-matching raises citation', () => {
+  it('rejects an upward move even with a condition-matching raises citation (the inflation bug)', () => {
     const result = validateRiskAdjudication(gerdPayload('moderate', ['chunk-gerd']), gerdRequest([gerdChunk]));
-    expect(result?.conditionSeverities[0].band).toBe('moderate');
+    expect(result?.conditionSeverities[0].band).toBe('mild');
+    expect(result?.metadata.warnings?.some((w) => w.startsWith('genericBandClamped'))).toBe(true);
   });
 
-  it('caps even justified upward moves at one band above the prior', () => {
-    const result = validateRiskAdjudication(gerdPayload('high', ['chunk-gerd']), gerdRequest([gerdChunk]));
-    expect(result?.conditionSeverities[0].band).toBe('moderate');
-  });
-
-  it('allows a one-band downward move without extra justification', () => {
+  it('rejects downward generic moves too — the prior is the prior', () => {
     const result = validateRiskAdjudication(gerdPayload('mild', []), {
       ...gerdRequest([]),
       structuredAnalysis: {
@@ -319,6 +317,30 @@ describe('generic band is clamped to the vision prior', () => {
         ],
       },
     });
-    expect(result?.conditionSeverities[0].band).toBe('mild');
+    expect(result?.conditionSeverities[0].band).toBe('moderate');
+  });
+
+  it('personal evidence remains the only band lever, applied on the pinned prior', () => {
+    const request = {
+      ...gerdRequest([]),
+      personalEvidence: [
+        {
+          ingredientName: 'cheese',
+          combinedRiskScore: 70,
+          confidenceLevel: 'medium' as const,
+          supportingEvidenceCount: 4,
+          calmEvidenceCount: 0,
+          reactiveEvidenceCount: 3,
+          summary: 'rough on 3 of 4 days',
+        },
+      ],
+    };
+    const payload = gerdPayload('moderate', []);
+    payload.conditionSeverities[0]!.personalEvidenceUsed = ['cheese'];
+    payload.conditionSeverities[0]!.finalBand = 'moderate';
+    const result = validateRiskAdjudication(payload, request);
+    // generic pinned to mild; medium-confidence personal evidence allows +1.
+    expect(result?.metadata.conditionSeverities[0]!.genericBand).toBe('mild');
+    expect(result?.conditionSeverities[0].band).toBe('moderate');
   });
 });
