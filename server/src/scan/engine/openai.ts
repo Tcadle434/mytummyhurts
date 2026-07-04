@@ -91,6 +91,24 @@ const EXTRACTION_TEMPERATURE = (() => {
 function extractionSamplingFields(): Record<string, number> {
   return EXTRACTION_TEMPERATURE === undefined ? {} : { temperature: EXTRACTION_TEMPERATURE };
 }
+
+// `reasoning.effort` and `text.verbosity` are gpt-5-family Responses params;
+// gpt-4.1 and older reject the whole request with invalid_request_error. All
+// stage models are env-overridable, so gate the params on the RESOLVED model —
+// a stale model pin must degrade to defaults, never crash the stage. (Found
+// live: OPENAI_RISK_ADJUDICATION_MODEL pinned to gpt-4.1-mini made every
+// adjudication call fail instantly while the pipeline silently fell back.)
+function supportsReasoningParams(model: string): boolean {
+  return model.startsWith('gpt-5');
+}
+
+function reasoningFields(model: string, effort: 'minimal' | 'low' | 'medium'): Record<string, unknown> {
+  return supportsReasoningParams(model) ? { reasoning: { effort } } : {};
+}
+
+function verbosityField(model: string): Record<string, string> {
+  return supportsReasoningParams(model) ? { verbosity: 'low' } : {};
+}
 const IMAGE_DETAIL = (process.env.OPENAI_IMAGE_DETAIL ?? 'high') === 'low' ? 'low' : 'high';
 const MENU_IMAGE_DETAIL = (process.env.OPENAI_MENU_IMAGE_DETAIL ?? 'high') === 'low' ? 'low' : 'high';
 const OPENAI_TIMEOUT_MS = positiveNumberEnv('OPENAI_TIMEOUT_MS', 30_000);
@@ -1744,7 +1762,7 @@ export async function adjudicateScanRiskWithAudit(
       },
     ],
     text: {
-      verbosity: 'low',
+      ...verbosityField(RISK_ADJUDICATION_MODEL),
       format: {
         type: 'json_schema',
         name: 'risk_adjudication',
@@ -1752,7 +1770,7 @@ export async function adjudicateScanRiskWithAudit(
         strict: true,
       },
     },
-    reasoning: { effort: 'low' },
+    ...reasoningFields(RISK_ADJUDICATION_MODEL, 'low'),
   };
 
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RiskAdjudicationPayload>(
@@ -1827,7 +1845,7 @@ export async function extractMealFromTextWithAudit(
     ],
     max_output_tokens: OPENAI_TEXT_MAX_OUTPUT_TOKENS,
     text: {
-      verbosity: 'low',
+      ...verbosityField(EXTRACTION_MODEL),
       format: {
         type: 'json_schema',
         name: 'meal_extraction_text',
@@ -1835,7 +1853,7 @@ export async function extractMealFromTextWithAudit(
         strict: true,
       },
     },
-    reasoning: { effort: 'low' },
+    ...reasoningFields(EXTRACTION_MODEL, 'low'),
   };
 
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
@@ -1899,7 +1917,7 @@ export async function classifyScanImagesWithAudit(
       },
     ],
     text: {
-      verbosity: 'low',
+      ...verbosityField(CLASSIFICATION_MODEL),
       format: {
         type: 'json_schema',
         name: 'scan_category_classification',
@@ -1909,7 +1927,7 @@ export async function classifyScanImagesWithAudit(
     },
     // Reasoning tokens count against max_output_tokens; minimal effort keeps
     // the small classification cap from being eaten before the JSON is emitted.
-    reasoning: { effort: 'minimal' },
+    ...reasoningFields(CLASSIFICATION_MODEL, 'minimal'),
   };
 
   const inputRefs = imageUrls.map((imageUrl, index) => ({
@@ -1974,7 +1992,7 @@ export async function extractMealFromImageWithAudit(
       },
     ],
     text: {
-      verbosity: 'low',
+      ...verbosityField(IMAGE_EXTRACTION_MODEL),
       format: {
         type: 'json_schema',
         name: 'meal_extraction_image',
@@ -1982,7 +2000,7 @@ export async function extractMealFromImageWithAudit(
         strict: true,
       },
     },
-    reasoning: { effort: 'low' },
+    ...reasoningFields(IMAGE_EXTRACTION_MODEL, 'low'),
   };
 
   const inputRefs = [{ inputKind: 'image', imageRef: imageRefKind(imageUrl) }];
@@ -2046,7 +2064,7 @@ export async function extractMealFromImagesWithAudit(
       },
     ],
     text: {
-      verbosity: 'low',
+      ...verbosityField(IMAGE_EXTRACTION_MODEL),
       format: {
         type: 'json_schema',
         name: 'meal_extraction_images',
@@ -2054,7 +2072,7 @@ export async function extractMealFromImagesWithAudit(
         strict: true,
       },
     },
-    reasoning: { effort: 'low' },
+    ...reasoningFields(IMAGE_EXTRACTION_MODEL, 'low'),
   };
 
   const inputRefs = imageUrls.map((imageUrl, index) => ({
@@ -2112,7 +2130,7 @@ async function requestMenuExtraction(
       },
     ],
     text: {
-      verbosity: 'low',
+      ...verbosityField(MENU_EXTRACTION_MODEL),
       format: {
         type: 'json_schema',
         name: 'menu_extraction_image',
@@ -2120,7 +2138,7 @@ async function requestMenuExtraction(
         strict: true,
       },
     },
-    reasoning: { effort: 'minimal' },
+    ...reasoningFields(MENU_EXTRACTION_MODEL, 'minimal'),
     max_output_tokens: OPENAI_MENU_MAX_OUTPUT_TOKENS,
   };
   const inputRefs = imageUrls.map((imageUrl, index) => ({
