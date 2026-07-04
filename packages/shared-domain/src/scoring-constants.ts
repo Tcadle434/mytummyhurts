@@ -2,6 +2,7 @@
 // from src/services/ai/scoring.ts (Expo) and server/src/scan/engine/scoring.ts
 // (NestJS). Both scoring.ts files import these so behavior is unchanged.
 import type { ProfileLearningStage } from './profile';
+import type { ConditionSeverityBand } from './scan';
 
 export const GUT_SCORE_ALGORITHM_VERSION = 'gut-score-v2';
 
@@ -33,6 +34,50 @@ export const RISK_LEVEL_HIGH_MIN = 64;
 // Top of the mild/low band: one below the medium floor (= 36). Both engines use
 // this for daily-score driver classification so the FE and BE agree on edges.
 export const RISK_LEVEL_MILD_MAX = RISK_LEVEL_MEDIUM_MIN - 1;
+
+// ---------------------------------------------------------------------------
+// Condition severity bands — THE band geometry (scoring overhaul D1).
+// One constant set for food and menu scans, shared by the LLM band-placement
+// engine (menu-rubric-engine) and the mechanism engine (mechanismScoring),
+// which previously disagreed (mild floor 17 vs 11, severe floor 85 vs 90).
+// The LLM owns the band; deterministic contributors own placement INSIDE the
+// band; bands are uncrossable by rubric noise.
+// ---------------------------------------------------------------------------
+export type ConditionBandRange = { min: number; mid: number; max: number };
+
+export const CONDITION_BAND_RANGES: Record<ConditionSeverityBand, ConditionBandRange> = {
+  none: { min: 0, mid: 5, max: 10 },
+  mild: { min: 11, mid: 23.5, max: RISK_LEVEL_MILD_MAX },
+  moderate: { min: RISK_LEVEL_MEDIUM_MIN, mid: 50, max: RISK_LEVEL_HIGH_MIN - 1 },
+  high: { min: RISK_LEVEL_HIGH_MIN, mid: 76.5, max: 89 },
+  severe: { min: 90, mid: 95, max: 100 },
+};
+
+export const CONDITION_BAND_ORDER: readonly ConditionSeverityBand[] = [
+  'none',
+  'mild',
+  'moderate',
+  'high',
+  'severe',
+];
+
+/** Score -> band using the shared geometry (replaces per-engine mappings). */
+export function conditionBandForScore(score: number): ConditionSeverityBand {
+  if (score >= CONDITION_BAND_RANGES.severe.min) return 'severe';
+  if (score >= CONDITION_BAND_RANGES.high.min) return 'high';
+  if (score >= CONDITION_BAND_RANGES.moderate.min) return 'moderate';
+  if (score >= CONDITION_BAND_RANGES.mild.min) return 'mild';
+  return 'none';
+}
+
+// One gate/cap policy for both engines (scoring overhaul D1):
+// - A score may not cross into the high band without a passed high-risk gate
+//   (mechanism path) — ungated scores clamp to the top of moderate.
+// - A score may not run deep past the high band's core without an extreme,
+//   profile-backed risk stack (rubric path) — meal traits alone never unlock a
+//   near-100 reading (the original over-scoring bug).
+export const UNGATED_HIGH_BAND_CEILING = CONDITION_BAND_RANGES.moderate.max;
+export const EXTREME_STACK_SCORE_CAP = 80;
 
 export const DAILY_ATTRIBUTION_WINDOWS = [
   { daysPrior: 0, weight: 0.55 },

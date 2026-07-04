@@ -51,7 +51,7 @@ export function buildExperimentMetadata({ api, context, env = process.env }) {
     context,
     extractionModel: env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini',
     menuModel: env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini',
-    normalizationModel: env.OPENAI_NORMALIZATION_MODEL ?? 'gpt-4.1-mini',
+    riskAdjudicationModel: env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-5-mini',
     extractionPromptVersion: env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'n/a',
   };
 }

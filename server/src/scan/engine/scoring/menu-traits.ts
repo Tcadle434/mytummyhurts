@@ -17,6 +17,7 @@ import {
   type MenuRubricRule,
 } from '../menuRubric';
 import {
+  EXTREME_STACK_SCORE_CAP,
   clamp,
   clampNumber,
   frequencyRiskIndex,
@@ -654,9 +655,10 @@ function calibrateContributorForProfile(contributor: ScoreContributor, profile: 
 }
 
 function hasExtremeRiskStack(_contributors: ScoreContributor[], profile: UserProfile | null) {
-  // Only a severe or dense-known-risk profile can push a meal past the 80 soft
-  // cap toward a near-100 reading. Meal traits alone never unlock it — letting a
-  // single fried/spicy item unlock 100 was the original over-scoring bug.
+  // Only a severe or dense-known-risk profile can push a meal past the shared
+  // EXTREME_STACK_SCORE_CAP toward a near-100 reading. Meal traits alone never
+  // unlock it — letting a single fried/spicy item unlock 100 was the original
+  // over-scoring bug.
   const severeProfile =
     severityRiskIndex(profile?.symptomSeverityBaseline) >= 4 &&
     frequencyRiskIndex(profile?.symptomFrequency) >= 3;
@@ -685,11 +687,11 @@ function combineSaturating(contributors: ScoreContributor[]) {
 
 function finalizeFoodRiskScore(rawScore: number, contributors: ScoreContributor[], profile: UserProfile | null) {
   const clamped = clamp(rawScore);
-  if (clamped <= 80 || hasExtremeRiskStack(contributors, profile)) {
+  if (clamped <= EXTREME_STACK_SCORE_CAP || hasExtremeRiskStack(contributors, profile)) {
     return clamped;
   }
 
-  return 80;
+  return EXTREME_STACK_SCORE_CAP;
 }
 
 export function scoreFoodRiskEntity(

@@ -7,6 +7,7 @@ import type {
   StructuredAnalysisV2,
   UserProfile,
 } from './domain';
+import { CONDITION_BAND_ORDER } from '@mth/shared-domain';
 import { normalize } from './text-utils';
 
 // Canonical citation shape lives in the package; re-exported (via domain.ts)
@@ -15,15 +16,9 @@ import { normalize } from './text-utils';
 export type { EvidenceCitation } from './domain';
 
 export const RISK_ADJUDICATION_PROMPT_VERSION =
-  process.env.OPENAI_RISK_ADJUDICATION_PROMPT_VERSION ?? 'mytummyhurts_risk_adjudication_v1';
+  process.env.OPENAI_RISK_ADJUDICATION_PROMPT_VERSION ?? 'mytummyhurts_risk_adjudication_v2';
 
-export const CONDITION_SEVERITY_BANDS: readonly ConditionSeverityBand[] = [
-  'none',
-  'mild',
-  'moderate',
-  'high',
-  'severe',
-] as const;
+export const CONDITION_SEVERITY_BANDS: readonly ConditionSeverityBand[] = CONDITION_BAND_ORDER;
 
 export type RiskAdjudicationConfidence = IngredientConfidence;
 

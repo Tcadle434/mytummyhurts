@@ -6,7 +6,7 @@ import { LearningJobService } from '../learning/learning-job.service';
 import { StorageService } from '../storage/storage.service';
 import { TraceService } from '../trace/trace.service';
 import type { IngredientInsight, UserProfile } from './engine/domain';
-import type { OpenAiAuditLog } from './engine/openai';
+import { PROMPT_VERSION as EXTRACTION_PROMPT_VERSION, type OpenAiAuditLog } from './engine/openai';
 import { buildFoodCompletionInput, buildMenuCompletionInput } from './scan-payload';
 import { ScanCrudService } from './scan-crud.service';
 import type { ScanStageCallback } from './scan-progress';
@@ -32,8 +32,6 @@ export interface AnalyzeBarcodeRequest {
   localDate?: string | null;
   timezone?: string | null;
 }
-
-const EXTRACTION_PROMPT_VERSION = process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3';
 
 export interface AnalyzeResult {
   scanId: string;

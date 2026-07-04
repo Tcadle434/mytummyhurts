@@ -2,7 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { DatabaseService } from '../database/database.service';
 import { estimateOpenAiCost } from '../scan/engine/openaiPricing';
-import type { OpenAiAuditLog } from '../scan/engine/openai';
+import {
+  CLASSIFICATION_MODEL,
+  EXTRACTION_MODEL,
+  EXTRACTION_SCHEMA_VERSION,
+  MENU_EXTRACTION_MODEL,
+  PROMPT_VERSION,
+  RISK_ADJUDICATION_MODEL,
+  type OpenAiAuditLog,
+} from '../scan/engine/openai';
+import { RISK_ADJUDICATION_PROMPT_VERSION } from '../scan/engine/riskAdjudication';
 
 export const WORKFLOW_VERSION = 'scan_workflow_v1';
 const GRAPH_NODES = [
@@ -164,12 +173,17 @@ export class TraceService {
           on conflict (workflow_version) do nothing`;
         await sql`
           insert into public.ai_prompt_versions (prompt_key, version, schema_version)
-          values ('mytummyhurts_extract', ${process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3'}, 'meal_extraction_v2')
+          values ('mytummyhurts_extract', ${PROMPT_VERSION}, ${EXTRACTION_SCHEMA_VERSION})
+          on conflict (prompt_key, version) do nothing`;
+        await sql`
+          insert into public.ai_prompt_versions (prompt_key, version, schema_version)
+          values ('mytummyhurts_risk_adjudication', ${RISK_ADJUDICATION_PROMPT_VERSION}, 'risk_adjudication_v1')
           on conflict (prompt_key, version) do nothing`;
         for (const [role, model] of [
-          ['extraction', process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini'],
-          ['menu', process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini'],
-          ['classification', process.env.OPENAI_CLASSIFICATION_MODEL ?? 'gpt-5-nano'],
+          ['extraction', EXTRACTION_MODEL],
+          ['menu', MENU_EXTRACTION_MODEL],
+          ['classification', CLASSIFICATION_MODEL],
+          ['risk_adjudication', RISK_ADJUDICATION_MODEL],
           ['embedding', process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small'],
         ] as const) {
           const kind = role === 'embedding' ? 'embedding' : 'llm';

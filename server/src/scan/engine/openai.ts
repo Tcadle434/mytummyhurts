@@ -56,14 +56,22 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
 // this flag a missing OPENAI_API_KEY fails at startup (see core/env.validation)
 // and these entry points throw instead of inventing meals.
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
-const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
-const IMAGE_EXTRACTION_MODEL = process.env.OPENAI_IMAGE_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
-const MENU_EXTRACTION_MODEL = process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini';
+// Exported model/version constants are the single source of truth for audit
+// metadata and version bookkeeping (trace.service ensureVersions).
+export const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
+export const IMAGE_EXTRACTION_MODEL = process.env.OPENAI_IMAGE_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
+export const MENU_EXTRACTION_MODEL = process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini';
 // Cheap dedicated router for the food-vs-menu decision; low detail + a small
 // output cap keep it a fraction of an extraction call.
-const CLASSIFICATION_MODEL = process.env.OPENAI_CLASSIFICATION_MODEL ?? 'gpt-5-nano';
-const RISK_ADJUDICATION_MODEL = process.env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-4.1-mini';
-const PROMPT_VERSION = process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3';
+export const CLASSIFICATION_MODEL = process.env.OPENAI_CLASSIFICATION_MODEL ?? 'gpt-5-nano';
+// Adjudication is a reasoning re-read of already-extracted facts, not vision:
+// gpt-5-mini at low effort replaces gpt-4.1-mini (Phase 2 item 4).
+export const RISK_ADJUDICATION_MODEL = process.env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-5-mini';
+export const PROMPT_VERSION = process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v4';
+// Audit schema versions: v3 food / v4 menu mark the Phase 2 schema changes
+// (field-anchor descriptions, dietFit maxItems 10, menu bands without rationale).
+export const EXTRACTION_SCHEMA_VERSION = 'meal_extraction_v3';
+export const MENU_EXTRACTION_SCHEMA_VERSION = 'menu_extraction_v4';
 // Determinism lever. GPT-5-family models often reject a non-default temperature,
 // so this is OPT-IN: only sent when OPENAI_EXTRACTION_TEMPERATURE is set to a
 // number. Note there is NO extraction cache: repeat submissions are deduped by
@@ -303,7 +311,7 @@ type RawDietFitHypothesisPayload = {
 
 const dietFitHypothesisSchema = {
   type: 'array',
-  maxItems: 8,
+  maxItems: 10,
   items: {
     type: 'object',
     additionalProperties: false,
@@ -332,21 +340,82 @@ const dietFitHypothesisSchema = {
   },
 } as const;
 
-const conditionSeverityArraySchema = {
-  type: 'array',
-  maxItems: 8,
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      condition: { type: 'string' },
-      band: { type: 'string', enum: ['none', 'mild', 'moderate', 'high', 'severe'] },
-      drivers: { type: 'array', maxItems: 6, items: { type: 'string' } },
-      rationale: { type: 'string' },
+// Field anchors live in the schema (delivered with every structured-output
+// call) instead of being restated in prose prompts (Phase 2 item 3).
+const ROLE_FIELD_DESCRIPTION =
+  'Culinary role in this meal: main = a central protein or star item, side = an accompanying item, condiment = sauce/spread/dressing, garnish = a small finishing touch, base = the starch or foundation. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish, not a main.';
+const PROMINENCE_FIELD_DESCRIPTION =
+  'Visual salience: primary = a defining, immediately obvious element; secondary = clearly present but not defining; trace = barely visible. Prominence is about how noticeable the ingredient is; amountEstimate is about how much of it there is.';
+const AMOUNT_ESTIMATE_FIELD_DESCRIPTION =
+  'How much of the meal the ingredient occupies: trace = barely present or seasoning-level, small = visible but minor, standard = a normal component, large = an unusually large share, dominant = the main base or defining ingredient.';
+const AMOUNT_BASIS_FIELD_DESCRIPTION =
+  'Short phrase citing the evidence for amountEstimate (e.g. "thin drizzle across the bowl", "covers most of the plate").';
+const CANONICAL_NAME_FIELD_DESCRIPTION =
+  'Canonical food name, singular lowercase. Must be an actual food or ingredient name, never a rubric category key such as spicy_heat or dairy_based.';
+
+function extractedIngredientArraySchema(evidence: 'visible' | 'inferred') {
+  return {
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        rawName: { type: 'string' },
+        canonicalName: { type: 'string', description: CANONICAL_NAME_FIELD_DESCRIPTION },
+        confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+        component: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        evidence: { type: 'string', enum: [evidence] },
+        role: {
+          description: ROLE_FIELD_DESCRIPTION,
+          anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }],
+        },
+        prominence: {
+          description: PROMINENCE_FIELD_DESCRIPTION,
+          anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }],
+        },
+        amountEstimate: {
+          description: AMOUNT_ESTIMATE_FIELD_DESCRIPTION,
+          anyOf: [{ type: 'string', enum: ['trace', 'small', 'standard', 'large', 'dominant'] }, { type: 'null' }],
+        },
+        amountBasis: {
+          description: AMOUNT_BASIS_FIELD_DESCRIPTION,
+          anyOf: [{ type: 'string' }, { type: 'null' }],
+        },
+      },
+      required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence', 'amountEstimate', 'amountBasis'],
     },
-    required: ['condition', 'band', 'drivers', 'rationale'],
-  },
-} as const;
+  } as const;
+}
+
+// Food scans keep the one-line rationale; menu items are band + drivers only
+// (Phase 2 item 5 — up to 100 items x conditions makes rationale a pure cost).
+function conditionSeverityArraySchema(options: { includeRationale: boolean }) {
+  return {
+    type: 'array',
+    maxItems: 8,
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        condition: { type: 'string' },
+        band: { type: 'string', enum: ['none', 'mild', 'moderate', 'high', 'severe'] },
+        drivers: {
+          type: 'array',
+          maxItems: 6,
+          items: { type: 'string' },
+          description: 'Extracted ingredients or prep facts that justify the band. Required non-empty for any band above none.',
+        },
+        ...(options.includeRationale ? { rationale: { type: 'string' } } : {}),
+      },
+      required: options.includeRationale
+        ? ['condition', 'band', 'drivers', 'rationale']
+        : ['condition', 'band', 'drivers'],
+    },
+  } as const;
+}
+
+const foodConditionSeveritySchema = conditionSeverityArraySchema({ includeRationale: true });
+const menuConditionSeveritySchema = conditionSeverityArraySchema({ includeRationale: false });
 
 const extractionSchema = {
   type: 'object',
@@ -372,44 +441,8 @@ const extractionSchema = {
         required: ['name', 'confidence', 'prepStyle'],
       },
     },
-    visibleIngredients: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          rawName: { type: 'string' },
-          canonicalName: { type: 'string' },
-          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-          component: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          evidence: { type: 'string', enum: ['visible'] },
-          role: { anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }] },
-          prominence: { anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }] },
-          amountEstimate: { anyOf: [{ type: 'string', enum: ['trace', 'small', 'standard', 'large', 'dominant'] }, { type: 'null' }] },
-          amountBasis: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-        },
-        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence', 'amountEstimate', 'amountBasis'],
-      },
-    },
-    inferredIngredients: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          rawName: { type: 'string' },
-          canonicalName: { type: 'string' },
-          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-          component: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          evidence: { type: 'string', enum: ['inferred'] },
-          role: { anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }] },
-          prominence: { anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }] },
-          amountEstimate: { anyOf: [{ type: 'string', enum: ['trace', 'small', 'standard', 'large', 'dominant'] }, { type: 'null' }] },
-          amountBasis: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-        },
-        required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence', 'amountEstimate', 'amountBasis'],
-      },
-    },
+    visibleIngredients: extractedIngredientArraySchema('visible'),
+    inferredIngredients: extractedIngredientArraySchema('inferred'),
     prepStyle: {
       type: 'array',
       items: { type: 'string' },
@@ -444,7 +477,7 @@ const extractionSchema = {
         required: ['key', 'confidence', 'evidence', 'source'],
       },
     },
-    conditionSeverities: conditionSeverityArraySchema,
+    conditionSeverities: foodConditionSeveritySchema,
     dietFitHypotheses: dietFitHypothesisSchema,
   },
   required: [
@@ -561,7 +594,7 @@ const menuExtractionSchema = {
               required: ['key', 'confidence', 'evidence', 'source'],
             },
           },
-          conditionSeverities: conditionSeverityArraySchema,
+          conditionSeverities: menuConditionSeveritySchema,
           dietFitHypotheses: dietFitHypothesisSchema,
           ingredientCallouts: {
             type: 'array',
@@ -946,7 +979,12 @@ function asConditionSeverityBand(value: unknown): ConditionSeverityBand {
   return conditionSeverityBands.includes(value as ConditionSeverityBand) ? (value as ConditionSeverityBand) : 'mild';
 }
 
-function coerceConditionSeverities(value: unknown): ConditionSeverity[] {
+// Mirrors the prompt rule "any band above none must cite at least one driver":
+// a moderate/high/severe band with no cited drivers is unsupported and
+// downgrades to mild rather than anchoring the score to an uncited hot band.
+const BANDS_REQUIRING_DRIVERS: readonly ConditionSeverityBand[] = ['moderate', 'high', 'severe'];
+
+export function coerceConditionSeverities(value: unknown): ConditionSeverity[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -959,10 +997,12 @@ function coerceConditionSeverities(value: unknown): ConditionSeverity[] {
         return null;
       }
       const rationale = String(payload.rationale ?? '').trim();
+      const drivers = asStringArray(payload.drivers).slice(0, 6);
+      const band = asConditionSeverityBand(payload.band);
       const severity: ConditionSeverity = {
         condition,
-        band: asConditionSeverityBand(payload.band),
-        drivers: asStringArray(payload.drivers).slice(0, 6),
+        band: !drivers.length && BANDS_REQUIRING_DRIVERS.includes(band) ? 'mild' : band,
+        drivers,
       };
       if (rationale) {
         severity.rationale = rationale;
@@ -1424,17 +1464,58 @@ async function runResponsesRequestWithAuditRetry<TPayload extends object>(
   });
 }
 
-function conditionPromptText(knownConditions: string[] | undefined) {
+// Five one-line band anchors with concrete dishes so band choice is calibrated
+// against fixed reference points instead of run-to-run vibes (Phase 2 item 1).
+// Shared by food scans and menu items.
+const BAND_ANCHOR_TEXT = [
+  'Band anchors — calibrate every band against these:',
+  '- none: no meaningful trigger for that condition is present (plain white rice; a banana; steamed vegetables).',
+  '- mild: a single small or modest trigger in an otherwise gentle meal (rice-heavy sushi rolls with a splash of soy sauce; oatmeal with berries; grilled chicken with a buttered roll).',
+  '- moderate: one clear trigger at normal portion, or two or three modest triggers stacking (creamy butter chicken for reflux; spaghetti in tomato sauce for reflux; a cheeseburger for IBS).',
+  '- high: several strong triggers stacking in one dish, or one aggressive dominant trigger (pepperoni pizza for reflux or IBS; fried fish and chips for reflux; a milkshake for lactose intolerance).',
+  '- severe: an extreme, unambiguous worst case for that condition (a loaded chili-cheese platter with fried sides and beer for reflux). Reserve severe for genuinely extreme loads.',
+  'When nothing meaningful is present for a condition, use none, not mild.',
+  'Trace- or condiment-level exposures (a dab of wasabi, a splash of soy sauce, a lemon wedge, a pickled garnish) never lift a band above mild on their own; moderate and above need at least one clear trigger at meaningful portion.',
+  'Any band above none must cite at least one driver from the returned ingredients or prep.',
+].join('\n');
+
+const BAND_CALIBRATION_EXAMPLES = [
+  'Worked examples:',
+  '- Pepperoni pizza for GERD / acid reflux: band high, drivers ["pepperoni", "cheese", "tomato sauce"] — processed meat, fat, and acid stack in one dish.',
+  '- Plain white rice for IBS: band none, drivers [] — no meaningful IBS trigger present.',
+  '- Butter chicken with rice for GERD / acid reflux: band moderate, drivers ["butter", "cream sauce"] — rich and creamy, but the rice base is gentle and nothing fried or acidic stacks on top.',
+].join('\n');
+
+function conditionPromptText(
+  knownConditions: string[] | undefined,
+  options: { includeRationale?: boolean } = {},
+) {
+  const rationaleField = (options.includeRationale ?? true) ? ', and a one-line rationale' : '';
   const conditions = (knownConditions ?? []).map((condition) => condition.trim()).filter(Boolean);
-  if (!conditions.length) {
-    return 'No diagnosed gut conditions are on file. Return a single conditionSeverities entry with condition "general" judging overall gut difficulty as none/mild/moderate/high/severe, with cited drivers and a one-line rationale.';
-  }
+  const instruction = conditions.length
+    ? [
+        `The person has these gut conditions: ${conditions.join(', ')}.`,
+        `For EACH listed condition, add one conditionSeverities entry: condition (exactly as written above), band (none/mild/moderate/high/severe) for how risky THIS food is for THAT condition, drivers (the specific ingredients or prep that justify the band)${rationaleField}.`,
+      ]
+    : [
+        `No diagnosed gut conditions are on file. Return a single conditionSeverities entry with condition "general" judging overall gut difficulty: band (none/mild/moderate/high/severe), drivers (the specific ingredients or prep that justify the band)${rationaleField}.`,
+      ];
   return [
-    `The person has these gut conditions: ${conditions.join(', ')}.`,
-    'For EACH listed condition, add one conditionSeverities entry: condition (exactly as written above), band (none/mild/moderate/high/severe) for how risky THIS food is for THAT condition, drivers (the specific ingredients or prep that justify the band), and a one-line rationale.',
-    'Cite drivers only from the ingredients and prep you returned above — do not introduce new or speculative ingredient names. If no returned ingredient is a meaningful trigger for a condition, use band none or mild with an empty drivers array.',
-    'Judge holistically and realistically: an ordinary balanced meal is usually none or mild even if it contains a small amount of a trigger; reserve high or severe for genuinely aggressive or trigger-dense dishes.',
+    ...instruction,
+    'Cite drivers only from the ingredients and prep you returned above — do not introduce new or speculative ingredient names. If no returned ingredient or prep is a meaningful trigger for a condition, use band none with an empty drivers array.',
+    BAND_ANCHOR_TEXT,
+    BAND_CALIBRATION_EXAMPLES,
   ].join('\n');
+}
+
+// Declared sensitivities enter the extraction context as a verification list,
+// never as a suggestion list (Phase 2 item 5).
+function knownIngredientsPromptLine(context: ExtractionContext) {
+  const known = (context.knownIngredients ?? []).map((entry) => entry.trim()).filter(Boolean);
+  if (!known.length) {
+    return null;
+  }
+  return `The user reports sensitivities to: ${known.slice(0, 12).join(', ')}. Check carefully for these, but report one only if it is actually present in this meal — never add a sensitivity ingredient that is not there.`;
 }
 
 const FOOD_BANDS_ON_SYSTEM_LINE =
@@ -1450,8 +1531,17 @@ function foodBandsUserLine(includeBands: boolean, knownConditions: string[]) {
   return includeBands ? conditionPromptText(knownConditions) : FOOD_BANDS_OFF_USER_LINE;
 }
 
+// Existence rule shared by the image and text extraction system prompts: the
+// old wording listed "trace" among hedged words, colliding with the legitimate
+// amountEstimate value for tiny-but-present amounts (Phase 2 item 5).
+const HEDGED_EXISTENCE_RULE =
+  'Never report an ingredient, and never emit a riskModifier, from hedged existence language such as "possible", "might contain", "could have", or "sometimes added" — either it is present or it is not. A tiny amount that is definitely present is not hedged: report it with amountEstimate trace.';
+
+const INGREDIENT_FIELDS_RULE =
+  'For each ingredient set role, prominence, amountEstimate, and a short amountBasis exactly as defined in the response schema field descriptions.';
+
 function buildImageSystemPrompt(includeBands: boolean) {
-  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what is actually there: report only ingredients you can see or that are defining, standard components of the identified dish (e.g. rice, rice vinegar, and nori for sushi). Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". If a dish does not contain something by definition (e.g. plain vegetable sushi has no garlic or onion), do not list it. For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. ${foodBandsSystemLine(includeBands)} Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a single meal photo for food recognition only. Return only JSON matching the provided schema. Identify the most likely dish, components, visible ingredients, inferred ingredients, sauces, dressings, and preparation methods. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate visible ingredients from inferred ingredients. ${INGREDIENT_FIELDS_RULE} Ground everything in what is actually there: report only ingredients you can see or that are defining, standard components of the identified dish (e.g. rice, rice vinegar, and nori for sushi). ${HEDGED_EXISTENCE_RULE} If a dish does not contain something by definition (e.g. plain vegetable sushi has no garlic or onion), do not list it. For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Also classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. If the meal is too obscured, cropped, blurry, or mixed to produce a useful ingredient list, set clarity to unclear and explain briefly. ${foodBandsSystemLine(includeBands)} Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
@@ -1461,11 +1551,13 @@ function buildImageUserPrompt(context: ExtractionContext, includeBands: boolean)
     'Analyze this single meal photo for structured food recognition.',
     'Represent multi-item plates in the components array.',
     'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
+    knownIngredientsPromptLine(context),
     foodBandsUserLine(includeBands, context.knownConditions),
     dietPromptText(context.dietPreferences ?? []),
-    'Return JSON matching this exact schema.',
-    JSON.stringify(extractionSchema),
-  ].join('\n');
+    'Return JSON matching the response schema.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function buildMultiImageUserPrompt(context: ExtractionContext & { imageCount: number }, includeBands: boolean) {
@@ -1474,11 +1566,13 @@ function buildMultiImageUserPrompt(context: ExtractionContext & { imageCount: nu
     'They may show multiple angles, a receipt-like food list, or multiple items from the same meal. Combine them into one structured food recognition result.',
     'Represent multi-item meals in the components array.',
     'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
+    knownIngredientsPromptLine(context),
     foodBandsUserLine(includeBands, context.knownConditions),
     dietPromptText(context.dietPreferences ?? []),
-    'Return JSON matching this exact schema.',
-    JSON.stringify(extractionSchema),
-  ].join('\n');
+    'Return JSON matching the response schema.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function buildScanClassificationSystemPrompt() {
@@ -1489,8 +1583,7 @@ function buildScanClassificationUserPrompt(imageCount: number) {
   return [
     `Classify these ${imageCount} scan image(s) as food or menu.`,
     'If multiple images are provided and any image is clearly a menu page, choose menu.',
-    'Return JSON matching this exact schema.',
-    JSON.stringify(scanCategoryClassificationSchema),
+    'Return JSON matching the response schema.',
   ].join('\n');
 }
 
@@ -1521,31 +1614,37 @@ function buildMenuUserPrompt(context: ExtractionContext & { pageCount: number })
   return [
     `Analyze these ${context.pageCount} menu image(s) as one complete menu.`,
     `Extract no more than ${MENU_ITEM_LIMIT} items.`,
-    'Before returning JSON, internally recount each visible item row across all columns and make sure none were omitted.',
     'Each item must include exactly one baseFoodCategory and a riskModifiers array, even when the array is empty.',
+    knownIngredientsPromptLine(context),
     MENU_LLM_BANDS
-      ? `Apply this per item: ${conditionPromptText(context.knownConditions)}`
+      ? `Apply this per item: ${conditionPromptText(context.knownConditions, { includeRationale: false })}`
       : 'Return an empty conditionSeverities array for every item.',
     dietPromptText(context.dietPreferences ?? []),
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function buildTextSystemPrompt(includeBands: boolean) {
-  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. For each ingredient set role (main, side, condiment, garnish, or base), prominence (primary, secondary, or trace), amountEstimate (trace, small, standard, large, or dominant), and a short amountBasis. Use amountEstimate to describe how much of the meal the ingredient appears to occupy: trace means barely present or seasoning, small means visible but minor, standard means a normal component, large means unusually large, and dominant means the main base or defining ingredient. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish at trace/small amount, not a main. Ground everything in what the description actually states or what is a defining, standard component of the named dish. Never report an ingredient, and never emit a riskModifier, from a hedged source such as "possible", "trace", "might contain", "could have", or "sometimes added". For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. ${foodBandsSystemLine(includeBands)} Do not provide medical advice or a final numeric risk score.
+  return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. ${INGREDIENT_FIELDS_RULE} Ground everything in what the description actually states or what is a defining, standard component of the named dish. ${HEDGED_EXISTENCE_RULE} For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. ${foodBandsSystemLine(includeBands)} Do not provide medical advice or a final numeric risk score.
 
 ${buildMenuRubricPromptText()}`;
 }
 
 function buildTextUserPrompt(text: string, context: ExtractionContext, includeBands: boolean) {
+  // The meal description leads: everything after it is standing instruction,
+  // so the subject of the analysis is never buried under boilerplate.
   return [
+    `Meal description: ${text}`,
     'Analyze this meal description for structured food recognition.',
     'Represent multi-item meals in the components array when needed.',
+    knownIngredientsPromptLine(context),
     foodBandsUserLine(includeBands, context.knownConditions),
     dietPromptText(context.dietPreferences ?? []),
-    'Return JSON matching this exact schema.',
-    JSON.stringify(extractionSchema),
-    `Meal description: ${text}`,
-  ].join('\n');
+    'Return JSON matching the response schema.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function buildRiskAdjudicationSystemPrompt() {
@@ -1556,36 +1655,41 @@ function buildRiskAdjudicationSystemPrompt() {
     'Return only JSON matching the provided schema.',
     'Do not output a numeric score.',
     'Do not invent ingredients, conditions, citations, diagnoses, or medical advice.',
-    'genericBand is the condition risk from food facts plus cited general nutrition evidence.',
+    'genericBand is the condition risk from food facts plus cited general nutrition evidence; treat the supplied extractionConditionSeverities as the prior for genericBand and depart from it only when the food facts or cited evidence clearly justify it.',
     'personalizedBand is the condition risk after considering the user-specific learned calm/reactive evidence.',
-    'finalBand is the band the deterministic scorer should use.',
-    'If personal evidence is absent or weak, finalBand must equal genericBand.',
+    'finalBand is the band the deterministic scorer will use. Set finalBand = personalizedBand only when the cited personal evidence is medium or high confidence; otherwise set finalBand = genericBand.',
     'Use citationChunkIds only from the short supplied RAG evidence IDs such as cite-0.',
   ].join(' ');
+}
+
+function adjudicationIngredientFacts(ingredient: ExtractedIngredient) {
+  return {
+    rawName: ingredient.rawName,
+    canonicalName: ingredient.canonicalName,
+    role: ingredient.role,
+    prominence: ingredient.prominence,
+    // Dose matters: the adjudicator must see how much of the trigger is there,
+    // not just that it exists (Phase 2 item 4).
+    amountEstimate: ingredient.amountEstimate,
+    confidence: ingredient.confidence,
+  };
 }
 
 function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
   const foodFacts = {
     dishName: input.structuredAnalysis.dishName,
     dishConfidence: input.structuredAnalysis.dishConfidence,
-    visibleIngredients: input.structuredAnalysis.visibleIngredients.map((ingredient) => ({
-      rawName: ingredient.rawName,
-      canonicalName: ingredient.canonicalName,
-      role: ingredient.role,
-      prominence: ingredient.prominence,
-      confidence: ingredient.confidence,
-    })),
-    inferredIngredients: input.structuredAnalysis.inferredIngredients.map((ingredient) => ({
-      rawName: ingredient.rawName,
-      canonicalName: ingredient.canonicalName,
-      role: ingredient.role,
-      prominence: ingredient.prominence,
-      confidence: ingredient.confidence,
-    })),
+    visibleIngredients: input.structuredAnalysis.visibleIngredients.map(adjudicationIngredientFacts),
+    inferredIngredients: input.structuredAnalysis.inferredIngredients.map(adjudicationIngredientFacts),
     prepStyle: input.structuredAnalysis.prepStyle,
     baseFoodCategory: input.structuredAnalysis.baseFoodCategory,
     riskModifiers: input.structuredAnalysis.riskModifiers,
   };
+  const extractionConditionSeverities = (input.structuredAnalysis.conditionSeverities ?? []).map((entry) => ({
+    condition: entry.condition,
+    band: entry.band,
+    drivers: entry.drivers,
+  }));
   const ragEvidence = input.ragEvidence.slice(0, 5).map((chunk, index) => ({
     chunkId: `cite-${index}`,
     title: chunk.title,
@@ -1602,17 +1706,18 @@ function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
     'Adjudicate digestive condition severity bands for this food scan.',
     'Return one conditionSeverities entry for every condition in userContext.knownConditions.',
     'Drivers must be extracted ingredients or preparation facts from extractedFoodFacts.',
+    'extractionConditionSeverities are the vision extractor\'s bands: use them as the genericBand prior.',
     'protectiveEvidence and personalEvidenceUsed should summarize only supplied personal evidence.',
     'If RAG evidence is relevant, cite it by chunkId. If it is not relevant, leave citationChunkIds empty.',
     'Input JSON:',
     JSON.stringify({
       extractedFoodFacts: foodFacts,
+      extractionConditionSeverities,
       userContext: { knownConditions: input.knownConditions },
       personalEvidence: input.personalEvidence,
       ragEvidence,
     }),
-    'Return JSON matching this exact schema.',
-    JSON.stringify(riskAdjudicationSchema),
+    'Return JSON matching the response schema.',
   ].join('\n');
 }
 
@@ -1639,6 +1744,7 @@ export async function adjudicateScanRiskWithAudit(
       },
     ],
     text: {
+      verbosity: 'low',
       format: {
         type: 'json_schema',
         name: 'risk_adjudication',
@@ -1646,6 +1752,7 @@ export async function adjudicateScanRiskWithAudit(
         strict: true,
       },
     },
+    reasoning: { effort: 'low' },
   };
 
   const { parsed, audit } = await runResponsesRequestWithAuditRetry<RiskAdjudicationPayload>(
@@ -1737,7 +1844,7 @@ export async function extractMealFromTextWithAudit(
     systemPrompt,
     userPrompt,
     jsonSchema: extractionSchema,
-    schemaVersion: 'meal_extraction_v2',
+    schemaVersion: EXTRACTION_SCHEMA_VERSION,
     requestMetadata: { source: 'text', includeConditionBands: includeBands },
     inputRefs: [{ inputKind: 'text' }],
   });
@@ -1885,7 +1992,7 @@ export async function extractMealFromImageWithAudit(
     systemPrompt,
     userPrompt,
     jsonSchema: extractionSchema,
-    schemaVersion: 'meal_extraction_v2',
+    schemaVersion: EXTRACTION_SCHEMA_VERSION,
     requestMetadata: { imageDetail: IMAGE_DETAIL, includeConditionBands: includeBands },
     inputRefs,
   });
@@ -1962,7 +2069,7 @@ export async function extractMealFromImagesWithAudit(
     systemPrompt,
     userPrompt,
     jsonSchema: extractionSchema,
-    schemaVersion: 'meal_extraction_v2',
+    schemaVersion: EXTRACTION_SCHEMA_VERSION,
     requestMetadata: { imageDetail: IMAGE_DETAIL, imageCount: imageUrls.length, includeConditionBands: includeBands },
     inputRefs,
   });
@@ -2028,7 +2135,7 @@ async function requestMenuExtraction(
     systemPrompt,
     userPrompt,
     jsonSchema: menuExtractionSchema,
-    schemaVersion: 'menu_extraction_v3',
+    schemaVersion: MENU_EXTRACTION_SCHEMA_VERSION,
     requestMetadata: {
       imageDetail: MENU_IMAGE_DETAIL,
       pageCount: imageUrls.length,
@@ -2161,7 +2268,7 @@ function combinedMenuAudit(
     provider: 'openai',
     model: MENU_EXTRACTION_MODEL,
     promptVersion: PROMPT_VERSION,
-    schemaVersion: 'menu_extraction_v3',
+    schemaVersion: MENU_EXTRACTION_SCHEMA_VERSION,
     systemPrompt,
     userPrompt,
     jsonSchema: menuExtractionSchema,

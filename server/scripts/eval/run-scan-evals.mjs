@@ -247,6 +247,34 @@ export async function signInOrSignUp(api, email, password) {
   }
 }
 
+/**
+ * Authenticated session for a whole pass. Long passes (e.g. --repeat 3, ~45
+ * minutes) outlive the access-token TTL, so every authenticated call goes
+ * through session.post: an expired token re-signs-in once and retries instead
+ * of killing the pass at the finish line.
+ */
+export function createEvalSession(api, email, password) {
+  let auth = null;
+  return {
+    async signIn() {
+      auth = await signInOrSignUp(api, email, password);
+      return auth;
+    },
+    get user() {
+      return auth?.user;
+    },
+    async post(endpoint, body) {
+      try {
+        return await apiPost(api, endpoint, body, auth.accessToken);
+      } catch (err) {
+        if (!(err instanceof ApiRequestError) || err.status !== 401) throw err;
+        await this.signIn();
+        return apiPost(api, endpoint, body, auth.accessToken);
+      }
+    },
+  };
+}
+
 export function profileBody(profile, label) {
   return {
     displayName: `Eval ${label}`,
@@ -390,23 +418,23 @@ async function judgeScan(run, expectation) {
   };
 }
 
-async function runSingleScan(args, accessToken, imageUrl, caseId, expectation, runIndex, runId, attempt) {
+async function runSingleScan(session, imageUrl, caseId, expectation, runIndex, runId, attempt) {
   // Attempt is part of the requestId: failed scans DEDUPE by requestId
   // (begin_scan_analysis returns failed_existing), so a retry must be a
   // genuinely new request or it just replays the original failure.
   const requestId = `eval-${runId}-${caseId}-${expectation.profile}-${runIndex + 1}-a${attempt}`;
-  return apiPost(args.api, 'scan-analyze-image', {
+  return session.post('scan-analyze-image', {
     requestId,
     imageDataUrls: [imageUrl],
     sourceType: 'upload',
     scanCategory: 'food',
     localDate: new Date().toISOString().slice(0, 10),
     timezone: 'America/Denver',
-  }, accessToken);
+  });
 }
 
-async function runExpectation(args, auth, profile, scanCase, expectation, runId, reporter) {
-  await apiPost(args.api, 'profile-update', profileBody(profile, `${scanCase.id} ${expectation.profile}`), auth.accessToken);
+async function runExpectation(args, session, profile, scanCase, expectation, runId, reporter) {
+  await session.post('profile-update', profileBody(profile, `${scanCase.id} ${expectation.profile}`));
 
   const imagePath = path.resolve(datasetRoot, scanCase.image);
   const imageUrl = await imageDataUrl(imagePath);
@@ -421,7 +449,7 @@ async function runExpectation(args, auth, profile, scanCase, expectation, runId,
     for (;;) {
       const startTime = Date.now();
       try {
-        const response = await runSingleScan(args, auth.accessToken, imageUrl, scanCase.id, expectation, index, runId, attempt);
+        const response = await runSingleScan(session, imageUrl, scanCase.id, expectation, index, runId, attempt);
         const summary = summarizeScan(response);
         runs.push(summary);
         console.log(`${scanCase.id} [${expectation.profile}] ${index + 1}/${repeat}: ${summary.score} ${summary.level} "${summary.dishName}"`);
@@ -623,7 +651,8 @@ export async function runScanEvals(argv = process.argv) {
 
   const email = args.email || `codex-scan-eval+${runId}@mytummyhurts.app`;
   const password = args.password || `Codex-${runId}-pass!`;
-  const auth = await signInOrSignUp(args.api, email, password);
+  const session = createEvalSession(args.api, email, password);
+  await session.signIn();
 
   const results = [];
   for (const scanCase of cases) {
@@ -631,7 +660,7 @@ export async function runScanEvals(argv = process.argv) {
       if (args.profileKeys?.length && !args.profileKeys.includes(expectation.profile)) continue;
       const profile = profilesDoc.profiles?.[expectation.profile];
       if (!profile) throw new Error(`Unknown profile "${expectation.profile}" in case ${scanCase.id}`);
-      results.push(await runExpectation(args, auth, profile, scanCase, expectation, runId, reporter));
+      results.push(await runExpectation(args, session, profile, scanCase, expectation, runId, reporter));
     }
   }
 
@@ -655,7 +684,7 @@ export async function runScanEvals(argv = process.argv) {
       profilesPath: path.relative(serverRoot, args.profilesPath),
     },
     user: {
-      id: auth.user?.id,
+      id: session.user?.id,
       email,
     },
     summary,

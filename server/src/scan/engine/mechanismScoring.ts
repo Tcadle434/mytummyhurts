@@ -13,7 +13,13 @@ import type {
   StructuredAnalysisV2,
   UserProfile,
 } from './domain';
-import { hasPairedEvidence } from '@mth/shared-domain';
+import {
+  RISK_LEVEL_HIGH_MIN,
+  RISK_LEVEL_MEDIUM_MIN,
+  UNGATED_HIGH_BAND_CEILING,
+  conditionBandForScore,
+  hasPairedEvidence,
+} from '@mth/shared-domain';
 import type { MenuRiskModifierKey } from './menuRubric';
 import { normalize } from './text-utils';
 
@@ -252,18 +258,15 @@ function conditionGroup(condition: string): ConditionGroup | null {
 }
 
 function conditionRiskLevel(score: number) {
-  if (score >= 64) return 'high' as const;
-  if (score >= 37) return 'medium' as const;
+  if (score >= RISK_LEVEL_HIGH_MIN) return 'high' as const;
+  if (score >= RISK_LEVEL_MEDIUM_MIN) return 'medium' as const;
   return 'low' as const;
 }
 
-function conditionSeverityBand(score: number): ConditionSeverity['band'] {
-  if (score >= 85) return 'severe';
-  if (score >= 64) return 'high';
-  if (score >= 37) return 'moderate';
-  if (score >= 17) return 'mild';
-  return 'none';
-}
+// Score -> band uses the shared geometry (scoring overhaul D1); this engine
+// previously used its own edges (mild >= 17, severe >= 85) that disagreed with
+// the band-placement engine (mild >= 11, severe >= 90).
+const conditionSeverityBand = conditionBandForScore;
 
 function inferAmount(ingredient: ExtractedIngredient): IngredientAmountEstimate {
   if (ingredient.amountEstimate) return ingredient.amountEstimate;
@@ -813,8 +816,8 @@ export function computeMechanismScoring(
       + mixedDishPoints
       + exposures.reduce((total, entry) => total + entry.points, 0)
       + adjustments.reduce((total, entry) => total + entry.points, 0);
-    const gatedScore = rawScore >= 64 && !highRiskGate(condition, exposures, adjustments, structured)
-      ? 63
+    const gatedScore = rawScore >= RISK_LEVEL_HIGH_MIN && !highRiskGate(condition, exposures, adjustments, structured)
+      ? UNGATED_HIGH_BAND_CEILING
       : rawScore;
     const score = Math.round(clamp(gatedScore, 5, 100));
     conditionScores[condition] = {
@@ -824,10 +827,10 @@ export function computeMechanismScoring(
   }
 
   const allConditionScores = Object.values(conditionScores).map((entry) => entry.score);
-  const hasHighCondition = allConditionScores.some((score) => score >= 64);
+  const hasHighCondition = allConditionScores.some((score) => score >= RISK_LEVEL_HIGH_MIN);
   const overallRiskScore = hasHighCondition
     ? combineOverall(allConditionScores)
-    : Math.min(63, combineOverall(allConditionScores));
+    : Math.min(UNGATED_HIGH_BAND_CEILING, combineOverall(allConditionScores));
   const baselineContributor: ScoreContributor = {
     key: 'base_menu_risk',
     label: 'Base menu risk',

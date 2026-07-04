@@ -80,6 +80,22 @@ ranges at or under ~45 points wide; when you tighten or re-band a case, record
 the reason in the expectation's `notes` field (documentation only — the runner
 ignores unknown fields).
 
+> **Phase 2 recalibration (2026-07-04).** The extraction prompts gained band
+> anchors + worked calibration examples and the rubric now ships its full
+> per-rule boundary definitions (`mytummyhurts_extract_v4`), which eliminated
+> the pre-Phase-2 multi-band swings. Every envelope was ratcheted to
+> **observed-bands-only** over seven post-anchor full passes (14+ samples
+> each): `expectedBands` is the exact set of bands the dish actually
+> produced (never-observed bands are the regression signal — e.g. pepperoni
+> pizza can no longer read medium), and `expectedScoreRange` is the exact
+> span of those bands. Sub-band score precision was tried at observed ±6 and
+> demonstrably does not hold at repeat 2 — the extractor's composition read
+> (tonkotsu vs plain ramen, naan vs no naan) legitimately moves borderline
+> dishes one band, so the band union is the assertion and per-expectation
+> `notes` record the sample evidence. The nightly drift baseline was seeded
+> from the post-ratchet green pass — drift comparisons against pre-Phase-2
+> experiments are expected to shift by design and are not regressions.
+
 With `LANGSMITH_API_KEY` in the environment, **any** of the runs above is also
 recorded as a LangSmith experiment tagged with `--context` (default `triage`) —
 see [Unified LangSmith telemetry](#unified-langsmith-telemetry). Without the

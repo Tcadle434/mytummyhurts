@@ -18,6 +18,8 @@ import {
   type MenuRiskModifierKey,
 } from '../menuRubric';
 import {
+  CONDITION_BAND_ORDER,
+  CONDITION_BAND_RANGES,
   clamp,
   clampNumber,
   ingredientConditionImpacts,
@@ -113,17 +115,11 @@ export function buildIngredientRiskRows(
 // The model chooses the severity band; deterministic scoring only places the
 // number inside that band. This keeps score granularity without letting
 // condiment/side/speculative rubric signals promote a scan into a hotter band.
-const BAND_RANGES: Record<ConditionSeverityBand, { min: number; mid: number; max: number }> = {
-  none: { min: 0, mid: 5, max: 10 },
-  mild: { min: 11, mid: 23.5, max: 36 },
-  moderate: { min: 37, mid: 50, max: 63 },
-  high: { min: 64, mid: 76.5, max: 89 },
-  severe: { min: 90, mid: 95, max: 100 },
-};
-const BAND_ORDER: readonly ConditionSeverityBand[] = ['none', 'mild', 'moderate', 'high', 'severe'];
+// Band geometry is the shared CONDITION_BAND_RANGES (scoring overhaul D1): one
+// constant set for food and menu scans, shared with the mechanism engine.
 
 function bandIndex(band: ConditionSeverityBand) {
-  return Math.max(0, BAND_ORDER.indexOf(band));
+  return Math.max(0, CONDITION_BAND_ORDER.indexOf(band));
 }
 
 export function strongestBand(bands: Array<ConditionSeverity | undefined>): ConditionSeverityBand | undefined {
@@ -139,7 +135,7 @@ export function strongestBand(bands: Array<ConditionSeverity | undefined>): Cond
 }
 
 function clampToBand(score: number, band: ConditionSeverityBand) {
-  const range = BAND_RANGES[band];
+  const range = CONDITION_BAND_RANGES[band];
   return clampNumber(score, range.min, range.max);
 }
 
@@ -316,7 +312,7 @@ export function scoreConditionFromBand(
   conditionProfile: UserProfile | null,
   item: MenuItemAnalysis,
 ): number {
-  const range = BAND_RANGES[band.band];
+  const range = CONDITION_BAND_RANGES[band.band];
   const placement = insideBandPlacementRatio(contributors, conditionProfile, item);
   const halfWidth = (range.max - range.min) / 2;
   return Math.round(clampToBand(range.mid + placement * halfWidth, band.band));
@@ -333,7 +329,7 @@ export function deriveOverallFromConditions(perConditionScores: number[], ceilin
   const sorted = [...perConditionScores].sort((left, right) => right - left);
   let overall = sorted[0];
   for (let index = 1; index < sorted.length; index += 1) {
-    const ceiling = ceilingBand ? BAND_RANGES[ceilingBand].max : 100;
+    const ceiling = ceilingBand ? CONDITION_BAND_RANGES[ceilingBand].max : 100;
     const remaining = Math.max(0, ceiling - overall);
     overall += remaining * clampNumber(sorted[index] / 100, 0, 1) * 0.22;
   }

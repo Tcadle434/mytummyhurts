@@ -271,6 +271,14 @@ export class ScanWorkflowService {
         if (this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false)) {
           return {};
         }
+        // D1 wiring: when enabled, the adjudicator's clamped finalBands REPLACE
+        // extraction.conditionSeverities before scoring — adjudication is the
+        // band source, extraction bands are its prior (see the adjudication
+        // user prompt). Default OFF (Phase 2 decision): adjudication only earns
+        // its extra call when medium/high-confidence personal evidence or RAG
+        // citations exist to move a band; without them it re-derives the
+        // generic band a second time for ~2x hot-path LLM latency/cost. Enable
+        // once learned insights + the RAG corpus are populated in prod.
         const enabled = this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false);
         if (!enabled || !extraction || !this.supportsRiskAdjudication(scanCategory)) {
           return {};
