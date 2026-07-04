@@ -237,4 +237,292 @@ describe('scan workflow (deterministic graph)', () => {
     expect(retrievalCalled).toBe(false);
     expect(adjudicationCalled).toBe(false);
   });
+
+  // --- Bounded RAG influence + conditional adjudication (steps 2 & 3) ---------
+  // These use injected fakes (no DB), like the adjudication test above, so they
+  // exercise the graph wiring deterministically.
+
+  function garlicRiceExtraction(): StructuredAnalysisV2 {
+    return {
+      ...fallbackExtractionFromText('garlic fried rice'),
+      dishName: 'garlic fried rice',
+      visibleIngredients: [
+        { rawName: 'white rice', canonicalName: 'rice', confidence: 'high', component: 'rice', evidence: 'visible', role: 'base', prominence: 'primary' },
+        { rawName: 'minced garlic', canonicalName: 'garlic', confidence: 'high', component: 'aromatics', evidence: 'visible', role: 'condiment', prominence: 'secondary' },
+      ],
+      inferredIngredients: [],
+      conditionSeverities: [{ condition: 'IBS', band: 'moderate', drivers: ['garlic'], rationale: 'Allium watch-out.' }],
+      riskModifiers: [{ key: 'allium_garlic_onion', confidence: 'high', evidence: 'ingredient', source: 'garlic' }],
+    };
+  }
+
+  function garlicChunk(direction: 'raises' | 'lowers' | 'neutral', overrides: Partial<RankedCandidate> = {}): RankedCandidate {
+    return {
+      chunkId: 'chunk-garlic',
+      documentId: 'doc-garlic',
+      content: 'Garlic is high in fructans and can worsen IBS symptoms.',
+      source: 'Curated reference',
+      title: 'IBS and garlic',
+      url: null,
+      headingPath: ['IBS'],
+      conditionTags: ['IBS'],
+      ingredientTags: ['garlic'],
+      direction,
+      vectorScore: 0.5,
+      keywordScore: 0.8,
+      hybridScore: 0.62,
+      rerankScore: 0.85,
+      ...overrides,
+    };
+  }
+
+  function ibsProfile(userId: string) {
+    return buildUserProfileFromSeed({
+      userId,
+      knownConditions: ['IBS'],
+      knownIngredientSensitivities: [],
+      commonSymptoms: [],
+      symptomFrequency: 'A few times a week',
+      symptomSeverityBaseline: 'Moderate',
+      mealContexts: [],
+      currentEatingPatterns: [],
+      lifestyleFactors: [],
+      foodsToReintroduce: [],
+    });
+  }
+
+  function fakeRetrievalReturning(chunks: RankedCandidate[], runId: string | null = 'rag-run') {
+    return {
+      async retrieve() {
+        return { runId, chunks };
+      },
+    } as unknown as RagRetrievalService;
+  }
+
+  it('RAG_INFLUENCE_ENABLED nudges the overall score UP within band and cites only matched chunks', async () => {
+    const extraction = garlicRiceExtraction();
+    const fakeLlm = {
+      name: 'fake',
+      async extractText() {
+        return { result: extraction, audits: [] };
+      },
+    } as unknown as LlmProvider;
+    const workflow = new ScanWorkflowService(
+      fakeLlm,
+      new ConfigService({ RAG_RETRIEVAL_ENABLED: 'true', RAG_INFLUENCE_ENABLED: 'true' }),
+      fakeRetrievalReturning([garlicChunk('raises')]),
+    );
+
+    const result = await workflow.run({
+      userId: 'wf-infl',
+      scanId: 'scan-infl-1',
+      kind: 'text',
+      text: 'garlic fried rice',
+      scanCategory: 'food',
+      profile: ibsProfile('wf-infl'),
+      insights: [],
+    });
+
+    const base = result.baseResult.overallRiskScore;
+    const final = result.finalResult.overallRiskScore;
+    // Raising evidence nudges up, by at most maxDelta (5), and never crosses a band.
+    expect(final).toBeGreaterThanOrEqual(base);
+    expect(final - base).toBeLessThanOrEqual(5);
+    expect(result.finalResult.overallRiskLevel).toBe(result.baseResult.overallRiskLevel);
+    // Citations present and ALL matched to garlic (the ingredient on the plate).
+    expect(result.finalResult.evidenceCitations?.length).toBeGreaterThan(0);
+    expect(result.finalResult.evidenceCitations?.every((c) => c.chunkId === 'chunk-garlic')).toBe(true);
+    // Diagnostic influence metadata recorded.
+    expect(result.finalResult.structuredAnalysis.ragInfluence?.bandGuardApplied).toBeDefined();
+  });
+
+  it('RAG_INFLUENCE_ENABLED nudges the overall score DOWN within band for reassuring evidence', async () => {
+    const extraction = garlicRiceExtraction();
+    const fakeLlm = {
+      name: 'fake',
+      async extractText() {
+        return { result: extraction, audits: [] };
+      },
+    } as unknown as LlmProvider;
+    const workflow = new ScanWorkflowService(
+      fakeLlm,
+      new ConfigService({ RAG_RETRIEVAL_ENABLED: 'true', RAG_INFLUENCE_ENABLED: 'true' }),
+      fakeRetrievalReturning([garlicChunk('lowers')]),
+    );
+
+    const result = await workflow.run({
+      userId: 'wf-infl-down',
+      scanId: 'scan-infl-down-1',
+      kind: 'text',
+      text: 'garlic fried rice',
+      scanCategory: 'food',
+      profile: ibsProfile('wf-infl-down'),
+      insights: [],
+    });
+
+    const base = result.baseResult.overallRiskScore;
+    const final = result.finalResult.overallRiskScore;
+    expect(final).toBeLessThanOrEqual(base);
+    expect(base - final).toBeLessThanOrEqual(5);
+    // Never crosses a band.
+    expect(result.finalResult.overallRiskLevel).toBe(result.baseResult.overallRiskLevel);
+  });
+
+  it('shows NO citation for a chunk whose ingredient is not in the dish (plain rice, dairy chunk)', async () => {
+    const plainRice: StructuredAnalysisV2 = {
+      ...fallbackExtractionFromText('plain white rice'),
+      dishName: 'plain white rice',
+      visibleIngredients: [
+        { rawName: 'white rice', canonicalName: 'rice', confidence: 'high', component: 'rice', evidence: 'visible', role: 'base', prominence: 'primary' },
+      ],
+      inferredIngredients: [],
+      conditionSeverities: [],
+      riskModifiers: [],
+    };
+    const dairyChunk = garlicChunk('raises', {
+      chunkId: 'chunk-dairy',
+      ingredientTags: ['dairy', 'cheese', 'lactose'],
+      content: 'Dairy can worsen symptoms.',
+    });
+    // Even with adjudication ON and an adjudicator that TRIES to cite the
+    // off-plate dairy chunk, the matched-signals filter must drop it.
+    const fakeLlm = {
+      name: 'fake',
+      async extractText() {
+        return { result: plainRice, audits: [] };
+      },
+      async adjudicateScanRisk() {
+        return {
+          result: {
+            conditionSeverities: [
+              {
+                condition: 'IBS',
+                genericBand: 'none',
+                personalizedBand: 'none',
+                finalBand: 'none',
+                drivers: [],
+                protectiveEvidence: [],
+                citationChunkIds: ['chunk-dairy'],
+                personalEvidenceUsed: [],
+                confidence: 'low',
+                rationale: 'Dairy note (should not be citable — no dairy on the plate).',
+              },
+            ],
+          },
+          audits: [],
+        };
+      },
+    } as unknown as LlmProvider;
+    const workflow = new ScanWorkflowService(
+      fakeLlm,
+      new ConfigService({
+        RAG_RETRIEVAL_ENABLED: 'true',
+        RAG_INFLUENCE_ENABLED: 'true',
+        SCAN_RISK_ADJUDICATION_ENABLED: 'true',
+      }),
+      fakeRetrievalReturning([dairyChunk]),
+    );
+
+    const result = await workflow.run({
+      userId: 'wf-rice',
+      scanId: 'scan-rice-1',
+      kind: 'text',
+      text: 'plain white rice',
+      scanCategory: 'food',
+      profile: ibsProfile('wf-rice'),
+      insights: [],
+    });
+
+    // No matched ingredient => no influence, and NO citation for the off-plate
+    // dairy chunk even though the adjudicator tried to cite it.
+    expect(result.finalResult.evidenceCitations ?? []).toHaveLength(0);
+    expect(result.finalResult.overallRiskScore).toBe(result.baseResult.overallRiskScore);
+    expect(result.finalResult.structuredAnalysis.ragInfluence).toBeUndefined();
+  });
+
+  it('conditional adjudication: cold-start scan (no insights, no matched literature) SKIPS the LLM call', async () => {
+    let adjudicationCalled = false;
+    const extraction = garlicRiceExtraction();
+    const fakeLlm = {
+      name: 'fake',
+      async extractText() {
+        return { result: extraction, audits: [] };
+      },
+      async adjudicateScanRisk() {
+        adjudicationCalled = true;
+        return { result: { conditionSeverities: [] }, audits: [] };
+      },
+    } as unknown as LlmProvider;
+    const workflow = new ScanWorkflowService(
+      fakeLlm,
+      // Adjudication enabled, retrieval on, but the only chunk is NEUTRAL and
+      // there are no insights -> nothing to weigh -> fast path.
+      new ConfigService({ SCAN_RISK_ADJUDICATION_ENABLED: 'true', RAG_RETRIEVAL_ENABLED: 'true' }),
+      fakeRetrievalReturning([garlicChunk('neutral')]),
+    );
+
+    const result = await workflow.run({
+      userId: 'wf-cold',
+      scanId: 'scan-cold-1',
+      kind: 'text',
+      text: 'garlic fried rice',
+      scanCategory: 'food',
+      profile: ibsProfile('wf-cold'),
+      insights: [],
+    });
+
+    expect(adjudicationCalled).toBe(false);
+    // Score still produced from extraction bands + placement (fast path).
+    expect(result.finalResult.overallRiskScore).toBe(result.baseResult.overallRiskScore);
+  });
+
+  it('conditional adjudication: matched directional literature ENABLES the LLM call', async () => {
+    let adjudicationCalled = false;
+    const extraction = garlicRiceExtraction();
+    const fakeLlm = {
+      name: 'fake',
+      async extractText() {
+        return { result: extraction, audits: [] };
+      },
+      async adjudicateScanRisk() {
+        adjudicationCalled = true;
+        return {
+          result: {
+            conditionSeverities: [
+              {
+                condition: 'IBS',
+                genericBand: 'moderate',
+                personalizedBand: 'moderate',
+                finalBand: 'moderate',
+                drivers: ['garlic'],
+                protectiveEvidence: [],
+                citationChunkIds: ['chunk-garlic'],
+                personalEvidenceUsed: [],
+                confidence: 'medium',
+                rationale: 'Garlic is a common IBS trigger.',
+              },
+            ],
+          },
+          audits: [],
+        };
+      },
+    } as unknown as LlmProvider;
+    const workflow = new ScanWorkflowService(
+      fakeLlm,
+      new ConfigService({ SCAN_RISK_ADJUDICATION_ENABLED: 'true', RAG_RETRIEVAL_ENABLED: 'true' }),
+      fakeRetrievalReturning([garlicChunk('raises')]),
+    );
+
+    await workflow.run({
+      userId: 'wf-warm',
+      scanId: 'scan-warm-1',
+      kind: 'text',
+      text: 'garlic fried rice',
+      scanCategory: 'food',
+      profile: ibsProfile('wf-warm'),
+      insights: [],
+    });
+
+    expect(adjudicationCalled).toBe(true);
+  });
 });

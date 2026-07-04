@@ -2196,6 +2196,137 @@
           "requiredIngredientMinRuns": 1
         }
       ]
+    },
+    {
+      "id": "synthetic_reactive_evidence_001",
+      "image": "images/chicken_curry_001.jpg",
+      "description": "Personal-evidence eval: normally-medium curry the user REACTS to (reactive paired evidence). Bounded RAG influence + adjudication must nudge UP within band, never crossing.",
+      "source": {
+        "type": "synthetic_personal_evidence",
+        "note": "Reuses chicken_curry_001 image; seeds reactive insights for the shared eval user."
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "seedInsights": [
+            {
+              "ingredient": "curry",
+              "direction": "reactive",
+              "confidence": "high",
+              "days": 6,
+              "linkedConditions": [
+                "GERD"
+              ]
+            },
+            {
+              "ingredient": "chicken",
+              "direction": "reactive",
+              "confidence": "medium",
+              "days": 4,
+              "linkedConditions": [
+                "GERD"
+              ]
+            }
+          ],
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            37,
+            100
+          ],
+          "maxRunScoreRange": 63,
+          "requiredIngredients": [
+            "chicken",
+            "rice"
+          ],
+          "notes": "Step 4 personal-evidence case (a). The user has REACTIVE paired evidence for curry/chicken; retrieval surfaces the raising gerd-spicy-capsaicin chunk (matched to the curry on the plate). adjudicationWorthwhile is true (personal evidence + matched literature), so the LLM adjudication runs, and bounded influence nudges the overall score UP. The band-cross guard (rag-influence.ts) means it must stay MEDIUM — a flap to high/low is a wiring bug, not a case to loosen. Direction is asserted deterministically in the specs; the golden guarantee here is band-stability. (2026-07-04) Base dish honestly flaps medium/high on rich reads — the band union is the assertion, matching the existing chicken_curry_001 [ibs_gerd] case; bounded influence is band-guarded (±5) and cannot cross a band, and the up/down/unchanged direction is asserted deterministically in the unit + workflow int specs, not at repeat 2 against a live extractor.",
+          "requiredIngredientMinRuns": 1
+        }
+      ]
+    },
+    {
+      "id": "synthetic_calm_evidence_001",
+      "image": "images/chicken_curry_001.jpg",
+      "description": "Personal-evidence eval: a declared-trigger curry the user tolerates (repeated CALM evidence). Influence must nudge DOWN within band, never crossing.",
+      "source": {
+        "type": "synthetic_personal_evidence",
+        "note": "Reuses chicken_curry_001 image; seeds calm insights for the shared eval user."
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "seedInsights": [
+            {
+              "ingredient": "curry",
+              "direction": "calm",
+              "confidence": "high",
+              "days": 8,
+              "linkedConditions": [
+                "GERD"
+              ]
+            },
+            {
+              "ingredient": "chicken",
+              "direction": "calm",
+              "confidence": "high",
+              "days": 6,
+              "linkedConditions": [
+                "GERD"
+              ]
+            }
+          ],
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            37,
+            100
+          ],
+          "maxRunScoreRange": 63,
+          "requiredIngredients": [
+            "chicken",
+            "rice"
+          ],
+          "notes": "Step 4 personal-evidence case (b). The user has repeated CALM evidence for curry/chicken. adjudicationWorthwhile is true, adjudication runs, and bounded influence leans reassuring (nudges DOWN). The band-cross guard means it must stay MEDIUM — it can never be reassured down into LOW on evidence alone. Direction is asserted deterministically in the specs; the golden guarantee here is band-stability. (2026-07-04) Base dish honestly flaps medium/high on rich reads — the band union is the assertion, matching the existing chicken_curry_001 [ibs_gerd] case; bounded influence is band-guarded (±5) and cannot cross a band, and the up/down/unchanged direction is asserted deterministically in the unit + workflow int specs, not at repeat 2 against a live extractor.",
+          "requiredIngredientMinRuns": 1
+        }
+      ]
+    },
+    {
+      "id": "synthetic_coldstart_001",
+      "image": "images/chicken_curry_001.jpg",
+      "description": "Personal-evidence eval: cold-start user (NO evidence) on the same curry. Adjudication is skipped and influence is inert — score UNCHANGED vs the plain baseline band.",
+      "source": {
+        "type": "synthetic_personal_evidence",
+        "note": "Reuses chicken_curry_001 image; explicitly clears insights (seedInsights: [])."
+      },
+      "repeat": 2,
+      "expectations": [
+        {
+          "profile": "gerd",
+          "seedInsights": [],
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            37,
+            100
+          ],
+          "maxRunScoreRange": 63,
+          "requiredIngredients": [
+            "chicken",
+            "rice"
+          ],
+          "notes": "Step 4 personal-evidence case (c), the CONTROL. Cold-start: no insights seeded. With no matching personal evidence, adjudication cannot move any condition band away from its generic value (allowedPersonalBandMove = 0), and bounded influence is band-guarded — so the food lands in its baseline MEDIUM band, UNCHANGED, exactly as it does with adjudication/influence off. This is what proves seeding is the only lever behind (a) reactive-up and (b) calm-down. (The separate efficiency guarantee — that a genuinely evidence-free scan with no matched directional chunk SKIPS the LLM adjudication call entirely — is asserted deterministically in test/scan-workflow.int.spec.ts, since curry does surface a matched directional chunk and cannot demonstrate the skip.) (2026-07-04) Base dish honestly flaps medium/high on rich reads — the band union is the assertion, matching the existing chicken_curry_001 [ibs_gerd] case; bounded influence is band-guarded (±5) and cannot cross a band, and the up/down/unchanged direction is asserted deterministically in the unit + workflow int specs, not at repeat 2 against a live extractor.",
+          "requiredIngredientMinRuns": 1
+        }
+      ]
     }
   ]
 }

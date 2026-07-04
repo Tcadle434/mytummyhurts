@@ -25,6 +25,7 @@ import {
   validateExpectation,
   writeDriftBaseline,
 } from './langsmith-lib.mjs';
+import { setEvalInsights } from './seed-insights.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverRoot = join(here, '..', '..');
@@ -65,6 +66,10 @@ Options:
   --drift-baseline <path>     Baseline file for the nightly drift alarm.
                               Default: server/evals/reports/langsmith-drift-baseline.json
   --update-drift-baseline     Rewrite the drift baseline from this run (full, unfiltered runs only)
+  --admin-url <url>           ADMIN DB connection used ONLY by cases that carry a
+                              \`seedInsights\` array (personal-evidence cases): their
+                              insights are seeded before the scan and cleared after.
+                              Default: DATABASE_ADMIN_URL or postgres://mth:mth@localhost:5432/mth
   --list                      List available cases and profiles, then exit
   --help                      Show this help
 
@@ -100,6 +105,9 @@ function parseArgs(argv) {
     dataset: DEFAULT_DATASET,
     driftBaselinePath: defaultDriftBaselinePath,
     updateDriftBaseline: false,
+    // Only used by cases that carry `seedInsights` (personal-evidence cases);
+    // the default suite never touches the database.
+    adminUrl: process.env.DATABASE_ADMIN_URL || 'postgres://mth:mth@localhost:5432/mth',
   };
 
   for (let index = 2; index < argv.length; index += 1) {
@@ -179,6 +187,11 @@ function parseArgs(argv) {
     }
     if (token === '--update-drift-baseline') {
       args.updateDriftBaseline = true;
+      continue;
+    }
+    if (token === '--admin-url') {
+      args.adminUrl = next;
+      index += 1;
       continue;
     }
     throw new Error(`Unknown argument: ${token}`);
@@ -436,6 +449,17 @@ async function runSingleScan(session, imageUrl, caseId, expectation, runIndex, r
 async function runExpectation(args, session, profile, scanCase, expectation, runId, reporter) {
   await session.post('profile-update', profileBody(profile, `${scanCase.id} ${expectation.profile}`));
 
+  // Personal-evidence cases (spec Step 4): seed learned insights for THIS user
+  // right before the scan, then clear them right after, so the shared eval user
+  // stays isolated between cases. `seedInsights: []` is an explicit cold-start
+  // reset. Cases without the key never touch the database.
+  const managesInsights = Array.isArray(expectation.seedInsights);
+  const userId = session.user?.id;
+  if (managesInsights) {
+    if (!userId) throw new Error('cannot seed insights: eval session has no user id');
+    await setEvalInsights(args.adminUrl, userId, expectation.seedInsights);
+  }
+
   const imagePath = path.resolve(datasetRoot, scanCase.image);
   const imageUrl = await imageDataUrl(imagePath);
   const repeat = args.repeat ?? expectation.repeat ?? scanCase.repeat ?? args.defaultRepeat;
@@ -443,6 +467,7 @@ async function runExpectation(args, session, profile, scanCase, expectation, run
   const runs = [];
   const failures = [];
 
+  try {
   for (let index = 0; index < repeat; index += 1) {
     let attempt = 0;
     const maxAttempts = expectation.allowTimeoutRetry === false ? 1 : 3;
@@ -480,6 +505,13 @@ async function runExpectation(args, session, profile, scanCase, expectation, run
         await reporter?.logRun({ key: exampleKey, error: failure.message, startTime, endTime: Date.now() });
         break;
       }
+    }
+  }
+  } finally {
+    // Always reset the shared user's insights so the next case starts clean,
+    // even if a scan in this case failed mid-way.
+    if (managesInsights && userId) {
+      await setEvalInsights(args.adminUrl, userId, []);
     }
   }
 
