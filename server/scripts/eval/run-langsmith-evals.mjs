@@ -20,6 +20,7 @@
  *     --email codex-scan-stability@mytummyhurts.app --password '...'
  */
 import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -40,20 +41,27 @@ const defaultCasesPath = join(datasetRoot, 'cases.json');
 const defaultProfilesPath = join(datasetRoot, 'profiles.json');
 const defaultApi = process.env.API_URL || process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 const DEFAULT_DATASET = 'mth-golden-scans';
+const defaultDriftBaselinePath = join(serverRoot, 'evals', 'reports', 'langsmith-drift-baseline.json');
+/** Nightly alarm threshold: a mean shift of more than one whole band is never noise. */
+const MAX_MEAN_BAND_DRIFT = 1;
 
 function usage() {
   console.log(`Usage:
   LANGSMITH_API_KEY=... npm --prefix server run eval:langsmith -- [options]
 
 Options:
-  --api <url>            API base URL. Default: API_URL / EXPO_PUBLIC_API_URL / http://localhost:3000
-  --dataset <name>       LangSmith dataset name. Default: ${DEFAULT_DATASET}
-  --email <email>        Reuse an eval user (required for production API).
-  --password <password>  Password for the reused eval user.
-  --case <id[,id]>       Run only selected case IDs.
-  --experiment <prefix>  Experiment name prefix. Default: derived from the extraction model.
-  --repeat <n>           Repetitions per example (LangSmith numRepetitions). Default: 1.
-  --help                 Show this help.`);
+  --api <url>              API base URL. Default: API_URL / EXPO_PUBLIC_API_URL / http://localhost:3000
+  --dataset <name>         LangSmith dataset name. Default: ${DEFAULT_DATASET}
+  --email <email>          Reuse an eval user (required for production API).
+  --password <password>    Password for the reused eval user.
+  --case <id[,id]>         Run only selected case IDs.
+  --experiment <prefix>    Experiment name prefix. Default: derived from the extraction model.
+  --repeat <n>             Repetitions per example (LangSmith numRepetitions). Default: 1.
+  --drift-baseline <path>  Baseline file for the >1-band mean-drift alarm.
+                           Default: evals/reports/langsmith-drift-baseline.json
+                           (auto-seeded on the first full run).
+  --update-drift-baseline  Overwrite the baseline with this run's band means.
+  --help                   Show this help.`);
 }
 
 function parseArgs(argv) {
@@ -63,6 +71,8 @@ function parseArgs(argv) {
     email: process.env.SCAN_EVAL_EMAIL,
     password: process.env.SCAN_EVAL_PASSWORD,
     repeat: 1,
+    driftBaselinePath: defaultDriftBaselinePath,
+    updateDriftBaseline: false,
   };
   for (let i = 2; i < argv.length; i += 1) {
     const token = argv[i];
@@ -74,6 +84,8 @@ function parseArgs(argv) {
     if (token === '--password') { args.password = next; i += 1; continue; }
     if (token === '--experiment') { args.experiment = next; i += 1; continue; }
     if (token === '--repeat') { args.repeat = Number(next); i += 1; continue; }
+    if (token === '--drift-baseline') { args.driftBaselinePath = resolve(next); i += 1; continue; }
+    if (token === '--update-drift-baseline') { args.updateDriftBaseline = true; continue; }
     if (token === '--case') {
       args.caseIds = new Set(String(next ?? '').split(',').map((s) => s.trim()).filter(Boolean));
       i += 1;
@@ -171,6 +183,75 @@ export function expectationPass({ outputs, referenceOutputs }) {
 
 const EVALUATORS = [expectationPass, bandMatch, scoreInRange, overallRiskScore];
 
+// ---- Nightly calibration-drift alarm ----
+// Point-in-time gates can't see slow drift; this compares the per-example mean
+// band of THIS run against a committed baseline and fails loudly when the mean
+// shift exceeds a whole band (low->medium is already product-breaking).
+
+export function bandOrdinal(level) {
+  if (level === 'low') return 0;
+  if (level === 'medium') return 1;
+  if (level === 'high') return 2;
+  return null;
+}
+
+/** rows: [{ key, level }] (one per completed scan) -> { perKey: { key: meanOrdinal }, runs } */
+export function bandMeansFromOutcomes(rows) {
+  const sums = new Map();
+  for (const row of rows ?? []) {
+    const ordinal = bandOrdinal(row.level);
+    if (!row.key || ordinal === null) continue;
+    const entry = sums.get(row.key) ?? { total: 0, count: 0 };
+    sums.set(row.key, { total: entry.total + ordinal, count: entry.count + 1 });
+  }
+  const perKey = {};
+  for (const [key, { total, count }] of sums) perKey[key] = Number((total / count).toFixed(3));
+  return { perKey, runs: (rows ?? []).length };
+}
+
+/**
+ * Mean signed band drift over the keys present in both runs.
+ * Positive = the suite reads riskier than the baseline.
+ */
+export function meanBandDrift(baselinePerKey, currentPerKey) {
+  const shared = Object.keys(currentPerKey ?? {}).filter((key) => typeof baselinePerKey?.[key] === 'number');
+  if (!shared.length) return { meanDrift: 0, sharedKeys: 0, perKeyDrift: {} };
+  const perKeyDrift = {};
+  let total = 0;
+  for (const key of shared) {
+    const drift = Number((currentPerKey[key] - baselinePerKey[key]).toFixed(3));
+    perKeyDrift[key] = drift;
+    total += drift;
+  }
+  return { meanDrift: Number((total / shared.length).toFixed(3)), sharedKeys: shared.length, perKeyDrift };
+}
+
+async function readDriftBaseline(path) {
+  try {
+    return JSON.parse(await readFile(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function writeDriftBaseline(path, { experiment, perKey, runs }) {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(
+    path,
+    `${JSON.stringify({ updatedAt: new Date().toISOString(), experiment: experiment ?? null, runs, perKey }, null, 2)}\n`,
+  );
+}
+
+/**
+ * Returns process exit code: 0 fine, 1 drift alarm. Split out of main() so the
+ * alarm logic is testable without LangSmith.
+ */
+export function evaluateDriftAlarm(baseline, current, maxMeanDrift = MAX_MEAN_BAND_DRIFT) {
+  const { meanDrift, sharedKeys, perKeyDrift } = meanBandDrift(baseline?.perKey, current.perKey);
+  if (!sharedKeys) return { exitCode: 0, meanDrift, sharedKeys, perKeyDrift };
+  return { exitCode: Math.abs(meanDrift) > maxMeanDrift ? 1 : 0, meanDrift, sharedKeys, perKeyDrift };
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help) return usage();
@@ -208,6 +289,9 @@ async function main() {
   const password = args.password || `Codex-${runId}-pass!`;
   const auth = await signInOrSignUp(args.api, email, password);
 
+  // Outcomes are also collected locally (independent of the LangSmith SDK's
+  // result shape) so the drift alarm can compare band means after the run.
+  const outcomes = [];
   const target = async (inputs) => {
     await apiPost(args.api, 'profile-update', profileBody(inputs.profile, `${inputs.caseId} ${inputs.profileKey}`), auth.accessToken);
     const url = await imageDataUrl(resolve(datasetRoot, inputs.image));
@@ -219,7 +303,9 @@ async function main() {
       localDate: new Date().toISOString().slice(0, 10),
       timezone: 'America/Denver',
     }, auth.accessToken);
-    return summarizeScan(response);
+    const summary = summarizeScan(response);
+    outcomes.push({ key: `${inputs.caseId}::${inputs.profileKey}`, level: summary.level, score: summary.score });
+    return summary;
   };
 
   const extractionModel = process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
@@ -243,6 +329,38 @@ async function main() {
 
   console.log(`\nExperiment recorded: ${results.experimentName ?? '(see LangSmith)'}`);
   console.log('Compare it against prior experiments in the LangSmith dataset UI to spot calibration drift.');
+
+  // ---- >1-band mean-drift alarm (nightly cron relies on the exit code) ----
+  const current = { experiment: results.experimentName ?? null, ...bandMeansFromOutcomes(outcomes) };
+  const baseline = await readDriftBaseline(args.driftBaselinePath);
+  if (!baseline) {
+    await writeDriftBaseline(args.driftBaselinePath, current);
+    console.log(`Drift baseline seeded at ${args.driftBaselinePath} (${Object.keys(current.perKey).length} example keys).`);
+    return;
+  }
+
+  const alarm = evaluateDriftAlarm(baseline, current);
+  console.log(
+    `Band drift vs baseline (${baseline.updatedAt ?? 'unknown date'}): mean ${alarm.meanDrift} over ${alarm.sharedKeys} shared example(s).`,
+  );
+  if (alarm.exitCode !== 0) {
+    const worst = Object.entries(alarm.perKeyDrift)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+      .slice(0, 10)
+      .map(([key, drift]) => `  ${key}: ${drift > 0 ? '+' : ''}${drift}`)
+      .join('\n');
+    console.error(
+      `\nDRIFT ALARM: mean band drift ${alarm.meanDrift} exceeds ±${MAX_MEAN_BAND_DRIFT} band.\n` +
+        `The suite reads ${alarm.meanDrift > 0 ? 'riskier' : 'safer'} than the committed baseline — investigate before shipping.\n` +
+        `Worst movers:\n${worst}`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (args.updateDriftBaseline) {
+    await writeDriftBaseline(args.driftBaselinePath, current);
+    console.log(`Drift baseline updated at ${args.driftBaselinePath}.`);
+  }
 }
 
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

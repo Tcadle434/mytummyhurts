@@ -169,13 +169,23 @@ export class ScanAnalysisService {
 
     try {
       const { profile, insights } = await this.loadContext(req.userId);
-      const imageUrls = await Promise.all(keys.map((k) => this.storage.signUrl(k)));
+      const signedUrls = await Promise.all(keys.map((k) => this.storage.signUrl(k)));
+      // OpenAI fetches image URLs from its own servers, so signed storage URLs
+      // only work when S3 is publicly reachable (prod). Inline uploads keep
+      // their original data URLs for the LLM call — same bytes, no public
+      // fetch required — which is what makes local/CI golden-eval runs (MinIO
+      // on localhost) possible at all. `keys` is imagePaths then inline
+      // uploads, so the slice keeps the page order aligned.
+      const llmImageUrls = [
+        ...signedUrls.slice(0, req.imagePaths?.length ?? 0),
+        ...(req.imageDataUrls ?? []),
+      ];
       const wf = await this.workflow.run({
         userId: req.userId,
         scanId,
         kind: req.scanCategory === 'menu' ? 'menu' : 'image',
-        imageUrls,
-        imageUri: imageUrls[0],
+        imageUrls: llmImageUrls,
+        imageUri: signedUrls[0],
         scanCategory: req.scanCategory ?? 'food',
         autoClassify: !req.scanCategory, // auto-detect food vs menu when unspecified
         profile,

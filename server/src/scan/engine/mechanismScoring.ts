@@ -92,7 +92,9 @@ const MECHANISMS: readonly MechanismDefinition[] = [
   {
     key: 'wheat_fructan_or_gluten',
     label: 'Wheat/fructan',
-    terms: ['wheat', 'bread', 'bun', 'roll', 'sub roll', 'pasta', 'ramen', 'udon', 'noodle', 'flour tortilla', 'tortilla', 'naan', 'pita', 'flatbread', 'pizza crust', 'pizza', 'pastry', 'pancake', 'waffle', 'dough', 'crust', 'breadcrumbs', 'gluten'],
+    // Named pasta shapes included: extractions say "spaghetti"/"macaroni"
+    // without the word "pasta" (mac & cheese was a known wheat miss).
+    terms: ['wheat', 'bread', 'bun', 'roll', 'sub roll', 'pasta', 'spaghetti', 'macaroni', 'lasagna', 'penne', 'fettuccine', 'linguine', 'couscous', 'ramen', 'udon', 'noodle', 'flour tortilla', 'tortilla', 'naan', 'pita', 'flatbread', 'pizza crust', 'pizza', 'pastry', 'pancake', 'waffle', 'dough', 'crust', 'breadcrumbs', 'gluten'],
     basePoints: { IBS: 7, GLUTEN: 24 },
   },
   {

@@ -1381,15 +1381,19 @@ async function runResponsesRequestWithAudit<TPayload extends object>(
   };
 }
 
-// Non-HTTP failure codes worth one more try: timeouts and malformed/truncated
-// model output are usually transient. Attempts stay capped by withRetry.
+// Non-HTTP failure codes worth one more try: timeouts, malformed/truncated
+// model output, and network-layer fetch rejections (ECONNRESET / socket hang
+// up surface as "fetch failed" with code openai_request_failed BEFORE any HTTP
+// status exists) are usually transient. A real outage still fails after the
+// capped attempts. Attempts stay capped by withRetry.
 const RETRYABLE_OPENAI_ERROR_CODES = new Set([
   'openai_timeout',
   'openai_invalid_json',
   'openai_incomplete_output',
+  'openai_request_failed',
 ]);
 
-function isTransientOpenAiError(error: unknown) {
+export function isTransientOpenAiError(error: unknown) {
   if (!(error instanceof Error)) {
     return true;
   }

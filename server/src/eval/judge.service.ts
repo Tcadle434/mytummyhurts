@@ -6,6 +6,11 @@ export interface JudgeResult {
   explanation: string;
   prompt: string;
   raw: unknown;
+  /**
+   * True when no judge actually ran (e.g. no OPENAI_API_KEY). Skipped verdicts
+   * must be excluded from pass rates — a skip is not a pass.
+   */
+  skipped: boolean;
 }
 
 export type JudgePreset = 'correctness' | 'hallucination' | 'groundedness' | 'rag_relevance';
@@ -56,7 +61,16 @@ export class JudgeService {
     const passThreshold = params.passThreshold ?? DEFAULT_PASS_THRESHOLD;
 
     if (!apiKey) {
-      return { pass: true, score: 1, explanation: 'judge skipped (no OPENAI_API_KEY)', prompt: `openevals:${params.preset}`, raw: null };
+      // Neutral skip, NOT a pass: callers must exclude skipped verdicts from
+      // pass rates instead of counting a missing key as a perfect score.
+      return {
+        pass: true,
+        score: 0,
+        explanation: 'judge skipped (no OPENAI_API_KEY)',
+        prompt: `openevals:${params.preset}`,
+        raw: null,
+        skipped: true,
+      };
     }
 
     const openevals = await importESM<typeof import('openevals')>('openevals');
@@ -83,9 +97,17 @@ export class JudgeService {
         explanation: String(result.comment ?? ''),
         prompt: promptTemplate,
         raw: result,
+        skipped: false,
       };
     } catch (err) {
-      return { pass: false, score: 0, explanation: `judge_error: ${(err as Error).message}`, prompt: promptTemplate, raw: null };
+      return {
+        pass: false,
+        score: 0,
+        explanation: `judge_error: ${(err as Error).message}`,
+        prompt: promptTemplate,
+        raw: null,
+        skipped: false,
+      };
     }
   }
 

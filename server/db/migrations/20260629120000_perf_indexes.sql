@@ -6,9 +6,19 @@
 -- revoked_at is null`. The existing (user_id, family_id) index cannot serve a
 -- family_id-only predicate, so every revocation scans the family rows. A partial
 -- index matching the WHERE clause keeps it index-only.
-create index if not exists auth_refresh_tokens_family_idx
-  on public.auth_refresh_tokens (family_id)
-  where revoked_at is null;
+--
+-- Guarded: on a FRESH replay (CI, local, eval gate) auth_refresh_tokens does not
+-- exist yet — migrate.mjs applies db/10_selfhost_auth.sql after the migration
+-- history, and that file now creates this same index. On an existing database
+-- the table is present and the index is created here.
+do $$
+begin
+  if to_regclass('public.auth_refresh_tokens') is not null then
+    create index if not exists auth_refresh_tokens_family_idx
+      on public.auth_refresh_tokens (family_id)
+      where revoked_at is null;
+  end if;
+end $$;
 
 -- complete_reserved_scan_analysis deletes child rows by (scan_id, user_id), but the
 -- existing indexes on these tables are (scan_id, display_order) — the user_id

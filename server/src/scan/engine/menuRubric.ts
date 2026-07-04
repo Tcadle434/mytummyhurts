@@ -222,7 +222,7 @@ export const menuBaseFoodCategoryRubric: readonly MenuRubricRule[] = [
     points: 6,
     prompt: 'Dominant base is wheat/gluten grain such as bread, bun, pasta, ramen, udon, couscous, tortilla, pizza crust, pastry, dumpling, or batter.',
     reason: 'Wheat and gluten-containing bases matter more for gluten-sensitive and some IBS profiles.',
-    terms: ['bread', 'bun', 'pasta', 'ramen', 'udon', 'couscous', 'tortilla', 'pizza', 'flatbread', 'pastry', 'dumpling', 'wonton', 'noodle', 'flour', 'batter'],
+    terms: ['bread', 'bun', 'pasta', 'spaghetti', 'macaroni', 'lasagna', 'penne', 'fettuccine', 'linguine', 'ramen', 'udon', 'couscous', 'tortilla', 'pizza', 'flatbread', 'pastry', 'dumpling', 'wonton', 'noodle', 'flour', 'batter'],
     contributorEvidence: 'ingredient',
     conditionMultipliers: [
       { conditions: ['Celiac', 'Celiac disease'], multiplier: 3.4 },
@@ -470,7 +470,9 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
     points: 7,
     prompt: 'Wheat, bread, bun, pasta, ramen, udon, flour tortilla, pizza crust, pastry, dumpling wrapper, batter, breadcrumbs, or gluten-containing grain.',
     reason: 'Wheat and gluten-containing bases matter for celiac, gluten sensitivity, and some IBS/FODMAP profiles.',
-    terms: ['wheat', 'bread', 'bun', 'pasta', 'ramen', 'udon', 'flour tortilla', 'pizza crust', 'pastry', 'dumpling', 'batter', 'breadcrumbs', 'gluten', 'noodle'],
+    // Named pasta shapes matter: extractions say "spaghetti"/"macaroni" without
+    // ever using the word "pasta" (mac & cheese was a known wheat miss).
+    terms: ['wheat', 'bread', 'bun', 'pasta', 'spaghetti', 'macaroni', 'lasagna', 'penne', 'fettuccine', 'linguine', 'ramen', 'udon', 'couscous', 'flour tortilla', 'pizza crust', 'pastry', 'dumpling', 'batter', 'breadcrumbs', 'gluten', 'noodle'],
     contributorEvidence: 'ingredient',
     conditionMultipliers: [
       { conditions: ['Celiac', 'Celiac disease'], multiplier: 2.4 },

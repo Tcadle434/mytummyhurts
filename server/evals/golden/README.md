@@ -22,5 +22,10 @@ Expect ranges, not exact scores. The useful labels are:
 - required digestive mechanisms
 - forbidden digestive mechanisms
 - max run-to-run score spread
+- required ingredients (substring needles over extracted names; `requiredIngredientMinRuns` relaxes flaky extractions)
+- forbidden ingredients (classic-hallucination guards, e.g. no `garlic` on plain rice)
+
+When you tighten, loosen, or re-band an expectation, write the reason in the
+expectation's `notes` field (documentation only; the runner ignores it).
 
 Do not add one-off scoring hacks for a case. If a case fails, fix the general mechanism/exposure rule and keep the case as permanent coverage.

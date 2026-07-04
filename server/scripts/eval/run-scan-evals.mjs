@@ -355,55 +355,69 @@ export function validateExpectation(expectation, runs, failures) {
   return { passed: errors.length === 0, errors, stats };
 }
 
-async function judgeScan(run, expectation, apiKey) {
-  if (!apiKey) {
-    return { skipped: true, pass: true, score: 1, explanation: 'judge skipped (OPENAI_API_KEY not set)' };
-  }
-  const prompt = [
-    'You are a strict evaluator for a gut-health food scan result.',
-    'Judge only explanation quality and grounding. Do not judge the numeric score.',
-    'PASS only if the explanation is grounded in extracted ingredients/mechanisms, cites/uses evidence honestly, does not invent ingredients, does not diagnose disease, and does not overstate tiny garnish-level ingredients.',
-    'Respond only with JSON: {"pass": boolean, "score": number, "explanation": string}.',
-    '',
-    `Expected bands: ${(expectation.expectedBands ?? [expectation.expectedBand]).filter(Boolean).join(', ')}`,
-    `Expected mechanisms: ${(expectation.requiredMechanisms ?? []).join(', ')}`,
-    `Dish: ${run.dishName}`,
-    `Score: ${run.score} ${run.level}`,
-    `Ingredients: ${(run.ingredients ?? []).map((entry) => `${entry.canonicalName ?? entry.rawName} (${entry.amountEstimate ?? 'unknown'} ${entry.role ?? 'unknown'})`).join(', ')}`,
-    `Mechanisms: ${(run.mechanismExposures ?? []).map((entry) => `${entry.mechanismKey}:${entry.points}:${entry.ingredient}`).join(', ')}`,
-    `Summary: ${run.summary ?? ''}`,
-    `Pip take: ${run.pipTake ?? ''}`,
-    `Recommendation: ${run.gutRecommendation ?? ''}`,
-  ].join('\n');
+// ---- LLM-as-judge (openevals JudgeService — the one implementation) ----
+// The judge checks explanation quality only; numeric gates stay deterministic.
+// Requires a built server (`npm --prefix server run build`) because it reuses
+// the compiled src/eval/judge.service.ts instead of a hand-rolled prompt.
+let judgeServicePromise = null;
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: process.env.OPENAI_JUDGE_MODEL ?? 'gpt-4.1-mini',
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
-    }),
-  });
-  if (!res.ok) return { skipped: false, pass: false, score: 0, explanation: `judge_http_${res.status}` };
-  const json = await res.json();
-  const text = json.choices?.[0]?.message?.content ?? '{}';
-  try {
-    const parsed = JSON.parse(text);
-    return {
-      skipped: false,
-      pass: Boolean(parsed.pass),
-      score: Number(parsed.score ?? 0),
-      explanation: String(parsed.explanation ?? ''),
-      raw: parsed,
-    };
-  } catch {
-    return { skipped: false, pass: false, score: 0, explanation: 'unparseable judge response', raw: text };
-  }
+function loadJudgeService() {
+  judgeServicePromise ??= import(
+    pathToFileURL(join(serverRoot, 'dist', 'eval', 'judge.service.js')).href
+  ).then(
+    (mod) => new mod.JudgeService(),
+    (err) => {
+      throw new Error(
+        `--judge needs the compiled JudgeService (npm --prefix server run build): ${err.message}`,
+      );
+    },
+  );
+  return judgeServicePromise;
 }
 
-async function runSingleScan(args, accessToken, imageUrl, caseId, expectation, runIndex, runId) {
-  const requestId = `eval-${runId}-${caseId}-${expectation.profile}-${runIndex + 1}`;
+const JUDGE_EXTRA_RUBRIC = [
+  'Judge only explanation quality and grounding, never the numeric score.',
+  'Assign a failing score (below 0.7) if the output invents ingredients outside the extracted list,',
+  'diagnoses a medical condition, overstates tiny garnish-level ingredients, or is dishonest about uncertainty.',
+].join(' ');
+
+async function judgeScan(run, expectation) {
+  const judge = await loadJudgeService();
+  const ingredients = (run.ingredients ?? [])
+    .map((entry) => `${entry.canonicalName ?? entry.rawName} (${entry.amountEstimate ?? 'unknown'} ${entry.role ?? 'unknown'})`)
+    .join(', ');
+  const mechanisms = (run.mechanismExposures?.length ? run.mechanismExposures : run.scoreContributors ?? [])
+    .map((entry) => `${entry.mechanismKey ?? entry.key}:${entry.points}:${entry.ingredient ?? entry.source ?? ''}`)
+    .join(', ');
+  const verdict = await judge.judge({
+    preset: 'groundedness',
+    dimension: 'scan_explanation_groundedness',
+    inputs: `Food scan of "${run.dishName}" (expected bands: ${(expectation.expectedBands ?? [expectation.expectedBand]).filter(Boolean).join(', ') || 'unspecified'})`,
+    outputs: [
+      `Summary: ${run.summary ?? ''}`,
+      `Pip take: ${run.pipTake ?? ''}`,
+      `Recommendation: ${run.gutRecommendation ?? ''}`,
+    ].join('\n'),
+    context: [
+      `Extracted ingredients (the only ingredients the explanation may reference): ${ingredients || 'none'}`,
+      `Mechanisms/drivers: ${mechanisms || 'none'}`,
+      `Score: ${run.score} ${run.level}`,
+    ].join('\n'),
+    extraRubric: JUDGE_EXTRA_RUBRIC,
+  });
+  return {
+    skipped: Boolean(verdict.skipped),
+    pass: Boolean(verdict.pass),
+    score: Number(verdict.score ?? 0),
+    explanation: String(verdict.explanation ?? ''),
+  };
+}
+
+async function runSingleScan(args, accessToken, imageUrl, caseId, expectation, runIndex, runId, attempt) {
+  // Attempt is part of the requestId: failed scans DEDUPE by requestId
+  // (begin_scan_analysis returns failed_existing), so a retry must be a
+  // genuinely new request or it just replays the original failure.
+  const requestId = `eval-${runId}-${caseId}-${expectation.profile}-${runIndex + 1}-a${attempt}`;
   return apiPost(args.api, 'scan-analyze-image', {
     requestId,
     imageDataUrls: [imageUrl],
@@ -425,17 +439,21 @@ async function runExpectation(args, auth, profile, scanCase, expectation, runId)
 
   for (let index = 0; index < repeat; index += 1) {
     let attempt = 0;
-    const maxAttempts = expectation.allowTimeoutRetry === false ? 1 : 2;
+    const maxAttempts = expectation.allowTimeoutRetry === false ? 1 : 3;
     for (;;) {
       try {
-        const response = await runSingleScan(args, auth.accessToken, imageUrl, scanCase.id, expectation, index, runId);
+        const response = await runSingleScan(args, auth.accessToken, imageUrl, scanCase.id, expectation, index, runId, attempt);
         const summary = summarizeScan(response);
         runs.push(summary);
         console.log(`${scanCase.id} [${expectation.profile}] ${index + 1}/${repeat}: ${summary.score} ${summary.level} "${summary.dishName}"`);
         break;
       } catch (err) {
         attempt += 1;
-        const retryable = err instanceof ApiRequestError && ['request_timeout', 'openai_timeout'].includes(String(err.code));
+        // Transient classes: client timeout, upstream timeout, and upstream
+        // network failure (ai_request_failed). Each retry is a NEW requestId.
+        const retryable =
+          err instanceof ApiRequestError &&
+          ['request_timeout', 'openai_timeout', 'ai_request_failed'].includes(String(err.code));
         if (retryable && attempt < maxAttempts) {
           console.warn(`${scanCase.id} [${expectation.profile}] ${index + 1}/${repeat}: retrying after ${err.code}`);
           continue;
@@ -458,7 +476,7 @@ async function runExpectation(args, auth, profile, scanCase, expectation, runId)
   const judges = [];
   if (args.judge) {
     for (const run of runs.filter((entry) => !entry.error)) {
-      const verdict = await judgeScan(run, expectation, process.env.OPENAI_API_KEY).catch((err) => ({
+      const verdict = await judgeScan(run, expectation).catch((err) => ({
         skipped: false,
         pass: false,
         score: 0,
@@ -466,8 +484,12 @@ async function runExpectation(args, auth, profile, scanCase, expectation, runId)
       }));
       judges.push({ scanId: run.scanId, ...verdict });
     }
-    if (args.judgeBlocking && judges.some((entry) => entry.pass === false)) {
-      validation.errors.push(`judge failure(s): ${judges.filter((entry) => entry.pass === false).map((entry) => entry.explanation).join('; ')}`);
+    // Skipped verdicts (e.g. no OPENAI_API_KEY) are excluded from the pass
+    // rate entirely: they neither block nor count as passes.
+    const judged = judges.filter((entry) => !entry.skipped);
+    const judgeFailures = judged.filter((entry) => entry.pass === false);
+    if (args.judgeBlocking && judgeFailures.length) {
+      validation.errors.push(`judge failure(s): ${judgeFailures.map((entry) => entry.explanation).join('; ')}`);
       validation.passed = false;
     }
   }

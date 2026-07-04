@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   bandMatch,
+  bandMeansFromOutcomes,
+  bandOrdinal,
   buildExamples,
+  evaluateDriftAlarm,
   expectationPass,
+  meanBandDrift,
   overallRiskScore,
   scoreInRange,
 } from '../scripts/eval/run-langsmith-evals.mjs';
@@ -85,5 +89,61 @@ describe('deterministic evaluators', () => {
     const fail = expectationPass({ outputs: { level: 'low', score: 20 }, referenceOutputs: ref });
     expect(fail.score).toBe(0);
     expect(fail.comment).toMatch(/band|score/i);
+  });
+});
+
+describe('band drift alarm', () => {
+  it('bandOrdinal maps risk levels to ordinals and rejects junk', () => {
+    expect(bandOrdinal('low')).toBe(0);
+    expect(bandOrdinal('medium')).toBe(1);
+    expect(bandOrdinal('high')).toBe(2);
+    expect(bandOrdinal('severe')).toBeNull();
+    expect(bandOrdinal(undefined)).toBeNull();
+  });
+
+  it('bandMeansFromOutcomes averages repeated runs per example key', () => {
+    // Arrange
+    const rows = [
+      { key: 'pizza::gerd', level: 'high' },
+      { key: 'pizza::gerd', level: 'medium' },
+      { key: 'rice::ibs', level: 'low' },
+      { key: 'broken::x', level: 'unknown' },
+    ];
+
+    // Act
+    const { perKey } = bandMeansFromOutcomes(rows);
+
+    // Assert
+    expect(perKey['pizza::gerd']).toBe(1.5);
+    expect(perKey['rice::ibs']).toBe(0);
+    expect(perKey['broken::x']).toBeUndefined();
+  });
+
+  it('meanBandDrift compares only shared keys and signs the direction', () => {
+    const baseline = { 'a::p': 0, 'b::p': 1, 'gone::p': 2 };
+    const current = { 'a::p': 1, 'b::p': 2, 'new::p': 0 };
+
+    const { meanDrift, sharedKeys, perKeyDrift } = meanBandDrift(baseline, current);
+
+    expect(sharedKeys).toBe(2);
+    expect(meanDrift).toBe(1);
+    expect(perKeyDrift).toEqual({ 'a::p': 1, 'b::p': 1 });
+  });
+
+  it('evaluateDriftAlarm exits 1 only past a whole band of mean drift', () => {
+    const baseline = { perKey: { 'a::p': 0, 'b::p': 0 } };
+    const calm = evaluateDriftAlarm(baseline, { perKey: { 'a::p': 1, 'b::p': 0 } });
+    expect(calm.exitCode).toBe(0);
+    expect(calm.meanDrift).toBe(0.5);
+
+    const loud = evaluateDriftAlarm(baseline, { perKey: { 'a::p': 2, 'b::p': 1.5 } });
+    expect(loud.exitCode).toBe(1);
+    expect(loud.meanDrift).toBe(1.75);
+  });
+
+  it('evaluateDriftAlarm never fires with no shared keys (fresh baseline)', () => {
+    const result = evaluateDriftAlarm({ perKey: {} }, { perKey: { 'a::p': 2 } });
+    expect(result.exitCode).toBe(0);
+    expect(result.sharedKeys).toBe(0);
   });
 });
