@@ -8,7 +8,7 @@ A slice of wheat bread delivers gluten (the elastic protein network that gives d
 
 ## Blinded Studies Point to the Fructan, Not the Gluten
 
-The strongest reason to separate gluten from fructan in NCGS is that when researchers remove the expectation and test the two components separately under blinded conditions, the fructan tends to reproduce IBS-type symptoms while purified gluten often does not. Monash University, whose team has run this kind of re-challenge work, describes the fructan content of wheat as the more likely trigger of gut symptoms in people who believe they are gluten-sensitive but do not have celiac disease. The practical read is that many self-identified "gluten reactions" in the IBS population track the FODMAP load of the food rather than the protein. Evidence here is still developing and individual responses vary, but the direction is consistent: for gut symptoms in NCGS, the oligosaccharide is the usual suspect. This is why a low-FODMAP approach frequently eases symptoms even without a strictly gluten-free diet.
+The strongest reason to separate gluten from fructan in NCGS is that when researchers remove the expectation and test the two components separately under blinded conditions, the fructan tends to reproduce IBS-type symptoms while purified gluten often does not. In the best-known example, a double-blind, placebo-controlled crossover trial gave adults with self-reported gluten sensitivity (and no celiac disease) concealed bars of gluten, fructan, or placebo, and found that gastrointestinal symptoms — bloating in particular — were significantly higher after the fructan than after the gluten, with gluten no different from placebo (Skodje GI et al., Gastroenterology 2018; PMID 29102613). Monash University, whose team has run this kind of re-challenge work, similarly describes the fructan content of wheat as the more likely trigger of gut symptoms in people who believe they are gluten-sensitive but do not have celiac disease. The practical read is that many self-identified "gluten reactions" in the IBS population track the FODMAP load of the food rather than the protein. Evidence here is still developing and individual responses vary, but the direction is consistent: for gut symptoms in NCGS, the oligosaccharide is the usual suspect. This is why a low-FODMAP approach frequently eases symptoms even without a strictly gluten-free diet.
 
 ## Celiac Disease Is a Separate Condition — Do Not Conflate It
 
@@ -22,6 +22,7 @@ Within the fructan mechanism, not all wheat foods carry the same load, which is 
 
 - Monash University FODMAP program — "What is a low FODMAP diet?"
 - Monash University FODMAP program — educational materials on oligosaccharides (fructans) and wheat
+- Skodje GI, et al. — Fructan, Rather Than Gluten, Induces Symptoms in Patients With Self-Reported Non-Celiac Gluten Sensitivity. Gastroenterology 2018;154:529-539. https://doi.org/10.1053/j.gastro.2017.10.040
 - NIDDK (National Institute of Diabetes and Digestive and Kidney Diseases) — Irritable Bowel Syndrome: Eating, Diet, & Nutrition. https://www.niddk.nih.gov/health-information/digestive-diseases/irritable-bowel-syndrome/eating-diet-nutrition
 - MedlinePlus (U.S. National Library of Medicine) — Celiac Disease. https://medlineplus.gov/celiacdisease.html
 
