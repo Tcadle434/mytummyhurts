@@ -222,6 +222,66 @@ function clampFinalBand(row: RawRiskAdjudicationCondition, personalEvidence: Per
   return bandAt(generic + Math.sign(final - generic) * allowedMove);
 }
 
+// Which corpus condition tags can justify raising a band for which user
+// condition. A histamine doc must never raise a GERD band (observed live:
+// the adjudicator cited fermented/histamine evidence to lift sushi's GERD
+// band from the vision model's mild to moderate — a 24-point score jump).
+const CONDITION_TAG_MATCHERS: Array<{ tag: string; matches: (key: string) => boolean }> = [
+  { tag: 'gerd', matches: (key) => key.includes('gerd') || key.includes('reflux') },
+  { tag: 'ibs', matches: (key) => key === 'ibs' || key.includes('irritable') },
+  { tag: 'high_fodmap', matches: (key) => key === 'ibs' || key.includes('irritable') || key.includes('fodmap') },
+  { tag: 'lactose_intolerance', matches: (key) => key.includes('lactose') },
+  { tag: 'gluten_sensitivity', matches: (key) => key.includes('gluten') || key.includes('celiac') },
+  { tag: 'histamine_intolerance', matches: (key) => key.includes('histamine') },
+];
+
+function chunkSupportsCondition(chunk: RiskAdjudicationEvidenceChunk, condition: string): boolean {
+  const key = conditionKey(condition);
+  return chunk.conditionTags.some((tag) => {
+    const matcher = CONDITION_TAG_MATCHERS.find((entry) => entry.tag === normalize(tag));
+    return matcher ? matcher.matches(key) : false;
+  });
+}
+
+/**
+ * The vision model saw the plate; the adjudicator did not. Its genericBand is
+ * an adjustment of the extraction prior, never a fresh opinion: at most one
+ * band in either direction, and an UPWARD move must cite at least one chunk
+ * whose condition tags actually cover this condition and whose direction is
+ * 'raises'. Without a prior (band request disabled), the raw band passes.
+ */
+function clampGenericBand(
+  raw: RawRiskAdjudicationCondition,
+  structured: StructuredAnalysisV2,
+  citedChunks: RiskAdjudicationEvidenceChunk[],
+  warnings: Set<string>,
+): ConditionSeverityBand {
+  const prior = structured.conditionSeverities?.find(
+    (entry) => conditionKey(entry.condition) === conditionKey(raw.condition),
+  );
+  if (!prior || !isBand(prior.band)) return raw.genericBand;
+
+  const priorIndex = bandIndex(prior.band);
+  const genericIndex = bandIndex(raw.genericBand);
+  const delta = genericIndex - priorIndex;
+  if (delta === 0) return raw.genericBand;
+
+  let allowedIndex: number;
+  if (delta < 0) {
+    allowedIndex = Math.max(genericIndex, priorIndex - 1);
+  } else {
+    const upwardJustified = citedChunks.some(
+      (chunk) => chunk.direction === 'raises' && chunkSupportsCondition(chunk, raw.condition),
+    );
+    allowedIndex = upwardJustified ? Math.min(genericIndex, priorIndex + 1) : priorIndex;
+  }
+
+  if (allowedIndex !== genericIndex) {
+    warnings.add(`genericBandClamped:${conditionKey(raw.condition)}:${raw.genericBand}->${bandAt(allowedIndex)}`);
+  }
+  return bandAt(allowedIndex);
+}
+
 function citationIdMap(chunks: RiskAdjudicationEvidenceChunk[]) {
   const map = new Map<string, string>();
   chunks.forEach((chunk, index) => {
@@ -271,11 +331,16 @@ export function validateRiskAdjudication(
       .filter((driver) => allowedIngredients.some((name) => namesMatch(name, driver)))
       .slice(0, 6);
 
-    const clampedFinalBand = clampFinalBand(raw, input.personalEvidence);
+    const citedChunks = input.ragEvidence.filter((chunk) => citationChunkIds.includes(chunk.chunkId));
+    const clampedGenericBand = clampGenericBand(raw, input.structuredAnalysis, citedChunks, warnings);
+    const clampedFinalBand = clampFinalBand(
+      { ...raw, genericBand: clampedGenericBand },
+      input.personalEvidence,
+    );
 
     const row: RawRiskAdjudicationCondition = {
       condition: raw.condition,
-      genericBand: raw.genericBand,
+      genericBand: clampedGenericBand,
       personalizedBand: raw.personalizedBand,
       finalBand: clampedFinalBand,
       drivers,

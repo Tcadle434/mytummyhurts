@@ -229,3 +229,96 @@ describe('risk adjudication validation', () => {
     expect(high?.conditionSeverities[0].band).toBe('none');
   });
 });
+
+// Regression for the live 2026-07-04 sushi scan: the vision model's GERD prior
+// was mild, but the adjudicator re-derived genericBand=moderate citing a
+// histamine-tagged chunk (soy sauce) — wrong condition — lifting the score
+// 31→55. The adjudicator adjusts the vision prior; it does not overrule it.
+describe('generic band is clamped to the vision prior', () => {
+  const gerdChunk = {
+    chunkId: 'chunk-gerd',
+    title: 'Fat and Fried Foods — Reflux',
+    source: 'Curated reference',
+    content: 'Fat delays gastric emptying and relaxes the LES.',
+    conditionTags: ['GERD'],
+    ingredientTags: ['fried', 'fat', 'avocado'],
+    direction: 'raises' as const,
+    relevanceScore: 0.6,
+  };
+  const histamineChunk = {
+    chunkId: 'chunk-hist',
+    title: 'Histamine, Aged and Fermented Foods',
+    source: 'Curated reference',
+    content: 'Fermented foods like soy sauce carry histamine.',
+    conditionTags: ['histamine_intolerance'],
+    ingredientTags: ['soy sauce', 'fermented'],
+    direction: 'raises' as const,
+    relevanceScore: 0.6,
+  };
+
+  function gerdStructured(): StructuredAnalysisV2 {
+    return {
+      ...structured(),
+      conditionSeverities: [
+        { condition: 'GERD / Acid reflux', band: 'mild', drivers: ['cheese'], rationale: 'Vision prior.' },
+      ],
+    };
+  }
+
+  function gerdPayload(genericBand: 'mild' | 'moderate' | 'high', citationChunkIds: string[]): RiskAdjudicationPayload {
+    return {
+      conditionSeverities: [
+        {
+          condition: 'GERD / Acid reflux',
+          genericBand,
+          personalizedBand: genericBand,
+          finalBand: genericBand,
+          drivers: ['cheese'],
+          protectiveEvidence: [],
+          citationChunkIds,
+          personalEvidenceUsed: [],
+          confidence: 'medium',
+          rationale: 'test',
+        },
+      ],
+    };
+  }
+
+  function gerdRequest(ragEvidence: (typeof gerdChunk)[]) {
+    return buildRiskAdjudicationRequest({
+      structuredAnalysis: gerdStructured(),
+      profile: { ...ibsProfile(), knownConditions: ['GERD / Acid reflux'] },
+      insights: [],
+      ragEvidence,
+    });
+  }
+
+  it('rejects an upward move justified only by a wrong-condition citation (the sushi bug)', () => {
+    const result = validateRiskAdjudication(gerdPayload('moderate', ['chunk-hist']), gerdRequest([histamineChunk]));
+    expect(result?.conditionSeverities[0].band).toBe('mild');
+    expect(result?.metadata.warnings?.some((w) => w.startsWith('genericBandClamped'))).toBe(true);
+  });
+
+  it('allows a one-band upward move with a condition-matching raises citation', () => {
+    const result = validateRiskAdjudication(gerdPayload('moderate', ['chunk-gerd']), gerdRequest([gerdChunk]));
+    expect(result?.conditionSeverities[0].band).toBe('moderate');
+  });
+
+  it('caps even justified upward moves at one band above the prior', () => {
+    const result = validateRiskAdjudication(gerdPayload('high', ['chunk-gerd']), gerdRequest([gerdChunk]));
+    expect(result?.conditionSeverities[0].band).toBe('moderate');
+  });
+
+  it('allows a one-band downward move without extra justification', () => {
+    const result = validateRiskAdjudication(gerdPayload('mild', []), {
+      ...gerdRequest([]),
+      structuredAnalysis: {
+        ...gerdStructured(),
+        conditionSeverities: [
+          { condition: 'GERD / Acid reflux', band: 'moderate', drivers: ['cheese'], rationale: 'Vision prior.' },
+        ],
+      },
+    });
+    expect(result?.conditionSeverities[0].band).toBe('mild');
+  });
+});
