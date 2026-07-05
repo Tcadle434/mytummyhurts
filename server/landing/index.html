@@ -3,166 +3,303 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MyTummyHurts — Know how you'll feel before you eat it</title>
-  <meta name="description" content="Scan any meal and get an honest, personalized read on how it'll sit with your stomach. Built for your gut — IBS, reflux, lactose — not a generic food list. iPhone app." />
+  <title>MyTummyHurts — The gut app that clears foods, not just blames them</title>
+  <meta name="description" content="Every food you eat builds a case from your own calm and rough days — and ends in a verdict you can trust: confirmed trigger, or officially cleared. Built for IBS, reflux, lactose and gluten. iPhone, 7 days free." />
+  <meta name="theme-color" content="#0c2e22" />
   <link rel="canonical" href="https://mytummyhurts.app/" />
   <link rel="icon" type="image/png" href="/assets/favicon.png" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="MyTummyHurts — Know how you'll feel before you eat it" />
-  <meta property="og:description" content="Scan any meal, get a personal gut-risk read, and find the foods you can stop worrying about." />
+  <meta property="og:site_name" content="MyTummyHurts" />
+  <meta property="og:title" content="MyTummyHurts — The gut app that clears foods, not just blames them" />
+  <meta property="og:description" content="Verdicts with receipts. Every food builds a case from your own calm and rough days — including the verdict no other gut app gives: cleared." />
   <meta property="og:url" content="https://mytummyhurts.app/" />
   <meta property="og:image" content="https://mytummyhurts.app/assets/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="MyTummyHurts — The gut app that clears foods, not just blames them" />
+  <meta name="twitter:description" content="Verdicts with receipts, earned from your own days. The best news it gives you is what you CAN eat." />
+  <meta name="twitter:image" content="https://mytummyhurts.app/assets/og.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "MobileApplication",
+    "name": "MyTummyHurts",
+    "operatingSystem": "iOS",
+    "applicationCategory": "HealthApplication",
+    "description": "A gut companion that builds a case for every food you eat — from your own calm and rough days — and hands down honest verdicts, including officially clearing foods you can stop worrying about.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "7 days free" }
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <script>
+    // Reveal animations only apply when JS is live (html.js). If landing.js
+    // never arrives (blocked/failed), drop the class so nothing stays hidden.
+    document.documentElement.classList.add("js");
+    setTimeout(function () {
+      if (!document.documentElement.classList.contains("enhanced")) {
+        document.documentElement.classList.remove("js");
+      }
+    }, 3000);
+  </script>
 </head>
 <body>
 
-<nav class="nav" id="nav">
+<a class="skip-link" href="#case-file">Skip to content</a>
+
+<nav class="nav" id="nav" aria-label="Main">
   <div class="nav-inner">
     <a class="nav-logo" href="/">MyTummyHurts</a>
     <div class="nav-links">
-      <a href="#how">How it works</a>
-      <a href="#gutscore">Gut Score</a>
-      <a href="#triggers">Triggers</a>
-      <a href="#pip">Meet Pip</a>
+      <a href="#case-file">The case file</a>
+      <a href="#cleared">Cleared</a>
+      <a href="#honesty">Honesty</a>
+      <a href="#pip">Pip</a>
     </div>
+    <a class="nav-cta" data-appstore href="#">Get the app</a>
   </div>
 </nav>
 
 <header class="hero">
   <div class="wrap hero-grid">
     <div class="hero-copy">
-      <p class="hero-eyebrow">For iPhone · launching soon</p>
-      <h1>Know how you'll feel <em>before</em> you eat it.</h1>
-      <p class="hero-sub">Take a picture of your food. Get an honest read on how it'll sit with your stomach — built for <strong>your</strong> body, not a generic food list.</p>
+      <p class="hero-eyebrow">Built for iPhone · 7 days free</p>
+      <h1>Your fear list is <em>too&nbsp;long.</em></h1>
+      <p class="hero-sub">MyTummyHurts puts every food you eat on trial — with your own calm and rough days as the evidence — and hands down verdicts you can trust. Including the one no other gut app gives: <strong>cleared.</strong></p>
       <div class="cta-row">
         <a class="appstore-btn" data-appstore href="#" aria-label="Download MyTummyHurts on the App Store">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
           <span class="lines"><span class="small">Download on the</span><span class="big">App Store</span></span>
         </a>
-        <span class="cta-note" id="cta-note">The listing goes live with launch — days away.</span>
+        <span class="cta-note">The listing goes live with launch — days away.</span>
       </div>
-      <div class="trust-row">
-        <span>7 days free</span>
-        <span>Private by default</span>
-        <span>Not a medical device</span>
-      </div>
+      <ul class="trust-row" aria-label="Good to know">
+        <li>7 days free</li>
+        <li>Delete your data anytime</li>
+        <li>Not a medical device</li>
+      </ul>
     </div>
 
     <div class="hero-visual">
-      <div class="phone" aria-hidden="true">
-        <div class="phone-notch"></div>
-        <p class="mock-greeting">Good evening, Sam</p>
-        <div class="mock-hero">
-          <div>
-            <p class="mock-score-label">Gut Score</p>
-            <p class="mock-score">72<small>/100</small></p>
-            <p class="mock-trend">▲ +4 this week</p>
+      <figure class="caseboard" aria-label="Example trigger profile: five verdicts earned from real days">
+        <figcaption class="board-head">
+          <span class="board-title">The caseboard</span>
+          <span class="board-meta">evidence&nbsp;=&nbsp;your own days</span>
+        </figcaption>
+        <div class="vrow">
+          <span class="pill confirmed">Confirmed</span>
+          <span class="food">Garlic &amp; onion</span>
+          <span class="why">rough on 3 of 4 days</span>
+        </div>
+        <div class="vrow">
+          <span class="pill suspect">Suspect</span>
+          <span class="food">Fried &amp; crispy</span>
+          <span class="why">1 rough day · case open</span>
+        </div>
+        <div class="vrow">
+          <span class="pill watching">Watching</span>
+          <span class="food">Cold brew</span>
+          <span class="why">no verdict yet</span>
+        </div>
+        <div class="vrow">
+          <span class="pill safe">Looking safe</span>
+          <span class="food">Sourdough</span>
+          <span class="why">calm 2 of 2</span>
+        </div>
+        <div class="cleared-band">
+          <span class="stamp" aria-hidden="true">Cleared</span>
+          <p class="band-title">
+            <svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Case closed — in their favor
+          </p>
+          <div class="vrow">
+            <span class="food">Tomatoes</span>
+            <span class="why">calm 4 of 4 days</span>
           </div>
-          <div class="mock-ring">
-            <svg width="74" height="74" viewBox="0 0 74 74">
-              <circle cx="37" cy="37" r="32" fill="none" stroke="rgba(247,246,242,0.15)" stroke-width="6"/>
-              <circle cx="37" cy="37" r="32" fill="none" stroke="#96c8ae" stroke-width="6" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="56"/>
-            </svg>
-            <img src="/assets/pip_joyous.png" alt="" />
+          <div class="vrow">
+            <span class="food">Rice &amp; grains</span>
+            <span class="why">calm 6 of 6 days</span>
           </div>
         </div>
-        <div class="mock-row"><span class="dot">✓</span> Tomatoes — cleared <span class="meta">calm 4 of 4</span></div>
-        <div class="mock-row"><span class="dot" style="background:var(--suspect-bg);color:var(--suspect-fg)">2</span> Garlic &amp; onion — under review</div>
-        <div class="mock-cta">Scan food</div>
-      </div>
-      <img class="hero-pip" src="/assets/pip_waving.png" alt="Pip, the MyTummyHurts mascot, waving" />
+      </figure>
+      <img class="hero-pip" src="/assets/pip_waving.png" alt="Pip, the MyTummyHurts stomach mascot, waving hello" width="150" height="150" />
+    </div>
+  </div>
+
+  <div class="legend" role="list" aria-label="The five verdicts">
+    <div class="legend-track">
+      <div class="legend-item" role="listitem"><span class="pill confirmed">Confirmed</span><p>Repeated rough days behind it. It really is them.</p></div>
+      <div class="legend-item" role="listitem"><span class="pill suspect">Suspect</span><p>Something rough on the record. Under review.</p></div>
+      <div class="legend-item" role="listitem"><span class="pill watching">Watching</span><p>On the board — no evidence either way yet.</p></div>
+      <div class="legend-item" role="listitem"><span class="pill safe">Looking safe</span><p>Calm so far, nothing against it.</p></div>
+      <div class="legend-item" role="listitem"><span class="pill cleared">Cleared</span><p>Repeated calm, zero rough. Officially exonerated.</p></div>
     </div>
   </div>
 </header>
 
-<section id="how">
+<section id="case-file" class="casefile">
   <div class="wrap">
-    <p class="eyebrow reveal">How it works</p>
-    <h2 class="reveal">Four taps from <em style="font-style:normal;color:var(--evergreen-bright)">“will this hurt?”</em> to <em style="font-style:normal;color:var(--evergreen-bright)">“oh, that's why.”</em></h2>
-    <p class="section-sub reveal">MyTummyHurts learns your stomach the way a good friend would — by paying attention, not preaching. The more you scan, the smarter it gets.</p>
-    <div class="steps">
-      <div class="step reveal"><p class="num">01</p><h3>Scan</h3><p>Point your camera at any meal. Pip reads the ingredients in seconds — sauces, prep, and all.</p></div>
-      <div class="step reveal"><p class="num">02</p><h3>Score</h3><p>Get a personal risk read from 0 to 100, tuned to your conditions and your past reactions — not someone else's elimination handbook.</p></div>
-      <div class="step reveal"><p class="num">03</p><h3>Check in</h3><p>One tap a day on how your gut actually felt. Five seconds in, days of insight out.</p></div>
-      <div class="step reveal"><p class="num">04</p><h3>Learn</h3><p>Your Gut Score climbs as the app surfaces what's actually working — and clears the foods that never deserved the blame.</p></div>
+    <div class="section-head reveal">
+      <p class="eyebrow">The case file</p>
+      <h2>How a verdict gets earned.</h2>
+      <p class="section-sub">No elimination spreadsheets, no 40-question quizzes. Two small habits — the app does the detective work in between.</p>
     </div>
-  </div>
-</section>
-
-<section class="gutscore" id="gutscore">
-  <div class="wrap gutscore-grid">
-    <div class="score-visual reveal" aria-hidden="true">
-      <svg viewBox="0 0 200 200">
-        <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(247,246,242,0.12)" stroke-width="14"/>
-        <circle cx="100" cy="100" r="86" fill="none" stroke="#96c8ae" stroke-width="14" stroke-linecap="round" stroke-dasharray="540" stroke-dashoffset="151"/>
-      </svg>
-      <div class="score-center"><div><p class="value">72</p><p class="caption">higher = calmer gut</p></div></div>
-    </div>
-    <div>
-      <p class="eyebrow reveal">Gut Score</p>
-      <h2 class="reveal">One number for how settled your gut is.</h2>
-      <p class="section-sub reveal">Your last two weeks — what you ate, what you scanned, how your days went — read as a single honest number. No fasting protocols. No wellness guilt trips.</p>
-      <div class="benefits">
-        <div class="benefit reveal"><span class="tick">✓</span><div><strong>Personal, not generic.</strong><p>Your score reflects your patterns — not the average human's.</p></div></div>
-        <div class="benefit reveal"><span class="tick">✓</span><div><strong>Trend that matters.</strong><p>Week-over-week movement, with the meals that moved it.</p></div></div>
-        <div class="benefit reveal"><span class="tick">✓</span><div><strong>Honest about uncertainty.</strong><p>Every read shows its evidence. Unclear scans say so instead of guessing.</p></div></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="triggers">
-  <div class="wrap">
-    <p class="eyebrow reveal">Your Trigger Profile</p>
-    <h2 class="reveal">The first food app that tells you what's <em style="font-style:normal;color:var(--safe-tint)">safe</em>.</h2>
-    <div class="caseboard-grid">
-      <div>
-        <p class="section-sub reveal">Every food you eat builds a case — confirmed triggers, suspects under review, and the part nobody else does: foods <strong>cleared by your own evidence</strong>. Eat something calmly enough times, and you can officially stop worrying about it.</p>
-        <p class="section-sub reveal" style="margin-top:16px">No forbidden-food lists. No permanent restriction. Verdicts earned from your days, one check-in at a time.</p>
-      </div>
-      <div class="verdicts reveal">
-        <div class="verdict"><span class="pill confirmed">Confirmed</span><span class="food">Garlic &amp; onion</span><span class="why">rough 3 of 4 days</span></div>
-        <div class="verdict"><span class="pill suspect">Under review</span><span class="food">Fried &amp; crispy</span><span class="why">1 more day decides</span></div>
-        <div class="cleared-band">
-          <p class="band-title">✓ Cleared</p>
-          <p class="band-sub">Calm every time you ate them. Case closed.</p>
-          <div class="verdict"><span class="pill safe">Cleared</span><span class="food">Tomatoes</span><span class="why">calm 4 of 4</span></div>
-          <div class="verdict"><span class="pill safe">Cleared</span><span class="food">Rice &amp; grains</span><span class="why">calm 6 of 6</span></div>
+    <div class="casefile-grid">
+      <div class="habits">
+        <div class="habit reveal">
+          <svg class="habit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.2-1.8h5.4L15.9 6h1.6A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5z"/><circle cx="12" cy="12" r="3.2"/></svg>
+          <h3>Scan what you eat</h3>
+          <p>Point the camera at the plate — or the menu. Every ingredient becomes a suspect, tracked from that moment on.</p>
+        </div>
+        <div class="habit reveal">
+          <svg class="habit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>
+          <h3>One tap before bed</h3>
+          <p>Calm, rough, or somewhere in between. Five seconds. Your days are the only testimony that counts.</p>
+        </div>
+        <div class="habit reveal">
+          <svg class="habit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15.5" rx="2.5"/><path d="M4 9.5h16M8.5 3v3.5M15.5 3v3.5"/><path d="M8 14l2.4 2.4L16.5 12" /></svg>
+          <h3>Days become evidence</h3>
+          <p>Not vibes, not streaks — distinct days, counted honestly. Every verdict shows its count, so you always see why.</p>
         </div>
       </div>
+
+      <figure class="docket reveal" aria-label="A real case: how tomatoes went from suspect to cleared">
+        <figcaption class="docket-head">
+          <span class="docket-no">Case file</span>
+          <span class="docket-food">Tomatoes</span>
+          <span class="docket-span">opened Tuesday · closed in 9 days</span>
+        </figcaption>
+        <ol class="docket-line">
+          <li class="entry">
+            <span class="entry-day">Tue</span>
+            <p>Caprese for lunch. You scan it — tomatoes go on the board. <span class="tag watching">watching</span></p>
+          </li>
+          <li class="entry">
+            <span class="entry-day">Tue · 9:14 pm</span>
+            <p>One-tap check-in: calm. First calm day on the record. <span class="tag count">calm 1 of 1</span></p>
+          </li>
+          <li class="entry">
+            <span class="entry-day">Fri</span>
+            <p>Pasta pomodoro, normal portion. Calm again. <span class="tag count">calm 2 of 2</span></p>
+          </li>
+          <li class="entry">
+            <span class="entry-day">Next Wed</span>
+            <p>Two more tomato days. Zero rough ones. <span class="tag count">calm 4 of 4</span></p>
+          </li>
+          <li class="entry verdict-entry">
+            <span class="entry-day">Verdict</span>
+            <p class="verdict-line"><strong>Calm on 4 of 4 days you ate it — cleared.</strong></p>
+          </li>
+        </ol>
+      </figure>
     </div>
   </div>
 </section>
 
-<section class="pips" id="pip">
-  <div class="wrap">
-    <p class="eyebrow reveal">Meet Pip</p>
-    <h2 class="reveal">A stomach that actually tells you how it feels.</h2>
-    <p class="section-sub reveal">Pip is the friend in the app — part mascot, part mood ring for your gut. Pip's face changes with your day, so you always know where you stand.</p>
-    <div class="pip-row">
-      <div class="pip-card reveal"><img src="/assets/pip_joyous.png" alt="Pip joyful" /><p class="state">Joyful</p><p class="when">Calm stretch</p></div>
-      <div class="pip-card reveal"><img src="/assets/pip_thinking.png" alt="Pip thinking" /><p class="state">Thinking</p><p class="when">Analyzing your scan</p></div>
-      <div class="pip-card reveal"><img src="/assets/pip_base.png" alt="Pip steady" /><p class="state">Steady</p><p class="when">A normal day</p></div>
-      <div class="pip-card reveal"><img src="/assets/pip_anxious.png" alt="Pip worried" /><p class="state">Worried</p><p class="when">Trigger ahead</p></div>
-      <div class="pip-card reveal"><img src="/assets/pip_love.png" alt="Pip loved" /><p class="state">Loved</p><p class="when">Streak day</p></div>
+<section id="cleared" class="clearedpoint">
+  <div class="wrap cleared-grid">
+    <div class="cleared-copy">
+      <p class="eyebrow reveal">The verdict no one else gives</p>
+      <h2 class="reveal">The first gut app whose best news is what you <em>can</em> eat.</h2>
+      <p class="section-sub reveal">Every other gut app ends the same way: a longer list of things to avoid. This one runs the other direction. Eat a food calmly enough times — zero rough days — and its case closes <em>in its favor.</em> Officially cleared, confetti and all.</p>
+      <p class="cleared-pull reveal">“You can stop worrying about tomatoes.”</p>
+      <p class="cleared-sig reveal">Not a smaller life. A shorter fear list.</p>
     </div>
+    <div class="celebration reveal" aria-label="The in-app moment when a food is cleared">
+      <div class="confetti" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <img src="/assets/pip_joyous.png" alt="Pip celebrating a cleared verdict" width="132" height="132" loading="lazy" />
+      <p class="cele-title">Cleared: Tomatoes</p>
+      <p class="cele-line">Calm on 4 of 4 days you ate it</p>
+      <span class="cele-chip">
+        <svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back on the menu
+      </span>
+    </div>
+  </div>
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track">
+      <span>Tomatoes · calm 4 of 4</span><span>Rice &amp; grains · calm 6 of 6</span><span>Sourdough · calm 3 of 3</span><span>Bananas · calm 5 of 5</span><span>Eggs · calm 3 of 3</span><span>Oats · calm 4 of 4</span><span>Blueberries · calm 4 of 4</span><span>Tomatoes · calm 4 of 4</span><span>Rice &amp; grains · calm 6 of 6</span><span>Sourdough · calm 3 of 3</span><span>Bananas · calm 5 of 5</span><span>Eggs · calm 3 of 3</span><span>Oats · calm 4 of 4</span><span>Blueberries · calm 4 of 4</span>
+    </div>
+  </div>
+</section>
+
+<section id="honesty" class="honesty">
+  <div class="wrap honesty-grid">
+    <div class="honesty-head">
+      <p class="eyebrow reveal">The honesty policy</p>
+      <h2 class="reveal">Confident only when the evidence is.</h2>
+      <p class="section-sub reveal">Gut advice is drowning in fake certainty. This app is built to say “probably,” “unclear,” and “here's the source” — and to be checkable when it does make a call.</p>
+    </div>
+    <div class="tenets">
+      <div class="tenet reveal">
+        <h3>Bands, not decimal theater</h3>
+        <p>A scan read lands in an honest band — mild, moderate, high, severe — because that's what the evidence supports. No fake-precise 63.7s.</p>
+      </div>
+      <div class="tenet reveal">
+        <h3>Unclear says “unclear”</h3>
+        <p>A dark photo of a mystery stew doesn't get a confident score. It gets an honest <em>couldn't read this</em> — never a guess dressed up as one.</p>
+      </div>
+      <div class="tenet reveal">
+        <h3>Citations that match the plate</h3>
+        <p>Reads cite real research — Monash University FODMAP data, NIDDK guidance — and a citation only appears when it's actually about what's in front of you.</p>
+      </div>
+      <div class="tenet reveal">
+        <h3>We keep score on ourselves</h3>
+        <p>The app checks its own predictions against how your days actually went. When it called a meal risky, did the rough day follow? That number exists — and it keeps us honest.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="tuned reveal">
+      <div class="tuned-copy">
+        <h3>Tuned to you. Moved only by you.</h3>
+        <p>Your conditions decide what the app watches first. Portions count — a bite of cheese isn't a cheese board. And the only thing allowed to move a verdict is your own calm and rough days. Not a generic trigger list. Not other people's stomachs.</p>
+        <ul class="cond-chips" aria-label="Conditions the app tunes for">
+          <li>IBS</li><li>Reflux</li><li>Lactose</li><li>Gluten</li><li>Portions: light · normal · heavy</li>
+        </ul>
+      </div>
+      <div class="tuned-example" aria-label="Example in-app warning">
+        <p class="ex-label">It even notices your day adding up</p>
+        <p class="ex-line">“Second dairy-heavy meal today — effects stack.”</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pip" class="pips">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <p class="eyebrow">Your partner on the case</p>
+      <h2>Every investigation needs someone who never judges.</h2>
+      <p class="section-sub">Pip is the little stomach who runs the board — files your scans, logs your check&#8209;ins, and takes every cleared verdict personally.</p>
+    </div>
+    <div class="pip-row">
+      <figure class="pip-card reveal"><img src="/assets/pip_waving.png" alt="Pip waving" width="120" height="120" loading="lazy" /><figcaption><span class="state">On the case</span><span class="when">your first scan</span></figcaption></figure>
+      <figure class="pip-card reveal"><img src="/assets/pip_thinking.png" alt="Pip thinking" width="120" height="120" loading="lazy" /><figcaption><span class="state">Reading the plate</span><span class="when">scan in progress</span></figcaption></figure>
+      <figure class="pip-card reveal"><img src="/assets/pip_base.png" alt="Pip content" width="120" height="120" loading="lazy" /><figcaption><span class="state">Steady</span><span class="when">an ordinary day</span></figcaption></figure>
+      <figure class="pip-card reveal"><img src="/assets/pip_anxious.png" alt="Pip looking worried" width="120" height="120" loading="lazy" /><figcaption><span class="state">On alert</span><span class="when">a risky plate ahead</span></figcaption></figure>
+      <figure class="pip-card reveal"><img src="/assets/pip_joyous.png" alt="Pip cheering" width="120" height="120" loading="lazy" /><figcaption><span class="state">Verdict day</span><span class="when">something just cleared</span></figcaption></figure>
+      <figure class="pip-card reveal"><img src="/assets/pip_love.png" alt="Pip holding a heart" width="120" height="120" loading="lazy" /><figcaption><span class="state">Calm streak</span><span class="when">a good week on record</span></figcaption></figure>
+    </div>
+    <p class="pip-aside reveal">Gentle, a little wry — and not once has Pip guilt-tripped anyone about the fries.</p>
   </div>
 </section>
 
 <section class="closing">
   <div class="wrap">
-    <img class="closing-pip reveal" src="/assets/pip_love.png" alt="" />
-    <h2 class="reveal">Your stomach has been trying to tell you something.</h2>
-    <p class="section-sub reveal">Start with one scan. Pip takes it from there.</p>
+    <img class="closing-pip reveal" src="/assets/pip_love.png" alt="" width="110" height="110" loading="lazy" />
+    <h2 class="reveal">Time to shorten the fear list.</h2>
+    <p class="section-sub reveal">7 days free on iPhone. The case opens with your first scan.</p>
     <div class="cta-row reveal">
       <a class="appstore-btn" data-appstore href="#" aria-label="Download MyTummyHurts on the App Store">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
         <span class="lines"><span class="small">Download on the</span><span class="big">App Store</span></span>
       </a>
+      <span class="cta-note">The listing goes live with launch — days away.</span>
     </div>
   </div>
 </section>
@@ -171,13 +308,14 @@
   <div class="wrap footer-grid">
     <span class="footer-brand">MyTummyHurts</span>
     <div class="footer-links">
-      <a href="#how">How it works</a>
-      <a href="#gutscore">Gut Score</a>
-      <a href="#triggers">Triggers</a>
+      <a href="#case-file">The case file</a>
+      <a href="#cleared">Cleared</a>
+      <a href="#honesty">Honesty</a>
+      <a href="#pip">Pip</a>
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms</a>
     </div>
-    <p class="footer-legal">© 2026 MyTummyHurts. Built for iPhone. Informational guidance only — not a medical device. Made with care for the bloated, the curious, and the chronically gut-tired.</p>
+    <p class="footer-legal">© 2026 MyTummyHurts · Built for iPhone. Informational guidance only — not a medical device. Made for the bloated, the suspicious of soup, and everyone tired of fearing lunch.</p>
   </div>
 </footer>
 
