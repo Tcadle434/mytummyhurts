@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   track: {
     alignSelf: 'stretch',
     borderRadius: radii.pill,
-    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.55),
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.58),
     padding: 4,
   },
   segments: {

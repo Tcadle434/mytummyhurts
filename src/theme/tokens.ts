@@ -7,8 +7,6 @@ const brand = foundations.color.brand;
 const ink = brand.ink;
 const neutral = foundations.color.neutral;
 
-const evergreen = brand.evergreen;
-
 export const tokens = {
   color: {
     surface: {
@@ -21,50 +19,51 @@ export const tokens = {
       card: {
         default: brand.surface.default,
         warm: brand.surface.warm,
-        success: '#EAF4EC',
-        info: '#EFF6FA',
+        success: '#F1F9F3',
+        info: '#F2F8FC',
       },
-      // Daylight hero blocks: the one WARM surface per screen (peach-cream,
-      // never dark). Text on it uses the `on*` colors, which are ink-based —
-      // the hero is light now, so on-hero text is dark.
+      // Hero blocks: the redesign's one-featured-surface-per-screen idea,
+      // wearing the original palette — the old warm card cream, never dark.
+      // Screens must use the on* ramp (not raw text tokens) so the hero can
+      // retint without touching screens.
       hero: {
-        background: brand.hero.base,
-        deep: brand.hero.deep,
-        raised: withAlpha('#FFFFFF', 0.75),
+        background: brand.surface.warm,
+        deep: neutral.warm[100],
+        raised: withAlpha(neutral.white, 0.9),
         onHero: ink,
-        onHeroMuted: withAlpha(ink, 0.68),
-        onHeroFaint: withAlpha(ink, 0.45),
+        onHeroMuted: neutral.cool[700],
+        onHeroFaint: neutral.cool[600],
       },
       sheet: brand.surface.default,
-      frosted: withAlpha(foundations.color.neutral.white, 0.82),
-      // The one sanctioned dark surface: camera glass. Video is dark, so the
-      // viewfinder chrome stays deep evergreen with porcelain text.
+      frosted: withAlpha(foundations.color.neutral.white, 0.78),
+      // The one dark surface in the app: camera glass, using the original
+      // capture-screen overlay tint (video is dark; nothing else may be).
       viewfinder: {
-        glass: evergreen.deep,
-        onGlass: evergreen.onDeep,
-        onGlassMuted: evergreen.onDeepMuted,
+        glass: '#0E1210',
+        onGlass: neutral.white,
+        onGlassMuted: withAlpha(neutral.white, 0.84),
       },
     },
     text: {
       primary: ink,
       secondary: neutral.cool[700],
       tertiary: neutral.cool[600],
-      inverse: neutral.white,
-      accent: evergreen.bright,
-      warm: '#8F5A16',
-      danger: '#A33B26',
+      inverse: foundations.color.neutral.white,
+      accent: '#2F6953',
+      warm: '#845B23',
+      danger: '#9C3427',
     },
     border: {
-      subtle: withAlpha(ink, 0.07),
-      strong: withAlpha(ink, 0.13),
-      emphasis: withAlpha(brand.cta.scan, 0.42),
+      subtle: withAlpha(ink, 0.08),
+      strong: withAlpha(ink, 0.14),
+      emphasis: withAlpha(brand.cta.scan, 0.24),
     },
     overlay: {
-      scrim: withAlpha(ink, 0.5),
+      scrim: withAlpha('#161D21', 0.44),
     },
     accent: {
       brand: brand.cta.scan,
-      brandStrong: evergreen.base,
+      brandStrong: '#478A70',
       mascot: brand.pip.base,
       mascotAccent: brand.pip.accent,
       warm: brand.status.yellow,
@@ -72,20 +71,20 @@ export const tokens = {
     action: {
       primary: {
         background: brand.cta.scan,
-        foreground: neutral.white,
+        foreground: foundations.color.neutral.white,
       },
       secondary: {
         background: foundations.color.neutral.white,
         foreground: ink,
       },
       quiet: {
-        background: withAlpha(brand.pip.base, 0.2),
-        foreground: evergreen.base,
+        background: withAlpha(brand.pip.base, 0.16),
+        foreground: '#2F6953',
       },
     },
     info: {
-      background: '#EAF3F9',
-      foreground: '#3D7397',
+      background: '#EAF5FB',
+      foreground: '#407BA0',
       tint: brand.info.blue,
     },
     chart: {
@@ -96,33 +95,34 @@ export const tokens = {
     status: {
       risk: {
         low: {
-          foreground: '#256B4A',
-          background: '#E3F2E8',
-          tint: '#3E9B6E',
+          foreground: '#3A7F63',
+          background: '#E5F3EA',
+          tint: '#67AD87',
         },
         medium: {
-          foreground: '#8F5A16',
+          foreground: '#9A5E14',
           background: brand.status.mediumBackground,
           tint: brand.status.orange,
         },
         high: {
-          foreground: '#A33B26',
-          background: '#FBE3DC',
+          foreground: '#A13B29',
+          background: '#FFE2DA',
           tint: brand.status.red,
         },
       },
-      // The five caseboard verdict tones. Text on `background` always uses
-      // `foreground` (text-grade contrast); `tint` is for fills, meters, and
-      // dots only. Cleared is deliberately the deepest green — the earned
-      // verdict outranks the hopeful one.
+      // The five caseboard verdict tones, built from the original status
+      // palette. Text on `background` always uses `foreground` (text-grade
+      // contrast); `tint` is for fills, meters, and dots only. Cleared is
+      // deliberately the deepest green — the earned verdict outranks the
+      // hopeful one.
       verdict: {
         confirmed: {
-          foreground: '#A33B26',
-          background: '#FBE3DC',
+          foreground: '#A13B29',
+          background: '#FFE2DA',
           tint: brand.status.red,
         },
         suspect: {
-          foreground: '#8F5A16',
+          foreground: '#9A5E14',
           background: brand.status.mediumBackground,
           tint: brand.status.orange,
         },
@@ -132,35 +132,35 @@ export const tokens = {
           tint: neutral.cool[600],
         },
         safe: {
-          foreground: '#256B4A',
-          background: '#E3F2E8',
-          tint: '#3E9B6E',
+          foreground: '#3A7F63',
+          background: '#E5F3EA',
+          tint: '#67AD87',
         },
         cleared: {
-          foreground: evergreen.base,
-          background: '#D7EBDD',
-          tint: '#2E8058',
+          foreground: '#2F6953',
+          background: '#E8F4EC',
+          tint: '#478A70',
         },
       },
       success: {
-        foreground: '#256B4A',
-        background: '#E3F2E8',
+        foreground: '#2F6E54',
+        background: '#E8F4EC',
       },
       warning: {
-        foreground: '#8F5A16',
-        background: '#FCF0D3',
+        foreground: '#8A6418',
+        background: '#FFF0CB',
       },
       danger: {
-        foreground: '#A33B26',
-        background: '#FBE3DC',
+        foreground: '#A13B29',
+        background: '#FFE2DA',
       },
     },
     icon: {
       primary: ink,
       muted: neutral.cool[600],
-      inverse: neutral.white,
-      accent: evergreen.bright,
-      info: '#3D7397',
+      inverse: foundations.color.neutral.white,
+      accent: '#2F6953',
+      info: '#407BA0',
       danger: brand.status.red,
     },
     utility: {
@@ -286,8 +286,6 @@ export const tokens = {
   },
   space: foundations.space,
   radius: foundations.radius,
-  // Airy separation: cards are borderless, so lift comes from soft neutral
-  // shadows — light enough that the canvas stays bright.
   shadow: {
     card: {
       shadowColor: foundations.color.neutral.black,

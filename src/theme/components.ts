@@ -10,49 +10,47 @@ export const components = {
   appScreen: {
     gradient: [color.surface.app.gradientStart, color.surface.app.default, color.surface.app.gradientEnd] as const,
   },
-  // Borderless cards: white on warm cream with a soft neutral lift.
-  // Separation comes from color and shadow, never hairlines.
   card: {
     default: {
       backgroundColor: color.surface.card.default,
-      borderColor: 'transparent',
+      borderColor: color.border.subtle,
       borderRadius: radius.xl,
-      borderWidth: 0,
+      borderWidth: 1,
       ...shadow.card,
     },
     warm: {
       backgroundColor: color.surface.card.warm,
-      borderColor: 'transparent',
+      borderColor: color.border.subtle,
       borderRadius: radius.xl,
-      borderWidth: 0,
+      borderWidth: 1,
       ...shadow.card,
     },
     frosted: {
       backgroundColor: color.surface.frosted,
-      borderColor: 'transparent',
+      borderColor: color.border.subtle,
       borderRadius: radius.xl,
-      borderWidth: 0,
+      borderWidth: 1,
       ...shadow.card,
     },
     success: {
       backgroundColor: color.surface.card.success,
-      borderColor: 'transparent',
+      borderColor: color.border.subtle,
       borderRadius: radius.xl,
-      borderWidth: 0,
+      borderWidth: 1,
       ...shadow.card,
     },
     info: {
       backgroundColor: color.surface.card.info,
-      borderColor: 'transparent',
+      borderColor: color.border.subtle,
       borderRadius: radius.xl,
-      borderWidth: 0,
+      borderWidth: 1,
       ...shadow.card,
     },
     hero: {
       backgroundColor: color.surface.hero.background,
-      borderColor: 'transparent',
+      borderColor: color.border.subtle,
       borderRadius: radius.xl,
-      borderWidth: 0,
+      borderWidth: 1,
       ...shadow.lift,
     },
   },
@@ -81,12 +79,14 @@ export const components = {
       paddingHorizontal: space.lg,
     },
   },
-  // The scan CTA is a flat mint pill (no gradient, no decorative overlays) —
-  // only the text/arrow colors live here.
+  // The scan CTA wears the original mint gradient (mascot → brand →
+  // brandStrong) with an ink arrow in a white bubble.
   scanCta: {
-    title: color.action.primary.foreground,
-    arrowBackground: withAlpha(color.utility.white, 0.94),
-    arrowForeground: color.accent.brandStrong,
+    gradient: [color.accent.mascot, color.accent.brand, color.accent.brandStrong] as const,
+    title: color.text.inverse,
+    subtitle: withAlpha(color.utility.white, 0.84),
+    arrowBackground: withAlpha(color.utility.white, 0.92),
+    arrowForeground: color.text.primary,
   },
   chip: {
     option: {
@@ -154,13 +154,14 @@ export const components = {
       paddingHorizontal: space.lg,
       ...shadow.lift,
     },
-    // Focused tabs sit on a soft mint tint (action.quiet); only the scan
-    // button gets the solid brand fill.
+    // Focused tab: mint icon/label on the soft success-green pill — the
+    // original treatment.
+    activeTint: color.accent.brand,
     inactiveTint: color.text.tertiary,
   },
   avatar: {
-    background: withAlpha(color.accent.mascot, 0.28),
-    foreground: color.accent.brandStrong,
+    background: color.info.background,
+    foreground: color.text.primary,
   },
   premiumBadge: {
     background: color.status.warning.background,

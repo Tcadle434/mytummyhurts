@@ -79,9 +79,7 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           <Ionicons
             name={isFocused ? config.iconFocused : config.icon}
             size={22}
-            color={
-              isFocused ? tokens.color.action.quiet.foreground : components.tabBar.inactiveTint
-            }
+            color={isFocused ? components.tabBar.activeTint : components.tabBar.inactiveTint}
           />
           {isFocused ? (
             <Animated.Text
@@ -162,14 +160,14 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 4,
   },
-  // Active pill is a soft mint tint with deep green content — quiet, so the
-  // scan button stays the bar's loudest element.
+  // Active pill is the original treatment: mint icon/label on the soft
+  // success-green pill, so the scan button stays the bar's loudest element.
   tabFocused: {
-    backgroundColor: tokens.color.action.quiet.background,
+    backgroundColor: tokens.color.status.success.background,
   },
   tabLabelFocused: {
     ...tokens.type.label.tab,
-    color: tokens.color.action.quiet.foreground,
+    color: components.tabBar.activeTint,
     fontFamily: type.body.bold,
   },
   scanSlot: {

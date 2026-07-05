@@ -1,14 +1,10 @@
-// Deep Garden, daylight revision — the app's design language.
-//
-// The garden stays; the lights come on. Warm cream canvas, white cards, and
-// one WARM hero block per screen (peach-cream, never dark). Evergreen is
-// demoted from surface to accent: it lives in headings, icons, wordmarks and
-// small fills, and must never be a background that dominates a screen. The
-// one sanctioned dark surface left in the app is the camera viewfinder,
-// which is dark because video is dark. Pip's mint and peach carry the
-// warmth. Type is unchanged: Bricolage Grotesque for anything with a voice
-// (headlines, verdicts, numerals) and Figtree for the quiet interface
-// around it.
+// The app's design language: the ORIGINAL MyTummyHurts palette (restored
+// verbatim from main after two darker redesign rounds were rejected) carried
+// by the redesign's structure. Warm cream canvas, warm-white cards, mint
+// actions, peach/orange status warmth — every color value here matches the
+// pre-redesign scheme exactly. What stayed from the redesign is everything
+// that isn't color: Bricolage Grotesque + Figtree type, the one-hero-per-
+// screen layout rules, and the caseboard verdict model.
 export const foundations = {
   color: {
     brand: {
@@ -16,26 +12,11 @@ export const foundations = {
         base: '#96C8AE',
         accent: '#FDA38B',
       },
-      // Green-cast ink: reads near-black but belongs to the garden.
-      ink: '#1A2E26',
-      // Accent scale only — text, icons, tiny fills. Not a surface.
-      evergreen: {
-        deep: '#0C2E22',
-        base: '#12402F',
-        bright: '#1B5A40',
-        onDeep: '#F7F6F2',
-        onDeepMuted: 'rgba(247, 246, 242, 0.72)',
-        onDeepFaint: 'rgba(247, 246, 242, 0.45)',
-      },
+      ink: '#212B32',
       canvas: '#FDF7F1',
       surface: {
-        default: '#FFFFFF',
+        default: '#FDFAF6',
         warm: '#FEF5EA',
-      },
-      // The hero block: the screen's one warm patch of daylight.
-      hero: {
-        base: '#FDF0DE',
-        deep: '#FBE6CC',
       },
       cta: {
         scan: '#5BA687',
@@ -60,9 +41,9 @@ export const foundations = {
         200: '#ECE4D9',
       },
       cool: {
-        600: '#6E7A74',
-        700: '#57635D',
-        800: '#3E4A44',
+        600: '#7E878D',
+        700: '#727375',
+        800: '#5E676D',
       },
     },
   },

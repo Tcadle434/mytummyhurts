@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
@@ -305,23 +306,30 @@ export function HomeScreen() {
 						initialMode: "food",
 					});
 				}}
-				style={({ pressed }) => [styles.scanCtaPill, pressed && { opacity: 0.92 }]}
+				style={({ pressed }) => [styles.scanCtaShell, pressed && { opacity: 0.92 }]}
 			>
-				<View style={styles.scanIconBubble}>
-					<Ionicons
-						name="camera-outline"
-						size={18}
-						color={components.scanCta.arrowForeground}
-					/>
-				</View>
-				<Text style={styles.scanTitle}>Scan food</Text>
-				<View style={styles.scanArrow}>
-					<Ionicons
-						name="arrow-forward"
-						size={16}
-						color={components.scanCta.arrowForeground}
-					/>
-				</View>
+				<LinearGradient
+					colors={[...components.scanCta.gradient]}
+					start={{ x: 0, y: 0 }}
+					end={{ x: 1, y: 1 }}
+					style={styles.scanCtaGradient}
+				>
+					<View style={styles.scanIconBubble}>
+						<Ionicons
+							name="camera-outline"
+							size={18}
+							color={components.scanCta.arrowForeground}
+						/>
+					</View>
+					<Text style={styles.scanTitle}>Scan food</Text>
+					<View style={styles.scanArrow}>
+						<Ionicons
+							name="arrow-forward"
+							size={16}
+							color={components.scanCta.arrowForeground}
+						/>
+					</View>
+				</LinearGradient>
 			</Pressable>
 
 			{isWaitingForComputedData ? (
@@ -565,11 +573,16 @@ const styles = StyleSheet.create({
 		borderRadius: radii.md,
 		backgroundColor: tokens.color.surface.app.default,
 	},
-	// The screen's saturated pill action: mint, deliberately a different
-	// shape (pill) from the warm hero block above it.
-	scanCtaPill: {
-		...components.button.primary,
-		backgroundColor: tokens.color.accent.brand,
+	// The screen's saturated pill action: the original mint gradient,
+	// deliberately a different shape (pill) from the hero card above it.
+	scanCtaShell: {
+		borderRadius: radii.pill,
+		overflow: "hidden",
+		...shadows.lift,
+	},
+	scanCtaGradient: {
+		minHeight: 56,
+		borderRadius: radii.pill,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,

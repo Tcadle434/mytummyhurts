@@ -1,65 +1,61 @@
-# Design direction — "Deep Garden, daylight"
+# Design direction — original palette, redesign structure
 
-*The spec behind the `redesign/app-refresh` branch. Third iteration: round
-one (Instrument Serif + cream/sage retrofit + canvas ornaments) was rejected
-on device screenshots — it read as the old app with toppings. Round two
-("Deep Garden") replaced it from the ground up with dark evergreen surfaces;
-the founder lived with it and rejected the darkness — evergreen blocks
-dominated daily-use screens (four dark elements on Home alone) and the app
-lost the old lightness and warmth. Round three keeps everything structural
-from Deep Garden and relights it: same bones, daylight palette.*
+*The spec behind the `redesign/app-refresh` branch, fourth iteration. Round
+one (Instrument Serif + cream retrofit + canvas ornaments) was rejected on
+device screenshots. Round two ("Deep Garden") went dark-evergreen-surfaces
+and was rejected after living with it: dark blocks dominated daily-use
+screens. Round three ("daylight") invented new warm hexes and was rejected
+immediately: no new colors, period. Round four is the settled rule:*
 
-## The idea
+**The color scheme is the ORIGINAL app palette, restored exactly from
+`main` — every value verbatim, nothing invented. The redesign keeps
+everything that is not color: type, layout, product structure.**
 
-The garden stays; the lights come on. Every screen sits on a **warm cream
-canvas** with white borderless cards, and earns at most **one warm hero
-block** — peach-cream, never dark: the screen's single most important
-statement. **Evergreen is demoted from surface to accent**: it lives in the
-wordmark, text accents, icons, and small fills, and must never be a
-background that dominates a screen. Actions are **mint**. Depth comes from
-color-blocking and soft neutral shadows — never hairlines, gradients, blobs,
-or frosted mud.
+## The split
 
-## The system
+- **Colors: original.** Warm cream canvas `#FDF7F1`, warm-white cards
+  `#FDFAF6` with hairline borders + soft black shadows, warm card `#FEF5EA`,
+  mint actions `#5BA687` (scan CTA is the original mint gradient
+  `mascot → brand → brandStrong`), ink `#212B32`, accent greens `#2F6953` /
+  `#478A70`, the original status warmth (orange `#FB913A`, red `#F5634A`,
+  medium bg `#FEEACB`). Focused tab: mint icon/label on the soft
+  success-green pill. Gut Score numeral: zone-tinted (the orange 37).
+- **Structure: redesign.** Bricolage Grotesque + Figtree type scale
+  (`tokens.type.*`), one-hero-per-screen layout, the caseboard verdict
+  model, Pip triple-encode, pill actions, tab bar shape.
 
-- **Canvas** `#FDF7F1` warm cream · **cards** pure white, borderless,
-  `tokens.shadow.card` (soft neutral) · **hero surfaces**
-  `tokens.color.surface.hero.*` (`#FDF0DE`, deep `#FBE6CC`) with the
-  `onHero / onHeroMuted / onHeroFaint` ramp — ink-based now, but screens
-  still must use the ramp, never raw text tokens, so the hero can retint
-  without touching screens.
-- **Type**: **Bricolage Grotesque** (via `tokens.type.display.*` and
-  `title.*`) for anything with a voice — headlines, verdicts, hero numerals.
-  **Figtree** (`body.*`, `label.*`) for the quiet interface. No serifs.
-  Numerals are chunky and confident (`display.metric`, 48px ExtraBold).
-- **Color roles**: `accent.brand` is mint `#5BA687` (primary buttons,
-  selected chips, FAB, scan CTA — white foreground); `accent.brandStrong` /
-  `text.accent` keep deep evergreen (`#12402F` / `#1B5A40`) for wordmark and
-  text-grade accents; Pip mint `#96C8AE` / peach `#FDA38B` are decorative
-  accents only — never text on the warm hero (use `text.accent` there); five
-  verdict tones (`status.verdict.*`) with text-grade foregrounds — text on a
-  tone background always uses `foreground`, `tint` is for fills/dots/meters
-  only.
-- **The one dark surface**: the camera viewfinder
-  (`tokens.color.surface.viewfinder.*`, deep evergreen glass + porcelain
-  text) — dark because video is dark. Nothing else in the app may be dark.
-- **Radii** 12–34, pill actions; **≤1 Pip per screen**; band words
-  calm/mixed/rough echo wherever band colors appear.
+## New concepts, old colors
 
-## The rules (unchanged across rounds — they were right; the palette wasn't)
+Concepts that didn't exist in the old app take their colors from the old
+palette only:
+
+- **Hero blocks** (`tokens.color.surface.hero.*`): the old warm card
+  `#FEF5EA`; on-hero ramp = ink / old secondary / old tertiary. Screens use
+  the ramp, never raw text tokens.
+- **Verdict tones** (`status.verdict.*`): built from the old risk/status
+  colors — confirmed = old high, suspect = old medium, watching = old
+  neutrals, safe = old low, cleared = old accent green family (`#2F6953` on
+  `#E8F4EC`, tint `#478A70`) so the earned verdict outranks the hopeful one.
+  Text on a tone background always uses `foreground`; `tint` is for
+  fills/dots/meters only.
+- **Camera viewfinder** (`surface.viewfinder.*`): the original capture
+  overlays — ink card behind the feed, `#0E1210` glass, white controls.
+  The one dark surface in the app; video is dark, nothing else may be.
+
+## The rules (they survived every round)
 
 1. One hero per screen, sized like a hero.
 2. Display face only on findings; quiet face on chrome.
 3. Triple-encode state: number + tone + Pip's face.
 4. Every number answers its next question inline.
-5. Exactly one saturated-ish surface per screen — and now it's the warm
-   peach-cream hero, with a single mint action pill allowed beside it.
+5. ≤1 Pip per screen; band words calm/mixed/rough echo wherever band colors
+   appear.
 
-## Where the warm hero lives
+## Where the hero lives
 
-| Screen | Hero block |
+| Screen | Hero block (warm `#FEF5EA` card) |
 | --- | --- |
-| Home | Gut Score card (ink numeral, arc + Pip on peach-cream) |
+| Home | Gut Score card (zone-tinted numeral, arc + Pip) |
 | Scan result | Pip's take panel under the white verdict card |
 | Menu result | Top-pick spotlight |
 | Check-in | none — the white question card with the live numeral is the hero |

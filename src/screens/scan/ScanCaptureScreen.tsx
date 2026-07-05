@@ -393,20 +393,20 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 5,
   },
-  // The viewfinder is the app's one dark block: deep evergreen glass behind
-  // the feed, not raw black or an ink text token misused as a surface.
+  // The viewfinder is the app's one dark block: ink behind the feed with
+  // the original dark camera glass for overlays.
   cameraCard: {
     flex: 1,
     minHeight: 460,
     borderRadius: radii.xxl,
     overflow: 'hidden',
-    backgroundColor: tokens.color.surface.viewfinder.glass,
+    backgroundColor: tokens.color.text.primary,
     position: 'relative',
     ...shadows.lift,
   },
   cameraScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.12),
+    backgroundColor: withAlpha(tokens.color.utility.shadow, 0.12),
   },
   cameraTopBar: {
     position: 'absolute',
