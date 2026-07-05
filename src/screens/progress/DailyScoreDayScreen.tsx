@@ -160,10 +160,10 @@ export function DailyScoreDayScreen({ navigation, route }: Props) {
 }
 
 /**
- * The screen's one evergreen block: the day spoken as a finding. Bricolage
+ * The screen's one hero block: the day spoken as a finding. Bricolage
  * verdict, on-hero ring numeral, Pip's face, and a one-sentence evidence
  * story built from what was actually logged. The band lives in the ring tint
- * and Pip's face; the copy stays porcelain-on-evergreen.
+ * and Pip's face; the copy stays ink-on-warm-hero.
  */
 function DailyScoreHero({ day }: { day: WeeklyProgressDay }) {
 	const hasScore = day.hasReport && day.dailyScore !== undefined;

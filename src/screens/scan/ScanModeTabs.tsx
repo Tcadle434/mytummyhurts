@@ -13,10 +13,10 @@ export type ScanModeTab<T extends string> = {
   disabled?: boolean;
 };
 
-// The pill floats over the viewfinder: evergreen-deep glass with the hero
-// text ramp, active segment in the brand green.
-const ACTIVE_COLOR = tokens.color.surface.hero.onHero;
-const INACTIVE_COLOR = tokens.color.surface.hero.onHeroMuted;
+// The pill floats over the viewfinder: dark camera glass with the on-glass
+// text ramp, active segment in the brand mint.
+const ACTIVE_COLOR = tokens.color.action.primary.foreground;
+const INACTIVE_COLOR = tokens.color.surface.viewfinder.onGlassMuted;
 const SLIDE_TIMING = { duration: 240, easing: Easing.out(Easing.cubic) } as const;
 
 export function ScanModeTabs<T extends string>({
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   track: {
     alignSelf: 'stretch',
     borderRadius: radii.pill,
-    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.55),
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.55),
     padding: 4,
   },
   segments: {

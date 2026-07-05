@@ -46,7 +46,7 @@ export const styles = StyleSheet.create({
 		gap: spacing.md,
 	},
 	imageBackgroundTitle: {
-		textShadowColor: withAlpha(tokens.color.surface.hero.deep, 0.38),
+		textShadowColor: withAlpha(tokens.color.utility.shadow, 0.38),
 		textShadowOffset: { width: 0, height: 1 },
 		textShadowRadius: 3,
 	},
@@ -114,7 +114,7 @@ export const styles = StyleSheet.create({
 	},
 	footerBodyOnImage: {
 		color: withAlpha(tokens.color.utility.white, 0.9),
-		textShadowColor: withAlpha(tokens.color.surface.hero.deep, 0.28),
+		textShadowColor: withAlpha(tokens.color.utility.shadow, 0.28),
 		textShadowOffset: { width: 0, height: 1 },
 		textShadowRadius: 2,
 	},

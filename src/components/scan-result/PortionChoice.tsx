@@ -7,8 +7,8 @@ import type { ConsumptionPortion } from "../../types/domain";
 // The one-tap portion refinement on a confirmed meal (Phase 4): three small
 // options, normal preselected, zero extra friction — skipping it still records
 // a normal portion. Lives inside the existing confirm affordance on both the
-// food scan card (light surface) and the menu top-pick spotlight (evergreen
-// hero surface), hence the onHero variant.
+// food scan card (white surface) and the menu top-pick spotlight (warm hero
+// surface), hence the onHero variant.
 export function PortionChoiceRow({
 	value,
 	onSelect,
@@ -94,8 +94,8 @@ const styles = StyleSheet.create({
 		borderColor: palette.primary,
 		backgroundColor: tokens.color.surface.card.success,
 	},
-	// On the evergreen hero: soft raised discs at rest, solid porcelain when
-	// selected — no hairlines against the dark surface.
+	// On the warm hero: soft raised discs at rest, solid white when selected —
+	// no hairlines against the tinted surface.
 	chipOnHero: {
 		borderWidth: 0,
 		backgroundColor: tokens.color.surface.hero.raised,

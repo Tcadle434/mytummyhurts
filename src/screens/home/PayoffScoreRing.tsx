@@ -20,11 +20,11 @@ type PayoffScoreRingProps = {
 };
 
 /**
- * The payoff moment's single score presentation, drawn on the evergreen hero
+ * The payoff moment's single score presentation, drawn on the warm hero
  * block: an animated ring sweep with the Bricolage hero numeral inside. The
- * stroke uses the band tint (a fill that pops on the dark surface), the track
- * is the raised-on-hero white, and the numeral is always porcelain — band
- * state is carried by the ring color, the band phrase, and Pip's face.
+ * stroke uses the band tint, the track is the raised-on-hero white, and the
+ * numeral is always ink — band state is carried by the ring color, the band
+ * phrase, and Pip's face.
  */
 export function PayoffScoreRing({ score, revealed, size = 150, strokeWidth = 12 }: PayoffScoreRingProps) {
   const hasScore = typeof score === 'number';

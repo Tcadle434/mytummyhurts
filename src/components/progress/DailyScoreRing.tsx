@@ -11,9 +11,9 @@ type DailyScoreRingProps = {
 	score?: number;
 	size?: number;
 	strokeWidth?: number;
-	/** `hero` renders the ring for the dark evergreen surface: on-hero numeral
+	/** `hero` renders the ring for the warm hero surface: on-hero numeral
 	 * and a raised-on-hero track. Default `card` keeps text-grade band colors
-	 * for white and porcelain surfaces. */
+	 * for white and cream surfaces. */
 	variant?: DailyScoreRingVariant;
 };
 

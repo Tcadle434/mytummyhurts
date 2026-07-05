@@ -565,8 +565,8 @@ const styles = StyleSheet.create({
 		borderRadius: radii.md,
 		backgroundColor: tokens.color.surface.app.default,
 	},
-	// The screen's saturated pill action: bright evergreen, deliberately a
-	// different shape (pill) from the deep-evergreen hero block above it.
+	// The screen's saturated pill action: mint, deliberately a different
+	// shape (pill) from the warm hero block above it.
 	scanCtaPill: {
 		...components.button.primary,
 		backgroundColor: tokens.color.accent.brand,

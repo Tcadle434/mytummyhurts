@@ -47,7 +47,7 @@ function topPickEyebrow(level: RiskLevel): string {
 	return "Gentlest option — still risky";
 }
 
-// The answer to "what do I order?" — the menu screen's one evergreen hero.
+// The answer to "what do I order?" — the menu screen's one warm hero.
 // The top-ranked dish sits on the deep garden surface with porcelain text;
 // the worded tone pill carries the risk state, and the honest eyebrow keeps
 // a rough menu's "gentlest option" from reading like a celebration. The
@@ -102,7 +102,7 @@ export function MenuTopPickCard({
 				<Ionicons
 					name={expanded ? "chevron-up" : "chevron-down"}
 					size={16}
-					color={tokens.color.accent.mascot}
+					color={tokens.color.text.accent}
 				/>
 			</Pressable>
 			{expanded ? (
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
 	pressedDim: {
 		opacity: 0.88,
 	},
-	// --- top-pick spotlight (the menu screen's evergreen hero) ---
+	// --- top-pick spotlight (the menu screen's warm hero) ---
 	topPickCard: {
 		width: "100%",
 		borderRadius: tokens.radius.xl,
@@ -390,12 +390,12 @@ const styles = StyleSheet.create({
 		justifyContent: "space-between",
 		gap: spacing.sm,
 	},
-	// Pip's mint is the accent that glows against the evergreen.
+	// Deep green is the accent that anchors the warm hero.
 	topPickEyebrow: {
 		...tokens.type.label.eyebrow,
 		fontFamily: type.body.semibold,
 		textTransform: "uppercase",
-		color: tokens.color.accent.mascot,
+		color: tokens.color.text.accent,
 		flexShrink: 1,
 	},
 	topPickName: {
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
 	breakdownToggleLabel: {
 		...tokens.type.body.small,
 		fontFamily: type.body.semibold,
-		color: tokens.color.accent.mascot,
+		color: tokens.color.text.accent,
 	},
 	// White receipt inset: the expanded evidence keeps its light-ramp contrast
 	// instead of restyling every evidence component for the dark surface.
@@ -597,8 +597,8 @@ const styles = StyleSheet.create({
 		backgroundColor: tokens.color.action.quiet.background,
 		paddingHorizontal: spacing.md,
 	},
-	// On the evergreen hero the button reads as a solid white pill — no
-	// hairline needed against the dark surface.
+	// On the warm hero the button reads as a solid white pill — no hairline
+	// needed against the tinted surface.
 	consumeButtonOnHero: {
 		backgroundColor: tokens.color.surface.card.default,
 	},

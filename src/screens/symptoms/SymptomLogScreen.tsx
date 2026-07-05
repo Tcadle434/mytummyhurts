@@ -386,8 +386,8 @@ function severityBandColors(value: number) {
 }
 
 const styles = StyleSheet.create({
-  // The screen's one evergreen block: the month spoken as a finding, in
-  // on-hero text. Everything below stays porcelain and white.
+  // The screen's one hero block: the month spoken as a finding, in
+  // on-hero text. Everything below stays cream and white.
   monthSummaryCard: {
     gap: spacing.xs,
     backgroundColor: tokens.color.surface.hero.background,

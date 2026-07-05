@@ -80,7 +80,7 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             name={isFocused ? config.iconFocused : config.icon}
             size={22}
             color={
-              isFocused ? tokens.color.action.primary.foreground : components.tabBar.inactiveTint
+              isFocused ? tokens.color.action.quiet.foreground : components.tabBar.inactiveTint
             }
           />
           {isFocused ? (
@@ -162,14 +162,14 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 4,
   },
-  // Active pill sits on the one anchor color; its icon + label flip to
-  // porcelain (action foreground), never the light text ramp.
+  // Active pill is a soft mint tint with deep green content — quiet, so the
+  // scan button stays the bar's loudest element.
   tabFocused: {
-    backgroundColor: tokens.color.accent.brand,
+    backgroundColor: tokens.color.action.quiet.background,
   },
   tabLabelFocused: {
     ...tokens.type.label.tab,
-    color: tokens.color.action.primary.foreground,
+    color: tokens.color.action.quiet.foreground,
     fontFamily: type.body.bold,
   },
   scanSlot: {

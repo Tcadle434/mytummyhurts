@@ -474,9 +474,9 @@ function caseboardCountForStatus(viewState: TriggerProfileViewState, status: Tri
 	return viewState.counts.cleared;
 }
 
-// The screen's one evergreen block: the verdict statement lives on the dark
+// The screen's one hero block: the verdict statement lives on the warm
 // hero surface, and the five verdict-tone count cells pin to it like case
-// tabs — light chips that stay legible against the deep green.
+// tabs — white chips that stay legible against the peach-cream.
 function CaseboardHero({ viewState }: { viewState: TriggerProfileViewState }) {
 	const story = caseboardStory(viewState);
 
@@ -780,8 +780,8 @@ const styles = StyleSheet.create({
 		lineHeight: 14,
 		textAlign: "center",
 	},
-	// The CTA sits right under the evergreen hero, so it takes the brighter
-	// accent.brand pill — an action, never a second dark block.
+	// The CTA sits right under the warm hero, so it takes the mint
+	// accent.brand pill — an action, never a second hero block.
 	checkInCta: {
 		...components.button.primary,
 		backgroundColor: tokens.color.accent.brand,

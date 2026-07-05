@@ -386,27 +386,27 @@ const styles = StyleSheet.create({
   modeHint: {
     ...tokens.type.body.small,
     marginTop: spacing.sm,
-    color: tokens.color.surface.hero.onHero,
+    color: tokens.color.surface.viewfinder.onGlass,
     fontFamily: type.body.medium,
     textAlign: 'center',
     textShadowColor: tokens.color.overlay.scrim,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 5,
   },
-  // The viewfinder is the dark block on the porcelain canvas: deep evergreen
-  // behind the feed, not raw black or an ink text token misused as a surface.
+  // The viewfinder is the app's one dark block: deep evergreen glass behind
+  // the feed, not raw black or an ink text token misused as a surface.
   cameraCard: {
     flex: 1,
     minHeight: 460,
     borderRadius: radii.xxl,
     overflow: 'hidden',
-    backgroundColor: tokens.color.surface.hero.deep,
+    backgroundColor: tokens.color.surface.viewfinder.glass,
     position: 'relative',
     ...shadows.lift,
   },
   cameraScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.12),
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.12),
   },
   cameraTopBar: {
     position: 'absolute',
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.58),
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.58),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -443,7 +443,7 @@ const styles = StyleSheet.create({
     borderColor: withAlpha(tokens.color.utility.white, 0.92),
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.28),
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.28),
   },
   shutterInner: {
     width: 58,
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.72),
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.72),
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -605,7 +605,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: withAlpha(tokens.color.surface.hero.deep, 0.72),
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.72),
     alignItems: 'center',
     justifyContent: 'center',
   },

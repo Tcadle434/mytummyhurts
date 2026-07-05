@@ -295,8 +295,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: 'center',
   },
-  // The screen's one evergreen block: the reveal is the moment, so the ring,
-  // numeral, and band phrase live on the hero surface in on-hero colors.
+  // The screen's one hero block: the reveal is the moment, so the ring,
+  // numeral, and band phrase live on the warm hero surface in on-hero colors.
   heroCard: {
     alignItems: 'center',
     gap: spacing.sm,

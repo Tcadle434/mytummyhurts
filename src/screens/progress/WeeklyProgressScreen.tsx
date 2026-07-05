@@ -133,7 +133,7 @@ export function WeeklyProgressScreen() {
 }
 
 /**
- * The screen's one evergreen block: the week spoken as a finding in on-hero
+ * The screen's one hero block: the week spoken as a finding in on-hero
  * text, with Pip's face carrying the band (words + face; the day rows below
  * carry the band colors).
  */

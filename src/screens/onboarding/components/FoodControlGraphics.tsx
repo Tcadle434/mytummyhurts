@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
 		fontSize: 68,
 		lineHeight: 74,
 		letterSpacing: 0,
-		textShadowColor: withAlpha(tokens.color.surface.hero.deep, 0.28),
+		textShadowColor: withAlpha(tokens.color.utility.shadow, 0.28),
 		textShadowOffset: { width: 0, height: 4 },
 		textShadowRadius: 8,
 		zIndex: 5,

@@ -24,24 +24,32 @@ export const tokens = {
         success: '#EAF4EC',
         info: '#EFF6FA',
       },
-      // Deep Garden hero blocks: the one dark surface per screen. Everything
-      // rendered on it uses the `on*` colors — never the light-theme text ramp.
+      // Daylight hero blocks: the one WARM surface per screen (peach-cream,
+      // never dark). Text on it uses the `on*` colors, which are ink-based —
+      // the hero is light now, so on-hero text is dark.
       hero: {
-        background: evergreen.base,
-        deep: evergreen.deep,
-        raised: withAlpha('#FFFFFF', 0.1),
-        onHero: evergreen.onDeep,
-        onHeroMuted: evergreen.onDeepMuted,
-        onHeroFaint: evergreen.onDeepFaint,
+        background: brand.hero.base,
+        deep: brand.hero.deep,
+        raised: withAlpha('#FFFFFF', 0.75),
+        onHero: ink,
+        onHeroMuted: withAlpha(ink, 0.68),
+        onHeroFaint: withAlpha(ink, 0.45),
       },
       sheet: brand.surface.default,
       frosted: withAlpha(foundations.color.neutral.white, 0.82),
+      // The one sanctioned dark surface: camera glass. Video is dark, so the
+      // viewfinder chrome stays deep evergreen with porcelain text.
+      viewfinder: {
+        glass: evergreen.deep,
+        onGlass: evergreen.onDeep,
+        onGlassMuted: evergreen.onDeepMuted,
+      },
     },
     text: {
       primary: ink,
       secondary: neutral.cool[700],
       tertiary: neutral.cool[600],
-      inverse: evergreen.onDeep,
+      inverse: neutral.white,
       accent: evergreen.bright,
       warm: '#8F5A16',
       danger: '#A33B26',
@@ -49,13 +57,13 @@ export const tokens = {
     border: {
       subtle: withAlpha(ink, 0.07),
       strong: withAlpha(ink, 0.13),
-      emphasis: withAlpha(evergreen.bright, 0.28),
+      emphasis: withAlpha(brand.cta.scan, 0.42),
     },
     overlay: {
-      scrim: withAlpha(evergreen.deep, 0.5),
+      scrim: withAlpha(ink, 0.5),
     },
     accent: {
-      brand: evergreen.bright,
+      brand: brand.cta.scan,
       brandStrong: evergreen.base,
       mascot: brand.pip.base,
       mascotAccent: brand.pip.accent,
@@ -63,8 +71,8 @@ export const tokens = {
     },
     action: {
       primary: {
-        background: evergreen.base,
-        foreground: evergreen.onDeep,
+        background: brand.cta.scan,
+        foreground: neutral.white,
       },
       secondary: {
         background: foundations.color.neutral.white,
@@ -150,7 +158,7 @@ export const tokens = {
     icon: {
       primary: ink,
       muted: neutral.cool[600],
-      inverse: evergreen.onDeep,
+      inverse: neutral.white,
       accent: evergreen.bright,
       info: '#3D7397',
       danger: brand.status.red,
@@ -278,28 +286,28 @@ export const tokens = {
   },
   space: foundations.space,
   radius: foundations.radius,
-  // Green-cast shadows: cards are borderless, so separation comes from a soft
-  // evergreen-tinted lift instead of hairlines + black smoke.
+  // Airy separation: cards are borderless, so lift comes from soft neutral
+  // shadows — light enough that the canvas stays bright.
   shadow: {
     card: {
-      shadowColor: evergreen.deep,
-      shadowOpacity: 0.09,
-      shadowRadius: 16,
-      shadowOffset: { width: 0, height: 6 },
+      shadowColor: foundations.color.neutral.black,
+      shadowOpacity: 0.06,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
       elevation: 4,
     },
     lift: {
-      shadowColor: evergreen.deep,
-      shadowOpacity: 0.13,
-      shadowRadius: 22,
-      shadowOffset: { width: 0, height: 10 },
+      shadowColor: foundations.color.neutral.black,
+      shadowOpacity: 0.08,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 12 },
       elevation: 6,
     },
     modal: {
-      shadowColor: evergreen.deep,
-      shadowOpacity: 0.2,
-      shadowRadius: 30,
-      shadowOffset: { width: 0, height: 14 },
+      shadowColor: foundations.color.neutral.black,
+      shadowOpacity: 0.12,
+      shadowRadius: 32,
+      shadowOffset: { width: 0, height: 16 },
       elevation: 8,
     },
   },

@@ -1,11 +1,14 @@
-// Deep Garden — the app's design language.
+// Deep Garden, daylight revision — the app's design language.
 //
-// One anchor: deep evergreen, used as SURFACES (hero cards, primary actions),
-// not just text. Porcelain canvas, pure white cards, and Pip's own mint/peach
-// as the accents that glow against the dark green. Type is Bricolage Grotesque
-// for anything with a voice (headlines, verdicts, numerals) and Figtree for
-// the quiet interface around it. No decorative extras — depth comes from
-// color-blocking.
+// The garden stays; the lights come on. Warm cream canvas, white cards, and
+// one WARM hero block per screen (peach-cream, never dark). Evergreen is
+// demoted from surface to accent: it lives in headings, icons, wordmarks and
+// small fills, and must never be a background that dominates a screen. The
+// one sanctioned dark surface left in the app is the camera viewfinder,
+// which is dark because video is dark. Pip's mint and peach carry the
+// warmth. Type is unchanged: Bricolage Grotesque for anything with a voice
+// (headlines, verdicts, numerals) and Figtree for the quiet interface
+// around it.
 export const foundations = {
   color: {
     brand: {
@@ -15,6 +18,7 @@ export const foundations = {
       },
       // Green-cast ink: reads near-black but belongs to the garden.
       ink: '#1A2E26',
+      // Accent scale only — text, icons, tiny fills. Not a surface.
       evergreen: {
         deep: '#0C2E22',
         base: '#12402F',
@@ -23,32 +27,37 @@ export const foundations = {
         onDeepMuted: 'rgba(247, 246, 242, 0.72)',
         onDeepFaint: 'rgba(247, 246, 242, 0.45)',
       },
-      canvas: '#F7F6F2',
+      canvas: '#FDF7F1',
       surface: {
         default: '#FFFFFF',
-        warm: '#F4F0E7',
+        warm: '#FEF5EA',
+      },
+      // The hero block: the screen's one warm patch of daylight.
+      hero: {
+        base: '#FDF0DE',
+        deep: '#FBE6CC',
       },
       cta: {
-        scan: '#12402F',
+        scan: '#5BA687',
       },
       info: {
-        blue: '#8FBFDD',
+        blue: '#9FCBE6',
       },
       status: {
-        red: '#D95B43',
-        yellow: '#F2C14E',
-        orange: '#E8973F',
-        mediumBackground: '#FCEFD9',
+        red: '#F5634A',
+        yellow: '#F9C872',
+        orange: '#FB913A',
+        mediumBackground: '#FEEACB',
       },
     },
     neutral: {
       white: '#FFFFFF',
       black: '#000000',
       warm: {
-        0: '#FFFFFF',
-        50: '#FAF9F6',
-        100: '#F2F1EC',
-        200: '#E4E2DA',
+        0: '#FFFDF9',
+        50: '#FDF9F4',
+        100: '#FBF3EA',
+        200: '#ECE4D9',
       },
       cool: {
         600: '#6E7A74',

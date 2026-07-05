@@ -4,9 +4,9 @@ import { StyleSheet, Text, View } from "react-native";
 import { spacing, tokens } from "../../theme";
 import { Pip } from "../common/Pip";
 
-// "Pip's take" is the scan result's one evergreen statement: Pip glowing on
-// the deep garden surface with porcelain text and a mint accent. Deliberately
-// local to scan results — other screens keep the light PipAnalysisCard.
+// "Pip's take" is the scan result's one hero statement: Pip on the warm
+// peach-cream block with ink text and a mint accent. Deliberately local to
+// scan results — other screens keep the plain-white PipAnalysisCard.
 export function PipTakePanel({ title = "Pip's take", body }: { title?: string; body: string }) {
 	return (
 		<View style={styles.panel}>
@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.sm,
 	},
-	// The soft raised disc is Pip's glow against the evergreen.
+	// The soft raised disc is Pip's glow against the warm hero.
 	pipGlow: {
 		width: 52,
 		height: 52,

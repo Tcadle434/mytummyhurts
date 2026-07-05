@@ -222,7 +222,7 @@ export function ScanResultScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      {/* The screen's one evergreen statement: Pip's take on the deep garden
+      {/* The screen's one hero statement: Pip's take on the warm hero
           surface, right under the white verdict card. */}
       {interpretation ? <PipTakePanel body={interpretation} /> : null}
 

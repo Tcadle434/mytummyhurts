@@ -10,7 +10,7 @@ export const components = {
   appScreen: {
     gradient: [color.surface.app.gradientStart, color.surface.app.default, color.surface.app.gradientEnd] as const,
   },
-  // Borderless cards: pure white on porcelain with a soft green-cast lift.
+  // Borderless cards: white on warm cream with a soft neutral lift.
   // Separation comes from color and shadow, never hairlines.
   card: {
     default: {
@@ -81,10 +81,10 @@ export const components = {
       paddingHorizontal: space.lg,
     },
   },
-  // The scan CTA is a flat bright-evergreen pill now (no gradient, no
-  // decorative overlays) — only the text/arrow colors live here.
+  // The scan CTA is a flat mint pill (no gradient, no decorative overlays) —
+  // only the text/arrow colors live here.
   scanCta: {
-    title: color.surface.hero.onHero,
+    title: color.action.primary.foreground,
     arrowBackground: withAlpha(color.utility.white, 0.94),
     arrowForeground: color.accent.brandStrong,
   },
@@ -154,8 +154,8 @@ export const components = {
       paddingHorizontal: space.lg,
       ...shadow.lift,
     },
-    // Focused tabs flip to porcelain-on-brand (action.primary.foreground);
-    // only the inactive state is a tint.
+    // Focused tabs sit on a soft mint tint (action.quiet); only the scan
+    // button gets the solid brand fill.
     inactiveTint: color.text.tertiary,
   },
   avatar: {

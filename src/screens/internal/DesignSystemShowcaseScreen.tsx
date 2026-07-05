@@ -109,9 +109,9 @@ export function DesignSystemShowcaseScreen() {
 
       <View style={styles.heroCard}>
         <Text style={styles.heroEyebrow}>SURFACE.HERO</Text>
-        <Text style={styles.heroTitle}>The one evergreen block per screen</Text>
+        <Text style={styles.heroTitle}>The one warm hero block per screen</Text>
         <Text style={styles.heroBody}>
-          Everything on it uses the on-hero ramp — onHero, onHeroMuted, onHeroFaint — never the light-theme text colors.
+          Everything on it uses the on-hero ramp — onHero, onHeroMuted, onHeroFaint — so the hero can retint without touching screens.
         </Text>
         <HeroMetric
           value={82}
