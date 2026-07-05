@@ -12,3 +12,16 @@ storage.mytummyhurts.app {
 	encode gzip
 	reverse_proxy minio:9000
 }
+
+# Marketing site — static files mounted from server/landing (see
+# docker-compose.prod.yml). Caddy auto-provisions TLS for the apex.
+mytummyhurts.app {
+    encode gzip zstd
+    root * /var/www/landing
+    header /assets/* Cache-Control "public, max-age=604800"
+    file_server
+}
+
+www.mytummyhurts.app {
+    redir https://mytummyhurts.app{uri} permanent
+}
