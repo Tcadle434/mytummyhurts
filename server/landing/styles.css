@@ -98,6 +98,7 @@ a { color: inherit; }
 }
 .hero-eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--mint); }
 .hero h1 {
+  text-wrap: balance;
   font-family: var(--display); font-weight: 800;
   font-size: clamp(2.6rem, 5.6vw, 4.6rem);
   line-height: 1.02; letter-spacing: -0.02em; margin-bottom: 24px;
@@ -150,6 +151,7 @@ a { color: inherit; }
 .mock-ring svg { transform: rotate(-90deg); }
 .mock-ring img { position: absolute; inset: 14px; width: 46px; height: 46px; object-fit: contain; }
 .mock-row {
+  color: var(--ink);
   background: var(--white); border-radius: 14px; padding: 10px 13px;
   display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
   box-shadow: var(--shadow-card); font-size: 0.78rem; font-weight: 600;
@@ -161,7 +163,7 @@ a { color: inherit; }
   text-align: center; padding: 12px; font-family: var(--display); font-weight: 700; font-size: 0.88rem;
 }
 .hero-pip {
-  position: absolute; right: -8px; bottom: -6px; width: clamp(120px, 14vw, 170px);
+  position: absolute; right: -14px; bottom: 150px; width: clamp(110px, 12vw, 150px);
   filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.35));
   animation: bob 5.5s ease-in-out infinite;
 }
