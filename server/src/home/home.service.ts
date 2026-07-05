@@ -56,7 +56,7 @@ export class HomeService {
                   left join public.ingredient_taxonomy_classifications c
                     on c.normalized_ingredient_name = btrim(regexp_replace(lower(i.ingredient_name), '[^a-z0-9]+', ' ', 'g'))
                   where i.user_id = ${userId}
-                  order by i.combined_risk_score asc nulls last limit 8`,
+                  order by (i.supporting_evidence_count > 0) desc, i.combined_risk_score asc nulls last limit 8`,
         sql`select learning_status from public.user_app_snapshots where user_id = ${userId}`,
       ]);
 

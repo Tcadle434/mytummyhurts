@@ -37,7 +37,13 @@ const GOOGLE_DISCOVERY: AuthSession.DiscoveryDocument = {
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
 };
 
-// Obtain a Google ID token directly and hand it to /v1/auth/google.
+// Obtain a Google ID token and hand it to /v1/auth/google.
+//
+// Google's iOS OAuth client only supports the authorization-code flow with PKCE
+// — the implicit id_token flow (responseType=IdToken) is Web-client-only and
+// Google rejects it here with `unsupported_response_type`. So: request a code,
+// then exchange it for tokens client-side. iOS clients are public (no secret),
+// so PKCE alone secures the exchange, and the token response carries the id_token.
 async function getGoogleIdToken(): Promise<string> {
   const clientId = env.googleIosClientId || env.googleWebClientId;
   if (!clientId) throw new Error('Google sign-in is not configured.');
@@ -45,19 +51,26 @@ async function getGoogleIdToken(): Promise<string> {
     clientId,
     scopes: ['openid', 'email', 'profile'],
     redirectUri: googleRedirectUri,
-    responseType: AuthSession.ResponseType.IdToken,
-    // PKCE only applies to the authorization-code flow. AuthRequest defaults
-    // usePKCE=true, which appends code_challenge_method to the implicit
-    // id_token request — Google then rejects it ("Parameter not allowed for
-    // this message type: code_challenge_method"). Disable it for this flow.
-    usePKCE: false,
-    extraParams: { nonce: createId('google') },
+    responseType: AuthSession.ResponseType.Code,
+    usePKCE: true,
   });
   const result = await request.promptAsync(GOOGLE_DISCOVERY);
-  if (result.type !== 'success' || !result.params.id_token) {
+  if (result.type !== 'success' || !result.params.code) {
     throw new Error('Google sign-in was canceled before completion.');
   }
-  return result.params.id_token;
+  const tokens = await AuthSession.exchangeCodeAsync(
+    {
+      clientId,
+      code: result.params.code,
+      redirectUri: googleRedirectUri,
+      extraParams: request.codeVerifier ? { code_verifier: request.codeVerifier } : undefined,
+    },
+    GOOGLE_DISCOVERY,
+  );
+  if (!tokens.idToken) {
+    throw new Error('Google did not return an ID token.');
+  }
+  return tokens.idToken;
 }
 
 export async function signInWithGoogle() {

@@ -45,7 +45,7 @@ export const SEED_SOURCES: SeedSource[] = [
     conditionTags: ['IBS', 'high_fodmap'],
     seedUrls: [
       // Excerpt + link-back only; respect robots.txt and ToS.
-      'https://www.monashfodmap.com/blog/what-is-a-low-fodmap-diet/',
+      'https://www.monashfodmap.com/about-fodmap-and-ibs/',
     ],
   },
   {

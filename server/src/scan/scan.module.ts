@@ -9,13 +9,26 @@ import { TraceModule } from '../trace/trace.module';
 import { ScanAnalysisService } from './scan-analysis.service';
 import { ScanController } from './scan.controller';
 import { ScanCrudService } from './scan-crud.service';
+import { ScanProgressService } from './scan-progress.service';
 import { ScanReservationService } from './scan-reservation.service';
 import { ScanWorkflowService } from './workflow/scan-workflow.service';
 
 @Module({
   imports: [LlmModule, LearningModule, RagModule, StorageModule, InsightsModule, TraceModule],
   controllers: [ScanController],
-  providers: [ScanReservationService, ScanWorkflowService, ScanAnalysisService, ScanCrudService],
-  exports: [ScanReservationService, ScanWorkflowService, ScanAnalysisService, ScanCrudService],
+  providers: [
+    ScanReservationService,
+    ScanWorkflowService,
+    ScanAnalysisService,
+    ScanCrudService,
+    ScanProgressService,
+  ],
+  exports: [
+    ScanReservationService,
+    ScanWorkflowService,
+    ScanAnalysisService,
+    ScanCrudService,
+    ScanProgressService,
+  ],
 })
 export class ScanModule {}

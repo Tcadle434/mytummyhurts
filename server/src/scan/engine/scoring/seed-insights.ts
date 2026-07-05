@@ -6,6 +6,7 @@ import {
   normalizeKey,
   roundWeight,
   symptomToCondition,
+  triggerVerdictStatusForBreakdown,
 } from '@mth/shared-domain';
 import {
   baseProfileRiskBonus,
@@ -207,6 +208,11 @@ export function mergeSeedAndLearnedInsights(
     }
 
     existing.sourceBreakdown.declared = existing.sourceBreakdown.declared || seed.sourceBreakdown.declared;
+    // An exposure-only learned row (scanned, never paired) has zero supporting
+    // evidence; adopting the seed's count keeps the declared food alive in
+    // consumers that gate on supportingEvidenceCount > 0 (condition insights,
+    // scan-time personal adjustments).
+    existing.supportingEvidenceCount = Math.max(existing.supportingEvidenceCount, seed.supportingEvidenceCount);
 
     const learnedEvidence = existing.positiveEvidenceCount + existing.negativeEvidenceCount;
     if (learnedEvidence >= 2) {
@@ -232,7 +238,10 @@ export function mergeSeedAndLearnedInsights(
 
 export function topTriggerSignals(insights: IngredientInsight[]) {
   return insights
-    .filter((insight) => insight.combinedRiskScore >= 52 || insight.triggerScore >= insight.safeScore)
+    .filter((insight) => {
+      const status = triggerVerdictStatusForBreakdown(insight);
+      return status === 'confirmed' || status === 'suspect';
+    })
     .sort((left, right) => right.combinedRiskScore - left.combinedRiskScore || right.supportingEvidenceCount - left.supportingEvidenceCount)
     .slice(0, 5)
     .map((insight) => ({
@@ -245,7 +254,10 @@ export function topTriggerSignals(insights: IngredientInsight[]) {
 
 export function topSafeFoodSignals(insights: IngredientInsight[]) {
   return insights
-    .filter((insight) => insight.safeScore > insight.triggerScore || insight.combinedRiskScore <= 44)
+    .filter((insight) => {
+      const status = triggerVerdictStatusForBreakdown(insight);
+      return status === 'safe' || status === 'cleared' || insight.combinedRiskScore <= 44;
+    })
     .sort((left, right) => left.combinedRiskScore - right.combinedRiskScore || right.supportingEvidenceCount - left.supportingEvidenceCount)
     .slice(0, 5)
     .map((insight) => ({

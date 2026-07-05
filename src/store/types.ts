@@ -1,7 +1,7 @@
 import { topUpOptions } from '../data/catalog';
 import { HomeResponse, LearningRecomputeRequest, ProfileUpdateRequest } from '../services/api/contracts';
 import { type ReportPayoffBaseline } from '../features/home/reportPayoff';
-import { AppUser, BillingState, ConditionIngredientInsight, DailyGutReport, IngredientInsight, OnboardingAnswers, OnboardingStage, ScanInputPayload, ScanRecord, SubscriptionPlan, UserProfile } from '../types/domain';
+import { AppUser, BillingState, ConditionIngredientInsight, ConsumptionPortion, DailyGutReport, IngredientInsight, OnboardingAnswers, OnboardingStage, ScanInputPayload, ScanRecord, SubscriptionPlan, UserProfile } from '../types/domain';
 
 export type AppStoreState = {
   onboardingStage: OnboardingStage;
@@ -65,6 +65,7 @@ export type AppStoreState = {
     scanId: string;
     consumptionStatus?: 'unknown' | 'consumed' | 'skipped';
     consumedMenuItemSourceIds?: string[];
+    consumptionPortion?: ConsumptionPortion;
   }) => Promise<void>;
   signOut: () => void;
 };

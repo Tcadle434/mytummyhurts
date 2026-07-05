@@ -16,18 +16,12 @@ export function Gauge({ score, label, labelText }: GaugeProps) {
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (circumference * score) / 100;
   const center = 66;
-  const tone =
+  const toneColors =
     label === 'high'
-      ? tokens.color.status.risk.high.tint
+      ? tokens.color.status.risk.high
       : label === 'medium'
-        ? tokens.color.status.risk.medium.tint
-        : tokens.color.status.risk.low.tint;
-  const badgeBackground =
-    label === 'high'
-      ? tokens.color.status.risk.high.background
-      : label === 'medium'
-        ? tokens.color.status.risk.medium.background
-        : tokens.color.status.risk.low.background;
+        ? tokens.color.status.risk.medium
+        : tokens.color.status.risk.low;
   const displayLabel = labelText ?? label.charAt(0).toUpperCase() + label.slice(1);
 
   return (
@@ -39,7 +33,7 @@ export function Gauge({ score, label, labelText }: GaugeProps) {
             cx={center}
             cy={center}
             r={radius}
-            stroke={tone}
+            stroke={toneColors.tint}
             strokeWidth={strokeWidth}
             strokeDasharray={`${circumference} ${circumference}`}
             strokeDashoffset={dashOffset}
@@ -48,14 +42,16 @@ export function Gauge({ score, label, labelText }: GaugeProps) {
             rotation={-90}
             origin={`${center}, ${center}`}
           />
-          <Circle cx={center} cy={center} r={radius - 16} fill={tokens.color.surface.frosted} />
+          <Circle cx={center} cy={center} r={radius - 16} fill={tokens.color.surface.card.default} />
         </Svg>
         <View style={styles.centerContent}>
-          <Text style={styles.score}>{score}%</Text>
+          <Text style={styles.score}>{score}</Text>
         </View>
       </View>
-      <View style={[styles.badge, { backgroundColor: badgeBackground }]}>
-        <Text style={[styles.badgeText, { color: tone }]}>{displayLabel}</Text>
+      {/* Text on a tone background always uses the darker text-grade
+          foreground — the tint is a fill color, not a text color. */}
+      <View style={[styles.badge, { backgroundColor: toneColors.background }]}>
+        <Text style={[styles.badgeText, { color: toneColors.foreground }]}>{displayLabel}</Text>
       </View>
     </View>
   );
@@ -77,11 +73,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // The score is a number the app stands behind — the Bricolage metric face
+  // owns the ring, sized down so a three-digit score still sits inside the
+  // fixed 132px gauge instead of spilling onto the stroke.
   score: {
+    ...tokens.type.display.metric,
+    fontSize: 38,
+    lineHeight: 42,
+    letterSpacing: -0.8,
     color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 22,
-    letterSpacing: -0.5,
   },
   badge: {
     paddingHorizontal: 12,

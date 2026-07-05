@@ -2,23 +2,26 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SkeletonImage } from '../common/SkeletonImage';
 import { SkeletonBlock } from '../common/UI';
-import { components, palette, spacing, type } from '../../theme';
+import { components, radii, spacing, tokens, type } from '../../theme';
 import { ScanHistorySummary } from '../../types/domain';
+import { riskLevelColors } from '../../utils/risk';
 
 type HistoryCardProps = {
   scan: ScanHistorySummary;
   onOpen: () => void;
 };
 
+const THUMB_SIZE = 44;
+
 export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
-  const tone = scan.overallRiskLevel === 'high' ? palette.high : scan.overallRiskLevel === 'medium' ? palette.medium : palette.low;
+  const tone = riskLevelColors(scan.overallRiskLevel);
   const title = scan.dishName?.trim() || 'Meal scan';
-  const metaLine = `${categoryLabel(scan.scanCategory)} • ${sourceLabel(scan.sourceType)} • ${formatTimestamp(scan.createdAt)}`;
+  const metaLine = `${formatTimestamp(scan.createdAt)} · ${sourceLabel(scan.sourceType)}`;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}, ${metaLine}, risk score ${scan.overallRiskScore}`}
+      accessibilityLabel={`${title}, ${scan.overallRiskLevel} risk, scanned at ${formatTimestamp(scan.createdAt)}`}
       onPress={onOpen}
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.84 }]}
     >
@@ -27,9 +30,9 @@ export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
           uri={scan.imageUri}
           style={styles.thumb}
           resizeMode="cover"
-          skeletonRadius={22}
+          skeletonRadius={THUMB_SIZE / 2}
           accessibilityLabel={`${title} photo`}
-          fallback={<SkeletonBlock width={44} height={44} radius={22} />}
+          fallback={<SkeletonBlock width={THUMB_SIZE} height={THUMB_SIZE} radius={THUMB_SIZE / 2} />}
         />
       </View>
 
@@ -42,17 +45,13 @@ export function HistoryCard({ scan, onOpen }: HistoryCardProps) {
         </Text>
       </View>
 
-      <View style={[styles.scoreRing, { borderColor: tone }]}>
-        <Text style={[styles.scoreLabel, { color: tone }]}>{scan.overallRiskScore}</Text>
+      <View style={[styles.riskPill, { backgroundColor: tone.background }]}>
+        <Text style={[styles.riskPillText, { color: tone.foreground }]}>
+          {scan.overallRiskLevel} risk
+        </Text>
       </View>
     </Pressable>
   );
-}
-
-function categoryLabel(value: ScanHistorySummary['scanCategory']) {
-  if (value === 'menu') return 'Menu';
-  if (value === 'grocery') return 'Grocery';
-  return 'Food';
 }
 
 function sourceLabel(value: ScanHistorySummary['sourceType']) {
@@ -76,41 +75,34 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   leadingWrap: {
-    width: 52,
+    width: THUMB_SIZE + spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
   },
   thumb: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
   },
   content: {
     flex: 1,
     gap: 3,
   },
   title: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 20,
-    letterSpacing: -0.2,
+    ...tokens.type.body.strong,
+    color: tokens.color.text.primary,
   },
   subtitle: {
-    color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 13,
+    ...tokens.type.body.small,
+    color: tokens.color.text.secondary,
   },
-  scoreRing: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
+  riskPill: {
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
   },
-  scoreLabel: {
-    fontFamily: type.body.bold,
-    fontSize: 21,
-    letterSpacing: -0.4,
+  riskPillText: {
+    ...tokens.type.label.tab,
+    fontFamily: type.body.semibold,
   },
 });

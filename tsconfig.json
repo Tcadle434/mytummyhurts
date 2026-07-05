@@ -8,5 +8,5 @@
       "@mth/shared-domain": ["packages/shared-domain/src"]
     }
   },
-  "exclude": ["server", "packages"]
+  "exclude": ["server", "packages", "web"]
 }

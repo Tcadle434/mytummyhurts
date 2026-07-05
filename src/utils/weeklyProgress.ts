@@ -220,9 +220,24 @@ export function dailyScoreFromSeverity(gutSeverity: number) {
 	return Math.max(0, Math.min(100, Math.round(90 - severity * 8)));
 }
 
+// Daily Score band thresholds. A score >= CALM_SCORE_MIN reads as a calm day,
+// >= MIXED_SCORE_MIN as mixed, anything lower as rough. Every surface that
+// colors a Daily Score must derive both its color and its band word from
+// these two helpers so the vocabulary can't drift again.
+export const CALM_SCORE_MIN = 67;
+export const MIXED_SCORE_MIN = 34;
+
+export type DailyScoreBand = "calm" | "mixed" | "rough";
+
+export function dailyScoreBand(value: number): DailyScoreBand {
+	if (value >= CALM_SCORE_MIN) return "calm";
+	if (value >= MIXED_SCORE_MIN) return "mixed";
+	return "rough";
+}
+
 export function dailyScoreZoneColor(value: number) {
-	if (value >= 67) return "low" as const;
-	if (value >= 34) return "medium" as const;
+	if (value >= CALM_SCORE_MIN) return "low" as const;
+	if (value >= MIXED_SCORE_MIN) return "medium" as const;
 	return "high" as const;
 }
 
@@ -312,7 +327,7 @@ function groupReportsByLocalDate(reports: DailyGutReport[]) {
 	return byDate;
 }
 
-function localDateFromScan(scan: ScanHistorySummary) {
+export function localDateFromScan(scan: ScanHistorySummary) {
 	if (scan.localDate) return scan.localDate;
 	return toLocalDate(new Date(scan.completedAt ?? scan.createdAt));
 }

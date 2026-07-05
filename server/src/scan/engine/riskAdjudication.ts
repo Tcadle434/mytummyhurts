@@ -7,6 +7,7 @@ import type {
   StructuredAnalysisV2,
   UserProfile,
 } from './domain';
+import { CONDITION_BAND_ORDER } from '@mth/shared-domain';
 import { normalize } from './text-utils';
 
 // Canonical citation shape lives in the package; re-exported (via domain.ts)
@@ -15,15 +16,9 @@ import { normalize } from './text-utils';
 export type { EvidenceCitation } from './domain';
 
 export const RISK_ADJUDICATION_PROMPT_VERSION =
-  process.env.OPENAI_RISK_ADJUDICATION_PROMPT_VERSION ?? 'mytummyhurts_risk_adjudication_v1';
+  process.env.OPENAI_RISK_ADJUDICATION_PROMPT_VERSION ?? 'mytummyhurts_risk_adjudication_v2';
 
-export const CONDITION_SEVERITY_BANDS: readonly ConditionSeverityBand[] = [
-  'none',
-  'mild',
-  'moderate',
-  'high',
-  'severe',
-] as const;
+export const CONDITION_SEVERITY_BANDS: readonly ConditionSeverityBand[] = CONDITION_BAND_ORDER;
 
 export type RiskAdjudicationConfidence = IngredientConfidence;
 
@@ -227,6 +222,33 @@ function clampFinalBand(row: RawRiskAdjudicationCondition, personalEvidence: Per
   return bandAt(generic + Math.sign(final - generic) * allowedMove);
 }
 
+/**
+ * The vision model saw the plate; the adjudicator did not. The generic band IS
+ * the extraction prior — the adjudicator has no band-setting power at all.
+ * (A ±1-with-citation allowance was tried first and inflated everything: the
+ * corpus carries a 'raises' chunk for nearly every known trigger, so almost
+ * every scan earned +1 — double-counting triggers the vision anchors already
+ * priced in.) Its only band lever is the user's own paired evidence, applied
+ * by clampFinalBand on top of this prior; literature contributes explanation,
+ * citations, and the bounded within-band influence delta — never a band.
+ * Without a prior (band request disabled), the raw band passes.
+ */
+function clampGenericBand(
+  raw: RawRiskAdjudicationCondition,
+  structured: StructuredAnalysisV2,
+  warnings: Set<string>,
+): ConditionSeverityBand {
+  const prior = structured.conditionSeverities?.find(
+    (entry) => conditionKey(entry.condition) === conditionKey(raw.condition),
+  );
+  if (!prior || !isBand(prior.band)) return raw.genericBand;
+
+  if (raw.genericBand !== prior.band) {
+    warnings.add(`genericBandClamped:${conditionKey(raw.condition)}:${raw.genericBand}->${prior.band}`);
+  }
+  return prior.band;
+}
+
 function citationIdMap(chunks: RiskAdjudicationEvidenceChunk[]) {
   const map = new Map<string, string>();
   chunks.forEach((chunk, index) => {
@@ -276,11 +298,15 @@ export function validateRiskAdjudication(
       .filter((driver) => allowedIngredients.some((name) => namesMatch(name, driver)))
       .slice(0, 6);
 
-    const clampedFinalBand = clampFinalBand(raw, input.personalEvidence);
+    const clampedGenericBand = clampGenericBand(raw, input.structuredAnalysis, warnings);
+    const clampedFinalBand = clampFinalBand(
+      { ...raw, genericBand: clampedGenericBand },
+      input.personalEvidence,
+    );
 
     const row: RawRiskAdjudicationCondition = {
       condition: raw.condition,
-      genericBand: raw.genericBand,
+      genericBand: clampedGenericBand,
       personalizedBand: raw.personalizedBand,
       finalBand: clampedFinalBand,
       drivers,

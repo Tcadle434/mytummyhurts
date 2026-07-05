@@ -15,8 +15,6 @@ export const tokens = {
         raised: neutral.warm[0],
         gradientStart: neutral.warm[50],
         gradientEnd: neutral.warm[100],
-        ornamentMint: withAlpha(brand.pip.base, 0.28),
-        ornamentPeach: withAlpha(brand.pip.accent, 0.24),
       },
       card: {
         default: brand.surface.default,
@@ -24,8 +22,29 @@ export const tokens = {
         success: '#F1F9F3',
         info: '#F2F8FC',
       },
+      // Hero blocks: the redesign's one-featured-surface-per-screen idea,
+      // wearing the original palette — the plain old card surface (the old
+      // Gut Score card was a regular card; the hero earns its weight from
+      // size and the lift shadow, not a tinted background). Screens must use
+      // the on* ramp (not raw text tokens) so the hero can retint without
+      // touching screens.
+      hero: {
+        background: brand.surface.default,
+        deep: neutral.warm[100],
+        raised: neutral.warm[200],
+        onHero: ink,
+        onHeroMuted: neutral.cool[700],
+        onHeroFaint: neutral.cool[600],
+      },
       sheet: brand.surface.default,
       frosted: withAlpha(foundations.color.neutral.white, 0.78),
+      // The one dark surface in the app: camera glass, using the original
+      // capture-screen overlay tint (video is dark; nothing else may be).
+      viewfinder: {
+        glass: '#0E1210',
+        onGlass: neutral.white,
+        onGlassMuted: withAlpha(neutral.white, 0.84),
+      },
     },
     text: {
       primary: ink,
@@ -83,7 +102,10 @@ export const tokens = {
           tint: '#67AD87',
         },
         medium: {
-          foreground: '#9A5E14',
+          // Amber-orange: text-grade kin of the #FB913A tint, same hue,
+          // deepened just enough to read as text. (#9A5E14 was too brown,
+          // #C05621 too red/dark — both rejected.)
+          foreground: '#D07A1F',
           background: brand.status.mediumBackground,
           tint: brand.status.orange,
         },
@@ -91,6 +113,38 @@ export const tokens = {
           foreground: '#A13B29',
           background: '#FFE2DA',
           tint: brand.status.red,
+        },
+      },
+      // The five caseboard verdict tones, built from the original status
+      // palette. Text on `background` always uses `foreground` (text-grade
+      // contrast); `tint` is for fills, meters, and dots only. Cleared is
+      // deliberately the deepest green — the earned verdict outranks the
+      // hopeful one.
+      verdict: {
+        confirmed: {
+          foreground: '#A13B29',
+          background: '#FFE2DA',
+          tint: brand.status.red,
+        },
+        suspect: {
+          foreground: '#D07A1F',
+          background: brand.status.mediumBackground,
+          tint: brand.status.orange,
+        },
+        watching: {
+          foreground: neutral.cool[800],
+          background: neutral.warm[100],
+          tint: neutral.cool[600],
+        },
+        safe: {
+          foreground: '#3A7F63',
+          background: '#E5F3EA',
+          tint: '#67AD87',
+        },
+        cleared: {
+          foreground: '#2F6953',
+          background: '#E8F4EC',
+          tint: '#478A70',
         },
       },
       success: {
@@ -121,44 +175,55 @@ export const tokens = {
     },
   },
   type: {
+    // Bricolage Grotesque owns anything with a voice — headlines, verdicts,
+    // numerals. Figtree carries the quiet interface. Two families, one clear
+    // hierarchy; no serifs.
     display: {
       hero: {
         fontFamily: foundations.typography.family.display,
-        fontSize: 38,
-        lineHeight: 44,
-        letterSpacing: -1,
+        fontSize: 34,
+        lineHeight: 40,
+        letterSpacing: -0.6,
       } satisfies TextStyle,
       section: {
         fontFamily: foundations.typography.family.display,
-        fontSize: 30,
-        lineHeight: 34,
-        letterSpacing: -0.6,
+        fontSize: 27,
+        lineHeight: 32,
+        letterSpacing: -0.4,
       } satisfies TextStyle,
       accent: {
-        fontFamily: foundations.typography.family.display,
-        fontSize: 22,
+        fontFamily: foundations.typography.family.displayBold,
+        fontSize: 21,
         lineHeight: 26,
-        letterSpacing: -0.4,
+        letterSpacing: -0.2,
+      } satisfies TextStyle,
+      // Hero numerals — Gut Score, Daily Score, scan scores. Chunky and
+      // confident; the number is the app's conclusion and stands like one.
+      metric: {
+        fontFamily: foundations.typography.family.display,
+        fontSize: 48,
+        lineHeight: 52,
+        letterSpacing: -1,
       } satisfies TextStyle,
     },
     title: {
       screen: {
-        fontFamily: foundations.typography.family.bodyBold,
+        fontFamily: foundations.typography.family.displayBold,
         fontSize: 24,
         lineHeight: 30,
-        letterSpacing: -0.4,
-      } satisfies TextStyle,
-      card: {
-        fontFamily: foundations.typography.family.bodyBold,
-        fontSize: 20,
-        lineHeight: 26,
         letterSpacing: -0.3,
       } satisfies TextStyle,
-      block: {
-        fontFamily: foundations.typography.family.bodyBold,
-        fontSize: 18,
-        lineHeight: 24,
+      card: {
+        fontFamily: foundations.typography.family.displayBold,
+        fontSize: 19,
+        lineHeight: 25,
         letterSpacing: -0.2,
+      } satisfies TextStyle,
+      block: {
+        fontFamily: foundations.typography.family.displaySemibold,
+        fontSize: 17,
+        lineHeight: 23,
+        letterSpacing: -0.1,
       } satisfies TextStyle,
     },
     body: {

@@ -8,6 +8,7 @@ export {
 	type ScanIngredient,
 } from "./common";
 export { ScoreDriversList, WhyThisScoreCard } from "./ScoreDrivers";
+export { PipTakePanel } from "./PipTakePanel";
 export { RiskHeroCard, ScanHeroCard } from "./HeroCards";
 export { DietFitCard, IngredientsBreakdownCard } from "./IngredientCards";
 export {
@@ -16,8 +17,17 @@ export {
 	PersonalizedScanCard,
 } from "./PersonalizedScanCard";
 export {
+	buildIngredientHistoryModel,
 	dietEvaluationTitle,
-	selectIngredientHistoryRows,
-	type IngredientHistoryRow,
+	displaySignalLabel,
+	newIngredientsLine,
+	type IngredientHistoryDisplayRow,
+	type IngredientHistoryModel,
 } from "./PersonalizedScanCard.helpers";
-export { MenuRankingCard, MenuTierCard } from "./MenuCards";
+export {
+	MenuBandSection,
+	MenuTierCard,
+	MenuTopPickCard,
+	riskLevelLabel,
+	riskToneKeyForLevel,
+} from "./MenuCards";

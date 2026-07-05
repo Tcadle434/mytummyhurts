@@ -1,3 +1,6 @@
+import { triggerVerdictStatus, type TriggerVerdictStatus } from "@mth/shared-domain";
+
+import { familyByKey } from "../../features/insights/triggerGroups";
 import type { DietEvaluation, DietFitStatus, ScanIngredientRisk, ScoreContributor } from "../../types/domain";
 
 const NOISE_HISTORY_INGREDIENTS = new Set([
@@ -9,30 +12,126 @@ const NOISE_HISTORY_INGREDIENTS = new Set([
 	"sea salt",
 ]);
 
-export type IngredientHistoryRow = {
+type PersonalHistory = NonNullable<ScanIngredientRisk["personalHistory"]>;
+
+// Ingredient history speaks the caseboard vocabulary — the same verdict words
+// and calm/rough day counts as the Triggers screen. Rows render ONLY when real
+// outcome evidence exists; everything else collapses into one "new to your
+// profile" line instead of a stack of "still learning" filler.
+export type IngredientHistoryDisplayRow = {
 	ingredient: ScanIngredientRisk;
-	history: NonNullable<ScanIngredientRisk["personalHistory"]>;
+	title: string;
+	line: string;
+	status: TriggerVerdictStatus;
 };
 
-export function selectIngredientHistoryRows(
+export type IngredientHistoryModel = {
+	rows: IngredientHistoryDisplayRow[];
+	newCount: number;
+};
+
+const HISTORY_STATUS_WORD: Record<TriggerVerdictStatus, string> = {
+	confirmed: "Confirmed trigger",
+	suspect: "Under review",
+	watching: "Watching",
+	safe: "Looking safe",
+	cleared: "Cleared",
+};
+
+function historyVerdict(history: PersonalHistory): TriggerVerdictStatus {
+	return triggerVerdictStatus({
+		combinedRiskScore: history.riskScore ?? 50,
+		confidenceLevel: history.confidenceLevel ?? "low",
+		positiveEvidenceCount: history.positiveEvidenceCount,
+		negativeEvidenceCount: history.negativeEvidenceCount,
+		declared: false,
+	});
+}
+
+function evidenceCounts(history: PersonalHistory): string {
+	const parts: string[] = [];
+	if (history.negativeEvidenceCount > 0) {
+		parts.push(`${history.negativeEvidenceCount} rough day${history.negativeEvidenceCount === 1 ? "" : "s"}`);
+	}
+	if (history.positiveEvidenceCount > 0) {
+		parts.push(`${history.positiveEvidenceCount} calm day${history.positiveEvidenceCount === 1 ? "" : "s"}`);
+	}
+	return parts.join(" · ");
+}
+
+const STATUS_DISPLAY_RANK: Record<TriggerVerdictStatus, number> = {
+	confirmed: 5,
+	suspect: 4,
+	cleared: 3,
+	safe: 2,
+	watching: 1,
+};
+
+export function buildIngredientHistoryModel(
 	ingredients: ScanIngredientRisk[] | undefined,
 	limit = 4,
-): IngredientHistoryRow[] {
-	return [...(ingredients ?? [])]
-		.filter((ingredient) => {
-			const name = displayIngredientName(ingredient).toLowerCase();
-			return Boolean(ingredient.personalHistory) && !NOISE_HISTORY_INGREDIENTS.has(name);
-		})
-		.map((ingredient, index) => ({
-			ingredient,
-			history: ingredient.personalHistory!,
-			index,
-		}))
-		.sort((left, right) => {
-			return historyRank(right.history) - historyRank(left.history) || left.index - right.index;
-		})
+): IngredientHistoryModel {
+	const seen = new Set<string>();
+	const evidenced: Array<IngredientHistoryDisplayRow & { outcomes: number }> = [];
+	let newCount = 0;
+
+	for (const ingredient of ingredients ?? []) {
+		const history = ingredient.personalHistory;
+		const title = displayIngredientName(ingredient);
+		const name = title.toLowerCase();
+		if (!history || NOISE_HISTORY_INGREDIENTS.has(name) || seen.has(name)) continue;
+		seen.add(name);
+
+		const outcomes = history.positiveEvidenceCount + history.negativeEvidenceCount;
+
+		if (history.matchType === "exact" && outcomes > 0) {
+			const status = historyVerdict(history);
+			evidenced.push({
+				ingredient,
+				title,
+				line: `${HISTORY_STATUS_WORD[status]} · ${evidenceCounts(history)}`,
+				status,
+				outcomes,
+			});
+			continue;
+		}
+
+		if (history.matchType === "family" && outcomes > 0 && history.matchedFamilyKey) {
+			// Family evidence names the FAMILY — never a sibling ingredient
+			// ("related to mayonnaise" is exactly the leak this replaces).
+			const family = familyByKey(history.matchedFamilyKey);
+			if (family) {
+				const status = historyVerdict(history);
+				evidenced.push({
+					ingredient,
+					title,
+					line: `Part of ${family.label} — ${evidenceCounts(history)} across similar foods`,
+					status,
+					outcomes,
+				});
+				continue;
+			}
+		}
+
+		newCount += 1;
+	}
+
+	const rows = evidenced
+		.sort(
+			(left, right) =>
+				STATUS_DISPLAY_RANK[right.status] - STATUS_DISPLAY_RANK[left.status] ||
+				right.outcomes - left.outcomes,
+		)
 		.slice(0, limit)
-		.map(({ ingredient, history }) => ({ ingredient, history }));
+		.map(({ outcomes: _outcomes, ...row }) => row);
+
+	return { rows, newCount };
+}
+
+export function newIngredientsLine(count: number): string {
+	return count === 1
+		? "1 food here is new to your profile — check-ins start its case."
+		: `${count} foods here are new to your profile — check-ins start their cases.`;
 }
 
 export function dietEvaluationTitle(evaluation: DietEvaluation) {
@@ -100,21 +199,6 @@ export function displaySignalLabel(contributor: Pick<ScoreContributor, "key" | "
 		default:
 			return machineTitleLabel(contributor.label) ? fallbackLabelFromKey(contributor.key, source) : contributor.label || source;
 	}
-}
-
-function historyRank(history: NonNullable<ScanIngredientRisk["personalHistory"]>) {
-	const riskRank =
-		history.riskLevel === "high"
-			? 5000
-			: history.riskLevel === "inconsistent"
-				? 4000
-				: history.riskLevel === "low"
-					? 3000
-					: history.riskLevel === "medium"
-						? 2000
-						: 1000;
-	const matchRank = history.matchType === "exact" ? 200 : history.matchType === "family" ? 100 : 0;
-	return riskRank + matchRank + history.supportingEvidenceCount * 10 + history.exactScanCount + history.familyScanCount;
 }
 
 function normalizeText(value: string | undefined) {

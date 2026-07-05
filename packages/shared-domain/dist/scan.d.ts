@@ -1,5 +1,5 @@
 import type { RiskLevel } from './index';
-import type { IngredientConfidence, InsightConfidenceLevel, DietEvaluation } from './profile';
+import type { IngredientConfidence, InsightConfidenceLevel, DietEvaluation, TrackedFoodFamilyKey } from './profile';
 import type { MenuBaseFoodCategory, MenuRiskModifier, MenuRecommendationTier, ScoreContributor } from './menu';
 export type ScanSourceType = 'camera' | 'upload' | 'manual_photo' | 'manual_upload' | 'manual_text' | 'barcode';
 export type ScanCategory = 'food' | 'menu' | 'grocery';
@@ -19,6 +19,12 @@ export interface MealComponent {
 export type IngredientRole = 'main' | 'side' | 'condiment' | 'garnish' | 'base';
 export type IngredientProminence = 'primary' | 'secondary' | 'trace';
 export type IngredientAmountEstimate = 'trace' | 'small' | 'standard' | 'large' | 'dominant';
+export type ConsumptionPortion = 'light' | 'normal' | 'heavy';
+export interface ScanDayLoad {
+    mechanismKey: string;
+    priorMealCount: number;
+    note: string;
+}
 export interface ExtractedIngredient {
     rawName: string;
     canonicalName: string;
@@ -94,6 +100,9 @@ export interface ScanIngredientPersonalHistory {
     lastSeenAt?: string;
     matchType: ScanIngredientPersonalHistoryMatchType;
     matchedLabel?: string;
+    /** Food family behind a 'family' match — clients render the family, never a
+     *  sibling ingredient ("related to mayonnaise" was a leak of this join). */
+    matchedFamilyKey?: TrackedFoodFamilyKey;
     riskLevel: ScanIngredientPersonalHistoryRiskLevel;
     riskScore?: number;
     confidenceLevel?: InsightConfidenceLevel;
@@ -115,12 +124,14 @@ export interface ScanIngredientRisk {
     componentName?: string;
     reason: string;
     displayOrder: number;
+    amountEstimate?: IngredientAmountEstimate;
     personalHistory?: ScanIngredientPersonalHistory;
 }
 export interface ScanMenuItemResult {
     id: string;
     sourceItemId: string;
     consumedAt?: string;
+    consumedPortion?: ConsumptionPortion;
     tier: MenuRecommendationTier;
     tierRank: number;
     displayOrder: number;

@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { ReactNode } from 'react';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
@@ -44,15 +43,6 @@ export function SkeletonBlock({ width = '100%', height, radius = radii.md, style
         style,
       ]}
     />
-  );
-}
-
-export function FrostedSection({ children, style }: SectionCardProps) {
-  return (
-    <View style={[styles.frostedCard, style]}>
-      <LinearGradient colors={[tokens.color.surface.frosted, 'rgba(255,255,255,0.66)']} style={StyleSheet.absoluteFill} />
-      {children}
-    </View>
   );
 }
 
@@ -107,12 +97,6 @@ export function PipAnalysisCard({ title = "Pip's take", body }: { title?: string
 }
 
 const styles = StyleSheet.create({
-  frostedCard: {
-    ...components.card.frosted,
-    overflow: 'hidden',
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
   skeletonBlock: {
     backgroundColor: tokens.color.chart.track,
     opacity: 0.7,

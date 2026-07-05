@@ -6,56 +6,68 @@ import {
 	type RiskLevel,
 } from "./common";
 import {
+	buildIngredientHistoryModel,
 	dietEvaluationTitle,
-	displayIngredientName,
-	selectMainSignalLabels,
-	selectIngredientHistoryRows,
-	type IngredientHistoryRow,
+	newIngredientsLine,
+	type IngredientHistoryDisplayRow,
 } from "./PersonalizedScanCard.helpers";
+import { cardTitleStyle, resultCardStyle, sectionLabelStyle } from "./styles";
+import { verdictTone } from "../common/UI";
 import { palette, spacing, tokens, type } from "../../theme";
-import type { DietEvaluation, ScanIngredientRisk, ScoreContributor } from "../../types/domain";
+import type { DietEvaluation, ScanIngredientRisk } from "../../types/domain";
 
 export function PersonalizedScanCard({
 	dietEvaluations,
 	ingredientRisks,
-	contributors,
+	level,
+	impactSummary,
 }: {
 	dietEvaluations?: DietEvaluation[];
 	ingredientRisks?: ScanIngredientRisk[];
-	contributors?: ScoreContributor[];
 	level: RiskLevel;
 	impactSummary?: string;
 }) {
 	const safeDietEvaluations = dietEvaluations ?? [];
-	const historyRows = selectIngredientHistoryRows(ingredientRisks, 4);
-	const mainSignalLabels = selectMainSignalLabels(contributors, 4);
+	const history = buildIngredientHistoryModel(ingredientRisks, 4);
+	const impact = impactSummary?.trim();
 
-	if (!safeDietEvaluations.length && !historyRows.length && !mainSignalLabels.length) {
+	if (!safeDietEvaluations.length && !history.rows.length && !history.newCount && !impact) {
 		return null;
 	}
 
+	const impactTone = tokens.color.status.risk[level];
+
 	return (
-		<View style={styles.resultCard}>
-			<Text style={styles.cardTitle}>Personalized for you</Text>
+		<View style={resultCardStyle}>
+			<Text style={cardTitleStyle}>Personalized for you</Text>
+
+			{impact ? (
+				<View style={styles.sectionBlock}>
+					<Text style={sectionLabelStyle}>Your Gut Score</Text>
+					<View style={[styles.impactRow, { backgroundColor: impactTone.background }]}>
+						<Ionicons name="pulse-outline" size={16} color={impactTone.foreground} />
+						<Text style={[styles.impactText, { color: impactTone.foreground }]}>{impact}</Text>
+					</View>
+				</View>
+			) : null}
 
 			{safeDietEvaluations.length ? (
 				<View style={styles.sectionBlock}>
-					<Text style={styles.sectionLabel}>Diet fit</Text>
+					<Text style={sectionLabelStyle}>Diet fit</Text>
 					<DietEvaluationRows evaluations={safeDietEvaluations} />
 				</View>
 			) : null}
 
-			{historyRows.length ? (
+			{history.rows.length || history.newCount ? (
 				<View style={styles.sectionBlock}>
-					<Text style={styles.sectionLabel}>Ingredient history</Text>
-					<IngredientHistoryRows rows={historyRows} />
-				</View>
-			) : null}
-
-			{mainSignalLabels.length ? (
-				<View style={styles.sectionBlock}>
-					<Text style={styles.sectionLabel}>Main signals</Text>
-					<MainSignalLabels labels={mainSignalLabels} />
+					<Text style={sectionLabelStyle}>Ingredient history</Text>
+					<IngredientHistoryRows rows={history.rows} />
+					{history.newCount ? (
+						<View style={styles.newFoodsRow}>
+							<Ionicons name="leaf-outline" size={14} color={tokens.color.text.tertiary} />
+							<Text style={styles.newFoodsText}>{newIngredientsLine(history.newCount)}</Text>
+						</View>
+					) : null}
 				</View>
 			) : null}
 		</View>
@@ -83,27 +95,26 @@ export function DietEvaluationRows({ evaluations }: { evaluations: DietEvaluatio
 	);
 }
 
-export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryRow[] }) {
+// Rows carry real verdicts only (the model already filtered filler into the
+// newCount line), so the icon bubble's tone always MEANS something.
+export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryDisplayRow[] }) {
 	if (!rows.length) return null;
 
 	return (
 		<View style={styles.rowStack}>
-			{rows.map(({ ingredient, history }) => {
-				const tone = historyTone(history.riskLevel);
+			{rows.map(({ ingredient, title, line, status }) => {
+				const tone = verdictTone(status);
 				return (
 					<View key={`${ingredient.id ?? ingredient.canonicalName}-${ingredient.displayOrder}`} style={styles.historyRow}>
 						<View style={[styles.historyIcon, { backgroundColor: tone.background }]}>
-							<Ionicons name={historyIconName(history.riskLevel)} size={14} color={tone.foreground} />
+							<Ionicons name={historyIconName(status)} size={14} color={tone.foreground} />
 						</View>
 						<View style={styles.rowBody}>
 							<Text style={styles.rowTitle} numberOfLines={1}>
-								{displayIngredientName(ingredient)}
+								{title}
 							</Text>
 							<Text style={styles.rowDetail} numberOfLines={2}>
-								{history.summary}
-								{history.matchType === "family" && history.matchedLabel
-									? ` · related to ${history.matchedLabel}`
-									: ""}
+								{line}
 							</Text>
 						</View>
 					</View>
@@ -113,81 +124,30 @@ export function IngredientHistoryRows({ rows }: { rows: IngredientHistoryRow[] }
 	);
 }
 
-function MainSignalLabels({ labels }: { labels: string[] }) {
-	if (!labels.length) return null;
-
-	return (
-		<View style={styles.signalWrap}>
-			{labels.map((label) => (
-				<View key={label} style={styles.signalChip}>
-					<Text style={styles.signalChipText} numberOfLines={1}>
-						{label}
-					</Text>
-				</View>
-			))}
-		</View>
-	);
-}
-
-function historyTone(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"]>["riskLevel"]) {
-	if (riskLevel === "high") return tokens.color.status.risk.high;
-	if (riskLevel === "low") return tokens.color.status.risk.low;
-	if (riskLevel === "medium" || riskLevel === "inconsistent") return tokens.color.status.risk.medium;
-	return {
-		background: tokens.color.surface.card.info,
-		foreground: palette.textMuted,
-		tint: palette.textMuted,
-	};
-}
-
-function historyIconName(riskLevel: NonNullable<ScanIngredientRisk["personalHistory"]>["riskLevel"]) {
-	if (riskLevel === "high") return "alert-circle-outline";
-	if (riskLevel === "low") return "checkmark-circle-outline";
-	if (riskLevel === "medium" || riskLevel === "inconsistent") return "analytics-outline";
-	return "time-outline";
+function historyIconName(status: IngredientHistoryDisplayRow["status"]) {
+	if (status === "confirmed") return "alert-circle-outline" as const;
+	if (status === "suspect") return "analytics-outline" as const;
+	if (status === "cleared") return "checkmark-done-circle-outline" as const;
+	if (status === "safe") return "checkmark-circle-outline" as const;
+	return "time-outline" as const;
 }
 
 const styles = StyleSheet.create({
-	resultCard: {
-		width: "100%",
-		borderRadius: 28,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		padding: spacing.lg,
-		gap: spacing.md,
-		...tokens.shadow.card,
-	},
-	cardTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
-	},
 	sectionBlock: {
 		gap: spacing.sm,
-	},
-	sectionLabel: {
-		color: palette.textMuted,
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
-		textTransform: "uppercase",
-		letterSpacing: 0.4,
 	},
 	rowStack: {
 		gap: spacing.xs,
 	},
+	// Flat rows on the white card — no tinted slabs. Beige panels inside a
+	// white card reintroduce the surface mush Deep Garden killed, and a tint
+	// that doesn't encode a verdict is a tint that lies. Color lives only in
+	// the status dot / icon bubble, where it means something.
 	dietRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.sm,
-		borderRadius: 16,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.xs,
 	},
 	statusDot: {
 		width: 10,
@@ -199,12 +159,7 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.sm,
-		borderRadius: 16,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.xs,
 	},
 	historyIcon: {
 		width: 28,
@@ -232,24 +187,30 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 17,
 	},
-	signalWrap: {
+	impactRow: {
 		flexDirection: "row",
-		flexWrap: "wrap",
+		alignItems: "flex-start",
 		gap: spacing.xs,
-	},
-	signalChip: {
-		borderRadius: 999,
-		backgroundColor: tokens.color.surface.card.default,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		borderRadius: 16,
 		paddingHorizontal: spacing.sm,
-		paddingVertical: 6,
-		maxWidth: "100%",
+		paddingVertical: spacing.sm,
 	},
-	signalChipText: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
+	impactText: {
+		flex: 1,
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
+	},
+	newFoodsRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.xs,
+		paddingVertical: spacing.xs,
+	},
+	newFoodsText: {
+		flex: 1,
+		color: tokens.color.text.tertiary,
+		fontFamily: type.body.regular,
+		fontSize: 12,
 		lineHeight: 17,
 	},
 });

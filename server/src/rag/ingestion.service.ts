@@ -5,6 +5,8 @@ import { DatabaseService } from '../database/database.service';
 import { chunkDocument } from './chunking';
 import { EMBEDDER, Embedder, toVectorLiteral } from './embedder';
 
+export type ChunkDirection = 'raises' | 'lowers' | 'neutral';
+
 export interface IngestInput {
   title: string;
   sourceType: 'pdf' | 'markdown' | 'html' | 'text' | 'web_scrape';
@@ -15,6 +17,11 @@ export interface IngestInput {
   license?: string | null;
   conditionTags?: string[];
   ingredientTags?: string[];
+  // Whether this document's evidence, on balance, argues a food RAISES or
+  // LOWERS risk for its tagged conditions (or is NEUTRAL context). Consumed by
+  // the bounded rag-influence path so a "gentle foods" doc can only ever nudge
+  // a score down and a "trigger" doc only up. Mixed/context docs stay neutral.
+  direction?: ChunkDirection;
 }
 
 @Injectable()
@@ -44,16 +51,17 @@ export class RagIngestionService {
                 ${input.conditionTags ?? []}, ${input.ingredientTags ?? []}, ${hash}, 'draft')
         returning id`;
 
+      const direction: ChunkDirection = input.direction ?? 'neutral';
       let childIdx = 0;
       for (const c of chunks) {
         const embLiteral = c.isParent ? null : toVectorLiteral(embeddings[childIdx++]);
         await sql`
           insert into public.rag_document_chunks
             (document_id, chunk_index, heading_path, content, token_count, is_parent,
-             embedding, condition_tags, ingredient_tags, embedding_model)
+             embedding, condition_tags, ingredient_tags, embedding_model, direction)
           values (${doc.id}, ${c.chunkIndex}, ${c.headingPath}, ${c.content}, ${c.tokenCount},
                   ${c.isParent}, ${embLiteral}::vector, ${input.conditionTags ?? []},
-                  ${input.ingredientTags ?? []}, ${this.embedder.model})`;
+                  ${input.ingredientTags ?? []}, ${this.embedder.model}, ${direction})`;
       }
       return { documentId: doc.id as string, chunks: chunks.length, deduped: false };
     });

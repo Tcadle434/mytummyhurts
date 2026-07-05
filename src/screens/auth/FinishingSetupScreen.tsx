@@ -1,9 +1,10 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { Pip } from '../../components/common/Pip';
 import { AppScreen, PrimaryButton } from '../../components/common/UI';
 import { signOut } from '../../services/auth';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, spacing, tokens, type } from '../../theme';
+import { spacing, tokens, type } from '../../theme';
 
 export function FinishingSetupScreen() {
   const initialServerSyncNeeded = useAppStore((state) => state.initialServerSyncNeeded);
@@ -25,11 +26,11 @@ export function FinishingSetupScreen() {
   return (
     <AppScreen scroll={false} contentContainerStyle={styles.content}>
       <View style={styles.body}>
-        <ActivityIndicator color={palette.primary} size="large" />
+        <Pip state="thinking" size={112} accessibilityLabel="Pip is getting things ready" />
         <View style={styles.copy}>
-          <Text style={styles.title}>Finishing setup</Text>
+          <Text style={styles.title}>Getting things ready</Text>
           <Text style={styles.subtitle}>
-            We are verifying your subscription and saving your profile before opening the app.
+            Pip is checking your subscription and saving your profile. This only takes a moment.
           </Text>
           {serverSyncError ? <Text style={styles.error}>{serverSyncError}</Text> : null}
         </View>
@@ -64,24 +65,19 @@ const styles = StyleSheet.create({
     maxWidth: 320,
   },
   title: {
-    color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 28,
-    lineHeight: 34,
+    ...tokens.type.display.section,
+    color: tokens.color.text.primary,
     textAlign: 'center',
   },
   subtitle: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 15,
-    lineHeight: 22,
+    ...tokens.type.body.default,
+    color: tokens.color.text.secondary,
     textAlign: 'center',
   },
   error: {
-    color: tokens.color.status.danger.foreground,
+    ...tokens.type.body.small,
     fontFamily: type.body.medium,
-    fontSize: 13,
-    lineHeight: 19,
+    color: tokens.color.status.danger.foreground,
     textAlign: 'center',
   },
   actions: {

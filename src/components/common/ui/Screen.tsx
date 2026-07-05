@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { ReactElement, ReactNode, Ref } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -237,22 +238,45 @@ export function DetailScreenHeader({ eyebrow, title, titleAccessory }: DetailScr
   );
 }
 
+const MTH_TEXT_LOGO = require('../../../../assets/mth_text_logo.png');
+
 export function Wordmark() {
   return (
-    <Text style={styles.wordmarkWrap}>
-      <Text style={styles.wordmarkStrong}>My</Text>
-      <Text style={styles.wordmarkSoft}>Tummy</Text>
-      <Text style={styles.wordmarkStrong}>Hurts</Text>
-    </Text>
+    <Image
+      source={MTH_TEXT_LOGO}
+      style={styles.wordmarkLogo}
+      resizeMode="contain"
+      accessibilityLabel="MyTummyHurts"
+    />
   );
 }
 
-export function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
+export function EmptyState({
+  title,
+  subtitle,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  subtitle: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <SectionCard style={styles.emptyState}>
       <Pip state="waving" size={108} />
       <Text style={styles.emptyStateTitle}>{title}</Text>
       <Text style={styles.emptyStateSubtitle}>{subtitle}</Text>
+      {actionLabel && onAction ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={actionLabel}
+          onPress={onAction}
+          style={({ pressed }) => [styles.emptyStateAction, pressed && { opacity: 0.88 }]}
+        >
+          <Text style={styles.emptyStateActionLabel}>{actionLabel}</Text>
+        </Pressable>
+      ) : null}
     </SectionCard>
   );
 }
@@ -401,18 +425,11 @@ const styles = StyleSheet.create({
     color: tokens.color.text.tertiary,
     textAlign: 'center',
   },
-  wordmarkWrap: {
-    fontSize: 20,
-  },
-  wordmarkStrong: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 20,
-  },
-  wordmarkSoft: {
-    color: tokens.color.text.accent,
-    fontFamily: type.display.fontFamily,
-    fontSize: 22,
+  // Brand wordmark: the original text-logo image.
+  wordmarkLogo: {
+    width: 164,
+    height: 34,
+    flexShrink: 1,
   },
   emptyState: {
     alignItems: 'center',
@@ -426,5 +443,18 @@ const styles = StyleSheet.create({
     ...tokens.type.body.default,
     color: tokens.color.text.tertiary,
     textAlign: 'center',
+  },
+  emptyStateAction: {
+    marginTop: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.xl,
+    borderRadius: tokens.radius.pill,
+    backgroundColor: tokens.color.action.primary.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateActionLabel: {
+    ...tokens.type.label.button,
+    color: tokens.color.action.primary.foreground,
   },
 });

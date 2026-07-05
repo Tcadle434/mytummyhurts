@@ -4,6 +4,7 @@ import type { Sql } from 'postgres';
 import { DatabaseService } from '../database/database.service';
 import { LearningJobService } from '../learning/learning-job.service';
 import { StorageService } from '../storage/storage.service';
+import type { PriorConsumedMeal } from './engine/day-load';
 import type { ScanIngredientPersonalHistory } from './engine/domain';
 import {
   buildHistoryContext,
@@ -60,10 +61,10 @@ export class ScanCrudService {
             where scan_id = ${scanId} and user_id = ${userId}
             order by display_order`,
           sql`
-            select id, source_item_id, consumed_at, tier, tier_rank, display_order, name,
-                   description, section, price, risk_score, risk_level, confidence,
-                   scoring_confidence, base_food_category, risk_modifiers, score_contributors,
-                   why_this_score, gut_recommendation
+            select id, source_item_id, consumed_at, consumed_portion, tier, tier_rank,
+                   display_order, name, description, section, price, risk_score, risk_level,
+                   confidence, scoring_confidence, base_food_category, risk_modifiers,
+                   score_contributors, why_this_score, gut_recommendation
             from public.menu_items
             where scan_id = ${scanId} and user_id = ${userId}
             order by display_order`,
@@ -179,16 +180,29 @@ export class ScanCrudService {
     scanId: string,
     consumptionStatus: 'unknown' | 'consumed' | 'skipped' = 'unknown',
     consumedMenuItemSourceIds: string[] = [],
+    consumptionPortion?: 'light' | 'normal' | 'heavy',
   ) {
     return this.db.service(async (sql) => {
-      const [updated] = await sql`
-        update public.scans set consumption_status = ${consumptionStatus}
-        where id = ${scanId} and user_id = ${userId} returning id`;
+      // Portion only means something on a consumed meal. Skipped/unknown
+      // clears it; consumed without a portion (older clients) leaves the
+      // stored value untouched so a re-tap cannot erase an earlier answer.
+      const [updated] = consumptionStatus !== 'consumed'
+        ? await sql`
+            update public.scans set consumption_status = ${consumptionStatus}, consumption_portion = null
+            where id = ${scanId} and user_id = ${userId} returning id, consumption_portion`
+        : consumptionPortion
+          ? await sql`
+              update public.scans set consumption_status = 'consumed', consumption_portion = ${consumptionPortion}
+              where id = ${scanId} and user_id = ${userId} returning id, consumption_portion`
+          : await sql`
+              update public.scans set consumption_status = 'consumed'
+              where id = ${scanId} and user_id = ${userId} returning id, consumption_portion`;
       if (!updated) throw new NotFoundException('scan_not_found');
 
       if (consumedMenuItemSourceIds.length) {
         await sql`
-          update public.menu_items set consumed_at = now()
+          update public.menu_items
+          set consumed_at = now(), consumed_portion = coalesce(${consumptionPortion ?? null}, consumed_portion)
           where user_id = ${userId} and scan_id = ${scanId} and source_item_id = any(${consumedMenuItemSourceIds})`;
       }
       await this.learning.enqueue({
@@ -200,9 +214,67 @@ export class ScanCrudService {
       return {
         ok: true as const,
         consumptionStatus,
+        consumptionPortion: (updated.consumption_portion ?? undefined) as
+          | 'light'
+          | 'normal'
+          | 'heavy'
+          | undefined,
         consumedMenuItemSourceIds,
         learningSyncStatus: 'queued' as const,
       };
+    });
+  }
+
+  /**
+   * Earlier consumed meals on the same local day as the given scan, for the
+   * day-load context: consumed food/grocery scans (their non-menu ingredient
+   * rows) plus individually confirmed menu items (their per-item rows — menu
+   * scans keep scan-level status 'unknown', so items are checked directly).
+   * Each confirmed menu item counts as its own meal.
+   */
+  async priorConsumedSameDayMeals(userId: string, scanId: string): Promise<PriorConsumedMeal[]> {
+    return this.db.service(async (sql) => {
+      const rows = await sql`
+        with cur as (
+          select user_id, local_date, created_at from public.scans
+          where id = ${scanId} and user_id = ${userId}
+        ),
+        prior as (
+          select s.id, s.consumption_status
+          from public.scans s, cur
+          where s.user_id = cur.user_id
+            and s.id <> ${scanId}
+            and s.local_date = cur.local_date
+            and s.created_at < cur.created_at
+            and s.analysis_status = 'completed'
+        )
+        select r.scan_id, '' as meal_part, r.canonical_name
+        from public.scan_ingredient_risks r
+        join prior on prior.id = r.scan_id
+        where r.user_id = ${userId}
+          and r.menu_item_source_id is null
+          and prior.consumption_status = 'consumed'
+        union all
+        select r.scan_id, r.menu_item_source_id as meal_part, r.canonical_name
+        from public.scan_ingredient_risks r
+        join prior on prior.id = r.scan_id
+        join public.menu_items mi
+          on mi.scan_id = r.scan_id
+         and mi.user_id = r.user_id
+         and mi.source_item_id = r.menu_item_source_id
+        where r.user_id = ${userId}
+          and mi.consumed_at is not null`;
+
+      const meals = new Map<string, PriorConsumedMeal>();
+      for (const row of rows) {
+        const scanIdValue = String(row.scan_id);
+        const key = `${scanIdValue}:${String(row.meal_part ?? '')}`;
+        const name = String(row.canonical_name ?? '').trim().toLowerCase();
+        if (!name) continue;
+        const meal = meals.get(key) ?? { scanId: scanIdValue, ingredientNames: [] };
+        meals.set(key, { ...meal, ingredientNames: [...meal.ingredientNames, name] });
+      }
+      return [...meals.values()];
     });
   }
 
@@ -302,6 +374,7 @@ export class ScanCrudService {
       id: m.id,
       sourceItemId: m.source_item_id,
       consumedAt: m.consumed_at ?? undefined,
+      consumedPortion: m.consumed_portion ?? undefined,
       tier: m.tier,
       tierRank: m.tier_rank,
       displayOrder: m.display_order,
@@ -341,12 +414,16 @@ export class ScanCrudService {
       scoringConfidence: scan.scoring_confidence ?? undefined,
       gutRecommendation: scan.gut_recommendation ?? undefined,
       consumptionStatus: scan.consumption_status,
+      consumptionPortion: scan.consumption_portion ?? undefined,
       inputText: scan.input_text ?? undefined,
       localDate: scan.local_date ? toLocalDate(scan.local_date) : undefined,
       timezone: scan.timezone ?? undefined,
       createdAt: scan.created_at,
       completedAt: scan.completed_at ?? undefined,
       imageUri,
+      // Additive day-load context (Phase 4): stamped into analysis_metadata at
+      // completion time when this scan repeated a same-day risk mechanism.
+      dayLoad: (meta.dayLoad as unknown) ?? undefined,
       possibleTriggers: (meta.possibleTriggers as string[]) ?? [],
       evidenceCitations: (meta.evidenceCitations as unknown[]) ?? [],
       conditionRiskScores,

@@ -3,6 +3,7 @@ import { ComponentProps } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../../theme";
+import { withAlpha } from "../../../theme/helpers";
 import { riskLevelColors } from "../../../utils/risk";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -281,8 +282,8 @@ const styles = StyleSheet.create({
 		height: 248,
 		borderRadius: 34,
 		borderWidth: 1,
-		borderColor: "rgba(255,255,255,0.74)",
-		backgroundColor: "rgba(255,255,255,0.18)",
+		borderColor: withAlpha(tokens.color.utility.white, 0.74),
+		backgroundColor: withAlpha(tokens.color.utility.white, 0.18),
 		overflow: "hidden",
 		alignItems: "center",
 		justifyContent: "center",
@@ -294,7 +295,7 @@ const styles = StyleSheet.create({
 	},
 	foodControlGlassSheen: {
 		...StyleSheet.absoluteFillObject,
-		backgroundColor: "rgba(255,255,255,0.12)",
+		backgroundColor: withAlpha(tokens.color.utility.white, 0.12),
 	},
 	foodControlPip: {
 		position: "absolute",
@@ -363,8 +364,8 @@ const styles = StyleSheet.create({
 		minHeight: 30,
 		borderRadius: 999,
 		borderWidth: 1,
-		borderColor: "rgba(255,255,255,0.58)",
-		backgroundColor: "rgba(91,166,135,0.84)",
+		borderColor: withAlpha(tokens.color.utility.white, 0.58),
+		backgroundColor: withAlpha(tokens.color.accent.brandStrong, 0.92),
 		paddingHorizontal: spacing.lg,
 		alignItems: "center",
 		justifyContent: "center",
@@ -384,7 +385,7 @@ const styles = StyleSheet.create({
 		fontSize: 68,
 		lineHeight: 74,
 		letterSpacing: 0,
-		textShadowColor: "rgba(33,43,50,0.28)",
+		textShadowColor: withAlpha(tokens.color.utility.shadow, 0.28),
 		textShadowOffset: { width: 0, height: 4 },
 		textShadowRadius: 8,
 		zIndex: 5,
@@ -394,7 +395,7 @@ const styles = StyleSheet.create({
 		width: 7,
 		height: 7,
 		borderRadius: 4,
-		backgroundColor: "rgba(255,255,255,0.86)",
+		backgroundColor: withAlpha(tokens.color.utility.white, 0.86),
 		zIndex: 2,
 	},
 	foodControlSparkleOne: {
@@ -428,8 +429,8 @@ const styles = StyleSheet.create({
 		minHeight: 102,
 		borderRadius: 24,
 		borderWidth: 1,
-		borderColor: "rgba(255,255,255,0.38)",
-		backgroundColor: "rgba(255,255,255,0.42)",
+		borderColor: withAlpha(tokens.color.utility.white, 0.38),
+		backgroundColor: withAlpha(tokens.color.utility.white, 0.42),
 		alignItems: "center",
 		justifyContent: "center",
 		paddingHorizontal: spacing.xs,
@@ -454,7 +455,7 @@ const styles = StyleSheet.create({
 		height: 36,
 		borderRadius: 18,
 		borderWidth: 2,
-		borderColor: "rgba(255,255,255,0.86)",
+		borderColor: withAlpha(tokens.color.utility.white, 0.86),
 		backgroundColor: palette.primary,
 		alignItems: "center",
 		justifyContent: "center",

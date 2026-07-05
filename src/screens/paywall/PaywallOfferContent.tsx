@@ -1,13 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Pip } from "../../components/common/Pip";
-import { PrimaryButton } from "../../components/common/UI";
+import { PrimaryButton, Wordmark } from "../../components/common/UI";
+import { GutScoreVisual } from "../../components/score/GutScoreVisual";
 import { SubscriptionPlan } from "../../types/domain";
 import { RevenueCatPlanDisplay } from "../../services/billing/revenueCatMapping";
 import { palette, radii, spacing, tokens, type } from "../../theme";
-
-const MTH_TEXT_LOGO = require("../../../assets/mth_text_logo.png");
 
 const PLAN_COPY: Record<
 	SubscriptionPlan,
@@ -77,69 +76,67 @@ export function PaywallOfferContent({
 				) : (
 					<View style={styles.headerSide} />
 				)}
-				<View style={styles.logoWrap}>
-					<Image
-						source={MTH_TEXT_LOGO}
-						style={styles.logo}
-						resizeMode="contain"
-						accessibilityIgnoresInvertColors
-					/>
+				<View style={styles.brandWrap}>
+					<Wordmark />
 					<Text style={styles.tagline}>{"Know how you'll feel before you eat"}</Text>
-					<Pip state="joy" size={96} style={styles.pip} />
 				</View>
 				<View style={styles.headerSide} />
 			</View>
 
 			{caseFile ? (
-				<View style={styles.caseFileCard}>
-					<View style={styles.caseFileHeader}>
-						<Text style={styles.caseFileKicker}>Your case file</Text>
-						<View style={styles.caseScorePill}>
-							<Text style={styles.caseScoreValue}>{caseFile.startingScore}</Text>
-							<Text style={styles.caseScoreLabel}>starting Gut Score</Text>
+				<View style={styles.pictureCard}>
+					<View style={styles.pictureBody}>
+						<View style={styles.pictureCopy}>
+							<Text style={styles.pictureTitle}>Starting Gut Score</Text>
+							<View style={styles.pictureMetricRow}>
+								<Text style={styles.pictureMetricValue}>{caseFile.startingScore}</Text>
+								<Text style={styles.pictureMetricUnit}>/100</Text>
+							</View>
 						</View>
+						<GutScoreVisual score={caseFile.startingScore} />
 					</View>
 					{caseFile.suspects.length > 0 ? (
-						<View style={styles.caseFileRow}>
-							<Ionicons name="search" size={14} color={palette.primaryDark} />
-							<Text style={styles.caseFileLine}>
-								Starting suspects: <Text style={styles.caseFileStrong}>{caseFile.suspects.join(", ")}</Text>
-							</Text>
+						<View style={styles.watchRow}>
+							<Text style={styles.watchLabel}>Watching first</Text>
+							<View style={styles.watchChips}>
+								{caseFile.suspects.map((food) => (
+									<View key={food} style={styles.watchChip}>
+										<Text style={styles.watchChipText}>{food}</Text>
+									</View>
+								))}
+							</View>
 						</View>
 					) : null}
-					<View style={styles.caseFileRow}>
-						<Ionicons name="git-branch-outline" size={14} color={palette.primaryDark} />
-						<Text style={styles.caseFileLine}>
-							Your scans and daily check-ins confirm or clear each one over time.
-						</Text>
-					</View>
 				</View>
 			) : (
 				<View style={styles.trustBlock}>
+					<Pip state="joy" size={84} />
 					<Text style={styles.trustedText}>
 						Built on published gut-trigger research, tuned to your answers.
 					</Text>
 				</View>
 			)}
 
-			<View style={styles.promiseBlock}>
-				<Text style={styles.promiseTitle}>Get your life back, start free today</Text>
-				<View style={styles.trialPill}>
-					<Ionicons name="sparkles" size={17} color={palette.primary} />
-					<Text style={styles.trialText}>7-day free trial</Text>
+			<View style={styles.offerBlock}>
+				<View style={styles.promiseBlock}>
+					<Text style={styles.promiseTitle}>Start free while Pip fills in the rest</Text>
+					<View style={styles.trialPill}>
+						<Ionicons name="sparkles" size={17} color={palette.primary} />
+						<Text style={styles.trialText}>7-day free trial</Text>
+					</View>
 				</View>
-			</View>
 
-			<View style={styles.planList}>
-				{(["annual", "monthly"] as const).map((plan) => (
-					<PlanRow
-						key={plan}
-						plan={plan}
-						display={planDisplay?.[plan]}
-						selected={selectedPlan === plan}
-						onPress={() => onSelectPlan(plan)}
-					/>
-				))}
+				<View style={styles.planList}>
+					{(["annual", "monthly"] as const).map((plan) => (
+						<PlanRow
+							key={plan}
+							plan={plan}
+							display={planDisplay?.[plan]}
+							selected={selectedPlan === plan}
+							onPress={() => onSelectPlan(plan)}
+						/>
+					))}
+				</View>
 			</View>
 
 			<View style={styles.ctaBlock}>
@@ -241,91 +238,90 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 		backgroundColor: tokens.color.status.success.background,
 	},
-	logoWrap: {
+	brandWrap: {
 		flex: 1,
 		alignItems: "center",
-		gap: 0,
+		gap: 2,
 		paddingTop: 2,
-	},
-	logo: {
-		width: 178,
-		height: 34,
 	},
 	tagline: {
 		color: palette.textMuted,
 		fontFamily: type.body.regular,
-		fontSize: 15,
-		lineHeight: 22,
-	},
-	pip: {
-		marginTop: 12,
-		marginBottom: -32,
+		fontSize: 13,
+		lineHeight: 18,
 	},
 	trustBlock: {
 		alignItems: "center",
-		gap: 3,
-		marginTop: -2,
-	},
-	caseFileCard: {
-		borderRadius: 20,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.card.default,
-		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
 		gap: spacing.xs,
-		...tokens.shadow.card,
 	},
-	caseFileHeader: {
+	// The hero is the Home Gut Score card wearing its "starting" label: same
+	// ink numeral, same arc + Pip triple-encode (an anxious Pip may sit
+	// next to a low score — the face must agree with the number). The only
+	// other words allowed on it are the watch-list chips.
+	pictureCard: {
+		borderRadius: radii.xl,
+		backgroundColor: tokens.color.surface.hero.background,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.md,
+		gap: spacing.sm,
+		...tokens.shadow.lift,
+	},
+	pictureBody: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.sm,
 	},
-	caseFileKicker: {
-		color: palette.textMuted,
-		fontFamily: type.body.bold,
-		fontSize: 11,
-		lineHeight: 14,
-		textTransform: "uppercase",
-		letterSpacing: 0.6,
-	},
-	caseScorePill: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.xs,
-		borderRadius: 999,
-		backgroundColor: tokens.color.status.success.background,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: 3,
-	},
-	caseScoreValue: {
-		color: palette.primaryDark,
-		fontFamily: type.body.bold,
-		fontSize: 16,
-		lineHeight: 20,
-	},
-	caseScoreLabel: {
-		color: palette.primaryDark,
-		fontFamily: type.body.medium,
-		fontSize: 11,
-		lineHeight: 14,
-	},
-	caseFileRow: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		gap: spacing.xs,
-	},
-	caseFileLine: {
+	pictureCopy: {
 		flex: 1,
-		color: palette.text,
+		minWidth: 0,
+	},
+	pictureTitle: {
+		...tokens.type.title.block,
+		color: tokens.color.surface.hero.onHero,
+	},
+	pictureMetricRow: {
+		flexDirection: "row",
+		alignItems: "flex-end",
+		marginTop: spacing.xs,
+	},
+	pictureMetricValue: {
+		...tokens.type.display.metric,
+		color: tokens.color.surface.hero.onHero,
+	},
+	pictureMetricUnit: {
+		color: tokens.color.surface.hero.onHeroMuted,
+		fontFamily: type.body.semibold,
+		fontSize: 18,
+		lineHeight: 24,
+		paddingBottom: 4,
+		marginLeft: 4,
+	},
+	watchRow: {
+		gap: spacing.xs,
+	},
+	watchLabel: {
+		color: tokens.color.surface.hero.onHeroFaint,
 		fontFamily: type.body.medium,
 		fontSize: 13,
-		lineHeight: 18,
+		lineHeight: 17,
 	},
-	caseFileStrong: {
-		fontFamily: type.body.bold,
-		color: palette.primaryDark,
+	watchChips: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: spacing.xs,
+	},
+	watchChip: {
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.surface.hero.raised,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 6,
+	},
+	watchChipText: {
+		color: tokens.color.text.accent,
+		fontFamily: type.body.semibold,
+		fontSize: 14,
+		lineHeight: 18,
 	},
 	trustedText: {
 		color: palette.textMuted,
@@ -334,15 +330,16 @@ const styles = StyleSheet.create({
 		lineHeight: 17,
 		textAlign: "center",
 	},
+	offerBlock: {
+		gap: spacing.md,
+	},
 	promiseBlock: {
 		alignItems: "center",
 		gap: spacing.sm,
 	},
 	promiseTitle: {
+		...tokens.type.title.card,
 		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 25,
-		lineHeight: 31,
 		textAlign: "center",
 	},
 	trialPill: {
@@ -371,7 +368,7 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
-		borderRadius: 20,
+		borderRadius: radii.md,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
@@ -416,7 +413,7 @@ const styles = StyleSheet.create({
 		lineHeight: 20,
 	},
 	planBadge: {
-		borderRadius: 999,
+		borderRadius: radii.pill,
 		backgroundColor: tokens.color.status.warning.background,
 		paddingHorizontal: spacing.xs,
 		paddingVertical: 3,
@@ -433,11 +430,13 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		lineHeight: 16,
 	},
+	// Price scanning is the user's second job on a paywall — the price sits at
+	// plan-title weight and size, never smaller than the plan name.
 	planPrice: {
 		color: palette.primaryDark,
 		fontFamily: type.body.bold,
-		fontSize: 14,
-		lineHeight: 18,
+		fontSize: 16,
+		lineHeight: 20,
 	},
 	ctaBlock: {
 		gap: spacing.sm,
@@ -450,10 +449,9 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	statusText: {
-		color: tokens.color.status.danger.foreground,
+		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+		color: tokens.color.status.danger.foreground,
 		textAlign: "center",
 	},
 	legalLink: {

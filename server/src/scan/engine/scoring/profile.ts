@@ -1,5 +1,6 @@
 import {
   IngredientInsight,
+  PredictiveValidityStats,
   ProfileSeed,
   ScanForInsightRecompute,
   StomachProfile,
@@ -28,6 +29,7 @@ export function buildUserProfileFromSeed(
     priorStomachProfile?: Partial<StomachProfile> | null;
     reportCount?: number;
     learningProgress?: ProfileLearningProgress;
+    predictiveValidity?: PredictiveValidityStats | null;
   } = {},
 ): UserProfile {
   const knownConditions = [...seed.knownConditions].filter(Boolean);
@@ -78,6 +80,8 @@ export function buildUserProfileFromSeed(
         declaredSensitivities: knownIngredientSensitivities,
         recentLearningEvent: recentLearningEvent(priorInsights),
         gutScore: priorStomachProfile?.metadata?.gutScore,
+        predictiveValidity:
+          options.predictiveValidity ?? priorStomachProfile?.metadata?.predictiveValidity,
       },
     },
   };

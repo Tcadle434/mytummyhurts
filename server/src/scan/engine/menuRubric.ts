@@ -222,7 +222,7 @@ export const menuBaseFoodCategoryRubric: readonly MenuRubricRule[] = [
     points: 6,
     prompt: 'Dominant base is wheat/gluten grain such as bread, bun, pasta, ramen, udon, couscous, tortilla, pizza crust, pastry, dumpling, or batter.',
     reason: 'Wheat and gluten-containing bases matter more for gluten-sensitive and some IBS profiles.',
-    terms: ['bread', 'bun', 'pasta', 'ramen', 'udon', 'couscous', 'tortilla', 'pizza', 'flatbread', 'pastry', 'dumpling', 'wonton', 'noodle', 'flour', 'batter'],
+    terms: ['bread', 'bun', 'pasta', 'spaghetti', 'macaroni', 'lasagna', 'penne', 'fettuccine', 'linguine', 'ramen', 'udon', 'couscous', 'tortilla', 'pizza', 'flatbread', 'pastry', 'dumpling', 'wonton', 'noodle', 'flour', 'batter'],
     contributorEvidence: 'ingredient',
     conditionMultipliers: [
       { conditions: ['Celiac', 'Celiac disease'], multiplier: 3.4 },
@@ -470,7 +470,9 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
     points: 7,
     prompt: 'Wheat, bread, bun, pasta, ramen, udon, flour tortilla, pizza crust, pastry, dumpling wrapper, batter, breadcrumbs, or gluten-containing grain.',
     reason: 'Wheat and gluten-containing bases matter for celiac, gluten sensitivity, and some IBS/FODMAP profiles.',
-    terms: ['wheat', 'bread', 'bun', 'pasta', 'ramen', 'udon', 'flour tortilla', 'pizza crust', 'pastry', 'dumpling', 'batter', 'breadcrumbs', 'gluten', 'noodle'],
+    // Named pasta shapes matter: extractions say "spaghetti"/"macaroni" without
+    // ever using the word "pasta" (mac & cheese was a known wheat miss).
+    terms: ['wheat', 'bread', 'bun', 'pasta', 'spaghetti', 'macaroni', 'lasagna', 'penne', 'fettuccine', 'linguine', 'ramen', 'udon', 'couscous', 'flour tortilla', 'pizza crust', 'pastry', 'dumpling', 'batter', 'breadcrumbs', 'gluten', 'noodle'],
     contributorEvidence: 'ingredient',
     conditionMultipliers: [
       { conditions: ['Celiac', 'Celiac disease'], multiplier: 2.4 },
@@ -549,7 +551,7 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
     key: 'added_sugar',
     label: 'Added sugar',
     points: 8,
-    prompt: 'Dessert, syrup, sweet sauce, candy, sweet drink, milkshake, frosting, glaze, sweetened condensed milk, or clearly sugar-heavy item.',
+    prompt: 'Dessert, syrup, sweet sauce, candy, sweet drink, milkshake, frosting, glaze, sweetened condensed milk, or clearly sugar-heavy item. Do not use for ordinary savory sauces unless the item is explicitly sweet, glazed, syrupy, dessert-like, or label evidence says sugar-heavy.',
     reason: 'Higher sugar items can add gut load, especially as drinks or large desserts.',
     terms: ['dessert', 'syrup', 'sweet sauce', 'candy', 'milkshake', 'frosting', 'glaze', 'sweetened condensed milk', 'sweet', 'sugar'],
     contributorEvidence: 'ingredient',
@@ -738,8 +740,11 @@ export const menuRiskModifierRubric: readonly MenuRubricRule[] = [
   },
 ];
 
+// Each rule ships its full boundary definition (`prompt`), not just its label:
+// pre-Phase-2 the definitions (incl. per-rule carve-outs like the mayo-is-not-
+// lactose rule) were written but never delivered to the model.
 function promptList(definitions: readonly MenuRubricRule[]) {
-  return definitions.map((definition) => `- ${definition.key}: ${definition.label}`).join('\n');
+  return definitions.map((definition) => `- ${definition.key} (${definition.label}): ${definition.prompt}`).join('\n');
 }
 
 export function buildMenuRubricPromptText() {
@@ -747,7 +752,7 @@ export function buildMenuRubricPromptText() {
     `Rubric schema: ${MENU_FOOD_RUBRIC_SCHEMA_VERSION}.`,
     'For every menu item, choose exactly one baseFoodCategory from this rubric. Choose the dominant food family; use mixed_dish_or_entree only when no single food family dominates, and unknown only when the item is too ambiguous.',
     promptList(menuBaseFoodCategoryRubric),
-    'Then assign 0-10 riskModifiers from this rubric. Include risk drivers and gentler/protective cues; these are not scores. Use common dish knowledge when the item name clearly implies a modifier, but lower confidence when uncertain. Do not assign added_sugar to ordinary savory sauces unless the item is explicitly sweet, glazed, syrupy, dessert-like, or label evidence says sugar-heavy. Do not assign unknown_sauce_or_marinade to named sauces; classify named sauces by their actual traits.',
+    'Then assign 0-10 riskModifiers from this rubric. Include risk drivers and gentler/protective cues; these are not scores. Apply each definition exactly, including its carve-outs. Use common dish knowledge when the item name clearly implies a modifier, but lower confidence when uncertain.',
     promptList(menuRiskModifierRubric),
   ].join('\n');
 }

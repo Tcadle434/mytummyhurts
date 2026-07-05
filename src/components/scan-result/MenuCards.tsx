@@ -2,37 +2,150 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colorForLevel, prioritizeScoreContributors, type MenuTierItem, type RiskLevel } from "./common";
-import { selectIngredientHistoryRows } from "./PersonalizedScanCard.helpers";
+import { buildIngredientHistoryModel } from "./PersonalizedScanCard.helpers";
 import { DietEvaluationRows, IngredientHistoryRows } from "./PersonalizedScanCard";
+import { PortionChoiceRow } from "./PortionChoice";
 import { ScoreDriversList } from "./ScoreDrivers";
-import { cardTitleStyle, resultCardStyle, sectionLabelStyle } from "./styles";
-import { InfoPill } from "../common/UI";
+import { resultCardStyle, sectionLabelStyle } from "./styles";
+import { InfoPill, VerdictPill, type VerdictToneKey } from "../common/UI";
+import { DEFAULT_PORTION } from "../../features/scan/consumptionPortions";
 import { palette, spacing, tokens, type } from "../../theme";
+import type { ConsumptionPortion } from "../../types/domain";
 
-export function MenuRankingCard({
+// "I ordered this" taps and portion-chip taps share one callback: portion is
+// omitted on the initial log (the handler applies the normal default).
+export type MenuItemConsumeHandler = (item: MenuTierItem, portion?: ConsumptionPortion) => void;
+
+const MIN_TOUCH_TARGET = 44;
+
+// Menu items speak in words on the scan line — a worded tone pill ("Low
+// risk"), never a raw score. The number still exists; it moves into the
+// expanded detail where its scale (/100) and direction (lower = easier) can
+// ride along with it.
+const RISK_TONE_KEY: Record<RiskLevel, VerdictToneKey> = {
+	low: "safe",
+	medium: "suspect",
+	high: "confirmed",
+};
+
+export function riskToneKeyForLevel(level: RiskLevel): VerdictToneKey {
+	return RISK_TONE_KEY[level];
+}
+
+export function riskLevelLabel(level: RiskLevel): string {
+	if (level === "high") return "High risk";
+	if (level === "medium") return "Medium risk";
+	return "Low risk";
+}
+
+// The eyebrow stays honest: the #1-ranked dish only gets celebrated as a best
+// bet when it actually reads low risk. Otherwise it is the gentlest of a
+// rough menu, and the copy says so.
+function topPickEyebrow(level: RiskLevel): string {
+	if (level === "low") return "Your best bet";
+	if (level === "medium") return "Gentlest option here";
+	return "Gentlest option — still risky";
+}
+
+// The answer to "what do I order?" — the menu screen's one warm hero.
+// The top-ranked dish sits on the deep garden surface with porcelain text;
+// the worded tone pill carries the risk state, and the honest eyebrow keeps
+// a rough menu's "gentlest option" from reading like a celebration. The
+// expanded breakdown drops onto a white inset so the light-ramp evidence
+// components keep their contrast.
+export function MenuTopPickCard({
+	item,
+	expanded,
+	onToggle,
+	onConsume,
+}: {
+	item: MenuTierItem;
+	expanded: boolean;
+	onToggle: () => void;
+	onConsume?: MenuItemConsumeHandler;
+}) {
+	const meta = [item.section, item.price].filter(Boolean).join(" • ");
+	return (
+		<View style={styles.topPickCard}>
+			<View style={styles.topPickHeader}>
+				<View style={styles.topPickEyebrowRow}>
+					<Text style={styles.topPickEyebrow}>{topPickEyebrow(item.level)}</Text>
+					<VerdictPill
+						label={riskLevelLabel(item.level)}
+						tone={riskToneKeyForLevel(item.level)}
+						size="sm"
+					/>
+				</View>
+				<Text style={styles.topPickName}>{item.name}</Text>
+				{meta ? <Text style={styles.topPickMeta}>{meta}</Text> : null}
+			</View>
+			<Text style={styles.topPickWhy}>{item.reason}</Text>
+			{onConsume ? (
+				<View style={styles.topPickConsume}>
+					<ConsumeMenuItemButton item={item} onConsume={onConsume} onHero />
+					{!item.consumed ? (
+						<Text style={styles.consumeHint}>
+							Logging what you order counts toward your triggers.
+						</Text>
+					) : null}
+				</View>
+			) : null}
+			<Pressable
+				accessibilityRole="button"
+				accessibilityState={{ expanded }}
+				onPress={onToggle}
+				style={({ pressed }) => [styles.breakdownToggle, pressed && styles.pressedDim]}
+			>
+				<Text style={styles.breakdownToggleLabel}>
+					{expanded ? "Hide the breakdown" : "See the full breakdown"}
+				</Text>
+				<Ionicons
+					name={expanded ? "chevron-up" : "chevron-down"}
+					size={16}
+					color={tokens.color.text.accent}
+				/>
+			</Pressable>
+			{expanded ? (
+				<View style={styles.topPickDetailsInset}>
+					<MenuItemDetails item={item} />
+				</View>
+			) : null}
+		</View>
+	);
+}
+
+// A worded, toned band: Bricolage title in the band's risk foreground over a
+// stack of plain rows on the canvas — the same section idiom the trigger
+// profile uses, so grouped verdict-ish content reads the same everywhere.
+export function MenuBandSection({
+	title,
+	subtitle,
+	level,
 	items,
 	expandedId,
 	onToggle,
 	onConsume,
 }: {
+	title: string;
+	subtitle?: string;
+	level: RiskLevel;
 	items: MenuTierItem[];
 	expandedId: string | null;
 	onToggle: (id: string) => void;
-	onConsume?: (item: MenuTierItem) => void;
+	onConsume?: MenuItemConsumeHandler;
 }) {
 	if (items.length === 0) {
 		return null;
 	}
-
+	const tone = tokens.color.status.risk[level];
 	return (
-		<View style={resultCardStyle}>
-			<View style={styles.rankingHeader}>
-				<View>
-					<Text style={cardTitleStyle}>Full menu ranking</Text>
-					<Text style={styles.rankingSubtitle}>
-						{items.length} item{items.length === 1 ? "" : "s"} scored from lowest to highest risk
-					</Text>
+		<View style={styles.bandSection}>
+			<View style={styles.bandHeader}>
+				<View style={styles.bandTitleRow}>
+					<Text style={[styles.bandTitle, { color: tone.foreground }]}>{title}</Text>
+					<Text style={styles.bandCount}>{items.length}</Text>
 				</View>
+				{subtitle ? <Text style={styles.bandSubtitle}>{subtitle}</Text> : null}
 			</View>
 			<View style={styles.menuRows}>
 				{items.map((item) => (
@@ -65,12 +178,12 @@ export function MenuTierCard({
 	if (items.length === 0) {
 		return null;
 	}
-	const color = colorForLevel(level);
+	const tone = tokens.color.status.risk[level];
 	return (
 		<View style={resultCardStyle}>
 			<View style={styles.tierHeader}>
-				<Ionicons name="checkmark-circle" size={26} color={color} />
-				<Text style={styles.tierTitle}>{title}</Text>
+				<Ionicons name="checkmark-circle" size={22} color={tone.tint} />
+				<Text style={[styles.tierTitle, { color: tone.foreground }]}>{title}</Text>
 			</View>
 			<View style={styles.menuRows}>
 				{items.map((item) => (
@@ -95,270 +208,406 @@ function MenuRow({
 	item: MenuTierItem;
 	expanded: boolean;
 	onToggle: () => void;
-	onConsume?: (item: MenuTierItem) => void;
+	onConsume?: MenuItemConsumeHandler;
 }) {
-	const riskColor = colorForLevel(item.level);
-	const scoreDrivers = prioritizeScoreContributors(item.scoreContributors, 4);
-	const ingredientHistoryRows = selectIngredientHistoryRows(item.ingredientRisks, 3);
-	const hasExpandedContent =
-		Boolean(item.insight) ||
-		scoreDrivers.length > 0 ||
-		Boolean(item.triggers?.length) ||
-		Boolean(item.dietEvaluations?.length) ||
-		ingredientHistoryRows.length > 0 ||
-		Boolean(item.saferSwap);
 	return (
 		<Pressable
-			accessibilityRole={hasExpandedContent ? "button" : undefined}
-			accessibilityState={hasExpandedContent ? { expanded } : undefined}
-			onPress={hasExpandedContent ? onToggle : undefined}
-			style={({ pressed }) => [styles.menuRow, pressed && hasExpandedContent && styles.menuRowPressed]}
+			accessibilityRole="button"
+			accessibilityState={{ expanded }}
+			onPress={onToggle}
+			style={({ pressed }) => [styles.menuRow, pressed && styles.pressedDim]}
 		>
 			<View style={styles.menuRowTop}>
-				{typeof item.rank === "number" ? (
-					<View style={[styles.rankBadge, { backgroundColor: riskColor }]}>
-						<Text style={styles.rankText}>{item.rank}</Text>
-					</View>
-				) : null}
 				<View style={styles.menuRowBody}>
 					{item.section || item.price ? (
 						<Text style={styles.menuMeta}>
 							{[item.section, item.price].filter(Boolean).join(" • ")}
 						</Text>
 					) : null}
-					<Text style={styles.menuName}>{item.name}</Text>
-					<Text style={styles.menuReason}>{item.reason}</Text>
-				</View>
-				<View style={[styles.scorePill, { borderColor: riskColor }]}>
-					<Text style={[styles.scorePillText, { color: riskColor }]}>{item.score}</Text>
-				</View>
-				{hasExpandedContent ? (
-					<Ionicons
-						name={expanded ? "chevron-up" : "chevron-down"}
-						size={18}
-						color={palette.textMuted}
-					/>
-				) : null}
-			</View>
-			{expanded && hasExpandedContent ? (
-				<View style={styles.expandedBlock}>
-					{item.insight ? (
-						<>
-							<Text style={sectionLabelStyle}>Why this score</Text>
-							<Text style={styles.insightBody}>{item.insight}</Text>
-						</>
-					) : null}
-					{item.triggers && item.triggers.length > 0 ? (
-						<View style={styles.triggerChipsRow}>
-							{item.triggers.map((trigger) => (
-								<InfoPill key={trigger} label={trigger} tone="warm" />
-							))}
-						</View>
-					) : null}
-					{scoreDrivers.length > 0 ? (
-						<ScoreDriversList contributors={scoreDrivers} accentColor={riskColor} />
-					) : null}
-					{item.dietEvaluations && item.dietEvaluations.length > 0 ? (
-						<View style={styles.scoreDrivers}>
-							<Text style={sectionLabelStyle}>Diet fit</Text>
-							<DietEvaluationRows evaluations={item.dietEvaluations} />
-						</View>
-					) : null}
-					{ingredientHistoryRows.length > 0 ? (
-						<View style={styles.scoreDrivers}>
-							<Text style={sectionLabelStyle}>Ingredient history</Text>
-							<IngredientHistoryRows rows={ingredientHistoryRows} />
-						</View>
-					) : null}
-					{item.saferSwap ? (
-						<View style={styles.saferSwapRow}>
-							<Ionicons name="chatbubble-ellipses-outline" size={16} color={palette.primary} />
-							<Text style={styles.saferSwapText}>{item.saferSwap}</Text>
-						</View>
-					) : null}
-					{onConsume ? (
-						<Pressable
-							accessibilityRole="button"
-							disabled={item.consumed}
-							onPress={() => onConsume(item)}
-							style={({ pressed }) => [
-								styles.consumeButton,
-								item.consumed && styles.consumeButtonDone,
-								pressed && !item.consumed && { opacity: 0.85 },
-							]}
-						>
+					<View style={styles.menuNameRow}>
+						{item.consumed ? (
 							<Ionicons
-								name={item.consumed ? "checkmark-circle" : "restaurant-outline"}
+								name="checkmark-circle"
 								size={15}
-								color={item.consumed ? tokens.color.status.risk.low.foreground : palette.primary}
+								color={tokens.color.status.risk.low.foreground}
 							/>
-							<Text
-								style={[styles.consumeButtonText, item.consumed && styles.consumeButtonTextDone]}
-							>
-								{item.consumed ? "Logged as eaten" : "I ordered this"}
-							</Text>
-						</Pressable>
-					) : null}
+						) : null}
+						<Text style={styles.menuName}>{item.name}</Text>
+					</View>
+					<Text style={styles.menuReason} numberOfLines={expanded ? undefined : 2}>
+						{item.reason}
+					</Text>
 				</View>
-			) : null}
+				<View style={styles.menuRowTrailing}>
+					<VerdictPill
+						label={riskLevelLabel(item.level)}
+						tone={riskToneKeyForLevel(item.level)}
+						size="sm"
+					/>
+					<View style={styles.detailsCue}>
+						<Text style={styles.detailsCueLabel}>{expanded ? "Hide" : "Details"}</Text>
+						<Ionicons
+							name={expanded ? "chevron-up" : "chevron-down"}
+							size={14}
+							color={palette.textMuted}
+						/>
+					</View>
+				</View>
+			</View>
+			{expanded ? <MenuItemDetails item={item} onConsume={onConsume} /> : null}
 		</Pressable>
 	);
 }
 
+function MenuItemDetails({
+	item,
+	onConsume,
+}: {
+	item: MenuTierItem;
+	onConsume?: MenuItemConsumeHandler;
+}) {
+	const tone = tokens.color.status.risk[item.level];
+	const scoreDrivers = prioritizeScoreContributors(item.scoreContributors, 4);
+	const ingredientHistoryRows = buildIngredientHistoryModel(item.ingredientRisks, 3).rows;
+	return (
+		<View style={styles.detailsBlock}>
+			<View style={styles.detailsSection}>
+				<Text style={sectionLabelStyle}>Why this score</Text>
+				<View
+					style={styles.scoreLine}
+					accessible
+					accessibilityLabel={`Risk score ${item.score} out of 100. Lower is easier on your gut.`}
+				>
+					<Text style={[styles.scoreValue, { color: tone.foreground }]}>{item.score}</Text>
+					<Text style={styles.scoreUnit}>/100</Text>
+					<Text style={styles.scoreCaption}>lower is easier on your gut</Text>
+				</View>
+				{item.insight ? <Text style={styles.insightBody}>{item.insight}</Text> : null}
+			</View>
+			{item.triggers && item.triggers.length > 0 ? (
+				<View style={styles.triggerChipsRow}>
+					{item.triggers.map((trigger) => (
+						<InfoPill key={trigger} label={trigger} tone="warm" />
+					))}
+				</View>
+			) : null}
+			{scoreDrivers.length > 0 ? (
+				<ScoreDriversList contributors={scoreDrivers} accentColor={colorForLevel(item.level)} />
+			) : null}
+			{item.dietEvaluations && item.dietEvaluations.length > 0 ? (
+				<View style={styles.detailsSection}>
+					<Text style={sectionLabelStyle}>Diet fit</Text>
+					<DietEvaluationRows evaluations={item.dietEvaluations} />
+				</View>
+			) : null}
+			{ingredientHistoryRows.length > 0 ? (
+				<View style={styles.detailsSection}>
+					<Text style={sectionLabelStyle}>Ingredient history</Text>
+					<IngredientHistoryRows rows={ingredientHistoryRows} />
+				</View>
+			) : null}
+			{item.saferSwap ? (
+				<View style={styles.saferSwapRow}>
+					<Ionicons name="chatbubble-ellipses-outline" size={16} color={palette.primary} />
+					<Text style={styles.saferSwapText}>{item.saferSwap}</Text>
+				</View>
+			) : null}
+			{onConsume ? <ConsumeMenuItemButton item={item} onConsume={onConsume} /> : null}
+		</View>
+	);
+}
+
+// "I ordered this" is the input that feeds trigger learning, so it reads as a
+// real button — full width, comfortable target — and the done state says what
+// the tap earned. Once logged, the portion chips appear in place (Phase 4):
+// normal is preselected, so ignoring them costs nothing.
+function ConsumeMenuItemButton({
+	item,
+	onConsume,
+	onHero = false,
+}: {
+	item: MenuTierItem;
+	onConsume: MenuItemConsumeHandler;
+	onHero?: boolean;
+}) {
+	const done = Boolean(item.consumed);
+	return (
+		<View style={styles.consumeStack}>
+			<Pressable
+				accessibilityRole="button"
+				accessibilityState={{ disabled: done }}
+				accessibilityLabel={
+					done ? `${item.name} logged — counts toward your triggers` : `I ordered this: ${item.name}`
+				}
+				disabled={done}
+				onPress={() => onConsume(item)}
+				style={({ pressed }) => [
+					styles.consumeButton,
+					onHero && styles.consumeButtonOnHero,
+					done && styles.consumeButtonDone,
+					pressed && !done && styles.pressedDim,
+				]}
+			>
+				<Ionicons
+					name={done ? "checkmark-circle" : "restaurant-outline"}
+					size={16}
+					color={done ? tokens.color.status.risk.low.foreground : tokens.color.action.quiet.foreground}
+				/>
+				<Text style={[styles.consumeButtonText, done && styles.consumeButtonTextDone]}>
+					{done ? "Logged — counts toward your triggers" : "I ordered this"}
+				</Text>
+			</Pressable>
+			{done ? (
+				<PortionChoiceRow
+					value={item.portion ?? DEFAULT_PORTION}
+					onSelect={(portion) => onConsume(item, portion)}
+					onHero={onHero}
+				/>
+			) : null}
+		</View>
+	);
+}
+
 const styles = StyleSheet.create({
-	rankingHeader: {
+	pressedDim: {
+		opacity: 0.88,
+	},
+	// --- top-pick spotlight (the menu screen's warm hero) ---
+	topPickCard: {
+		width: "100%",
+		borderRadius: tokens.radius.xl,
+		backgroundColor: tokens.color.surface.hero.background,
+		padding: spacing.lg,
+		gap: spacing.md,
+		...tokens.shadow.lift,
+	},
+	topPickHeader: {
+		gap: tokens.space.xxs,
+	},
+	topPickEyebrowRow: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
-		gap: spacing.md,
+		gap: spacing.sm,
 	},
-	rankingSubtitle: {
-		marginTop: 2,
-		color: palette.textMuted,
+	// Deep green is the accent that anchors the warm hero.
+	topPickEyebrow: {
+		...tokens.type.label.eyebrow,
+		fontFamily: type.body.semibold,
+		textTransform: "uppercase",
+		color: tokens.color.text.accent,
+		flexShrink: 1,
+	},
+	topPickName: {
+		...tokens.type.display.section,
+		color: tokens.color.surface.hero.onHero,
+	},
+	topPickMeta: {
+		...tokens.type.label.metric,
+		color: tokens.color.surface.hero.onHeroFaint,
+	},
+	topPickWhy: {
+		...tokens.type.body.emphasis,
+		color: tokens.color.surface.hero.onHeroMuted,
+	},
+	topPickConsume: {
+		gap: spacing.xs,
+	},
+	consumeHint: {
+		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
+		color: tokens.color.surface.hero.onHeroMuted,
+	},
+	breakdownToggle: {
+		flexDirection: "row",
+		alignItems: "center",
+		alignSelf: "flex-start",
+		gap: tokens.space.xxs,
+		minHeight: MIN_TOUCH_TARGET,
+	},
+	breakdownToggleLabel: {
+		...tokens.type.body.small,
+		fontFamily: type.body.semibold,
+		color: tokens.color.text.accent,
+	},
+	// Cream receipt inset: keeps a visible boundary now that the top-pick
+	// card is the same white as regular cards.
+	topPickDetailsInset: {
+		borderRadius: tokens.radius.lg,
+		backgroundColor: tokens.color.surface.app.default,
+		padding: spacing.md,
+	},
+	// --- worded bands ---
+	bandSection: {
+		gap: spacing.sm,
+	},
+	bandHeader: {
+		gap: tokens.space.xxs,
+		paddingHorizontal: spacing.xs,
+	},
+	bandTitleRow: {
+		flexDirection: "row",
+		alignItems: "baseline",
+		gap: spacing.xs,
+	},
+	bandTitle: {
+		...tokens.type.display.accent,
+		flex: 1,
+	},
+	bandCount: {
+		...tokens.type.body.small,
+		fontFamily: type.body.bold,
+		color: tokens.color.text.tertiary,
+	},
+	bandSubtitle: {
+		...tokens.type.label.metric,
+		color: tokens.color.text.tertiary,
 	},
 	menuRows: {
 		gap: spacing.sm,
 	},
+	// --- onboarding tier card ---
 	tierHeader: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
 	},
 	tierTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 23,
+		...tokens.type.display.accent,
 	},
+	// --- rows ---
+	// Borderless: white rows lift off the porcelain band on the soft
+	// green-cast shadow, matching the card system.
 	menuRow: {
-		borderRadius: 20,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		borderRadius: tokens.radius.lg,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.sm,
 		gap: spacing.sm,
-	},
-	menuRowPressed: {
-		opacity: 0.88,
+		...tokens.shadow.card,
 	},
 	menuRowTop: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
-		minHeight: 56,
-	},
-	rankBadge: {
-		width: 34,
-		height: 34,
-		borderRadius: 17,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	rankText: {
-		color: palette.white,
-		fontFamily: type.body.bold,
-		fontSize: 14,
-		lineHeight: 18,
+		minHeight: MIN_TOUCH_TARGET,
 	},
 	menuRowBody: {
 		flex: 1,
 		minWidth: 0,
 		gap: 2,
 	},
+	menuNameRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: tokens.space.xxs,
+	},
 	menuMeta: {
-		color: palette.textMuted,
+		...tokens.type.label.eyebrow,
 		fontFamily: type.body.semibold,
-		fontSize: 11,
-		lineHeight: 14,
+		color: tokens.color.text.tertiary,
 		textTransform: "uppercase",
-		letterSpacing: 0.3,
 	},
 	menuName: {
-		color: palette.text,
+		...tokens.type.body.strong,
 		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 20,
+		color: tokens.color.text.primary,
+		flexShrink: 1,
 	},
 	menuReason: {
-		color: palette.textMuted,
-		fontFamily: type.body.regular,
-		fontSize: 12,
-		lineHeight: 16,
+		...tokens.type.body.small,
+		color: tokens.color.text.secondary,
 	},
-	scorePill: {
-		minWidth: 48,
-		height: 36,
-		borderRadius: 18,
+	menuRowTrailing: {
+		alignItems: "flex-end",
+		gap: spacing.xs,
+	},
+	detailsCue: {
+		flexDirection: "row",
 		alignItems: "center",
-		justifyContent: "center",
-		borderWidth: 2,
-		paddingHorizontal: spacing.sm,
-		backgroundColor: tokens.color.surface.card.default,
+		gap: 2,
 	},
-	scorePillText: {
-		fontFamily: type.body.bold,
-		fontSize: 16,
-		lineHeight: 20,
+	detailsCueLabel: {
+		...tokens.type.label.metric,
+		color: tokens.color.text.tertiary,
 	},
-	expandedBlock: {
+	// --- expanded detail ---
+	detailsBlock: {
 		gap: spacing.sm,
 		paddingTop: spacing.xs,
 	},
+	detailsSection: {
+		gap: spacing.xs,
+	},
+	scoreLine: {
+		flexDirection: "row",
+		alignItems: "flex-end",
+		gap: tokens.space.xxs,
+	},
+	scoreValue: {
+		...tokens.type.display.accent,
+	},
+	scoreUnit: {
+		...tokens.type.body.small,
+		fontFamily: type.body.semibold,
+		color: tokens.color.text.tertiary,
+		paddingBottom: 2,
+	},
+	scoreCaption: {
+		...tokens.type.body.small,
+		color: tokens.color.text.tertiary,
+		paddingBottom: 2,
+		marginLeft: tokens.space.xxs,
+	},
 	insightBody: {
-		color: palette.text,
-		fontFamily: type.body.regular,
-		fontSize: 14,
-		lineHeight: 20,
+		...tokens.type.body.small,
+		color: tokens.color.text.primary,
 	},
 	triggerChipsRow: {
 		flexDirection: "row",
 		flexWrap: "wrap",
 		gap: spacing.xs,
 	},
-	scoreDrivers: {
-		gap: spacing.xs,
-	},
 	saferSwapRow: {
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.xs,
-		borderRadius: 14,
+		borderRadius: tokens.radius.sm,
 		backgroundColor: tokens.color.surface.card.success,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.xs,
 	},
 	saferSwapText: {
+		...tokens.type.body.small,
+		fontFamily: type.body.semibold,
 		flex: 1,
 		color: palette.primaryDark,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 18,
+	},
+	// --- consumption affordance ---
+	consumeStack: {
+		gap: spacing.xs,
 	},
 	consumeButton: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "center",
 		gap: spacing.xs,
-		borderRadius: 999,
-		borderWidth: 1,
-		borderColor: palette.primary,
-		paddingVertical: spacing.xs,
-		paddingHorizontal: spacing.sm,
-		alignSelf: "flex-start",
+		minHeight: MIN_TOUCH_TARGET,
+		borderRadius: tokens.radius.pill,
+		backgroundColor: tokens.color.action.quiet.background,
+		paddingHorizontal: spacing.md,
+	},
+	// The hero surface is the same old card white now, so the button keeps
+	// its quiet mint tint there too.
+	consumeButtonOnHero: {
+		backgroundColor: tokens.color.action.quiet.background,
 	},
 	consumeButtonDone: {
-		borderColor: tokens.color.status.risk.low.tint,
 		backgroundColor: tokens.color.status.risk.low.background,
 	},
 	consumeButtonText: {
-		color: palette.primary,
-		fontFamily: type.body.semibold,
-		fontSize: 12,
-		lineHeight: 16,
+		...tokens.type.label.chip,
+		color: tokens.color.action.quiet.foreground,
 	},
 	consumeButtonTextDone: {
 		color: tokens.color.status.risk.low.foreground,

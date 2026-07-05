@@ -21,10 +21,20 @@ import {
 import {
   computeMenuScanResultFromExtraction,
   computeScanResultFromStructured,
+  toRiskLevel,
 } from '../engine/scoring';
 import { LLM_PROVIDER, LlmProvider } from '../../llm/llm-provider.interface';
 import type { RankedCandidate } from '../../rag/reranker';
 import { RagRetrievalService } from '../../rag/retrieval.service';
+import { computeRagAdjustment, type RagSignal } from '../../rag/rag-influence';
+import { buildRagSignals } from '../../rag/rag-signals';
+import { adjudicationWorthwhile } from '../../rag/adjudication-worthwhile';
+import {
+  ingredientsPreviewFromExtraction,
+  type ScanAnalysisStage,
+  type ScanStageCallback,
+  type ScanStageDetail,
+} from '../scan-progress';
 
 export interface ScanWorkflowInput {
   userId: string;
@@ -38,6 +48,8 @@ export interface ScanWorkflowInput {
   profile: UserProfile | null;
   insights: IngredientInsight[];
   context?: ExtractionContext;
+  /** Display-only progress reporting; must never affect the analysis. */
+  onStage?: ScanStageCallback;
 }
 
 export interface ScanWorkflowResult {
@@ -48,12 +60,18 @@ export interface ScanWorkflowResult {
   audits: OpenAiAuditLog[];
 }
 
+// Bounded RAG influence may nudge the overall score by at most this many points
+// (before the band-cross guard clamps it further). Small by design: literature
+// refines placement inside a band, it never overturns the engine's band.
+const RAG_INFLUENCE_MAX_DELTA = 5;
+
 /**
  * Deterministic LangGraph workflow for scan analysis. The graph is a fixed DAG —
  * branches depend only on input kind/category, never on model output. The LLM
- * only EXTRACTS; the numeric score comes from the deterministic engine. The RAG
- * nodes are wired but no-op until Phase 7 enables them; with RAG off the final
- * result is byte-identical to the engine output.
+ * only EXTRACTS; the numeric score comes from the deterministic engine. RAG
+ * retrieval, conditional adjudication, and bounded influence are gated by
+ * RAG_RETRIEVAL_ENABLED / SCAN_RISK_ADJUDICATION_ENABLED / RAG_INFLUENCE_ENABLED;
+ * with all off the final result is byte-identical to the engine output.
  */
 @Injectable()
 export class ScanWorkflowService {
@@ -74,7 +92,27 @@ export class ScanWorkflowService {
       knownConditions: profile?.knownConditions ?? [],
       knownIngredients: profile?.knownIngredientSensitivities ?? [],
       dietPreferences: profile?.dietPreferences,
+      // Mechanism-only scoring discards extraction conditionSeverities, so do
+      // not pay the extractor to produce them on that path (FOOD_LLM_BANDS in
+      // the engine can also force this off globally).
+      requestConditionBands: !this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false),
     };
+  }
+
+  // Progress is display-only: a throwing (or missing) callback must never
+  // break the deterministic graph.
+  private notifyStage(input: ScanWorkflowInput, stage: ScanAnalysisStage, detail?: ScanStageDetail) {
+    try {
+      input.onStage?.(stage, detail);
+    } catch {
+      // Best-effort by design.
+    }
+  }
+
+  private numberFlag(name: string, fallback: number) {
+    const raw = this.config.get<string>(name);
+    const parsed = Number(raw);
+    return raw !== undefined && Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
   private flag(name: string, fallback = false) {
@@ -128,6 +166,16 @@ export class ScanWorkflowService {
     return Array.from(terms).map((term) => this.normalizeTerm(term)).filter(Boolean);
   }
 
+  // Matched influence signals: only chunks whose ingredient appears in the dish.
+  // Pure; safe to call more than once (adjudication gate + applyEvidence).
+  private buildSignals(
+    extraction: StructuredAnalysisV2 | MenuScanAnalysis | null,
+    ragEvidence: RiskAdjudicationEvidenceChunk[],
+  ): RagSignal[] {
+    if (!extraction || !ragEvidence.length) return [];
+    return buildRagSignals(extraction as StructuredAnalysisV2, ragEvidence);
+  }
+
   private toRagEvidence(chunks: RankedCandidate[]): RiskAdjudicationEvidenceChunk[] {
     return chunks.slice(0, 5).map((chunk) => ({
       chunkId: chunk.chunkId,
@@ -155,6 +203,12 @@ export class ScanWorkflowService {
         reducer: (_a, b) => b,
         default: () => [],
       }),
+      // Matched (ingredient-in-dish) influence signals, computed in applyEvidence
+      // and reused by finalize for matched-only citations.
+      ragSignals: Annotation<RagSignal[]>({
+        reducer: (_a, b) => b,
+        default: () => [],
+      }),
       evidenceCitations: Annotation<EvidenceCitation[]>({
         reducer: (_a, b) => b,
         default: () => [],
@@ -173,6 +227,7 @@ export class ScanWorkflowService {
       .addNode('loadUserContext', (s: S) => ({ context: this.deriveContext(s.input) }))
       .addNode('generate', async (s: S) => {
         const { input, context } = s;
+        this.notifyStage(input, 'reading_ingredients');
         let kind = input.kind;
         // Auto food/menu classification for images without an explicit category.
         if (kind === 'image' && input.autoClassify && (input.imageUrls?.length ?? 0) > 0) {
@@ -205,7 +260,13 @@ export class ScanWorkflowService {
         };
       })
       .addNode('normalizeFoodFacts', (s: S) => {
-        const { extraction, scanCategory } = s;
+        const { input, extraction, scanCategory } = s;
+        // Extraction just finished: surface what was found while scoring runs.
+        if (extraction) {
+          this.notifyStage(input, 'scoring', {
+            ingredientsPreview: ingredientsPreviewFromExtraction(extraction),
+          });
+        }
         if (!extraction || !this.supportsRiskAdjudication(scanCategory)) {
           return {};
         }
@@ -242,11 +303,27 @@ export class ScanWorkflowService {
         if (this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false)) {
           return {};
         }
+        // D1 wiring: when enabled, the adjudicator's clamped finalBands REPLACE
+        // extraction.conditionSeverities before scoring — adjudication is the
+        // band source, extraction bands are its prior (see the adjudication
+        // user prompt). Default OFF (Phase 2 decision): adjudication only earns
+        // its extra call when medium/high-confidence personal evidence or RAG
+        // citations exist to move a band; without them it re-derives the
+        // generic band a second time for ~2x hot-path LLM latency/cost. Enable
+        // once learned insights + the RAG corpus are populated in prod.
         const enabled = this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false);
         if (!enabled || !extraction || !this.supportsRiskAdjudication(scanCategory)) {
           return {};
         }
         const structured = extraction as StructuredAnalysisV2;
+        // Conditional adjudication (Phase 2 decision): only pay for the second
+        // LLM round-trip when there is real personal evidence or matched
+        // literature to weigh. Cold-start scans keep the fast path — their score
+        // still comes from extraction bands + deterministic placement.
+        const signals = this.buildSignals(structured, s.ragEvidence ?? []);
+        if (!adjudicationWorthwhile(input.insights, structured, signals)) {
+          return {};
+        }
         const request = buildRiskAdjudicationRequest({
           structuredAnalysis: structured,
           profile: input.profile,
@@ -298,11 +375,71 @@ export class ScanWorkflowService {
               );
         return { baseResult };
       })
-      .addNode('finalize', (s: S) => {
+      // Bounded RAG influence: literature may nudge the OVERALL score within its
+      // band (never across — computeRagAdjustment enforces the guard). Off by
+      // default (RAG_INFLUENCE_ENABLED); when off, baseResult passes through
+      // untouched and finalize keeps its prior citation behavior.
+      .addNode('applyEvidence', (s: S) => {
         const base = s.baseResult;
+        if (!base) return {};
+        const influenceEnabled = this.flag('RAG_INFLUENCE_ENABLED', false);
+        const signals = influenceEnabled ? this.buildSignals(s.extraction, s.ragEvidence ?? []) : [];
+        if (!influenceEnabled || signals.length === 0) {
+          // Still record matched signals (empty here) so finalize is explicit.
+          return { ragSignals: signals };
+        }
+        const adjustment = computeRagAdjustment(base.overallRiskScore, signals, {
+          enabled: true,
+          maxDelta: this.numberFlag('RAG_INFLUENCE_MAX_DELTA', RAG_INFLUENCE_MAX_DELTA),
+        });
+        if (!adjustment.applied || adjustment.finalScore === base.overallRiskScore) {
+          return { ragSignals: signals };
+        }
+        // Nudge the overall score + level only. Per-condition bands are out of
+        // scope for v1 (they keep their extraction/adjudication values).
+        return {
+          ragSignals: signals,
+          baseResult: base,
+          finalResult: {
+            ...base,
+            overallRiskScore: adjustment.finalScore,
+            overallRiskLevel: toRiskLevel(adjustment.finalScore),
+            structuredAnalysis: {
+              ...base.structuredAnalysis,
+              ragInfluence: {
+                baseScore: adjustment.baseScore,
+                finalScore: adjustment.finalScore,
+                delta: adjustment.clampedDelta,
+                bandGuardApplied: adjustment.bandGuardApplied,
+                reason: adjustment.reason,
+              },
+            },
+          },
+        };
+      })
+      .addNode('finalize', (s: S) => {
+        this.notifyStage(s.input, 'personalizing');
+        // Prefer the influence-adjusted result from applyEvidence when present.
+        const base = s.finalResult ?? s.baseResult;
         if (!base) return { finalResult: base };
-        const citations =
-          s.evidenceCitations?.length
+        const influenceEnabled = this.flag('RAG_INFLUENCE_ENABLED', false);
+        // Matched-signals citation filter (the CORE trust guarantee): when
+        // influence is on, only chunks whose ingredient is actually in the dish
+        // may ever be cited — never every retrieved chunk, and never an
+        // adjudication-chosen chunk for an off-plate ingredient. A plain-rice
+        // scan therefore shows no dairy/garlic citations regardless of which path
+        // produced them.
+        const matchedChunkIds = new Set((s.ragSignals ?? []).map((signal) => signal.chunkId));
+        const matchedCitations = evidenceCitationsFromChunks(
+          (s.ragEvidence ?? []).filter((chunk) => matchedChunkIds.has(chunk.chunkId)),
+        );
+        const citations = influenceEnabled
+          ? // Adjudication citations survive only if they are matched; otherwise
+            // show the full matched set (the "receipts" for what's on the plate).
+            (s.evidenceCitations ?? []).filter((citation) => citation.chunkId && matchedChunkIds.has(citation.chunkId)).length
+            ? (s.evidenceCitations ?? []).filter((citation) => citation.chunkId && matchedChunkIds.has(citation.chunkId))
+            : matchedCitations
+          : s.evidenceCitations?.length
             ? s.evidenceCitations
             : this.flag('SCAN_RISK_ADJUDICATION_ENABLED', false) || this.flag('SCAN_MECHANISM_SCORING_V1_ENABLED', false)
               ? evidenceCitationsFromChunks(s.ragEvidence ?? [])
@@ -326,7 +463,8 @@ export class ScanWorkflowService {
       .addEdge('normalizeFoodFacts', 'retrieveEvidence')
       .addEdge('retrieveEvidence', 'adjudicateRisk')
       .addEdge('adjudicateRisk', 'score')
-      .addEdge('score', 'finalize')
+      .addEdge('score', 'applyEvidence')
+      .addEdge('applyEvidence', 'finalize')
       .addEdge('finalize', END)
       .compile();
   }

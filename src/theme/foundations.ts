@@ -1,3 +1,10 @@
+// The app's design language: the ORIGINAL MyTummyHurts palette (restored
+// verbatim from main after two darker redesign rounds were rejected) carried
+// by the redesign's structure. Warm cream canvas, warm-white cards, mint
+// actions, peach/orange status warmth — every color value here matches the
+// pre-redesign scheme exactly. What stayed from the redesign is everything
+// that isn't color: Bricolage Grotesque + Figtree type, the one-hero-per-
+// screen layout rules, and the caseboard verdict model.
 export const foundations = {
   color: {
     brand: {
@@ -42,11 +49,13 @@ export const foundations = {
   },
   typography: {
     family: {
-      display: 'InstrumentSerif_400Regular',
-      bodyRegular: 'PlusJakartaSans_400Regular',
-      bodyMedium: 'PlusJakartaSans_500Medium',
-      bodySemibold: 'PlusJakartaSans_600SemiBold',
-      bodyBold: 'PlusJakartaSans_700Bold',
+      display: 'BricolageGrotesque_800ExtraBold',
+      displayBold: 'BricolageGrotesque_700Bold',
+      displaySemibold: 'BricolageGrotesque_600SemiBold',
+      bodyRegular: 'Figtree_400Regular',
+      bodyMedium: 'Figtree_500Medium',
+      bodySemibold: 'Figtree_600SemiBold',
+      bodyBold: 'Figtree_700Bold',
     },
   },
   space: {
@@ -61,10 +70,10 @@ export const foundations = {
   },
   radius: {
     sm: 12,
-    md: 18,
-    lg: 24,
-    xl: 30,
-    xxl: 38,
+    md: 16,
+    lg: 22,
+    xl: 28,
+    xxl: 34,
     pill: 999,
   },
   motion: {

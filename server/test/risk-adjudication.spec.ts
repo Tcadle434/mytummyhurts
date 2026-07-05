@@ -229,3 +229,118 @@ describe('risk adjudication validation', () => {
     expect(high?.conditionSeverities[0].band).toBe('none');
   });
 });
+
+// Regression for the live 2026-07-04 sushi scans: the text-only adjudicator
+// first re-derived GERD genericBand=moderate over the vision model's mild
+// (citing a histamine chunk — wrong condition), lifting 31->55. A ±1-with-
+// citation allowance was tried and inflated everything (the corpus has a
+// raises chunk for nearly every trigger). Final rule: the generic band IS the
+// vision prior; the adjudicator's only band lever is personal evidence.
+describe('generic band is pinned to the vision prior', () => {
+  const gerdChunk = {
+    chunkId: 'chunk-gerd',
+    title: 'Fat and Fried Foods — Reflux',
+    source: 'Curated reference',
+    content: 'Fat delays gastric emptying and relaxes the LES.',
+    conditionTags: ['GERD'],
+    ingredientTags: ['fried', 'fat', 'avocado'],
+    direction: 'raises' as const,
+    relevanceScore: 0.6,
+  };
+  const histamineChunk = {
+    chunkId: 'chunk-hist',
+    title: 'Histamine, Aged and Fermented Foods',
+    source: 'Curated reference',
+    content: 'Fermented foods like soy sauce carry histamine.',
+    conditionTags: ['histamine_intolerance'],
+    ingredientTags: ['soy sauce', 'fermented'],
+    direction: 'raises' as const,
+    relevanceScore: 0.6,
+  };
+
+  function gerdStructured(): StructuredAnalysisV2 {
+    return {
+      ...structured(),
+      conditionSeverities: [
+        { condition: 'GERD / Acid reflux', band: 'mild', drivers: ['cheese'], rationale: 'Vision prior.' },
+      ],
+    };
+  }
+
+  function gerdPayload(genericBand: 'mild' | 'moderate' | 'high', citationChunkIds: string[]): RiskAdjudicationPayload {
+    return {
+      conditionSeverities: [
+        {
+          condition: 'GERD / Acid reflux',
+          genericBand,
+          personalizedBand: genericBand,
+          finalBand: genericBand,
+          drivers: ['cheese'],
+          protectiveEvidence: [],
+          citationChunkIds,
+          personalEvidenceUsed: [],
+          confidence: 'medium',
+          rationale: 'test',
+        },
+      ],
+    };
+  }
+
+  function gerdRequest(ragEvidence: (typeof gerdChunk)[]) {
+    return buildRiskAdjudicationRequest({
+      structuredAnalysis: gerdStructured(),
+      profile: { ...ibsProfile(), knownConditions: ['GERD / Acid reflux'] },
+      insights: [],
+      ragEvidence,
+    });
+  }
+
+  it('rejects an upward move justified by a wrong-condition citation (the sushi bug)', () => {
+    const result = validateRiskAdjudication(gerdPayload('moderate', ['chunk-hist']), gerdRequest([histamineChunk]));
+    expect(result?.conditionSeverities[0].band).toBe('mild');
+    expect(result?.metadata.warnings?.some((w) => w.startsWith('genericBandClamped'))).toBe(true);
+  });
+
+  it('rejects an upward move even with a condition-matching raises citation (the inflation bug)', () => {
+    const result = validateRiskAdjudication(gerdPayload('moderate', ['chunk-gerd']), gerdRequest([gerdChunk]));
+    expect(result?.conditionSeverities[0].band).toBe('mild');
+    expect(result?.metadata.warnings?.some((w) => w.startsWith('genericBandClamped'))).toBe(true);
+  });
+
+  it('rejects downward generic moves too — the prior is the prior', () => {
+    const result = validateRiskAdjudication(gerdPayload('mild', []), {
+      ...gerdRequest([]),
+      structuredAnalysis: {
+        ...gerdStructured(),
+        conditionSeverities: [
+          { condition: 'GERD / Acid reflux', band: 'moderate', drivers: ['cheese'], rationale: 'Vision prior.' },
+        ],
+      },
+    });
+    expect(result?.conditionSeverities[0].band).toBe('moderate');
+  });
+
+  it('personal evidence remains the only band lever, applied on the pinned prior', () => {
+    const request = {
+      ...gerdRequest([]),
+      personalEvidence: [
+        {
+          ingredientName: 'cheese',
+          combinedRiskScore: 70,
+          confidenceLevel: 'medium' as const,
+          supportingEvidenceCount: 4,
+          calmEvidenceCount: 0,
+          reactiveEvidenceCount: 3,
+          summary: 'rough on 3 of 4 days',
+        },
+      ],
+    };
+    const payload = gerdPayload('moderate', []);
+    payload.conditionSeverities[0]!.personalEvidenceUsed = ['cheese'];
+    payload.conditionSeverities[0]!.finalBand = 'moderate';
+    const result = validateRiskAdjudication(payload, request);
+    // generic pinned to mild; medium-confidence personal evidence allows +1.
+    expect(result?.metadata.conditionSeverities[0]!.genericBand).toBe('mild');
+    expect(result?.conditionSeverities[0].band).toBe('moderate');
+  });
+});

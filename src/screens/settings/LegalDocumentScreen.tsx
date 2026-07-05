@@ -1,10 +1,10 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, ScreenHeader, SectionCard } from '../../components/common/UI';
 import { legalDocuments } from '../../data/legal';
 import { RootStackParamList } from '../../navigation/types';
-import { palette, spacing, type } from '../../theme';
+import { spacing, tokens } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LegalDocument'>;
 
@@ -13,22 +13,30 @@ export function LegalDocumentScreen({ route }: Props) {
 
   return (
     <AppScreen>
-      <ScreenHeader
-        eyebrow="Legal"
-        title={document.title}
-        subtitle="This in-app copy is a product-ready draft until the hosted legal pages are finalized."
-      />
+      <ScreenHeader eyebrow="Legal" title={document.title} />
 
-      <View style={{ gap: spacing.md }}>
+      <View style={styles.sections}>
         {document.sections.map((section) => (
           <SectionCard key={section.heading}>
-            <Text style={{ color: palette.text, fontFamily: type.body.bold, fontSize: 18 }}>{section.heading}</Text>
-            <Text style={{ color: palette.textMuted, fontFamily: type.body.regular, fontSize: 14, lineHeight: 22 }}>
-              {section.body}
-            </Text>
+            <Text style={styles.sectionHeading}>{section.heading}</Text>
+            <Text style={styles.sectionBody}>{section.body}</Text>
           </SectionCard>
         ))}
       </View>
     </AppScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  sections: {
+    gap: spacing.md,
+  },
+  sectionHeading: {
+    ...tokens.type.title.block,
+    color: tokens.color.text.primary,
+  },
+  sectionBody: {
+    ...tokens.type.body.default,
+    color: tokens.color.text.secondary,
+  },
+});

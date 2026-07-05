@@ -1,6 +1,7 @@
 import { StyleSheet } from "react-native";
 
-import { palette, spacing, type } from "../../theme";
+import { palette, spacing, tokens, type } from "../../theme";
+import { withAlpha } from "../../theme/helpers";
 
 export const styles = StyleSheet.create({
 	backgroundLayer: {
@@ -14,7 +15,7 @@ export const styles = StyleSheet.create({
 	},
 	backgroundWash: {
 		...StyleSheet.absoluteFillObject,
-		backgroundColor: "rgba(19, 28, 26, 0.1)",
+		backgroundColor: withAlpha(tokens.color.text.primary, 0.1),
 	},
 	onboardingContent: {
 		paddingBottom: spacing.lg,
@@ -45,7 +46,7 @@ export const styles = StyleSheet.create({
 		gap: spacing.md,
 	},
 	imageBackgroundTitle: {
-		textShadowColor: "rgba(64, 152, 119, 0.38)",
+		textShadowColor: withAlpha(tokens.color.utility.shadow, 0.38),
 		textShadowOffset: { width: 0, height: 1 },
 		textShadowRadius: 3,
 	},
@@ -112,8 +113,8 @@ export const styles = StyleSheet.create({
 		marginBottom: spacing.md,
 	},
 	footerBodyOnImage: {
-		color: "rgba(255, 255, 255, 0.9)",
-		textShadowColor: "rgba(64, 152, 119, 0.28)",
+		color: withAlpha(tokens.color.utility.white, 0.9),
+		textShadowColor: withAlpha(tokens.color.utility.shadow, 0.28),
 		textShadowOffset: { width: 0, height: 1 },
 		textShadowRadius: 2,
 	},

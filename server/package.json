@@ -14,6 +14,7 @@
     "eval": "node scripts/eval/run.mjs",
     "eval:scans": "node scripts/eval/run-scan-evals.mjs",
     "eval:retrieval": "node scripts/eval/run-retrieval-evals.mjs",
+    "eval:langsmith": "node scripts/eval/run-langsmith-evals.mjs",
     "eval:all": "npm run build && npm run eval && npm run eval:retrieval && npm run eval:scans",
     "rag:seed": "node scripts/rag/seed-corpus.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
@@ -21,8 +22,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
     "@aws-sdk/s3-request-presigner": "^3.700.0",
-    "@langchain/core": "^0.3.18",
-    "@langchain/langgraph": "^0.2.39",
+    "@langchain/core": "^1.2.1",
+    "@langchain/langgraph": "^1.4.7",
+    "@langchain/openai": "^1.5.3",
     "@mth/shared-domain": "file:../packages/shared-domain",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",
@@ -38,11 +40,14 @@
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.36.4",
     "jose": "^5.9.6",
+    "langsmith": "^0.7.14",
     "nestjs-pino": "^4.1.0",
+    "openevals": "^0.2.0",
     "pino-http": "^10.3.0",
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",

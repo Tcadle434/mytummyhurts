@@ -1,10 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
 
-import { Pip } from "../../components/common/Pip";
 import { SectionCard } from "../../components/common/UI";
-import { palette, spacing, tokens, type, type PipState } from "../../theme";
+import { GutScoreVisual, getGutScoreZone } from "../../components/score/GutScoreVisual";
+import { spacing, tokens, type } from "../../theme";
 
 type GutScoreHomeCardProps = {
 	score: number;
@@ -12,11 +11,10 @@ type GutScoreHomeCardProps = {
 	onInfoPress: () => void;
 };
 
-type GutScoreZone = "low" | "medium" | "high";
-
 export function GutScoreHomeCard({ score, trendDelta7d = 0, onInfoPress }: GutScoreHomeCardProps) {
-	const zone = getGutScoreZone(score);
-	const scoreColor = getGutScoreZoneColor(zone);
+	// The numeral wears the zone tint (the triple-encode: number + arc
+	// segment + Pip's face agree) — the original treatment.
+	const scoreColor = getGutScoreZoneTint(score);
 
 	return (
 		<SectionCard style={styles.card}>
@@ -47,7 +45,7 @@ export function GutScoreHomeCard({ score, trendDelta7d = 0, onInfoPress }: GutSc
 				<GutScoreTrendCard delta={trendDelta7d} />
 			</View>
 
-			<GutScoreVisual score={score} zone={zone} />
+			<GutScoreVisual score={score} />
 		</SectionCard>
 	);
 }
@@ -64,62 +62,6 @@ function GutScoreTrendCard({ delta }: { delta: number }) {
 	);
 }
 
-function GutScoreVisual({ score, zone }: { score: number; zone: GutScoreZone }) {
-	return (
-		<View
-			style={styles.visualWrap}
-			accessible
-			accessibilityLabel={`Gut Score ${score}, ${zone} range`}
-		>
-			<SegmentedGutScoreArc activeZone={zone} />
-			<Pip state={getPipStateForScore(score)} size={94} style={styles.pipMascot} />
-		</View>
-	);
-}
-
-function SegmentedGutScoreArc({ activeZone }: { activeZone: GutScoreZone }) {
-	const segments: { zone: GutScoreZone; start: number; end: number; color: string }[] = [
-		{ zone: "low", start: -132, end: -52, color: tokens.color.status.risk.high.tint },
-		{ zone: "medium", start: -40, end: 40, color: tokens.color.status.risk.medium.tint },
-		{ zone: "high", start: 52, end: 132, color: tokens.color.status.risk.low.tint },
-	];
-
-	return (
-		<Svg width={132} height={120} viewBox="0 0 162 148" style={styles.arcSvg}>
-			{segments.map((segment) => (
-				<Path
-					key={segment.zone}
-					d={describeArc(81, 96, 63, segment.start, segment.end)}
-					fill="none"
-					stroke={segment.color}
-					strokeWidth={14}
-					strokeLinecap="round"
-					opacity={segment.zone === activeZone ? 1 : 0.24}
-				/>
-			))}
-		</Svg>
-	);
-}
-
-function getGutScoreZone(score: number): GutScoreZone {
-	if (score <= 33) return "low";
-	if (score <= 66) return "medium";
-	return "high";
-}
-
-function getGutScoreZoneColor(zone: GutScoreZone) {
-	if (zone === "low") return tokens.color.status.risk.high.tint;
-	if (zone === "medium") return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.low.tint;
-}
-
-function getPipStateForScore(score: number): PipState {
-	const zone = getGutScoreZone(score);
-	if (zone === "low") return "anxious";
-	if (zone === "medium") return "base";
-	return "joy";
-}
-
 function getGutScoreTrend(delta: number) {
 	if (delta < 0) {
 		const magnitude = Math.abs(delta);
@@ -133,33 +75,23 @@ function getGutScoreTrend(delta: number) {
 	if (delta > 0) {
 		return {
 			iconName: "trending-up-outline" as const,
-			color: palette.primary,
+			color: tokens.color.accent.brand,
 			metricText: `+${delta} ${delta === 1 ? "pt" : "pts"}`,
 		};
 	}
 
 	return {
 		iconName: "remove-outline" as const,
-		color: palette.textMuted,
+		color: tokens.color.text.secondary,
 		metricText: "Steady",
 	};
 }
 
-function describeArc(cx: number, cy: number, radius: number, startAngle: number, endAngle: number) {
-	const start = polarToCartesian(cx, cy, radius, endAngle);
-	const end = polarToCartesian(cx, cy, radius, startAngle);
-	const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-
-	return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
-}
-
-function polarToCartesian(cx: number, cy: number, radius: number, angleInDegrees: number) {
-	const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
-
-	return {
-		x: cx + radius * Math.cos(angleInRadians),
-		y: cy + radius * Math.sin(angleInRadians),
-	};
+function getGutScoreZoneTint(score: number) {
+	const zone = getGutScoreZone(score);
+	if (zone === "low") return tokens.color.status.risk.high.tint;
+	if (zone === "medium") return tokens.color.status.risk.medium.tint;
+	return tokens.color.status.risk.low.tint;
 }
 
 const styles = StyleSheet.create({
@@ -170,6 +102,8 @@ const styles = StyleSheet.create({
 		justifyContent: "space-between",
 		gap: spacing.sm,
 		paddingVertical: spacing.md,
+		backgroundColor: tokens.color.surface.hero.background,
+		...tokens.shadow.lift,
 	},
 	copyColumn: {
 		flex: 1,
@@ -184,13 +118,13 @@ const styles = StyleSheet.create({
 	},
 	title: {
 		...tokens.type.title.block,
-		color: tokens.color.text.primary,
+		color: tokens.color.surface.hero.onHero,
 	},
 	infoBadge: {
 		width: 26,
 		height: 26,
 		borderRadius: 13,
-		backgroundColor: tokens.color.status.success.background,
+		backgroundColor: tokens.color.surface.hero.raised,
 		alignItems: "center",
 		justifyContent: "center",
 		marginTop: -2,
@@ -200,13 +134,10 @@ const styles = StyleSheet.create({
 		alignItems: "flex-end",
 	},
 	scoreValue: {
-		fontFamily: type.body.bold,
-		fontSize: 44,
-		lineHeight: 48,
-		letterSpacing: -1,
+		...tokens.type.display.metric,
 	},
 	scoreScale: {
-		color: tokens.color.text.tertiary,
+		color: tokens.color.surface.hero.onHeroMuted,
 		fontFamily: type.body.semibold,
 		fontSize: 18,
 		lineHeight: 24,
@@ -215,7 +146,7 @@ const styles = StyleSheet.create({
 	},
 	explainerText: {
 		maxWidth: 160,
-		color: tokens.color.text.secondary,
+		color: tokens.color.surface.hero.onHeroMuted,
 		fontFamily: type.body.medium,
 		fontSize: 13,
 		lineHeight: 18,
@@ -233,25 +164,9 @@ const styles = StyleSheet.create({
 		lineHeight: 16,
 	},
 	trendContext: {
-		color: palette.textMuted,
+		color: tokens.color.surface.hero.onHeroFaint,
 		fontFamily: type.body.medium,
 		fontSize: 12,
 		lineHeight: 16,
-	},
-	visualWrap: {
-		width: 132,
-		height: 142,
-		alignItems: "center",
-		justifyContent: "flex-end",
-	},
-	arcSvg: {
-		position: "absolute",
-		top: 0,
-		left: 0,
-		width: 132,
-		height: 120,
-	},
-	pipMascot: {
-		marginBottom: 0,
 	},
 });

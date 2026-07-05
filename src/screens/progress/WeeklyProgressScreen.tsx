@@ -3,6 +3,7 @@ import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
+	FadeIn,
 	useAnimatedStyle,
 	useSharedValue,
 	withSequence,
@@ -10,8 +11,9 @@ import Animated, {
 	withTiming,
 } from "react-native-reanimated";
 
+import { Pip } from "../../components/common/Pip";
 import { AppScreen, DetailScreenHeader } from "../../components/common/UI";
-import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
+import { bandRiskColors, pipStateForBand } from "../../components/progress/bandStyle";
 import { useHomeData } from "../../features/home/hooks";
 import { useHistoryFeed } from "../../features/history/hooks";
 import { RootStackParamList } from "../../navigation/types";
@@ -19,18 +21,17 @@ import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
 import { components, radii, spacing, tokens, type } from "../../theme";
 import {
+	DailyScoreBand,
 	WeeklyProgressDay,
 	addDays,
-	buildWeeklyProgressDay,
 	buildWeeklyProgressDays,
+	dailyScoreBand,
 	formatWeekRange,
 	getCurrentWeekStart,
-	getFeaturedDailyScoreDay,
 	parseLocalDate,
 	toLocalDate,
-	yesterdayLocalDate,
 } from "../../utils/weeklyProgress";
-import { gutScoreTint } from "../../utils/risk";
+import { buildWeekSummary } from "./weekSummary";
 
 export function WeeklyProgressScreen() {
 	const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -58,20 +59,17 @@ export function WeeklyProgressScreen() {
 		[reports, scans, selectedWeek]
 	);
 
-	const visibleDays = useMemo(() => {
-		const filtered = isActiveWeek
-			? orderedDays.filter((day) => day.localDate <= todayLocalDate)
-			: orderedDays;
-		return [...filtered].reverse();
-	}, [orderedDays, isActiveWeek, todayLocalDate]);
+	// Only the days that have actually happened count toward the week's story.
+	const elapsedDays = useMemo(
+		() =>
+			isActiveWeek
+				? orderedDays.filter((day) => day.localDate <= todayLocalDate)
+				: orderedDays,
+		[orderedDays, isActiveWeek, todayLocalDate]
+	);
 
-	const featuredDay = isActiveWeek
-		? buildWeeklyProgressDay({
-				scans,
-				reports,
-				localDate: yesterdayLocalDate(),
-		  })
-		: getFeaturedDailyScoreDay(orderedDays);
+	const visibleDays = useMemo(() => [...elapsedDays].reverse(), [elapsedDays]);
+	const weekSummary = useMemo(() => buildWeekSummary(elapsedDays), [elapsedDays]);
 
 	const canGoOlder = true;
 	const canGoNewer = selectedWeek < currentWeekStart;
@@ -94,38 +92,26 @@ export function WeeklyProgressScreen() {
 
 	return (
 		<AppScreen>
-			<DetailScreenHeader
-				eyebrow="Daily Score"
-				title={formatWeekRange(selectedWeek)}
-				titleAccessory={
-					<WeekStepper
-						onOlder={goOlder}
-						onNewer={goNewer}
-						canGoOlder={canGoOlder}
-						canGoNewer={canGoNewer}
-					/>
-				}
-			/>
+			<DetailScreenHeader eyebrow="Weekly progress" />
 
-			<WeeklyProgressCard
-				days={orderedDays}
-				mode="interactive"
-				showChevron={false}
-				featuredDay={featuredDay}
-				featuredLabel={isActiveWeek ? "Yesterday" : "Selected day"}
-				onFeaturedMealsPress={(day) =>
-					navigation.navigate("DailyScoreDay", {
-						localDate: day.localDate,
-						weekStart: selectedWeek,
-					})
-				}
-				onFeaturedSymptomsPress={(day) =>
-					navigation.navigate("DailyScoreDay", {
-						localDate: day.localDate,
-						weekStart: selectedWeek,
-					})
-				}
-			/>
+			<View style={styles.weekRow}>
+				<Text style={styles.weekRangeLabel}>{formatWeekRange(selectedWeek)}</Text>
+				<WeekStepper
+					onOlder={goOlder}
+					onNewer={goNewer}
+					canGoOlder={canGoOlder}
+					canGoNewer={canGoNewer}
+				/>
+			</View>
+
+			<Animated.View key={selectedWeek} entering={FadeIn.duration(260)}>
+				<WeekHero
+					headline={weekSummary.headline}
+					detail={weekSummary.detail}
+					deltaLine={weekSummary.deltaLine}
+					band={weekSummary.band}
+				/>
+			</Animated.View>
 
 			<View style={styles.dayList}>
 				{visibleDays.map((day) => (
@@ -143,6 +129,34 @@ export function WeeklyProgressScreen() {
 				))}
 			</View>
 		</AppScreen>
+	);
+}
+
+/**
+ * The screen's one hero block: the week spoken as a finding in on-hero
+ * text, with Pip's face carrying the band (words + face; the day rows below
+ * carry the band colors).
+ */
+function WeekHero({
+	headline,
+	detail,
+	deltaLine,
+	band,
+}: {
+	headline: string;
+	detail: string;
+	deltaLine?: string;
+	band?: DailyScoreBand;
+}) {
+	return (
+		<View style={styles.heroCard} accessible accessibilityRole="summary">
+			<Pip state={pipStateForBand(band)} size={72} />
+			<View style={styles.heroCopy}>
+				<Text style={styles.heroHeadline}>{headline}</Text>
+				<Text style={styles.heroDetail}>{detail}</Text>
+				{deltaLine ? <Text style={styles.heroDelta}>{deltaLine}</Text> : null}
+			</View>
+		</View>
 	);
 }
 
@@ -220,12 +234,14 @@ function WeekDayRow({
 }) {
 	const hasScore = day.dailyScore !== undefined && day.hasReport;
 	const score = hasScore ? (day.dailyScore as number) : undefined;
-	const scoreColor = score !== undefined ? gutScoreTint(score) : tokens.color.text.tertiary;
 	const symptomSummary = day.report?.symptomTags.length
 		? day.report.symptomTags.slice(0, 2).join(", ")
 		: day.report
 			? "Report logged"
 			: "No report";
+	const mealSummary = day.mealCount
+		? `${day.mealCount} meal${day.mealCount === 1 ? "" : "s"}`
+		: "No meals";
 
 	const rowScale = useSharedValue(1);
 	const pillScale = useSharedValue(1);
@@ -258,34 +274,14 @@ function WeekDayRow({
 		<Animated.View style={rowAnimatedStyle}>
 			<Pressable
 				accessibilityRole="button"
+				accessibilityLabel={dayRowAccessibilityLabel(day, score, mealSummary)}
 				onPressIn={handlePressIn}
 				onPressOut={handlePressOut}
 				onPress={handlePress}
 				style={styles.dayRow}
 			>
-				<View
-					style={[
-						styles.dayDateBadge,
-						{ backgroundColor: badgeColorForScore(score) },
-						score === undefined && styles.dayDateBadgeEmpty,
-					]}
-				>
-					<Text
-						style={[
-							styles.dayBadgeMonth,
-							score === undefined && styles.dayBadgeTextEmpty,
-						]}
-					>
-						{formatMonth(day.localDate)}
-					</Text>
-					<Text
-						style={[
-							styles.dayBadgeDay,
-							score === undefined && styles.dayBadgeTextEmpty,
-						]}
-					>
-						{formatDayOfMonth(day.localDate)}
-					</Text>
+				<View style={styles.dayDateBadge}>
+					<Text style={styles.dayBadgeDay}>{formatDayOfMonth(day.localDate)}</Text>
 				</View>
 				<View style={styles.dayCopy}>
 					<View style={styles.dayTitleRow}>
@@ -297,18 +293,30 @@ function WeekDayRow({
 						) : null}
 					</View>
 					<Text style={styles.dayMeta}>
-						{day.mealCount ? `${day.mealCount} meal${day.mealCount === 1 ? "" : "s"}` : "No meals"} · {symptomSummary}
+						{mealSummary} · {symptomSummary}
 					</Text>
 				</View>
 				<Animated.View
 					style={[
 						styles.dayScorePill,
-						score !== undefined && { backgroundColor: scoreBackground(score) },
+						score !== undefined && {
+							backgroundColor: bandRiskColors(score).background,
+						},
 						pillAnimatedStyle,
 					]}
 				>
-					<Text style={[styles.dayScoreText, { color: scoreColor }]}>
-						{score !== undefined ? `${score}%` : "—"}
+					<Text
+						style={[
+							styles.dayScoreText,
+							{
+								color:
+									score !== undefined
+										? bandRiskColors(score).foreground
+										: tokens.color.text.tertiary,
+							},
+						]}
+					>
+						{score !== undefined ? `${score}% · ${dailyScoreBand(score)}` : "—"}
 					</Text>
 				</Animated.View>
 				<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
@@ -317,23 +325,16 @@ function WeekDayRow({
 	);
 }
 
-function scoreBackground(score: number) {
-	if (score >= 67) return tokens.color.status.risk.low.background;
-	if (score >= 34) return tokens.color.status.risk.medium.background;
-	return tokens.color.status.risk.high.background;
-}
-
-function badgeColorForScore(score: number | undefined) {
-	if (score === undefined) return tokens.color.surface.card.warm;
-	if (score >= 67) return tokens.color.status.risk.low.tint;
-	if (score >= 34) return tokens.color.status.risk.medium.tint;
-	return tokens.color.status.risk.high.tint;
-}
-
-function formatMonth(localDate: string) {
-	return parseLocalDate(localDate)
-		.toLocaleDateString(undefined, { month: "short" })
-		.toUpperCase();
+function dayRowAccessibilityLabel(
+	day: WeeklyProgressDay,
+	score: number | undefined,
+	mealSummary: string
+) {
+	const scorePart =
+		score !== undefined
+			? `Daily Score ${score} percent, ${dailyScoreBand(score)} day`
+			: "no check-in yet";
+	return `${formatWeekday(day.localDate)}, ${scorePart}, ${mealSummary}`;
 }
 
 function formatDayOfMonth(localDate: string) {
@@ -345,6 +346,16 @@ function formatWeekday(localDate: string) {
 }
 
 const styles = StyleSheet.create({
+	weekRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: spacing.md,
+	},
+	weekRangeLabel: {
+		...tokens.type.body.strong,
+		color: tokens.color.text.secondary,
+	},
 	stepperRow: {
 		flexDirection: "row",
 		alignItems: "center",
@@ -353,15 +364,41 @@ const styles = StyleSheet.create({
 	stepperButton: {
 		width: 34,
 		height: 34,
-		borderRadius: 17,
+		borderRadius: radii.pill,
 		alignItems: "center",
 		justifyContent: "center",
-		backgroundColor: tokens.color.surface.frosted,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.card.default,
+		...tokens.shadow.card,
 	},
 	stepperButtonDisabled: {
 		opacity: 0.6,
+	},
+	heroCard: {
+		...components.card.hero,
+		flexDirection: "row",
+		alignItems: "center",
+		gap: spacing.md,
+		padding: spacing.lg,
+	},
+	heroCopy: {
+		flex: 1,
+		gap: spacing.xs,
+	},
+	// display.section, not display.hero: the copy column sits beside a 72px
+	// Pip, and the wider Bricolage metrics need the smaller size to wrap well.
+	heroHeadline: {
+		...tokens.type.display.section,
+		color: tokens.color.surface.hero.onHero,
+	},
+	heroDetail: {
+		...tokens.type.body.default,
+		fontFamily: type.body.medium,
+		color: tokens.color.surface.hero.onHeroMuted,
+	},
+	heroDelta: {
+		...tokens.type.body.small,
+		fontFamily: type.body.medium,
+		color: tokens.color.surface.hero.onHeroFaint,
 	},
 	dayList: {
 		gap: spacing.sm,
@@ -377,33 +414,15 @@ const styles = StyleSheet.create({
 	dayDateBadge: {
 		width: 48,
 		height: 48,
-		borderRadius: 24,
+		borderRadius: radii.pill,
 		alignItems: "center",
 		justifyContent: "center",
-		paddingTop: 4,
-		paddingBottom: 5,
-	},
-	dayDateBadgeEmpty: {
-		borderWidth: 1,
-		borderColor: tokens.color.border.strong,
-	},
-	dayBadgeMonth: {
-		color: tokens.color.text.inverse,
-		fontFamily: type.body.bold,
-		fontSize: 9,
-		lineHeight: 11,
-		letterSpacing: 0.6,
+		backgroundColor: tokens.color.surface.app.default,
 	},
 	dayBadgeDay: {
-		color: tokens.color.text.inverse,
-		fontFamily: type.body.bold,
-		fontSize: 18,
-		lineHeight: 22,
+		...tokens.type.metric.value,
+		color: tokens.color.text.primary,
 		fontVariant: ["tabular-nums"],
-		letterSpacing: -0.3,
-	},
-	dayBadgeTextEmpty: {
-		color: tokens.color.text.tertiary,
 	},
 	dayCopy: {
 		flex: 1,
@@ -415,10 +434,8 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	dayTitle: {
+		...tokens.type.body.strong,
 		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 16,
-		lineHeight: 21,
 	},
 	todayPill: {
 		paddingHorizontal: spacing.xs,
@@ -427,18 +444,16 @@ const styles = StyleSheet.create({
 		backgroundColor: tokens.color.status.success.background,
 	},
 	todayPillText: {
-		color: tokens.color.text.accent,
+		...tokens.type.label.tab,
 		fontFamily: type.body.bold,
-		fontSize: 11,
-		lineHeight: 14,
+		color: tokens.color.status.success.foreground,
 		letterSpacing: 0.4,
 		textTransform: "uppercase",
 	},
 	dayMeta: {
-		color: tokens.color.text.secondary,
+		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
+		color: tokens.color.text.secondary,
 	},
 	dayScorePill: {
 		minWidth: 44,
@@ -449,8 +464,7 @@ const styles = StyleSheet.create({
 		paddingVertical: 6,
 	},
 	dayScoreText: {
+		...tokens.type.label.chip,
 		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 17,
 	},
 });

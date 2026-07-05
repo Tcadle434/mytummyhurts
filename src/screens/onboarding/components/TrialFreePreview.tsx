@@ -1,6 +1,6 @@
 import { Image, StyleSheet, View } from "react-native";
 
-import { tokens } from "../../../theme";
+import { foundations, tokens } from "../../../theme";
 
 const HOME_SCREENSHOT = require("../../../../assets/ui/home_screenshot_onboarding.png");
 
@@ -39,7 +39,9 @@ const styles = StyleSheet.create({
 		width: PHONE_WIDTH,
 		height: PHONE_HEIGHT,
 		borderRadius: 38,
-		backgroundColor: "#111111",
+		// Device-hardware black, not a theme color: the frame mimics an iPhone
+		// bezel around the real home screenshot.
+		backgroundColor: foundations.color.neutral.black,
 		padding: BEZEL_THICKNESS,
 		...tokens.shadow.lift,
 	},
@@ -61,6 +63,6 @@ const styles = StyleSheet.create({
 		width: 78,
 		height: 20,
 		borderRadius: 10,
-		backgroundColor: "#000000",
+		backgroundColor: foundations.color.neutral.black,
 	},
 });

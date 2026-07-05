@@ -18,6 +18,7 @@ import type {
   IngredientInsight,
   IngredientTaxonomyConfidence,
   IngredientTaxonomySource,
+  PredictiveValidityStats,
   ProfileSeed,
   ScanForInsightRecompute,
   StomachProfile,
@@ -34,6 +35,7 @@ export function buildProfileFromRow(
     learningProgress?: ProfileLearningProgress;
     reportCount?: number;
     dietPreferences?: DietPreference[];
+    predictiveValidity?: PredictiveValidityStats | null;
   } = {},
 ) {
   if (!row) return null;
@@ -52,6 +54,7 @@ export function buildProfileFromRow(
     priorStomachProfile: { metadata: { gutScore } } as Partial<StomachProfile>,
     learningProgress: options.learningProgress,
     reportCount: options.reportCount,
+    predictiveValidity: options.predictiveValidity,
   });
 }
 

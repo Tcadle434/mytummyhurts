@@ -72,12 +72,23 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
   };
 
   return {
-      updateScanConsumption: async ({ scanId, consumptionStatus, consumedMenuItemSourceIds }) => {
+      updateScanConsumption: async ({ scanId, consumptionStatus, consumedMenuItemSourceIds, consumptionPortion }) => {
         const nextStatus = consumptionStatus ?? (consumedMenuItemSourceIds?.length ? 'consumed' : undefined);
         if (nextStatus) {
           set((state) => ({
             scans: state.scans.map((scan) =>
-              scan.id === scanId ? { ...scan, consumptionStatus: nextStatus } : scan,
+              scan.id === scanId
+                ? {
+                    ...scan,
+                    consumptionStatus: nextStatus,
+                    // Portion only means something on a consumed meal; keep the
+                    // cached record aligned with the server's clearing rule.
+                    consumptionPortion:
+                      nextStatus === 'consumed'
+                        ? (consumptionPortion ?? scan.consumptionPortion)
+                        : undefined,
+                  }
+                : scan,
             ),
           }));
         }
@@ -85,6 +96,7 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
         trackEvent('scan_consumption_updated', {
           scan_id: scanId,
           status: nextStatus ?? 'consumed',
+          portion: consumptionPortion ?? 'unset',
           menu_item_count: consumedMenuItemSourceIds?.length ?? 0,
         });
 
@@ -97,6 +109,7 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
             scanId,
             consumptionStatus,
             consumedMenuItemSourceIds,
+            consumptionPortion,
           });
           if (response.learningSyncStatus === 'queued') {
             refreshScanLearning(scanId, 'scan_consumption_updated');

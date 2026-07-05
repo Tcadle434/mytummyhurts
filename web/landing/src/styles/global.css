@@ -1,0 +1,197 @@
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/figtree';
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Bricolage Grotesque Variable', sans-serif;
+  --font-body: 'Figtree Variable', system-ui, sans-serif;
+
+  /* Deep Garden surfaces (src/theme/foundations.ts) */
+  --color-canvas: #f7f6f2;
+  --color-ink: #1a2e26;
+  --color-ink-soft: #57635d;
+  --color-ink-faint: #6e7a74;
+  --color-evergreen: #12402f;
+  --color-evergreen-deep: #0c2e22;
+  --color-action: #1b5a40;
+  --color-mint: #96c8ae;
+  --color-peach: #fda38b;
+  --color-porcelain: #f7f6f2;
+  --color-on-hero: #f7f6f2;
+  --color-on-hero-muted: rgba(247, 246, 242, 0.72);
+  --color-on-hero-faint: rgba(247, 246, 242, 0.48);
+
+  /* Verdict tones (src/theme/tokens.ts): fg for text, bg for fills, tint for dots/meters */
+  --color-confirmed-fg: #a33b26;
+  --color-confirmed-bg: #fbe3dc;
+  --color-confirmed-tint: #d95b43;
+  --color-suspect-fg: #8f5a16;
+  --color-suspect-bg: #fcefd9;
+  --color-suspect-tint: #e8973f;
+  --color-watching-fg: #3e4a44;
+  --color-watching-bg: #f2f1ec;
+  --color-watching-tint: #6e7a74;
+  --color-safe-fg: #256b4a;
+  --color-safe-bg: #e3f2e8;
+  --color-safe-tint: #3e9b6e;
+  --color-cleared-fg: #12402f;
+  --color-cleared-bg: #d7ebdd;
+  --color-cleared-tint: #2e8058;
+
+  --radius-card: 22px;
+  --radius-panel: 28px;
+  --radius-hero: 34px;
+
+  --shadow-card: 0 6px 16px rgba(12, 46, 34, 0.09);
+  --shadow-lift: 0 10px 22px rgba(12, 46, 34, 0.13);
+  --shadow-modal: 0 14px 30px rgba(12, 46, 34, 0.2);
+
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--color-mint);
+  color: var(--color-evergreen-deep);
+}
+
+/* ---------- Fine grain on evergreen surfaces ---------- */
+.noise {
+  position: relative;
+}
+.noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: soft-light;
+  border-radius: inherit;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 240px 240px;
+}
+
+/* ---------- Hero entrance (page load, staggered) ---------- */
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.js .fade-rise { animation: fade-rise 0.9s var(--ease-spring) both; }
+.js .fade-rise-1 { animation: fade-rise 0.9s var(--ease-spring) 0.12s both; }
+.js .fade-rise-2 { animation: fade-rise 0.9s var(--ease-spring) 0.24s both; }
+.js .fade-rise-3 { animation: fade-rise 0.9s var(--ease-spring) 0.36s both; }
+.js .fade-rise-4 { animation: fade-rise 1s var(--ease-spring) 0.5s both; }
+
+/* ---------- Scroll reveals (IntersectionObserver toggles .is-in) ---------- */
+.js .reveal {
+  opacity: 0;
+  transform: translateY(34px);
+  transition:
+    opacity 0.8s var(--ease-spring),
+    transform 0.8s var(--ease-spring);
+  transition-delay: var(--reveal-delay, 0s);
+}
+.js .reveal.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ---------- Ambient garden glow (hero + closing) ---------- */
+@keyframes glow-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6%, 8%, 0) scale(1.12); }
+}
+@keyframes glow-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-7%, -5%, 0) scale(0.95); }
+}
+.glow-a { animation: glow-drift-a 16s ease-in-out infinite; }
+.glow-b { animation: glow-drift-b 19s ease-in-out infinite; }
+
+/* ---------- Pip bob ---------- */
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+.bob { animation: bob 5.5s ease-in-out infinite; }
+
+/* ---------- Marquee ---------- */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee-track {
+  display: inline-flex;
+  flex-shrink: 0;
+  animation: marquee var(--marquee-duration, 38s) linear infinite;
+}
+
+/* ---------- Scan sweep line (how-it-works card) ---------- */
+@keyframes sweep {
+  0% { top: 8%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 88%; opacity: 0; }
+}
+.sweep { animation: sweep 2.6s ease-in-out infinite; }
+
+/* ---------- Soft pulse (dots, live chips) ---------- */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.4); }
+}
+.pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+
+/* ---------- Day-dot fill-in (learn card) ---------- */
+@keyframes dot-in {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+.js .is-in .dot-in {
+  animation: dot-in 0.5s var(--ease-spring) both;
+  animation-delay: var(--dot-delay, 0s);
+}
+
+/* ---------- Phone screen crossfade ---------- */
+.screen {
+  transition: opacity 0.7s ease;
+}
+
+/* ---------- Reduced motion: everything ambient dies ---------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .js .fade-rise,
+  .js .fade-rise-1,
+  .js .fade-rise-2,
+  .js .fade-rise-3,
+  .js .fade-rise-4 {
+    animation: none;
+  }
+  .js .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .glow-a,
+  .glow-b,
+  .bob,
+  .marquee-track,
+  .sweep,
+  .pulse-dot {
+    animation: none;
+  }
+  .js .is-in .dot-in { animation: none; }
+  .screen { transition: none; }
+}

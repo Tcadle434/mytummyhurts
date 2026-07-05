@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { navigationRef } from './navigationRef';
 import { trackEvent } from '../services/analytics';
-import { components, palette, shadows, spacing, tokens, type } from '../theme';
+import { components, shadows, spacing, tokens, type } from '../theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 type TabRoute = BottomTabBarProps['state']['routes'][number];
@@ -160,6 +160,8 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 4,
   },
+  // Active pill is the original treatment: mint icon/label on the soft
+  // success-green pill, so the scan button stays the bar's loudest element.
   tabFocused: {
     backgroundColor: tokens.color.status.success.background,
   },
@@ -167,7 +169,6 @@ const styles = StyleSheet.create({
     ...tokens.type.label.tab,
     color: components.tabBar.activeTint,
     fontFamily: type.body.bold,
-    fontSize: 11,
   },
   scanSlot: {
     width: SCAN_SLOT_WIDTH,
@@ -178,7 +179,7 @@ const styles = StyleSheet.create({
     width: SCAN_BUTTON_DIAMETER,
     height: SCAN_BUTTON_DIAMETER,
     borderRadius: SCAN_BUTTON_DIAMETER / 2,
-    backgroundColor: palette.primary,
+    backgroundColor: tokens.color.accent.brand,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 4,

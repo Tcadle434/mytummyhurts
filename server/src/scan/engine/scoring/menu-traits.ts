@@ -17,6 +17,7 @@ import {
   type MenuRubricRule,
 } from '../menuRubric';
 import {
+  EXTREME_STACK_SCORE_CAP,
   clamp,
   clampNumber,
   frequencyRiskIndex,
@@ -206,6 +207,18 @@ function menuRuleMatch(rule: MenuTraitRule, item: MenuItemAnalysis): MenuTraitMa
   );
 }
 
+// raw_or_undercooked is an ANIMAL-food risk (mirrors mechanismScoring's
+// isRawAnimalRisk): a signal whose source names no animal food or raw-animal
+// prep (e.g. plain "raw" on bananas, salad, watermelon) is raw produce, not a
+// food-safety risk, and must not score.
+const RAW_ANIMAL_SOURCE_TERMS = [
+  'fish', 'shellfish', 'seafood', 'meat', 'beef', 'steak', 'pork', 'chicken',
+  'poultry', 'egg', 'dairy', 'milk', 'tuna', 'salmon', 'yellowtail', 'snapper',
+  'shrimp', 'prawn', 'oyster', 'clam', 'scallop', 'crab', 'octopus', 'squid',
+  'sashimi', 'tartare', 'ceviche', 'crudo', 'carpaccio', 'rare', 'runny',
+  'unpasteurized', 'undercooked',
+] as const;
+
 function shouldIgnoreRubricMatch(
   key: MenuBaseFoodCategoryKey | MenuRiskModifierKey,
   source: string,
@@ -213,6 +226,10 @@ function shouldIgnoreRubricMatch(
 ) {
   const normalizedSource = normalizeMenuScoringText(source);
   const normalizedItem = menuScoringText(item);
+
+  if (key === 'raw_or_undercooked' && !menuTextHasAny(normalizedSource, RAW_ANIMAL_SOURCE_TERMS)) {
+    return true;
+  }
 
   if (key === 'alcohol' && normalizedSource.includes('cocktail sauce')) {
     return true;
@@ -364,9 +381,51 @@ function scoreEvidenceFromRubricSignal(rule: MenuTraitRule, signal: MenuRubricSi
   return 'description';
 }
 
-function modelRubricContributor(signal: MenuRubricSignal, profile: UserProfile | null, item: MenuItemAnalysis): ScoreContributor | null {
+// Signals claiming HARD evidence ("ingredient" / "prep") must cite a source
+// that actually appears in the extraction (name, description, prep styles, or
+// ingredient names). Pre-Phase-2 the model regularly fabricates term-like
+// sources for modifiers it never saw ("tea" on plain rice, "rum" on tacos,
+// "bun" on bananas) — those must never move the score. Softer evidence classes
+// (description / common_dish_knowledge) legitimately paraphrase, so only the
+// hard classes are gated; protective signals stay untouched.
+const SOURCE_TRACEABLE_EVIDENCE = new Set<MenuRubricSignal['evidence']>(['ingredient', 'prep']);
+
+function stemScoringToken(word: string) {
+  return word.replace(/s$/, '');
+}
+
+function itemTextTokens(item: MenuItemAnalysis): ReadonlySet<string> {
+  return new Set(menuScoringText(item).split(' ').filter(Boolean).map(stemScoringToken));
+}
+
+function signalSourceIsTraceable(signal: MenuRubricSignal, itemTokens: ReadonlySet<string>) {
+  const sourceTokens = normalizeMenuScoringText(signal.source).split(' ').filter(Boolean).map(stemScoringToken);
+  if (!sourceTokens.length) {
+    return false;
+  }
+  return sourceTokens.some((token) => itemTokens.has(token));
+}
+
+function modelRubricContributor(
+  signal: MenuRubricSignal,
+  profile: UserProfile | null,
+  item: MenuItemAnalysis,
+  itemTokens: ReadonlySet<string>,
+): ScoreContributor | null {
   const rule = menuTraitRulesByKey.get(signal.key);
   if (!rule) {
+    return null;
+  }
+
+  if (
+    rule.points > 0 &&
+    SOURCE_TRACEABLE_EVIDENCE.has(signal.evidence) &&
+    !signalSourceIsTraceable(signal, itemTokens) &&
+    // A paraphrased source is still honest when the rule's own terms match the
+    // extraction anyway (e.g. source "pasta" on extracted "spaghetti") — the
+    // fallback matcher would have raised the same rule from the same text.
+    !firstMenuTermMatch(menuScoringText(item), rule.terms)
+  ) {
     return null;
   }
 
@@ -458,6 +517,7 @@ function modelRubricContributors(item: MenuItemAnalysis, profile: UserProfile | 
   const seen = new Set<string>();
   const baseFoodCategory = item.baseFoodCategory ?? fallbackMenuBaseFoodCategoryForScoring(item);
   const riskModifiers = item.riskModifiers?.length ? item.riskModifiers : fallbackMenuRiskModifiersForScoring(item);
+  const itemTokens = itemTextTokens(item);
 
   for (const signal of [baseFoodCategory, ...riskModifiers]) {
     if (seen.has(signal.key)) {
@@ -468,7 +528,7 @@ function modelRubricContributors(item: MenuItemAnalysis, profile: UserProfile | 
       continue;
     }
 
-    const contributor = modelRubricContributor(signal, profile, item);
+    const contributor = modelRubricContributor(signal, profile, item, itemTokens);
     if (!contributor) {
       continue;
     }
@@ -595,9 +655,10 @@ function calibrateContributorForProfile(contributor: ScoreContributor, profile: 
 }
 
 function hasExtremeRiskStack(_contributors: ScoreContributor[], profile: UserProfile | null) {
-  // Only a severe or dense-known-risk profile can push a meal past the 80 soft
-  // cap toward a near-100 reading. Meal traits alone never unlock it — letting a
-  // single fried/spicy item unlock 100 was the original over-scoring bug.
+  // Only a severe or dense-known-risk profile can push a meal past the shared
+  // EXTREME_STACK_SCORE_CAP toward a near-100 reading. Meal traits alone never
+  // unlock it — letting a single fried/spicy item unlock 100 was the original
+  // over-scoring bug.
   const severeProfile =
     severityRiskIndex(profile?.symptomSeverityBaseline) >= 4 &&
     frequencyRiskIndex(profile?.symptomFrequency) >= 3;
@@ -626,11 +687,11 @@ function combineSaturating(contributors: ScoreContributor[]) {
 
 function finalizeFoodRiskScore(rawScore: number, contributors: ScoreContributor[], profile: UserProfile | null) {
   const clamped = clamp(rawScore);
-  if (clamped <= 80 || hasExtremeRiskStack(contributors, profile)) {
+  if (clamped <= EXTREME_STACK_SCORE_CAP || hasExtremeRiskStack(contributors, profile)) {
     return clamped;
   }
 
-  return 80;
+  return EXTREME_STACK_SCORE_CAP;
 }
 
 export function scoreFoodRiskEntity(

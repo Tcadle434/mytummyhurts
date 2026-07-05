@@ -10,22 +10,25 @@ type RiskBarProps = {
 };
 
 export function RiskBar({ label, score, level }: RiskBarProps) {
-  const tone =
+  const toneColors =
     level === 'high'
-      ? components.chart.risk.high
+      ? tokens.color.status.risk.high
       : level === 'medium'
-        ? components.chart.risk.medium
-        : components.chart.risk.low;
+        ? tokens.color.status.risk.medium
+        : tokens.color.status.risk.low;
   const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
+  // Sentence case, not per-word capitalize: "Acid reflux", never "Acid Reflux".
+  const displayLabel = label.charAt(0).toUpperCase() + label.slice(1);
 
   return (
     <View style={styles.row}>
       <View style={styles.header}>
-        <Text style={styles.label} numberOfLines={1}>{label}</Text>
-        <Text style={[styles.level, { color: tone }]}>{levelLabel}</Text>
+        <Text style={styles.label} numberOfLines={1}>{displayLabel}</Text>
+        {/* Level word is text: the darker text-grade foreground. The tint stays on the bar fill. */}
+        <Text style={[styles.level, { color: toneColors.foreground }]}>{levelLabel}</Text>
       </View>
       <View style={styles.track}>
-        <View style={[styles.fill, { width: `${score}%`, backgroundColor: tone }]} />
+        <View style={[styles.fill, { width: `${score}%`, backgroundColor: toneColors.tint }]} />
       </View>
     </View>
   );
@@ -46,7 +49,6 @@ const styles = StyleSheet.create({
     color: tokens.color.text.primary,
     fontFamily: type.body.medium,
     fontSize: 14,
-    textTransform: 'capitalize',
   },
   level: {
     fontFamily: type.body.semibold,

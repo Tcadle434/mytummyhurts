@@ -28,6 +28,10 @@ type Rule = {
   reason: string;
 };
 
+// Sequential LLM calls (15s timeout each) inside a synchronous recompute must
+// stay bounded; unclassified names beyond the cap wait for the next run.
+const MAX_CLASSIFICATIONS_PER_RUN = 25;
+
 const RULES: Rule[] = [
   { aliases: ['gochujang'], family: 'sauces_condiments', patterns: ['spicy_heat', 'fermented_aged_histamine'], confidence: 'high', reason: 'Gochujang is a spicy fermented chili condiment.' },
   { aliases: ['rice vinegar', 'vinegar'], family: 'sauces_condiments', patterns: ['acidic_pickled'], confidence: 'high', reason: 'Vinegar-based ingredients are acidic condiment exposures.' },
@@ -152,6 +156,9 @@ export class TaxonomyClassifierService {
     }
 
     const canUseLlm = Boolean(this.config.get<string>('OPENAI_API_KEY'));
+    // Cap classifications per run: calls are sequential (15s timeout each) and
+    // this runs inside the synchronous learning recompute. Remaining names are
+    // picked up by later recomputes.
     const namesToClassify = normalizedNames.filter((name) => {
       const existing = existingByName.get(name);
       if (!existing) return true;
@@ -161,7 +168,7 @@ export class TaxonomyClassifierService {
         return true;
       }
       return false;
-    });
+    }).slice(0, MAX_CLASSIFICATIONS_PER_RUN);
 
     // Classifications are per-ingredient external calls (LLM or deterministic);
     // gather them first, then persist in a single bulk upsert. namesToClassify is

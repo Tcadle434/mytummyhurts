@@ -5,6 +5,7 @@ import { IsArray, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator
 import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
 import { ScanAnalysisService } from './scan-analysis.service';
 import { ScanCrudService } from './scan-crud.service';
+import { ScanProgressService } from './scan-progress.service';
 
 // Tight per-user/IP limit for the expensive AI scan endpoints (vs the global 120/min).
 const AI_HEAVY = { default: { limit: 20, ttl: 60_000 } };
@@ -35,6 +36,10 @@ class ScanIdDto {
   @IsString() scanId!: string;
 }
 
+class ScanProgressDto {
+  @IsString() requestId!: string;
+}
+
 class ConsumptionDto {
   @IsString() scanId!: string;
   @IsOptional() @IsIn(['unknown', 'consumed', 'skipped']) consumptionStatus?:
@@ -42,6 +47,12 @@ class ConsumptionDto {
     | 'consumed'
     | 'skipped';
   @IsOptional() @IsArray() consumedMenuItemSourceIds?: string[];
+  // Additive (Phase 4): one-tap portion on the consumed confirm. Optional so
+  // older clients keep working; absent means "leave the stored answer alone".
+  @IsOptional() @IsIn(['light', 'normal', 'heavy']) consumptionPortion?:
+    | 'light'
+    | 'normal'
+    | 'heavy';
 }
 
 class HistoryDto {
@@ -73,6 +84,7 @@ export class ScanController {
   constructor(
     private readonly analysis: ScanAnalysisService,
     private readonly crud: ScanCrudService,
+    private readonly progress: ScanProgressService,
   ) {}
 
   @Throttle(AI_HEAVY)
@@ -103,6 +115,13 @@ export class ScanController {
     });
   }
 
+  // Lightweight display-only progress for the analyzing screen; the blocking
+  // analyze request stays the source of truth for completion.
+  @Post('scan-progress')
+  scanProgress(@CurrentUser() user: AuthUser, @Body() dto: ScanProgressDto) {
+    return this.progress.getProgress(user.id, dto.requestId);
+  }
+
   @Post('scan-get')
   getScan(@CurrentUser() user: AuthUser, @Body() dto: ScanIdDto) {
     return this.crud.getScan(user.id, dto.scanId);
@@ -120,6 +139,7 @@ export class ScanController {
       dto.scanId,
       dto.consumptionStatus,
       dto.consumedMenuItemSourceIds ?? [],
+      dto.consumptionPortion,
     );
   }
 

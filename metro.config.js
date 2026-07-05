@@ -15,9 +15,11 @@ config.resolver.useWatchman = false;
 // imports Node-only packages (@nestjs/*, pg, etc.) that must never be crawled
 // or bundled by Metro. Preserve any blockList the default Expo config set.
 const serverBlock = /[\\/]server[\\/].*/;
+// web/ hosts standalone web projects (landing page) with their own node_modules.
+const webBlock = /[\\/]web[\\/].*/;
 config.resolver.blockList = config.resolver.blockList
-  ? [].concat(config.resolver.blockList, serverBlock)
-  : [serverBlock];
+  ? [].concat(config.resolver.blockList, serverBlock, webBlock)
+  : [serverBlock, webBlock];
 
 function isInside(parent, child) {
   const relativePath = path.relative(parent, child);

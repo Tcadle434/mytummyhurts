@@ -4,7 +4,7 @@ import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
 import { palette, spacing, tokens, type } from "../../../theme";
-import { riskLevelTint } from "../../../utils/risk";
+import { riskLevelColors, riskLevelTint } from "../../../utils/risk";
 
 export type PhaseDiscoveryState = "scan" | "loading" | "result";
 
@@ -182,7 +182,10 @@ function RiskScoreDial({
 	const circumference = 2 * Math.PI * radius;
 	const clamped = Math.max(0, Math.min(100, score));
 	const dashOffset = circumference * (1 - clamped / 100);
+	// Tint fills the ring; the numeral uses the text-grade foreground so it
+	// stays readable on the white card.
 	const ringColor = riskLevelTint(tone);
+	const scoreColor = riskLevelColors(tone).foreground;
 
 	return (
 		<View
@@ -214,7 +217,7 @@ function RiskScoreDial({
 				/>
 			</Svg>
 			<View style={styles.dialCenter} pointerEvents="none">
-				<Text style={[styles.dialScore, { color: ringColor }]}>{clamped}</Text>
+				<Text style={[styles.dialScore, { color: scoreColor }]}>{clamped}</Text>
 				<Text style={styles.dialLabel}>Risk score</Text>
 			</View>
 		</View>

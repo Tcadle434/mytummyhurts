@@ -1,13 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { palette, radii, spacing, tokens, type } from "../../theme";
+import { radii, spacing, tokens, type } from "../../theme";
+import { formatConditionName } from "../../utils/conditionFormat";
 
 type ConditionsChipRowProps = {
 	conditions: string[];
 	onEdit: () => void;
 };
 
+// A quiet supporting utility: the user's conditions on warm-neutral surfaces —
+// never the success green that means "safe food" elsewhere on this screen.
 export function ConditionsChipRow({ conditions, onEdit }: ConditionsChipRowProps) {
 	return (
 		<View style={styles.wrap}>
@@ -20,7 +23,7 @@ export function ConditionsChipRow({ conditions, onEdit }: ConditionsChipRowProps
 					hitSlop={8}
 					style={({ pressed }) => [styles.editButton, pressed && { opacity: 0.78 }]}
 				>
-					<Ionicons name="create-outline" size={14} color={palette.primary} />
+					<Ionicons name="create-outline" size={14} color={tokens.color.text.secondary} />
 					<Text style={styles.editButtonLabel}>Edit</Text>
 				</Pressable>
 			</View>
@@ -28,7 +31,7 @@ export function ConditionsChipRow({ conditions, onEdit }: ConditionsChipRowProps
 				<View style={styles.chipWrap}>
 					{conditions.map((condition) => (
 						<View key={condition} style={styles.chip}>
-							<Text style={styles.chipLabel}>{condition}</Text>
+							<Text style={styles.chipLabel}>{formatConditionName(condition)}</Text>
 						</View>
 					))}
 				</View>
@@ -58,10 +61,9 @@ const styles = StyleSheet.create({
 		gap: spacing.md,
 	},
 	label: {
-		color: tokens.color.text.primary,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 20,
+		...tokens.type.body.small,
+		fontFamily: type.body.semibold,
+		color: tokens.color.text.secondary,
 	},
 	editButton: {
 		flexDirection: "row",
@@ -70,13 +72,14 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.sm,
 		paddingVertical: 5,
 		borderRadius: radii.pill,
-		backgroundColor: tokens.color.status.success.background,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.utility.white,
 	},
 	editButtonLabel: {
-		color: palette.primary,
-		fontFamily: type.body.bold,
-		fontSize: 12,
-		lineHeight: 15,
+		...tokens.type.label.tab,
+		fontFamily: type.body.semibold,
+		color: tokens.color.text.secondary,
 	},
 	chipWrap: {
 		flexDirection: "row",
@@ -86,16 +89,15 @@ const styles = StyleSheet.create({
 	chip: {
 		minHeight: 30,
 		borderRadius: radii.pill,
-		backgroundColor: tokens.color.status.success.background,
+		backgroundColor: tokens.color.status.verdict.watching.background,
 		paddingHorizontal: spacing.sm,
 		alignItems: "center",
 		justifyContent: "center",
 	},
 	chipLabel: {
-		color: palette.primary,
+		...tokens.type.body.small,
 		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 17,
+		color: tokens.color.status.verdict.watching.foreground,
 	},
 	emptyChip: {
 		alignSelf: "flex-start",
@@ -112,9 +114,8 @@ const styles = StyleSheet.create({
 		backgroundColor: "transparent",
 	},
 	emptyChipLabel: {
-		color: tokens.color.text.tertiary,
+		...tokens.type.body.small,
 		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 17,
+		color: tokens.color.text.tertiary,
 	},
 });

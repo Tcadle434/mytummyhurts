@@ -7,7 +7,12 @@
 // domain.ts. The pieces below are the parts that are byte-for-byte identical.
 
 import type { RiskLevel } from './index';
-import type { IngredientConfidence, InsightConfidenceLevel, DietEvaluation } from './profile';
+import type {
+  IngredientConfidence,
+  InsightConfidenceLevel,
+  DietEvaluation,
+  TrackedFoodFamilyKey,
+} from './profile';
 import type {
   MenuBaseFoodCategory,
   MenuRiskModifier,
@@ -37,6 +42,19 @@ export interface MealComponent {
 export type IngredientRole = 'main' | 'side' | 'condiment' | 'garnish' | 'base';
 export type IngredientProminence = 'primary' | 'secondary' | 'trace';
 export type IngredientAmountEstimate = 'trace' | 'small' | 'standard' | 'large' | 'dominant';
+
+// How much of a confirmed meal the user says they ate. Captured as a one-tap
+// choice on the consumption confirm; 'normal' is the zero-friction default.
+export type ConsumptionPortion = 'light' | 'normal' | 'heavy';
+
+// Additive day-load context on a completed scan: this scan repeats a risk
+// mechanism (e.g. dairy) that already appeared in an earlier consumed meal on
+// the same local day. Display + data only in v1 — it never moves the score.
+export interface ScanDayLoad {
+  mechanismKey: string;
+  priorMealCount: number;
+  note: string;
+}
 
 export interface ExtractedIngredient {
   rawName: string;
@@ -125,6 +143,9 @@ export interface ScanIngredientPersonalHistory {
   lastSeenAt?: string;
   matchType: ScanIngredientPersonalHistoryMatchType;
   matchedLabel?: string;
+  /** Food family behind a 'family' match — clients render the family, never a
+   *  sibling ingredient ("related to mayonnaise" was a leak of this join). */
+  matchedFamilyKey?: TrackedFoodFamilyKey;
   riskLevel: ScanIngredientPersonalHistoryRiskLevel;
   riskScore?: number;
   confidenceLevel?: InsightConfidenceLevel;
@@ -147,6 +168,10 @@ export interface ScanIngredientRisk {
   componentName?: string;
   reason: string;
   displayOrder: number;
+  // Extraction's portion-size read for this ingredient ('trace'…'dominant').
+  // Persisted so dose-weighted learning can read it back without re-parsing
+  // the stored extraction JSON. Absent on rows saved before Phase 4.
+  amountEstimate?: IngredientAmountEstimate;
   personalHistory?: ScanIngredientPersonalHistory;
 }
 
@@ -154,6 +179,7 @@ export interface ScanMenuItemResult {
   id: string;
   sourceItemId: string;
   consumedAt?: string;
+  consumedPortion?: ConsumptionPortion;
   tier: MenuRecommendationTier;
   tierRank: number;
   displayOrder: number;

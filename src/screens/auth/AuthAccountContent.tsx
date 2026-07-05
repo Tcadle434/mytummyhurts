@@ -12,6 +12,12 @@ import {
 } from "../../components/common/UI";
 import { palette, radii, spacing, tokens, type } from "../../theme";
 
+// Both provider buttons share this geometry so Apple's native button and the
+// Google pill read as one set. The Apple SDK needs a numeric pill radius, so
+// callers use these constants instead of `radii.pill`.
+export const PROVIDER_BUTTON_HEIGHT = 54;
+export const PROVIDER_BUTTON_CORNER_RADIUS = PROVIDER_BUTTON_HEIGHT / 2;
+
 type AuthAccountContentProps = {
 	email: string;
 	password: string;
@@ -43,7 +49,7 @@ export function AuthAccountContent({
 	providerSlot,
 	eyebrow = "Account creation",
 	title = "Create your account",
-	subtitle = "Save your profile, scans, reports, and gut insights.",
+	subtitle = "So everything Pip learns about your gut stays saved.",
 	backAccessibilityLabel = "Go back",
 	showModeToggle = true,
 	onBack,
@@ -141,7 +147,7 @@ export function AuthAccountContent({
 						{busy ? (
 							<View style={styles.feedbackRow}>
 								<ActivityIndicator color={palette.primary} />
-								<Text style={styles.feedbackText}>Working on {busyMessage}...</Text>
+								<Text style={styles.feedbackText}>{formatBusyLabel(busyMessage)}</Text>
 							</View>
 						) : null}
 						{errorMessage ? <InfoPill label={errorMessage} tone="warm" /> : null}
@@ -150,6 +156,25 @@ export function AuthAccountContent({
 			</View>
 		</AppScreen>
 	);
+}
+
+// Callers pass a lowercase activity phrase ('signing in', 'apple sign-in',
+// 'creating your account'). Normalize it into one warm sentence here so every
+// auth surface reads the same and provider names are properly cased.
+function formatBusyLabel(busyMessage: string): string {
+	const trimmed = busyMessage.trim();
+	const providerMatch = /^([a-z]+) sign-in$/i.exec(trimmed);
+	if (providerMatch?.[1]) {
+		const provider = providerMatch[1];
+		if (provider.toLowerCase() === "account") {
+			return "Signing you in…";
+		}
+		return `Connecting to ${provider.charAt(0).toUpperCase()}${provider.slice(1)}…`;
+	}
+	if (!trimmed) {
+		return "Working on it…";
+	}
+	return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}…`;
 }
 
 export function AuthProviderButton({
@@ -218,6 +243,9 @@ const styles = StyleSheet.create({
 		...tokens.type.label.eyebrow,
 		color: tokens.color.text.tertiary,
 	},
+	// The display faces voice findings, never chrome. "Create your account"
+	// is an instruction, so it stays in the shared screen-title token like
+	// every other screen title.
 	title: {
 		...tokens.type.title.screen,
 		color: tokens.color.text.primary,
@@ -237,7 +265,7 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 	},
 	providerButton: {
-		minHeight: 54,
+		minHeight: PROVIDER_BUTTON_HEIGHT,
 		borderRadius: radii.pill,
 		backgroundColor: tokens.color.action.secondary.background,
 		borderWidth: 1,

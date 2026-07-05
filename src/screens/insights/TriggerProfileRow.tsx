@@ -1,27 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { EvidenceMeter, VerdictPill, verdictTone } from "../../components/common/UI";
 import {
 	evidenceDetailForInsight,
 	type TriggerStatus,
 } from "../../features/insights/triggerProfile";
-import { palette, radii, spacing, tokens, type } from "../../theme";
+import { radii, spacing, tokens, type } from "../../theme";
 import { IngredientInsight, InsightConfidenceLevel } from "../../types/domain";
-
-export const STATUS_META: Record<
-	TriggerStatus,
-	{ pill: string; tone: { background: string; foreground: string; tint: string } }
-> = {
-	confirmed: { pill: "Confirmed", tone: tokens.color.status.risk.high },
-	suspect: { pill: "Reviewing", tone: tokens.color.status.risk.medium },
-	cleared: { pill: "Cleared", tone: tokens.color.status.risk.low },
-	safe: { pill: "Safe", tone: tokens.color.status.risk.low },
-};
+import { STATUS_LABEL } from "./statusVisuals";
 
 function confidenceSegments(level: InsightConfidenceLevel) {
 	return level === "high" ? 3 : level === "medium" ? 2 : 1;
 }
 
+function capitalize(value: string) {
+	return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+// A caseboard row reads like an open case file: the food, its verdict, and the
+// evidence sentence — the product's best artifact — at reading size, never
+// truncated mid-payoff.
 export function TriggerProfileRow({
 	insight,
 	status,
@@ -35,7 +34,7 @@ export function TriggerProfileRow({
 	emoji?: string;
 	extraDetail?: string;
 }) {
-	const meta = STATUS_META[status];
+	const tone = verdictTone(status);
 	const evidenceLine = evidenceDetailForInsight(insight, status);
 	const detail = extraDetail ? `${evidenceLine} · ${extraDetail}` : evidenceLine;
 	const conditionLabel = extraDetail ? "" : insight.linkedConditions.slice(0, 2).join(", ");
@@ -45,15 +44,15 @@ export function TriggerProfileRow({
 	return (
 		<Pressable
 			accessibilityRole="button"
-			accessibilityLabel={`${displayName}, ${meta.pill}, ${insight.confidenceLevel} confidence. ${detail}`}
+			accessibilityLabel={`${displayName}, ${STATUS_LABEL[status]}, ${insight.confidenceLevel} confidence. ${detail}`}
 			onPress={onPress}
 			style={({ pressed }) => [styles.row, pressed && { opacity: 0.9 }]}
 		>
-			<View style={[styles.glyph, { backgroundColor: meta.tone.background }]}>
+			<View style={[styles.glyph, { backgroundColor: tone.background }]}>
 				{emoji ? (
 					<Text style={styles.glyphEmoji}>{emoji}</Text>
 				) : (
-					<Text style={[styles.glyphLabel, { color: meta.tone.tint }]}>
+					<Text style={[styles.glyphLabel, { color: tone.foreground }]}>
 						{displayName.charAt(0)}
 					</Text>
 				)}
@@ -65,28 +64,33 @@ export function TriggerProfileRow({
 					</Text>
 					{insight.sourceBreakdown.declared ? (
 						<View style={styles.declaredBadge}>
-							<Ionicons name="person" size={9} color={palette.primary} />
+							<Ionicons name="person" size={10} color={tokens.color.action.quiet.foreground} />
 							<Text style={styles.declaredBadgeText}>You told us</Text>
 						</View>
 					) : null}
 				</View>
-				<Text style={styles.meta} numberOfLines={1}>
+				<Text style={styles.meta} numberOfLines={2}>
 					{detail}
 					{conditionLabel ? ` · ${conditionLabel}` : ""}
 				</Text>
+				<View style={styles.footRow}>
+					<VerdictPill label={STATUS_LABEL[status]} tone={status} size="sm" />
+					<View style={styles.meterWrap}>
+						<EvidenceMeter
+							filled={filledSegments}
+							total={3}
+							label={`${capitalize(insight.confidenceLevel)} confidence`}
+							tone={status}
+						/>
+					</View>
+				</View>
 			</View>
-			<View style={styles.confidenceTrack} accessibilityElementsHidden>
-				{[0, 1, 2].map((segment) => (
-					<View
-						key={segment}
-						style={[
-							styles.confidenceSegment,
-							segment < filledSegments && { backgroundColor: meta.tone.tint },
-						]}
-					/>
-				))}
-			</View>
-			<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
+			<Ionicons
+				name="chevron-forward"
+				size={18}
+				color={tokens.color.icon.muted}
+				style={styles.chevron}
+			/>
 		</Pressable>
 	);
 }
@@ -94,11 +98,9 @@ export function TriggerProfileRow({
 const styles = StyleSheet.create({
 	row: {
 		flexDirection: "row",
-		alignItems: "center",
+		alignItems: "flex-start",
 		gap: spacing.sm,
 		borderRadius: radii.lg,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 		backgroundColor: tokens.color.surface.card.default,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.md,
@@ -120,7 +122,7 @@ const styles = StyleSheet.create({
 	},
 	copy: {
 		flex: 1,
-		gap: 3,
+		gap: spacing.xs,
 	},
 	titleRow: {
 		flexDirection: "row",
@@ -128,42 +130,39 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 	},
 	title: {
+		...tokens.type.body.strong,
 		flexShrink: 1,
 		color: tokens.color.text.primary,
-		fontFamily: type.body.semibold,
-		fontSize: 15,
-		lineHeight: 19,
 	},
 	declaredBadge: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 3,
-		borderRadius: 999,
-		backgroundColor: palette.sageSoft,
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.action.quiet.background,
 		paddingHorizontal: spacing.xs,
-		paddingVertical: 1,
+		paddingVertical: 2,
 	},
 	declaredBadgeText: {
-		color: palette.primary,
+		...tokens.type.label.tab,
 		fontFamily: type.body.semibold,
-		fontSize: 9,
-		lineHeight: 13,
+		color: tokens.color.action.quiet.foreground,
 	},
 	meta: {
-		color: tokens.color.text.tertiary,
+		...tokens.type.body.small,
 		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
+		color: tokens.color.text.secondary,
 	},
-	confidenceTrack: {
+	footRow: {
 		flexDirection: "row",
 		alignItems: "center",
-		gap: 3,
+		gap: spacing.sm,
+		marginTop: 2,
 	},
-	confidenceSegment: {
-		width: 12,
-		height: 4,
-		borderRadius: 2,
-		backgroundColor: tokens.color.chart.track,
+	meterWrap: {
+		flex: 1,
+	},
+	chevron: {
+		alignSelf: "center",
 	},
 });

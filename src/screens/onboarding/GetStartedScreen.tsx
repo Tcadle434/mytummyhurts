@@ -9,6 +9,7 @@ import { OnboardingStackParamList } from "../../navigation/types";
 import { trackEvent } from "../../services/analytics";
 import { useAppStore } from "../../store/useAppStore";
 import { radii, spacing, tokens } from "../../theme";
+import { withAlpha } from "../../theme/helpers";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "GetStarted">;
 
@@ -109,7 +110,7 @@ const styles = StyleSheet.create({
 	},
 	scrim: {
 		...StyleSheet.absoluteFillObject,
-		backgroundColor: "rgba(19, 28, 26, 0.1)",
+		backgroundColor: withAlpha(tokens.color.text.primary, 0.1),
 	},
 	content: {
 		flex: 1,
@@ -170,7 +171,7 @@ const styles = StyleSheet.create({
 		...tokens.type.body.small,
 		color: tokens.color.utility.white,
 		textAlign: "center",
-		textShadowColor: "rgba(19, 28, 26, 0.38)",
+		textShadowColor: withAlpha(tokens.color.text.primary, 0.38),
 		textShadowOffset: { width: 0, height: 1 },
 		textShadowRadius: 8,
 	},

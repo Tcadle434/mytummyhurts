@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ReactNode } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text } from "react-native";
 
 import { Pip } from "../common/Pip";
 import { components, spacing, tokens, type PipState } from "../../theme";
@@ -112,17 +112,17 @@ const styles = StyleSheet.create({
 		width: 34,
 		height: 34,
 		borderRadius: 17,
-		backgroundColor: tokens.color.surface.frosted,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.card.warm,
 		alignItems: "center",
 		justifyContent: "center",
 	},
 	pip: {
 		marginBottom: spacing.xs,
 	},
+	// The modal exists to explain something the app concluded — the title is a
+	// finding, so it gets the Bricolage accent face.
 	title: {
-		...tokens.type.title.screen,
+		...tokens.type.display.accent,
 		color: tokens.color.text.primary,
 		textAlign: "center",
 	},

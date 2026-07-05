@@ -22,6 +22,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '../../components/common/UI';
+import { Pip } from '../../components/common/Pip';
 import { CustomEntryModal } from '../../components/modals/CustomEntryModal';
 import { env } from '../../config/env';
 import {
@@ -45,7 +46,8 @@ import {
   getNotificationPermissionState,
 } from '../../services/notifications';
 import { useAppStore } from '../../store/useAppStore';
-import { components, palette, radii, spacing, tokens, type } from '../../theme';
+import { palette, radii, spacing, tokens, type } from '../../theme';
+import { describeProfileForPip } from './profileSummary';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 type ExpandedSection = SettingsSection | null;
@@ -66,6 +68,15 @@ type BusySection =
   | null;
 type CustomCategory = 'conditions' | 'sensitivities' | 'symptoms';
 
+// Save confirmations render adjacent to the section they belong to — never
+// below the danger zone at the bottom of the screen.
+type StatusPlacement = 'account' | 'health' | 'general';
+type StatusFeedback = {
+  placement: StatusPlacement;
+  message: string;
+  tone: 'soft' | 'warm';
+};
+
 const CHECKIN_TIME_PRESETS: { label: string; hour: number }[] = [
   { label: 'Morning · 9am', hour: 9 },
   { label: 'Midday · 1pm', hour: 13 },
@@ -84,7 +95,7 @@ const CUSTOM_CATEGORY_COPY: Record<
   },
   sensitivities: {
     title: 'Add a custom sensitivity',
-    subtitle: 'Add any food or ingredient you already suspect.',
+    subtitle: 'Add any food or ingredient you think might bother you.',
     placeholder: 'Example: eggs, soy, coffee',
   },
   symptoms: {
@@ -133,7 +144,7 @@ export function SettingsScreen() {
     (profile?.dietPreferences ?? []).map((preference) => preference.key),
   );
   const [busySection, setBusySection] = useState<BusySection>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatusFeedback | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsBlocked, setNotificationsBlocked] = useState(false);
   const [checkinHour, setCheckinHour] = useState<number | null>(null);
@@ -227,14 +238,18 @@ export function SettingsScreen() {
     count: number,
   ) {
     setBusySection(section);
-    setStatusMessage(null);
+    setStatus(null);
     try {
       await updateProfileSettings(update);
       trackEvent('profile_saved', { [countKey]: count });
-      setStatusMessage(`${noun} saved.`);
+      setStatus({ placement: 'health', message: `${noun} saved.`, tone: 'soft' });
       setExpandedSection(null);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : `${noun} could not be saved.`);
+      setStatus({
+        placement: 'health',
+        message: error instanceof Error ? error.message : `${noun} could not be saved.`,
+        tone: 'warm',
+      });
     } finally {
       setBusySection(null);
     }
@@ -257,7 +272,7 @@ export function SettingsScreen() {
 
   async function handleSaveDiet() {
     setBusySection('diet');
-    setStatusMessage(null);
+    setStatus(null);
     try {
       await updateProfileSettings({
         dietPreferences: selectedDietKeys.map((key) => ({
@@ -270,12 +285,14 @@ export function SettingsScreen() {
       trackEvent('diet_preferences_saved', {
         diet_count: selectedDietKeys.length,
       });
-      setStatusMessage('Diet goal saved.');
+      setStatus({ placement: 'health', message: 'Diet goal saved.', tone: 'soft' });
       setExpandedSection(null);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Diet goal could not be saved.',
-      );
+      setStatus({
+        placement: 'health',
+        message: error instanceof Error ? error.message : 'Diet goal could not be saved.',
+        tone: 'warm',
+      });
     } finally {
       setBusySection(null);
     }
@@ -328,15 +345,17 @@ export function SettingsScreen() {
 
   async function handleSaveAccount() {
     setBusySection('account');
-    setStatusMessage(null);
+    setStatus(null);
     try {
       await updateProfileSettings({ displayName: displayNameDraft.trim() || null });
-      setStatusMessage('Display name saved.');
+      setStatus({ placement: 'account', message: 'Display name saved.', tone: 'soft' });
       setExpandedSection(null);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Display name could not be saved.',
-      );
+      setStatus({
+        placement: 'account',
+        message: error instanceof Error ? error.message : 'Display name could not be saved.',
+        tone: 'warm',
+      });
     } finally {
       setBusySection(null);
     }
@@ -350,22 +369,28 @@ export function SettingsScreen() {
       await ensureDailyCheckinScheduled({ reports: state.dailyReports, scans: state.scans });
       trackEvent('daily_checkin_time_changed', { hour });
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Reminder time could not be saved.',
-      );
+      setStatus({
+        placement: 'account',
+        message: error instanceof Error ? error.message : 'Reminder time could not be saved.',
+        tone: 'warm',
+      });
     }
   }
 
   async function handleEnableNotifications() {
     setBusySection('notifications');
-    setStatusMessage(null);
+    setStatus(null);
     try {
       // Permanently denied: the iOS dialog can never reappear, so the only
       // working path is the system Settings page for this app.
       const permission = await getNotificationPermissionState();
       if (!permission.granted && !permission.canAskAgain) {
         setNotificationsBlocked(true);
-        setStatusMessage('Notifications are turned off in iOS Settings — flip them on there and come back.');
+        setStatus({
+          placement: 'account',
+          message: 'Notifications are turned off in iOS Settings — flip them on there and come back.',
+          tone: 'warm',
+        });
         await Linking.openSettings();
         return;
       }
@@ -373,12 +398,18 @@ export function SettingsScreen() {
       await registerDailyReportNotifications();
       setNotificationsEnabled(true);
       setNotificationsBlocked(false);
-      setStatusMessage('Daily report reminders are enabled.');
+      setStatus({
+        placement: 'account',
+        message: 'Daily report reminders are enabled.',
+        tone: 'soft',
+      });
     } catch (error) {
       setNotificationsEnabled(false);
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Notifications could not be enabled.',
-      );
+      setStatus({
+        placement: 'account',
+        message: error instanceof Error ? error.message : 'Notifications could not be enabled.',
+        tone: 'warm',
+      });
     } finally {
       setBusySection(null);
     }
@@ -409,28 +440,33 @@ export function SettingsScreen() {
   }
 
   async function handleSignOut() {
-    setStatusMessage(null);
+    setStatus(null);
     try {
       await signOut();
       resetToSignIn();
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Sign out could not be completed.',
-      );
+      setStatus({
+        placement: 'general',
+        message: error instanceof Error ? error.message : 'Sign out could not be completed.',
+        tone: 'warm',
+      });
     }
   }
 
   async function handleDeleteAccount() {
     setBusySection('delete');
-    setStatusMessage(null);
+    setStatus(null);
     try {
       await apiClient.deleteAccount();
       await signOut();
       resetToCreateAccount();
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Account deletion could not be completed.',
-      );
+      setStatus({
+        placement: 'general',
+        message:
+          error instanceof Error ? error.message : 'Account deletion could not be completed.',
+        tone: 'warm',
+      });
     } finally {
       setBusySection(null);
     }
@@ -440,20 +476,27 @@ export function SettingsScreen() {
     billing.subscriptionStatus === 'none' ? undefined : prettyStatus(billing.subscriptionStatus);
   const notificationBadge = notificationsEnabled ? 'On' : 'Off';
 
+  const profileSummary = describeProfileForPip({
+    conditions: profile?.knownConditions ?? [],
+    sensitivities: profile?.knownIngredientSensitivities ?? [],
+    dietLabels: (profile?.dietPreferences ?? []).map((preference) => preference.label),
+  });
+
   return (
     <AppScreen scrollViewRef={scrollRef}>
-      <DetailScreenHeader eyebrow="Settings" />
+      <DetailScreenHeader eyebrow="Your account" title="Settings" />
 
       <View style={styles.profileCard}>
-        <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarLabel}>
-            {accountInitials(profile?.displayName, authUser?.email)}
-          </Text>
+        <View style={styles.profileHeader}>
+          <Pip state="subtle" size={56} />
+          <View style={styles.profileHeaderCopy}>
+            <Text style={styles.profileEyebrow}>What Pip knows about you</Text>
+            <Text style={styles.profileMeta} numberOfLines={1}>
+              {accountMetaLine(profile?.displayName, authUser?.email)}
+            </Text>
+          </View>
         </View>
-        <View style={styles.profileCopy}>
-          <Text style={styles.profileName}>{accountTitle(profile?.displayName)}</Text>
-          <Text style={styles.profileEmail}>{authUser?.email ?? 'No active session'}</Text>
-        </View>
+        <Text style={styles.profileSummary}>{profileSummary}</Text>
       </View>
 
       <SectionGroup label="Account">
@@ -545,6 +588,10 @@ export function SettingsScreen() {
           </ExpandedBlock>
         ) : null}
       </SectionGroup>
+
+      {status?.placement === 'account' ? (
+        <InfoPill label={status.message} tone={status.tone} />
+      ) : null}
 
       <SectionGroup
         label="Health profile"
@@ -711,6 +758,10 @@ export function SettingsScreen() {
         ) : null}
       </SectionGroup>
 
+      {status?.placement === 'health' ? (
+        <InfoPill label={status.message} tone={status.tone} />
+      ) : null}
+
       <SectionGroup label="Support & legal">
         <SettingsRow
           icon="help-circle-outline"
@@ -748,7 +799,9 @@ export function SettingsScreen() {
         />
       </SectionGroup>
 
-      {statusMessage ? <InfoPill label={statusMessage} tone="soft" /> : null}
+      {status?.placement === 'general' ? (
+        <InfoPill label={status.message} tone={status.tone} />
+      ) : null}
 
       <SecondaryButton label="Sign out" onPress={() => void handleSignOut()} />
 
@@ -877,27 +930,14 @@ function splitByCatalog(values: string[], catalog: readonly string[]) {
   return { predefined, custom };
 }
 
-function accountInitials(displayName?: string | null, email?: string | null) {
-  const trimmedDisplayName = displayName?.trim();
-  if (trimmedDisplayName) {
-    const parts = trimmedDisplayName.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
-    }
-    return trimmedDisplayName.slice(0, 2).toUpperCase();
+// Never renders a blank line when the display name is unset — users who
+// skipped naming themselves just see their email.
+function accountMetaLine(displayName?: string | null, email?: string | null) {
+  const parts = [displayName?.trim(), email?.trim()].filter(Boolean);
+  if (parts.length === 0) {
+    return 'No active session';
   }
-
-  const emailPrefix = email?.split('@')[0]?.trim();
-  if (emailPrefix) {
-    return emailPrefix.slice(0, 2).toUpperCase();
-  }
-
-  return 'U';
-}
-
-function accountTitle(displayName?: string | null) {
-  const trimmedDisplayName = displayName?.trim();
-  return trimmedDisplayName ?? '';
+  return parts.join(' · ');
 }
 
 function prettyStatus(status: string) {
@@ -951,45 +991,39 @@ function openDeleteConfirmation(onConfirm: () => void) {
 }
 
 const styles = StyleSheet.create({
+  // The screen's hero: what Pip knows about you, stated warmly in the
+  // Bricolage accent face on the warm card surface. Borderless like every
+  // Deep Garden card — separation comes from the green-cast lift. Everything
+  // below it recedes into utility lists.
   profileCard: {
+    borderRadius: radii.lg,
+    backgroundColor: tokens.color.surface.card.warm,
+    padding: spacing.md,
+    gap: spacing.sm,
+    ...tokens.shadow.card,
+  },
+  profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: tokens.color.surface.card.default,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
-    padding: spacing.md,
+    gap: spacing.sm,
   },
-  profileAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: components.avatar.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileAvatarLabel: {
-    color: palette.primaryDark,
-    fontFamily: type.body.bold,
-    fontSize: 20,
-  },
-  profileCopy: {
+  profileHeaderCopy: {
     flex: 1,
     gap: 2,
   },
-  profileName: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 18,
-    lineHeight: 23,
-    letterSpacing: -0.2,
-  },
-  profileEmail: {
+  profileEyebrow: {
+    ...tokens.type.label.eyebrow,
     color: tokens.color.text.tertiary,
+    textTransform: 'uppercase',
+  },
+  profileMeta: {
+    ...tokens.type.body.small,
     fontFamily: type.body.medium,
-    fontSize: 13,
-    lineHeight: 17,
+    color: tokens.color.text.secondary,
+  },
+  profileSummary: {
+    ...tokens.type.display.accent,
+    color: tokens.color.text.primary,
   },
   groupBlock: {
     gap: spacing.xs,
@@ -1005,9 +1039,7 @@ const styles = StyleSheet.create({
   groupCard: {
     borderRadius: radii.lg,
     backgroundColor: tokens.color.surface.card.default,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
-    overflow: 'hidden',
+    ...tokens.shadow.card,
   },
   row: {
     minHeight: 56,

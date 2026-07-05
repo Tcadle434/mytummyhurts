@@ -222,6 +222,13 @@ export function buildPersonalHistory(
     lastSeenAt: context.exactLastSeenByName.get(normalizedName) ?? exactInsight?.lastSeenAt,
     matchType,
     matchedLabel: useFamilyMatch ? familyMatch?.label : undefined,
+    // Clients render the FAMILY, never the sibling ingredient in matchedLabel —
+    // "avocado · related to mayonnaise" was this join leaking into copy. The
+    // stored key is trusted (written by the taxonomy classifier from the same
+    // controlled vocabulary).
+    matchedFamilyKey: useFamilyMatch
+      ? (taxonomy?.primaryFoodFamilyKey as ScanIngredientPersonalHistory['matchedFamilyKey'])
+      : undefined,
     riskLevel,
     riskScore: selectedInsight?.riskScore,
     confidenceLevel: selectedInsight?.confidenceLevel,

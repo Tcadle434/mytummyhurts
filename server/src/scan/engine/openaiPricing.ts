@@ -52,6 +52,9 @@ const MODEL_PRICING_USD_PER_1M_TOKENS: Record<string, PricingRate> = {
   'gpt-4.1-nano': { input: 0.1, cachedInput: 0.025, output: 0.4 },
   'gpt-4o': { input: 2.5, cachedInput: 1.25, output: 10 },
   'gpt-4o-mini': { input: 0.15, cachedInput: 0.075, output: 0.6 },
+  // Embeddings bill input tokens only.
+  'text-embedding-3-small': { input: 0.02, cachedInput: null, output: 0 },
+  'text-embedding-3-large': { input: 0.13, cachedInput: null, output: 0 },
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {

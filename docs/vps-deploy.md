@@ -62,3 +62,7 @@ The only thing that can't be validated headlessly is the **on-device OAuth flow*
 ## Rollback
 
 Pre-prod, there are no installed clients to keep alive — rollback is simply redeploying the previous `api` image (and previous app build if needed). There is no Supabase fallback, by design: the VPS is the single backend.
+
+## Landing page (mytummyhurts.app)
+
+The marketing site is **built** from [`web/landing/`](../web/landing/README.md) (Vite + React); `npm run build` there emits the static site into `server/landing/`, which stays committed. Caddy serves that directory unchanged (apex block + www redirect, `./landing` bind mount), so deploying a landing change is: build locally, commit `server/landing/**`, `git pull` on the VPS. `/privacy.html` and `/terms.html` must keep those exact URL shapes — App Store Connect references the privacy URL.

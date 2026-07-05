@@ -9,13 +9,6 @@ const space = tokens.space;
 export const components = {
   appScreen: {
     gradient: [color.surface.app.gradientStart, color.surface.app.default, color.surface.app.gradientEnd] as const,
-    ornament: {
-      topRight: color.surface.app.ornamentMint,
-      bottomLeft: color.surface.app.ornamentPeach,
-      midLeft: withAlpha(color.accent.warm, 0.12),
-      dotMint: withAlpha(color.accent.mascot, 0.42),
-      dotPeach: withAlpha(color.accent.mascotAccent, 0.5),
-    },
   },
   card: {
     default: {
@@ -53,6 +46,13 @@ export const components = {
       borderWidth: 1,
       ...shadow.card,
     },
+    hero: {
+      backgroundColor: color.surface.hero.background,
+      borderColor: color.border.subtle,
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      ...shadow.lift,
+    },
   },
   button: {
     primary: {
@@ -79,10 +79,10 @@ export const components = {
       paddingHorizontal: space.lg,
     },
   },
+  // The scan CTA wears the original mint gradient (mascot → brand →
+  // brandStrong) with an ink arrow in a white bubble.
   scanCta: {
     gradient: [color.accent.mascot, color.accent.brand, color.accent.brandStrong] as const,
-    ornamentLeft: withAlpha(color.utility.white, 0.06),
-    ornamentRight: withAlpha(color.utility.white, 0.08),
     title: color.text.inverse,
     subtitle: withAlpha(color.utility.white, 0.84),
     arrowBackground: withAlpha(color.utility.white, 0.92),
@@ -154,6 +154,8 @@ export const components = {
       paddingHorizontal: space.lg,
       ...shadow.lift,
     },
+    // Focused tab: mint icon/label on the soft success-green pill — the
+    // original treatment.
     activeTint: color.accent.brand,
     inactiveTint: color.text.tertiary,
   },

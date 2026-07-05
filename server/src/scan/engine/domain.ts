@@ -26,6 +26,7 @@ import type {
   InsightSourceBreakdown,
   ProfileLearningSignal,
   ProfileLearningEvent,
+  PredictiveValidityStats,
   StomachProfileIngredientScore,
   StomachProfile,
   DietPreference,
@@ -62,6 +63,8 @@ import type {
   IngredientRole,
   IngredientProminence,
   IngredientAmountEstimate,
+  ConsumptionPortion,
+  ScanDayLoad,
   ExtractedIngredient,
   ConditionSeverityBand,
   ConditionSeverity,
@@ -106,6 +109,7 @@ export type {
   InsightSourceBreakdown,
   ProfileLearningSignal,
   ProfileLearningEvent,
+  PredictiveValidityStats,
   StomachProfileIngredientScore,
   StomachProfile,
   DietPreference,
@@ -140,6 +144,8 @@ export type {
   IngredientRole,
   IngredientProminence,
   IngredientAmountEstimate,
+  ConsumptionPortion,
+  ScanDayLoad,
   ExtractedIngredient,
   ConditionSeverityBand,
   ConditionSeverity,
@@ -165,6 +171,15 @@ export type {
 // graph is not byte-identical across the two apps. They reference the
 // re-exported shared types above.
 // ---------------------------------------------------------------------------
+/** Bounded RAG influence applied to the overall score (additive, diagnostic). */
+export interface RagInfluenceMetadata {
+  baseScore: number;
+  finalScore: number;
+  delta: number;
+  bandGuardApplied: boolean;
+  reason: string;
+}
+
 export interface StructuredAnalysisV2 {
   dishName: string;
   dishConfidence: IngredientConfidence;
@@ -184,6 +199,7 @@ export interface StructuredAnalysisV2 {
   gutRecommendation?: string;
   rubricVersion?: string;
   riskAdjudication?: RiskAdjudicationMetadata;
+  ragInfluence?: RagInfluenceMetadata;
   ragRetrievalRunId?: string | null;
   evidenceCitations?: EvidenceCitation[];
   mechanismExposures?: MechanismExposure[];

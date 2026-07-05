@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppScreen, EmptyState, SectionCard, TabScreenHeader } from '../../components/common/UI';
+import { bandRiskColors } from '../../components/progress/bandStyle';
 import { useHistoryFeed } from '../../features/history/hooks';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
@@ -12,7 +13,13 @@ import { useAppStore } from '../../store/useAppStore';
 import { components, radii, shadows, spacing, tokens, type } from '../../theme';
 import { DailyGutReport } from '../../types/domain';
 import { gutScoreTint } from '../../utils/risk';
-import { parseLocalDate, toLocalDate } from '../../utils/weeklyProgress';
+import {
+  DailyScoreBand,
+  dailyScoreBand,
+  parseLocalDate,
+  toLocalDate,
+  yesterdayLocalDate,
+} from '../../utils/weeklyProgress';
 
 type MonthCursor = {
   year: number;
@@ -26,6 +33,7 @@ type CalendarCell = {
   isToday?: boolean;
   isFuture?: boolean;
 };
+
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -51,6 +59,10 @@ export function SymptomLogScreen() {
     () => sameCursor(visibleMonth, currentMonthCursor()),
     [visibleMonth],
   );
+  const monthHeadline = useMemo(
+    () => buildMonthHeadline(monthReports, isCurrentMonth, visibleMonth),
+    [isCurrentMonth, monthReports, visibleMonth],
+  );
 
   useEffect(() => {
     trackEvent('symptom_log_viewed', { report_count: reports.length });
@@ -64,6 +76,15 @@ export function SymptomLogScreen() {
   return (
     <AppScreen contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}>
       <TabScreenHeader title="Symptoms" />
+
+      {monthHeadline ? (
+        <SectionCard style={styles.monthSummaryCard}>
+          <Text style={styles.monthHeadline}>{monthHeadline}</Text>
+          <Text style={styles.monthSubline}>
+            from {monthReports.length} logged {monthReports.length === 1 ? 'day' : 'days'}
+          </Text>
+        </SectionCard>
+      ) : null}
 
       <SectionCard style={styles.calendarCard}>
         <View style={styles.monthHeader}>
@@ -99,9 +120,9 @@ export function SymptomLogScreen() {
         </View>
 
         <View style={styles.legendRow}>
-          <LegendItem color={gutScoreTint(80)} label="67-100" />
-          <LegendItem color={gutScoreTint(50)} label="34-66" />
-          <LegendItem color={gutScoreTint(20)} label="0-33" />
+          <LegendItem color={gutScoreTint(80)} label="Calm" />
+          <LegendItem color={gutScoreTint(50)} label="Mixed" />
+          <LegendItem color={gutScoreTint(20)} label="Rough" />
         </View>
 
         <View style={styles.weekdayGrid}>
@@ -129,7 +150,9 @@ export function SymptomLogScreen() {
 
       <View style={styles.listHeader}>
         <Text style={styles.sectionTitle}>Logged days</Text>
-        <Text style={styles.sectionMeta}>{monthReports.length}</Text>
+        <Text style={styles.sectionMeta}>
+          {monthReports.length} {monthReports.length === 1 ? 'day' : 'days'}
+        </Text>
       </View>
 
       {monthReports.length ? (
@@ -140,12 +163,14 @@ export function SymptomLogScreen() {
         </View>
       ) : (
         <EmptyState
-          title="No reports this month"
+          title="No check-ins this month"
           subtitle={
             isCurrentMonth
               ? 'Tap a day above to log how your gut felt.'
               : `Nothing was logged in ${formatMonthTitle(visibleMonth)}.`
           }
+          actionLabel={isCurrentMonth ? 'Log yesterday' : undefined}
+          onAction={isCurrentMonth ? () => openReport(yesterdayLocalDate()) : undefined}
         />
       )}
     </AppScreen>
@@ -157,26 +182,26 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
     return <View style={styles.calendarCell} />;
   }
 
-  const filled = Boolean(report);
-  const fillColor = report ? gutScoreTint(dailyScoreValue(report)) : tokens.color.surface.card.default;
+  const bandColors = report ? bandRiskColors(dailyScoreValue(report)) : null;
+  const bandWord = report ? dailyScoreBand(dailyScoreValue(report)) : null;
 
   return (
     <View style={styles.calendarCell}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Day ${cell.day}, ${filled ? 'report logged' : 'no report'}`}
+        accessibilityLabel={`Day ${cell.day}, ${bandWord ? `${bandWord} day logged` : 'no report'}`}
         disabled={!onPress}
         onPress={onPress}
         style={({ pressed }) => [
           styles.dayCell,
           {
-            backgroundColor: fillColor,
-            borderColor: filled ? fillColor : cell.isToday ? tokens.color.border.emphasis : tokens.color.border.subtle,
+            backgroundColor: bandColors ? bandColors.background : tokens.color.surface.app.default,
             opacity: cell.isFuture ? 0.42 : pressed ? 0.82 : 1,
           },
+          cell.isToday && styles.dayCellToday,
         ]}
       >
-        <Text style={[styles.dayNumber, filled && styles.dayNumberFilled]}>{cell.day}</Text>
+        <Text style={[styles.dayNumber, bandColors ? { color: bandColors.foreground } : null]}>{cell.day}</Text>
       </Pressable>
     </View>
   );
@@ -184,33 +209,37 @@ function CalendarDay({ cell, report, onPress }: { cell: CalendarCell; report?: D
 
 function ReportRow({ report, onPress }: { report: DailyGutReport; onPress: () => void }) {
   const score = dailyScoreValue(report);
-  const tone = gutScoreTint(score);
+  const badgeColors = bandRiskColors(score);
+  const severityColors = severityBandColors(report.gutSeverity);
+  const severityBand = severityBandWord(report.gutSeverity);
   const symptomSummary = report.symptomTags.length ? report.symptomTags.slice(0, 3).join(', ') : 'No symptoms tagged';
   const remainingCount = Math.max(report.symptomTags.length - 3, 0);
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${formatReportDate(report.localDate)}, gut severity ${report.gutSeverity} out of 10, ${symptomSummary}`}
+      accessibilityLabel={`${formatReportDate(report.localDate)}, gut severity ${report.gutSeverity} out of 10, a ${severityBand} day, ${symptomSummary}`}
       onPress={onPress}
       style={({ pressed }) => [styles.reportRow, pressed && { opacity: 0.9 }]}
     >
-      <View style={[styles.reportDateBadge, { backgroundColor: tone }]}>
-        <Text style={styles.reportMonth}>{formatShortMonth(report.localDate)}</Text>
-        <Text style={styles.reportDay}>{formatDayNumber(report.localDate)}</Text>
+      <View style={[styles.reportDateBadge, { backgroundColor: badgeColors.background }]}>
+        <Text style={[styles.reportMonth, { color: badgeColors.foreground }]}>{formatShortMonth(report.localDate)}</Text>
+        <Text style={[styles.reportDay, { color: badgeColors.foreground }]}>{formatDayNumber(report.localDate)}</Text>
       </View>
       <View style={styles.reportCopy}>
         <View style={styles.reportTitleRow}>
-          <Text style={styles.reportTitle}>{formatReportDate(report.localDate)}</Text>
-          <View style={[styles.severityPill, { backgroundColor: scoreBackground(score) }]}>
-            <Text style={[styles.severityPillText, { color: scoreForeground(score) }]}>
+          <Text style={styles.reportTitle} numberOfLines={1}>
+            {symptomSummary}
+            {remainingCount ? ` +${remainingCount}` : ''}
+          </Text>
+          <View style={[styles.severityPill, { backgroundColor: severityColors.background }]}>
+            <Text style={[styles.severityPillText, { color: severityColors.foreground }]}>
               {report.gutSeverity}/10
             </Text>
           </View>
         </View>
         <Text style={styles.reportMeta} numberOfLines={1}>
-          {symptomSummary}
-          {remainingCount ? ` +${remainingCount}` : ''}
+          {formatReportDate(report.localDate)} · {severityBand} day
         </Text>
         {report.notes ? (
           <Text style={styles.reportNotes} numberOfLines={2}>
@@ -243,6 +272,25 @@ function mergeReports(reports: DailyGutReport[]) {
   }
 
   return Array.from(byDate.values()).sort((left, right) => right.localDate.localeCompare(left.localDate));
+}
+
+// "9 calm days this month" — the month as an emotional record, headlined by
+// its best true statistic (calm first, then mixed, then rough).
+function buildMonthHeadline(monthReports: DailyGutReport[], isCurrentMonth: boolean, cursor: MonthCursor) {
+  if (monthReports.length === 0) {
+    return null;
+  }
+
+  const counts: Record<DailyScoreBand, number> = { calm: 0, mixed: 0, rough: 0 };
+  for (const report of monthReports) {
+    counts[dailyScoreBand(dailyScoreValue(report))] += 1;
+  }
+
+  const leadingBand: DailyScoreBand = counts.calm > 0 ? 'calm' : counts.mixed > 0 ? 'mixed' : 'rough';
+  const count = counts[leadingBand];
+  const dayWord = count === 1 ? 'day' : 'days';
+  const period = isCurrentMonth ? 'this month' : `in ${formatMonthName(cursor)}`;
+  return `${count} ${leadingBand} ${dayWord} ${period}`;
 }
 
 function currentMonthCursor(): MonthCursor {
@@ -297,6 +345,10 @@ function formatMonthTitle(cursor: MonthCursor) {
   return new Date(cursor.year, cursor.month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
+function formatMonthName(cursor: MonthCursor) {
+  return new Date(cursor.year, cursor.month, 1).toLocaleDateString(undefined, { month: 'long' });
+}
+
 function formatReportDate(localDate: string) {
   return parseLocalDate(localDate).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 }
@@ -318,19 +370,38 @@ function dailyScoreFromSeverity(gutSeverity: number) {
   return Math.max(0, Math.min(100, Math.round(90 - severity * 8)));
 }
 
-function scoreForeground(value: number) {
-  if (value >= 67) return tokens.color.status.risk.low.foreground;
-  if (value >= 34) return tokens.color.status.risk.medium.foreground;
-  return tokens.color.status.risk.high.foreground;
+// Severity (0-10, higher = worse) banding matches the check-in slider: 0-3
+// calm, 4-6 mixed, 7-10 rough. The pill is colored by its own scale, not the
+// 0-100 score bands.
+function severityBandWord(value: number): DailyScoreBand {
+  if (value <= 3) return 'calm';
+  if (value <= 6) return 'mixed';
+  return 'rough';
 }
 
-function scoreBackground(value: number) {
-  if (value >= 67) return tokens.color.status.risk.low.background;
-  if (value >= 34) return tokens.color.status.risk.medium.background;
-  return tokens.color.status.risk.high.background;
+function severityBandColors(value: number) {
+  if (value <= 3) return tokens.color.status.risk.low;
+  if (value <= 6) return tokens.color.status.risk.medium;
+  return tokens.color.status.risk.high;
 }
 
 const styles = StyleSheet.create({
+  // The screen's one hero block: the month spoken as a finding, in
+  // on-hero text. Everything below stays cream and white.
+  monthSummaryCard: {
+    gap: spacing.xs,
+    backgroundColor: tokens.color.surface.hero.background,
+    ...shadows.lift,
+  },
+  monthHeadline: {
+    ...tokens.type.display.section,
+    color: tokens.color.surface.hero.onHero,
+  },
+  monthSubline: {
+    ...tokens.type.body.small,
+    fontFamily: type.body.medium,
+    color: tokens.color.surface.hero.onHeroMuted,
+  },
   calendarCard: {
     gap: spacing.md,
   },
@@ -346,18 +417,15 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: tokens.color.surface.card.default,
-    borderWidth: 1,
-    borderColor: tokens.color.border.subtle,
+    backgroundColor: tokens.color.surface.app.default,
   },
   monthButtonDisabled: {
     opacity: 0.5,
   },
   monthTitle: {
+    ...tokens.type.title.card,
     flex: 1,
     color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 19,
     textAlign: 'center',
   },
   legendRow: {
@@ -405,15 +473,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.md,
-    borderWidth: 1,
+  },
+  // Today keeps the one functional ring on the calendar; every other cell is
+  // a borderless fill (pale band background or porcelain).
+  dayCellToday: {
+    borderWidth: 2,
+    borderColor: tokens.color.accent.brandStrong,
   },
   dayNumber: {
-    color: tokens.color.text.primary,
+    color: tokens.color.text.secondary,
     fontFamily: type.body.semibold,
     fontSize: 13,
-  },
-  dayNumberFilled: {
-    color: tokens.color.text.inverse,
   },
   listHeader: {
     flexDirection: 'row',
@@ -422,9 +492,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   sectionTitle: {
+    ...tokens.type.title.card,
     color: tokens.color.text.primary,
-    fontFamily: type.body.bold,
-    fontSize: 22,
   },
   sectionMeta: {
     color: tokens.color.text.tertiary,
@@ -448,16 +517,13 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.card,
   },
   reportMonth: {
-    color: tokens.color.text.inverse,
     fontFamily: type.body.semibold,
     fontSize: 11,
     textTransform: 'uppercase',
   },
   reportDay: {
-    color: tokens.color.text.inverse,
     fontFamily: type.body.bold,
     fontSize: 22,
     lineHeight: 25,

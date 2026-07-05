@@ -67,7 +67,8 @@ export function ScoreDriversList({
 										</Text>
 									</View>
 								) : null}
-								<Text style={[styles.driverTier, { color: tone.tint }]}>{tierLabel}</Text>
+								{/* Tier word is text — text-grade foreground, never the tint. */}
+								<Text style={[styles.driverTier, { color: tone.foreground }]}>{tierLabel}</Text>
 							</View>
 							{driver.source ? (
 								<Text style={styles.driverSource} numberOfLines={1}>
@@ -107,7 +108,7 @@ export function ScoreDriversList({
 										</Text>
 									</View>
 								) : null}
-								<Text style={[styles.driverTier, { color: tone.tint }]}>{tierLabel}</Text>
+								<Text style={[styles.driverTier, { color: tone.foreground }]}>{tierLabel}</Text>
 							</View>
 							<Text style={styles.scoreDriverReason}>{driver.reason}</Text>
 						</View>

@@ -3,7 +3,6 @@ import { ComponentProps, Fragment } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { palette, spacing, tokens, type } from "../../../theme";
-import { gutScoreTint } from "../../../utils/risk";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 type TimelineTone = "start" | "mid" | "goal";
@@ -118,7 +117,8 @@ function TimelineStep({
 
 function ScoreComparison({ currentScore }: { currentScore: number }) {
 	const clampedCurrent = Math.max(0, Math.min(100, Math.round(currentScore)));
-	const currentColor = gutScoreTint(clampedCurrent);
+	// Text-grade band color (never the tint) so the numeral reads on white.
+	const currentColor = gutScoreForeground(clampedCurrent);
 
 	return (
 		<View style={styles.comparisonCard}>
@@ -142,6 +142,14 @@ function ScoreComparison({ currentScore }: { currentScore: number }) {
 			</View>
 		</View>
 	);
+}
+
+// Same banding as gutScoreTint in utils/risk, but the darker text-grade
+// foreground colors — tints are fills and fail contrast as text.
+function gutScoreForeground(score: number) {
+	if (score >= 67) return tokens.color.status.risk.low.foreground;
+	if (score >= 34) return tokens.color.status.risk.medium.foreground;
+	return tokens.color.status.risk.high.foreground;
 }
 
 function nodeColors(tone: TimelineTone) {

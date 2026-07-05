@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: tokens.color.surface.card.default,
     borderWidth: 1,
     borderColor: tokens.color.border.subtle,
     alignItems: 'center',

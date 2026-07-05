@@ -26,6 +26,7 @@ function ingredientRiskPayload(result: ScanResult) {
     component_name: ingredient.componentName ?? null,
     reason: ingredient.reason,
     display_order: ingredient.displayOrder,
+    amount_estimate: ingredient.amountEstimate ?? null,
   }));
 }
 
@@ -125,6 +126,7 @@ export function buildMenuCompletionInput(
       component_name: ing.componentName ?? item.name,
       reason: ing.reason,
       display_order: ing.displayOrder,
+      amount_estimate: ing.amountEstimate ?? null,
     })),
   );
 

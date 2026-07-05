@@ -86,12 +86,13 @@ function IngredientGroup({
 	level: RiskLevel;
 	items: ScanIngredient[];
 }) {
-	const color = colorForLevel(level);
+	const tone = tokens.color.status.risk[level];
 	return (
 		<View style={styles.ingredientGroup}>
 			<View style={styles.ingredientGroupHeader}>
-				<View style={[styles.ingredientGroupDot, { backgroundColor: color }]} />
-				<Text style={[styles.ingredientGroupLabel, { color }]}>{label}</Text>
+				{/* Tint fills the dot; the label wears the text-grade foreground. */}
+				<View style={[styles.ingredientGroupDot, { backgroundColor: tone.tint }]} />
+				<Text style={[styles.ingredientGroupLabel, { color: tone.foreground }]}>{label}</Text>
 				<Text style={styles.ingredientGroupCount}>
 					{items.length} item{items.length === 1 ? "" : "s"}
 				</Text>
@@ -130,7 +131,7 @@ const styles = StyleSheet.create({
 		flexDirection: "row",
 		alignItems: "flex-start",
 		gap: spacing.sm,
-		borderRadius: 16,
+		borderRadius: tokens.radius.md,
 		backgroundColor: tokens.color.surface.card.warm,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: spacing.sm,
@@ -189,13 +190,13 @@ const styles = StyleSheet.create({
 		flexWrap: "wrap",
 		gap: spacing.xs,
 	},
+	// Chips ride the warm surface instead of a hairline outline.
 	ingredientChip: {
 		flexDirection: "row",
 		alignItems: "center",
 		gap: 6,
-		borderRadius: 999,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
+		borderRadius: tokens.radius.pill,
+		backgroundColor: tokens.color.surface.card.warm,
 		paddingHorizontal: spacing.sm,
 		paddingVertical: 6,
 		maxWidth: "100%",

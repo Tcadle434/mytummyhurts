@@ -1,7 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { DatabaseService } from '../database/database.service';
-import type { OpenAiAuditLog } from '../scan/engine/openai';
+import { estimateOpenAiCost } from '../scan/engine/openaiPricing';
+import {
+  CLASSIFICATION_MODEL,
+  EXTRACTION_MODEL,
+  EXTRACTION_SCHEMA_VERSION,
+  MENU_EXTRACTION_MODEL,
+  PROMPT_VERSION,
+  RISK_ADJUDICATION_MODEL,
+  type OpenAiAuditLog,
+} from '../scan/engine/openai';
+import { RISK_ADJUDICATION_PROMPT_VERSION } from '../scan/engine/riskAdjudication';
+import { LangsmithScanForwarder } from './langsmith-forwarder';
 
 export const WORKFLOW_VERSION = 'scan_workflow_v1';
 const GRAPH_NODES = [
@@ -38,10 +49,17 @@ export interface ScanTraceInput {
 export class TraceService {
   private readonly logger = new Logger('Trace');
   private versionsEnsured = false;
+  // Plain member (not DI) — it has no dependencies beyond env, and keeping it
+  // out of the module graph means test harnesses constructing TraceService
+  // directly are unaffected.
+  private readonly langsmith = new LangsmithScanForwarder();
 
   constructor(private readonly db: DatabaseService) {}
 
   async recordScanTrace(input: ScanTraceInput): Promise<string | null> {
+    // Best-effort mirror to LangSmith before the DB write so a DB failure
+    // cannot suppress the trace either. Fire-and-forget, never throws.
+    this.langsmith.forward(input);
     try {
       await this.ensureVersions();
       return await this.db.service(async (sql) => {
@@ -116,6 +134,42 @@ export class TraceService {
     }
   }
 
+  /**
+   * Ledger row for a standalone embedding call (RAG retrieval/ingestion).
+   * These run outside any scan trace, so trace_id/node_trace_id stay null;
+   * userId is recorded when the caller has one. Best-effort like all traces.
+   */
+  async recordEmbeddingCostEvent(input: {
+    model: string;
+    inputTokens: number | null;
+    totalTokens: number | null;
+    userId?: string | null;
+  }): Promise<void> {
+    try {
+      const snapshot = estimateOpenAiCost(input.model, {
+        responseId: null,
+        inputTokens: input.inputTokens,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: input.totalTokens ?? input.inputTokens,
+      });
+      if (!snapshot.billable) return;
+      await this.db.service(async (sql) => {
+        await sql`
+          insert into public.ai_cost_events
+            (user_id, operation, provider, model, input_tokens, output_tokens,
+             total_tokens, estimated_cost_usd_micros, pricing_snapshot, billable)
+          values (${input.userId ?? null}, 'embedding', 'openai', ${input.model},
+                  ${snapshot.usage.inputTokens}, 0, ${snapshot.usage.totalTokens},
+                  ${snapshot.estimatedCostUsdMicros ?? 0},
+                  ${sql.json(snapshot.pricingSnapshot as never)}, true)`;
+      });
+    } catch (err) {
+      this.logger.warn(`embedding cost event write failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   private async ensureVersions(): Promise<void> {
     if (this.versionsEnsured) return;
     this.versionsEnsured = true;
@@ -127,12 +181,17 @@ export class TraceService {
           on conflict (workflow_version) do nothing`;
         await sql`
           insert into public.ai_prompt_versions (prompt_key, version, schema_version)
-          values ('mytummyhurts_extract', ${process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v3'}, 'meal_extraction_v2')
+          values ('mytummyhurts_extract', ${PROMPT_VERSION}, ${EXTRACTION_SCHEMA_VERSION})
+          on conflict (prompt_key, version) do nothing`;
+        await sql`
+          insert into public.ai_prompt_versions (prompt_key, version, schema_version)
+          values ('mytummyhurts_risk_adjudication', ${RISK_ADJUDICATION_PROMPT_VERSION}, 'risk_adjudication_v1')
           on conflict (prompt_key, version) do nothing`;
         for (const [role, model] of [
-          ['extraction', process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini'],
-          ['menu', process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini'],
-          ['normalization', process.env.OPENAI_NORMALIZATION_MODEL ?? 'gpt-4.1-mini'],
+          ['extraction', EXTRACTION_MODEL],
+          ['menu', MENU_EXTRACTION_MODEL],
+          ['classification', CLASSIFICATION_MODEL],
+          ['risk_adjudication', RISK_ADJUDICATION_MODEL],
           ['embedding', process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small'],
         ] as const) {
           const kind = role === 'embedding' ? 'embedding' : 'llm';

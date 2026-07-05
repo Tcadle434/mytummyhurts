@@ -301,6 +301,7 @@ function menuResultItem(
         componentName: ingredient.component ?? option.name,
         reason: '',
         displayOrder: index,
+        amountEstimate: ingredient.amountEstimate,
       };
     });
 

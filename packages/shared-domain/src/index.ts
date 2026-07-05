@@ -37,6 +37,7 @@ export * from './gut-score';
 export * from './profile';
 export * from './menu';
 export * from './scan';
+export * from './trigger-status';
 
 // ---------------------------------------------------------------------------
 // Shared scoring VALUE exports — constants, pure utilities, and data tables

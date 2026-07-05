@@ -33,6 +33,11 @@ create table if not exists public.auth_refresh_tokens (
 );
 create index if not exists auth_refresh_tokens_user_family_idx
   on public.auth_refresh_tokens (user_id, family_id);
+-- Mirrors 20260629120000_perf_indexes.sql for fresh replays: that migration
+-- runs before this file creates the table, so it skips when the table is absent.
+create index if not exists auth_refresh_tokens_family_idx
+  on public.auth_refresh_tokens (family_id)
+  where revoked_at is null;
 
 -- These tables hold secrets; only the service role (mth_service, bypassrls)
 -- should ever read them. Enabling RLS with NO policies denies the app role

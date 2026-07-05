@@ -29,6 +29,7 @@ __exportStar(require("./gut-score"), exports);
 __exportStar(require("./profile"), exports);
 __exportStar(require("./menu"), exports);
 __exportStar(require("./scan"), exports);
+__exportStar(require("./trigger-status"), exports);
 // ---------------------------------------------------------------------------
 // Shared scoring VALUE exports — constants, pure utilities, and data tables
 // that were byte-identical in src/services/ai/scoring.ts (Expo) and

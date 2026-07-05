@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { dietEvaluationTitle, selectIngredientHistoryRows, selectMainSignalLabels } from "../PersonalizedScanCard.helpers";
+import {
+	buildIngredientHistoryModel,
+	dietEvaluationTitle,
+	newIngredientsLine,
+	selectMainSignalLabels,
+} from "../PersonalizedScanCard.helpers";
 import type { DietEvaluation, ScanIngredientRisk, ScoreContributor } from "../../../types/domain";
 
 function ingredient(
@@ -21,8 +26,9 @@ function ingredient(
 }
 
 describe("PersonalizedScanCard helpers", () => {
-	it("prioritizes rough/fine learned history ahead of brand-new rows", () => {
-		const rows = selectIngredientHistoryRows([
+	it("speaks the caseboard vocabulary and collapses filler into the new-foods count", () => {
+		const model = buildIngredientHistoryModel([
+			// No evidence → collapses into newCount, never a filler row.
 			ingredient("turkey", {
 				displayOrder: 0,
 				personalHistory: {
@@ -36,8 +42,22 @@ describe("PersonalizedScanCard helpers", () => {
 					summary: "New for your history",
 				},
 			}),
-			ingredient("bread", {
+			// Seen twice but no paired outcomes → also filler → newCount.
+			ingredient("rice cracker", {
 				displayOrder: 1,
+				personalHistory: {
+					exactScanCount: 2,
+					familyScanCount: 0,
+					matchType: "exact",
+					riskLevel: "unknown",
+					supportingEvidenceCount: 0,
+					positiveEvidenceCount: 0,
+					negativeEvidenceCount: 0,
+					summary: "Seen 2 times · still learning",
+				},
+			}),
+			ingredient("bread", {
+				displayOrder: 2,
 				personalHistory: {
 					exactScanCount: 6,
 					familyScanCount: 0,
@@ -52,7 +72,7 @@ describe("PersonalizedScanCard helpers", () => {
 				},
 			}),
 			ingredient("rice", {
-				displayOrder: 2,
+				displayOrder: 3,
 				personalHistory: {
 					exactScanCount: 5,
 					familyScanCount: 0,
@@ -66,26 +86,64 @@ describe("PersonalizedScanCard helpers", () => {
 					summary: "Seen 5 times · usually sits fine",
 				},
 			}),
-			ingredient("tomato", {
-				displayOrder: 3,
+		]);
+
+		// Evidence-backed rows only, risk first.
+		expect(model.rows.map((row) => row.ingredient.canonicalName)).toEqual(["bread", "rice"]);
+		expect(model.rows[0]?.line).toBe("Confirmed trigger · 4 rough days");
+		expect(model.rows[0]?.status).toBe("confirmed");
+		expect(model.rows[1]?.line).toBe("Cleared · 4 calm days");
+		expect(model.newCount).toBe(2);
+		expect(newIngredientsLine(model.newCount)).toBe(
+			"2 foods here are new to your profile — check-ins start their cases.",
+		);
+	});
+
+	it("names the family for family matches — never a sibling ingredient", () => {
+		const model = buildIngredientHistoryModel([
+			ingredient("avocado", {
+				displayOrder: 0,
 				personalHistory: {
-					exactScanCount: 10,
-					familyScanCount: 0,
-					matchType: "exact",
-					riskLevel: "inconsistent",
-					riskScore: 52,
-					confidenceLevel: "high",
-					supportingEvidenceCount: 10,
-					positiveEvidenceCount: 5,
-					negativeEvidenceCount: 5,
-					summary: "Seen 10 times · inconsistent for you",
+					exactScanCount: 0,
+					familyScanCount: 17,
+					matchType: "family",
+					matchedLabel: "mayonnaise",
+					matchedFamilyKey: "plant_fats_spreads",
+					riskLevel: "medium",
+					riskScore: 55,
+					confidenceLevel: "medium",
+					supportingEvidenceCount: 3,
+					positiveEvidenceCount: 1,
+					negativeEvidenceCount: 2,
+					summary: "Similar foods seen 17 times · still learning",
+				},
+			}),
+			// Family match WITHOUT the family key (old server) → collapses to
+			// newCount rather than leaking the sibling name.
+			ingredient("sushi vinegar", {
+				displayOrder: 1,
+				personalHistory: {
+					exactScanCount: 0,
+					familyScanCount: 19,
+					matchType: "family",
+					matchedLabel: "mayonnaise",
+					riskLevel: "medium",
+					riskScore: 55,
+					confidenceLevel: "medium",
+					supportingEvidenceCount: 3,
+					positiveEvidenceCount: 1,
+					negativeEvidenceCount: 2,
+					summary: "Similar foods seen 19 times · still learning",
 				},
 			}),
 		]);
 
-		expect(rows.map((row) => row.ingredient.canonicalName)).toEqual(["bread", "tomato", "rice", "turkey"]);
-		expect(rows[1]?.history.summary).toBe("Seen 10 times · inconsistent for you");
-		expect(rows[1]?.history.summary).not.toContain("usually rough for you");
+		expect(model.rows).toHaveLength(1);
+		expect(model.rows[0]?.line).toBe(
+			"Part of Fats, oils & spreads — 2 rough days · 1 calm day across similar foods",
+		);
+		expect(model.rows[0]?.line).not.toContain("mayonnaise");
+		expect(model.newCount).toBe(1);
 	});
 
 	it("renders concise diet verdict titles", () => {

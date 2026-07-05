@@ -23,6 +23,7 @@ import {
 	toggleExpandedId,
 } from "../../../components/scan-result/ScanResultCards";
 import { palette, spacing, tokens, type } from "../../../theme";
+import { withAlpha } from "../../../theme/helpers";
 
 export type KnowBeforeEatStage =
 	| "menu-scan"
@@ -337,7 +338,7 @@ function ScannerImageView({
 					style={[styles.scanSweep, { width, transform: [{ translateY }] }]}
 				>
 					<LinearGradient
-						colors={["rgba(91,174,136,0)", "rgba(91,174,136,0.28)"]}
+						colors={[withAlpha(palette.primary, 0), withAlpha(palette.primary, 0.28)]}
 						style={styles.scanGlow}
 					/>
 					<View style={styles.scanLine} />

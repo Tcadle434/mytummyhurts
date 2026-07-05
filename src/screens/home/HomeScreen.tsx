@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
+import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 
-import { AppScreen, SectionCard, SkeletonBlock } from "../../components/common/UI";
+import { AppScreen, SectionCard, SkeletonBlock, Wordmark } from "../../components/common/UI";
 import { TriggersSummaryRow } from "../../components/home/TriggersSummaryRow";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
 import { isLiveBackendConfigured } from "../../config/env";
@@ -19,7 +19,7 @@ import { trackEvent } from "../../services/analytics";
 import { queryClient } from "../../services/query/client";
 import { queryKeys } from "../../services/query/keys";
 import { useAppStore } from "../../store/useAppStore";
-import { components, palette, radii, shadows, spacing, tokens, type } from "../../theme";
+import { components, radii, shadows, spacing, tokens } from "../../theme";
 import { DailyGutReport, ScanHistorySummary } from "../../types/domain";
 import { localDaypartGreeting } from "../../utils/time";
 import {
@@ -30,7 +30,6 @@ import {
 import { GutScoreHomeCard } from "./GutScoreHomeCard";
 import { GutScoreInfoModal } from "./GutScoreInfoModal";
 
-const MTH_TEXT_LOGO = require("../../../assets/mth_text_logo.png");
 const DAILY_REPORT_PROMPT_DISMISSED_KEY = "home.dailyReportPromptDismissedDate";
 const EMPTY_SCANS: ScanHistorySummary[] = [];
 const EMPTY_DAILY_REPORTS: DailyGutReport[] = [];
@@ -188,18 +187,15 @@ export function HomeScreen() {
 				<RefreshControl
 					refreshing={refreshing}
 					onRefresh={() => void handleRefresh()}
-					tintColor={palette.textMuted}
+					tintColor={tokens.color.text.secondary}
 				/>
 			}
 		>
 			<View style={styles.headerStack}>
 				<View style={styles.topRow}>
-					<Image
-						source={MTH_TEXT_LOGO}
-						style={styles.textLogo}
-						resizeMode="contain"
-						accessibilityLabel="MyTummyHurts"
-					/>
+					<View style={styles.wordmarkWrap} accessibilityLabel="MyTummyHurts">
+						<Wordmark />
+					</View>
 
 					<Pressable
 						accessibilityRole="button"
@@ -250,7 +246,7 @@ export function HomeScreen() {
 					]}
 				>
 					<View style={styles.dailyReportBannerIcon}>
-						<Ionicons name="pulse-outline" size={18} color={palette.primary} />
+						<Ionicons name="pulse-outline" size={18} color={tokens.color.accent.brand} />
 					</View>
 					<View style={styles.dailyReportBannerCopy}>
 						<Text style={styles.dailyReportBannerTitle}>
@@ -273,7 +269,7 @@ export function HomeScreen() {
 							pressed && { opacity: 0.72 },
 						]}
 					>
-						<Ionicons name="close" size={18} color={palette.textMuted} />
+						<Ionicons name="close" size={18} color={tokens.color.icon.muted} />
 					</Pressable>
 				</Pressable>
 			) : null}
@@ -436,20 +432,15 @@ const styles = StyleSheet.create({
 		justifyContent: "space-between",
 		gap: spacing.md,
 	},
-	textLogo: {
-		width: 164,
-		height: 34,
+	wordmarkWrap: {
 		flexShrink: 1,
 	},
 	titleStack: {
 		gap: spacing.xs,
 	},
 	greetingText: {
-		color: palette.text,
-		fontFamily: type.body.semibold,
-		fontSize: 17,
-		lineHeight: 22,
-		letterSpacing: -0.2,
+		...tokens.type.title.block,
+		color: tokens.color.text.primary,
 	},
 	streakRow: {
 		flexDirection: "row",
@@ -460,15 +451,14 @@ const styles = StyleSheet.create({
 		fontSize: 15,
 	},
 	streakText: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 15,
+		...tokens.type.body.emphasis,
+		color: tokens.color.text.secondary,
 	},
 	iconButton: {
 		width: 42,
 		height: 42,
 		borderRadius: 21,
-		backgroundColor: tokens.color.surface.frosted,
+		backgroundColor: tokens.color.surface.card.default,
 		borderWidth: 1,
 		borderColor: tokens.color.border.subtle,
 		alignItems: "center",
@@ -480,8 +470,6 @@ const styles = StyleSheet.create({
 		gap: spacing.sm,
 		backgroundColor: tokens.color.surface.card.default,
 		borderRadius: radii.xl,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.md,
 		...shadows.card,
@@ -500,16 +488,12 @@ const styles = StyleSheet.create({
 		gap: 2,
 	},
 	dailyReportBannerTitle: {
-		color: palette.text,
-		fontFamily: type.body.bold,
-		fontSize: 16,
-		letterSpacing: -0.2,
+		...tokens.type.body.strong,
+		color: tokens.color.text.primary,
 	},
 	dailyReportBannerSubtitle: {
-		color: palette.textMuted,
-		fontFamily: type.body.medium,
-		fontSize: 13,
-		lineHeight: 18,
+		...tokens.type.body.small,
+		color: tokens.color.text.secondary,
 	},
 	dailyReportBannerClose: {
 		width: 30,
@@ -587,23 +571,23 @@ const styles = StyleSheet.create({
 		justifyContent: "space-between",
 		paddingVertical: spacing.xs,
 		borderRadius: radii.md,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: tokens.color.surface.frosted,
+		backgroundColor: tokens.color.surface.app.default,
 	},
+	// The screen's saturated pill action: the original mint gradient,
+	// deliberately a different shape (pill) from the hero card above it.
 	scanCtaShell: {
-		borderRadius: radii.lg,
+		borderRadius: radii.pill,
 		overflow: "hidden",
-		...shadows.card,
+		...shadows.lift,
 	},
 	scanCtaGradient: {
-		minHeight: 60,
-		borderRadius: radii.lg,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.xs,
+		minHeight: 56,
+		borderRadius: radii.pill,
 		flexDirection: "row",
 		alignItems: "center",
 		gap: spacing.sm,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: spacing.xs,
 	},
 	scanIconBubble: {
 		width: 36,
@@ -614,11 +598,9 @@ const styles = StyleSheet.create({
 		justifyContent: "center",
 	},
 	scanTitle: {
+		...tokens.type.label.button,
 		flex: 1,
 		color: components.scanCta.title,
-		fontFamily: type.body.bold,
-		fontSize: 17,
-		letterSpacing: -0.2,
 		textAlign: "center",
 	},
 	scanArrow: {

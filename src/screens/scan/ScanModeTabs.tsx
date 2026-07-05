@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { palette, radii, type } from '../../theme';
+import { radii, tokens, type } from '../../theme';
+import { withAlpha } from '../../theme/helpers';
 
 export type ScanModeTab<T extends string> = {
   key: T;
@@ -12,7 +13,10 @@ export type ScanModeTab<T extends string> = {
   disabled?: boolean;
 };
 
-const INACTIVE_COLOR = 'rgba(255, 255, 255, 0.6)';
+// The pill floats over the viewfinder: dark camera glass with the on-glass
+// text ramp, active segment in the brand mint.
+const ACTIVE_COLOR = tokens.color.action.primary.foreground;
+const INACTIVE_COLOR = tokens.color.surface.viewfinder.onGlassMuted;
 const SLIDE_TIMING = { duration: 240, easing: Easing.out(Easing.cubic) } as const;
 
 export function ScanModeTabs<T extends string>({
@@ -64,7 +68,7 @@ export function ScanModeTabs<T extends string>({
               onPress={() => onChange(tab.key)}
               style={[styles.segment, tab.disabled && styles.segmentDisabled]}
             >
-              <Ionicons name={tab.icon} size={15} color={selected ? palette.white : INACTIVE_COLOR} />
+              <Ionicons name={tab.icon} size={15} color={selected ? ACTIVE_COLOR : INACTIVE_COLOR} />
               <Text
                 numberOfLines={1}
                 style={[styles.segmentLabel, selected && styles.segmentLabelActive]}
@@ -83,7 +87,7 @@ const styles = StyleSheet.create({
   track: {
     alignSelf: 'stretch',
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(14, 18, 16, 0.55)',
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.58),
     padding: 4,
   },
   segments: {
@@ -96,7 +100,7 @@ const styles = StyleSheet.create({
     left: 0,
     bottom: 0,
     borderRadius: radii.pill,
-    backgroundColor: palette.primary,
+    backgroundColor: tokens.color.accent.brand,
   },
   segment: {
     flex: 1,
@@ -116,6 +120,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   segmentLabelActive: {
-    color: palette.white,
+    color: ACTIVE_COLOR,
   },
 });

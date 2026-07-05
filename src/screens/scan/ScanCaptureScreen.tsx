@@ -5,11 +5,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useRef, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { AppScreen, PrimaryButton, ScreenHeader, SectionCard, SecondaryButton } from '../../components/common/UI';
+import { AppScreen, PrimaryButton, SectionCard, SecondaryButton } from '../../components/common/UI';
+import { Pip } from '../../components/common/Pip';
 import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { prepareCameraScanImage, prepareScanImageAsset } from '../../services/images/scanImage';
 import { palette, radii, shadows, spacing, tokens, type } from '../../theme';
+import { withAlpha } from '../../theme/helpers';
 import { createScanRequestId } from '../../utils/id';
 import { buildBarcodeScanPayload, buildImageScanPayload } from './scanPayload';
 import { ScanModeTabs, type ScanModeTab } from './ScanModeTabs';
@@ -25,22 +27,12 @@ type SelectedImage = {
 const SCAN_IMAGE_QUALITY = 0.68;
 const BARCODE_TYPES = ['ean13', 'ean8', 'upc_a', 'upc_e'] as const;
 const SUPPORTED_BARCODE_TYPES = new Set<string>(BARCODE_TYPES);
-const MODE_COPY: Record<CaptureMode, {
-  title: string;
-  subtitle: string;
-}> = {
-  food: {
-    title: 'Scan food',
-    subtitle: 'Take a photo or upload meal images for analysis.',
-  },
-  menu: {
-    title: 'Scan menu',
-    subtitle: 'Take or upload menu photos to rank the best options.',
-  },
-  barcode: {
-    title: 'Scan barcode',
-    subtitle: 'Point the camera at a UPC or EAN barcode.',
-  },
+// Mode copy lives in-frame, under the mode tabs, so the viewfinder keeps the
+// height a screen header used to spend restating the tab labels. Barcode mode
+// carries its own hint inside the scanning frame.
+const MODE_HINTS: Record<ImageCaptureMode, string> = {
+  food: "Snap your plate — we'll read the ingredients.",
+  menu: "Snap each menu page — we'll find your safest picks.",
 };
 
 const MODE_TABS: ScanModeTab<CaptureMode>[] = [
@@ -71,7 +63,6 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
   const [barcodeBusy, setBarcodeBusy] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const cameraRef = useRef<CameraView | null>(null);
-  const modeCopy = MODE_COPY[mode];
   const imageScanCategory: ImageCaptureMode = mode === 'menu' ? 'menu' : 'food';
   const barcodeDisabled = Boolean(!permission?.granted && permission?.canAskAgain === false);
 
@@ -213,10 +204,18 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
 
   return (
     <AppScreen scroll={false} contentContainerStyle={styles.content}>
-      <ScreenHeader
-        title={modeCopy.title}
-        subtitle={modeCopy.subtitle}
-      />
+      {navigation.canGoBack() ? (
+        <View style={styles.chromeRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={() => navigation.goBack()}
+            style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.72 }]}
+          >
+            <Ionicons name="chevron-back" size={22} color={tokens.color.icon.primary} />
+          </Pressable>
+        </View>
+      ) : null}
 
       {permission?.granted ? (
         <View style={styles.cameraCard}>
@@ -234,6 +233,9 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
 
           <View style={styles.cameraTopBar}>
             <ScanModeTabs tabs={modeTabs} value={mode} onChange={(next) => void selectScanMode(next)} />
+            {mode !== 'barcode' ? (
+              <Text style={styles.modeHint}>{MODE_HINTS[imageScanCategory]}</Text>
+            ) : null}
           </View>
 
           {mode === 'barcode' ? (
@@ -298,13 +300,22 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <SectionCard style={styles.permissionCard}>
+          <View style={styles.permissionPip}>
+            <Pip state="waving" size={96} />
+          </View>
           <Text style={styles.permissionTitle}>Camera access keeps scanning instant.</Text>
           <Text style={styles.permissionBody}>
             {mode === 'barcode'
               ? 'Barcode scans need camera access.'
               : 'You can still upload food or menu photos without camera access.'}
           </Text>
-          <PrimaryButton label="Allow camera" onPress={() => requestPermission()} />
+          {selectedImages.length ? (
+            // With images queued, "Analyze" in the tray below is the screen's
+            // one saturated action; the camera ask steps back to secondary.
+            <SecondaryButton label="Allow camera" onPress={() => requestPermission()} />
+          ) : (
+            <PrimaryButton label="Allow camera" onPress={() => requestPermission()} />
+          )}
           {mode !== 'barcode' ? (
             <SecondaryButton label={imageScanCategory === 'menu' ? 'Upload menu photos' : 'Upload food photos'} onPress={() => void openLibrary()} />
           ) : null}
@@ -326,7 +337,7 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
               onPress={() => void openLibrary()}
               style={({ pressed }) => [styles.addMoreButton, pressed && { opacity: 0.82 }]}
             >
-              <Ionicons name="add" size={16} color={palette.primary} />
+              <Ionicons name="add" size={16} color={tokens.color.action.quiet.foreground} />
               <Text style={styles.addMoreLabel}>Add</Text>
             </Pressable>
           </View>
@@ -334,7 +345,6 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
             {selectedImages.map((image, index) => (
               <View key={`${image.uri}-${index}`} style={styles.thumbWrap}>
                 <Image source={{ uri: image.uri }} style={styles.thumb} resizeMode="cover" />
-                <Text style={styles.thumbLabel}>Image {index + 1}</Text>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Remove image ${index + 1}`}
@@ -359,10 +369,36 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     justifyContent: 'flex-start',
   },
+  chromeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  // Borderless white disc on porcelain — separation comes from the shadow.
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.pill,
+    backgroundColor: tokens.color.surface.card.default,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.card,
+  },
+  modeHint: {
+    ...tokens.type.body.small,
+    marginTop: spacing.sm,
+    color: tokens.color.surface.viewfinder.onGlass,
+    fontFamily: type.body.medium,
+    textAlign: 'center',
+    textShadowColor: tokens.color.overlay.scrim,
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 5,
+  },
+  // The viewfinder is the app's one dark block: ink behind the feed with
+  // the original dark camera glass for overlays.
   cameraCard: {
     flex: 1,
     minHeight: 460,
-    borderRadius: 30,
+    borderRadius: radii.xxl,
     overflow: 'hidden',
     backgroundColor: tokens.color.text.primary,
     position: 'relative',
@@ -370,7 +406,7 @@ const styles = StyleSheet.create({
   },
   cameraScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.12)',
+    backgroundColor: withAlpha(tokens.color.utility.shadow, 0.12),
   },
   cameraTopBar: {
     position: 'absolute',
@@ -387,38 +423,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // Camera-overlay glass: evergreen-deep instead of neutral black smoke.
   previewControl: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: 'rgba(14, 18, 16, 0.58)',
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.58),
     alignItems: 'center',
     justifyContent: 'center',
   },
   previewControlActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    backgroundColor: withAlpha(tokens.color.utility.white, 0.92),
   },
   shutterOuter: {
     width: 78,
     height: 78,
     borderRadius: 39,
     borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.92)',
+    borderColor: withAlpha(tokens.color.utility.white, 0.92),
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(27, 28, 30, 0.28)',
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.28),
   },
   shutterInner: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: withAlpha(tokens.color.utility.white, 0.92),
   },
   uploadOverlayButton: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: 'rgba(14, 18, 16, 0.72)',
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.72),
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -492,7 +529,7 @@ const styles = StyleSheet.create({
     fontFamily: type.body.bold,
     fontSize: 15,
     textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.32)',
+    textShadowColor: tokens.color.overlay.scrim,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 5,
   },
@@ -500,17 +537,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  permissionPip: {
+    alignItems: 'center',
+  },
   permissionTitle: {
+    ...tokens.type.title.card,
     color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 24,
-    lineHeight: 30,
+    textAlign: 'center',
   },
   permissionBody: {
+    ...tokens.type.body.default,
     color: palette.textMuted,
-    fontFamily: type.body.regular,
-    fontSize: 15,
-    lineHeight: 22,
+    textAlign: 'center',
   },
   uploadTrayCard: {
     gap: spacing.md,
@@ -521,29 +559,28 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
+  // Card titles speak in Bricolage via the title tokens.
   uploadTrayTitle: {
+    ...tokens.type.title.block,
     color: palette.text,
-    fontFamily: type.body.bold,
-    fontSize: 18,
   },
   uploadTraySubtitle: {
     color: palette.textMuted,
     fontFamily: type.body.medium,
     fontSize: 13,
   },
+  // Quiet action pill: mint wash, no hairline — borderless is the system.
   addMoreButton: {
     minHeight: 36,
     borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: palette.pillGreenBorder,
-    backgroundColor: palette.pillGreen,
+    backgroundColor: tokens.color.action.quiet.background,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
   },
   addMoreLabel: {
-    color: palette.primary,
+    color: tokens.color.action.quiet.foreground,
     fontFamily: type.body.bold,
     fontSize: 13,
   },
@@ -552,21 +589,14 @@ const styles = StyleSheet.create({
     paddingRight: spacing.sm,
   },
   thumbWrap: {
-    width: 82,
-    gap: 5,
+    width: 72,
     position: 'relative',
   },
   thumb: {
-    width: 82,
-    height: 92,
+    width: 72,
+    height: 80,
     borderRadius: radii.md,
     backgroundColor: tokens.color.surface.card.warm,
-  },
-  thumbLabel: {
-    color: palette.textMuted,
-    fontFamily: type.body.medium,
-    fontSize: 11,
-    textAlign: 'center',
   },
   removeImageButton: {
     position: 'absolute',
@@ -575,7 +605,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(14,18,16,0.72)',
+    backgroundColor: withAlpha(tokens.color.surface.viewfinder.glass, 0.72),
     alignItems: 'center',
     justifyContent: 'center',
   },

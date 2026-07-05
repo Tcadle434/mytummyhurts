@@ -223,6 +223,21 @@ describe('scan crud', () => {
 
     const cons = await crud.updateConsumption(U, FOOD_SCAN, 'consumed');
     expect(cons.consumptionStatus).toBe('consumed');
+    // Old-client shape: no portion sent, none stored.
+    expect(cons.consumptionPortion).toBeUndefined();
+
+    // Portion round-trip: stored, readable, sticky for portion-less re-confirms,
+    // and cleared when the meal is skipped.
+    const heavy = await crud.updateConsumption(U, FOOD_SCAN, 'consumed', [], 'heavy');
+    expect(heavy.consumptionPortion).toBe('heavy');
+    const reread = await crud.getScan(U, FOOD_SCAN);
+    expect(reread.scan.consumptionPortion).toBe('heavy');
+    const reconfirm = await crud.updateConsumption(U, FOOD_SCAN, 'consumed');
+    expect(reconfirm.consumptionPortion).toBe('heavy');
+    const skipped = await crud.updateConsumption(U, FOOD_SCAN, 'skipped');
+    expect(skipped.consumptionPortion).toBeUndefined();
+    // Leave the scan how the original test left it: consumed.
+    await crud.updateConsumption(U, FOOD_SCAN, 'consumed', [], 'normal');
 
     const hist = await crud.history(U, 1, 12);
     expect(hist.scans.length).toBeGreaterThan(0);
