@@ -430,11 +430,11 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.semibold,
 		color: tokens.color.text.accent,
 	},
-	// White receipt inset: the expanded evidence keeps its light-ramp contrast
-	// instead of restyling every evidence component for the dark surface.
+	// Cream receipt inset: keeps a visible boundary now that the top-pick
+	// card is the same white as regular cards.
 	topPickDetailsInset: {
 		borderRadius: tokens.radius.lg,
-		backgroundColor: tokens.color.surface.card.default,
+		backgroundColor: tokens.color.surface.app.default,
 		padding: spacing.md,
 	},
 	// --- worded bands ---
@@ -597,10 +597,10 @@ const styles = StyleSheet.create({
 		backgroundColor: tokens.color.action.quiet.background,
 		paddingHorizontal: spacing.md,
 	},
-	// On the warm hero the button reads as a solid white pill — no hairline
-	// needed against the tinted surface.
+	// The hero surface is the same old card white now, so the button keeps
+	// its quiet mint tint there too.
 	consumeButtonOnHero: {
-		backgroundColor: tokens.color.surface.card.default,
+		backgroundColor: tokens.color.action.quiet.background,
 	},
 	consumeButtonDone: {
 		backgroundColor: tokens.color.status.risk.low.background,

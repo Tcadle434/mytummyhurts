@@ -29,9 +29,12 @@ everything that is not color: type, layout, product structure.**
 Concepts that didn't exist in the old app take their colors from the old
 palette only:
 
-- **Hero blocks** (`tokens.color.surface.hero.*`): the old warm card
-  `#FEF5EA`; on-hero ramp = ink / old secondary / old tertiary. Screens use
-  the ramp, never raw text tokens.
+- **Hero blocks** (`tokens.color.surface.hero.*`): the plain old card
+  surface `#FDFAF6` — the old Gut Score card was a regular card, so the hero
+  earns its weight from size and the lift shadow, not a tinted background
+  (the warm `#FEF5EA` read yellow at card scale and was rejected). On-hero
+  ramp = ink / old secondary / old tertiary; raised = old track `#ECE4D9`.
+  Screens use the ramp, never raw text tokens.
 - **Verdict tones** (`status.verdict.*`): built from the old risk/status
   colors — confirmed = old high, suspect = old medium, watching = old
   neutrals, safe = old low, cleared = old accent green family (`#2F6953` on
@@ -53,7 +56,7 @@ palette only:
 
 ## Where the hero lives
 
-| Screen | Hero block (warm `#FEF5EA` card) |
+| Screen | Hero block (old card white, lift shadow) |
 | --- | --- |
 | Home | Gut Score card (zone-tinted numeral, arc + Pip) |
 | Scan result | Pip's take panel under the white verdict card |

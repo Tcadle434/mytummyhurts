@@ -39,12 +39,12 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.sm,
 	},
-	// The soft raised disc is Pip's glow against the warm hero.
+	// The soft mint disc is Pip's glow against the card.
 	pipGlow: {
 		width: 52,
 		height: 52,
 		borderRadius: tokens.radius.pill,
-		backgroundColor: tokens.color.surface.hero.raised,
+		backgroundColor: tokens.color.action.quiet.background,
 		alignItems: "center",
 		justifyContent: "center",
 	},

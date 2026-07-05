@@ -94,14 +94,16 @@ const styles = StyleSheet.create({
 		borderColor: palette.primary,
 		backgroundColor: tokens.color.surface.card.success,
 	},
-	// On the warm hero: soft raised discs at rest, solid white when selected —
-	// no hairlines against the tinted surface.
+	// The hero surface is the same old card white now, so the onHero variant
+	// mirrors the light-surface idiom exactly.
 	chipOnHero: {
-		borderWidth: 0,
-		backgroundColor: tokens.color.surface.hero.raised,
+		borderWidth: 1,
+		borderColor: tokens.color.border.subtle,
+		backgroundColor: tokens.color.surface.card.default,
 	},
 	chipOnHeroActive: {
-		backgroundColor: tokens.color.surface.card.default,
+		borderColor: palette.primary,
+		backgroundColor: tokens.color.surface.card.success,
 	},
 	chipText: {
 		...tokens.type.label.chip,
@@ -111,7 +113,7 @@ const styles = StyleSheet.create({
 		color: palette.primaryDark,
 	},
 	chipTextOnHero: {
-		color: tokens.color.surface.hero.onHeroMuted,
+		color: palette.textMuted,
 	},
 	chipTextOnHeroActive: {
 		color: palette.primaryDark,

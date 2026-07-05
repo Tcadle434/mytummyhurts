@@ -23,13 +23,15 @@ export const tokens = {
         info: '#F2F8FC',
       },
       // Hero blocks: the redesign's one-featured-surface-per-screen idea,
-      // wearing the original palette — the old warm card cream, never dark.
-      // Screens must use the on* ramp (not raw text tokens) so the hero can
-      // retint without touching screens.
+      // wearing the original palette — the plain old card surface (the old
+      // Gut Score card was a regular card; the hero earns its weight from
+      // size and the lift shadow, not a tinted background). Screens must use
+      // the on* ramp (not raw text tokens) so the hero can retint without
+      // touching screens.
       hero: {
-        background: brand.surface.warm,
+        background: brand.surface.default,
         deep: neutral.warm[100],
-        raised: withAlpha(neutral.white, 0.9),
+        raised: neutral.warm[200],
         onHero: ink,
         onHeroMuted: neutral.cool[700],
         onHeroFaint: neutral.cool[600],
