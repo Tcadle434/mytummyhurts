@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { ReactElement, ReactNode, Ref } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -237,13 +238,16 @@ export function DetailScreenHeader({ eyebrow, title, titleAccessory }: DetailScr
   );
 }
 
+const MTH_TEXT_LOGO = require('../../../../assets/mth_text_logo.png');
+
 export function Wordmark() {
   return (
-    <Text style={styles.wordmarkWrap}>
-      <Text style={styles.wordmarkStrong}>My</Text>
-      <Text style={styles.wordmarkSoft}>Tummy</Text>
-      <Text style={styles.wordmarkStrong}>Hurts</Text>
-    </Text>
+    <Image
+      source={MTH_TEXT_LOGO}
+      style={styles.wordmarkLogo}
+      resizeMode="contain"
+      accessibilityLabel="MyTummyHurts"
+    />
   );
 }
 
@@ -421,16 +425,11 @@ const styles = StyleSheet.create({
     color: tokens.color.text.tertiary,
     textAlign: 'center',
   },
-  // Brand wordmark: Bricolage in two evergreen weights — one voice, one color.
-  wordmarkWrap: {
-    ...tokens.type.title.card,
-    color: tokens.color.accent.brandStrong,
-  },
-  wordmarkStrong: {
-    color: tokens.color.accent.brandStrong,
-  },
-  wordmarkSoft: {
-    color: tokens.color.accent.brand,
+  // Brand wordmark: the original text-logo image.
+  wordmarkLogo: {
+    width: 164,
+    height: 34,
+    flexShrink: 1,
   },
   emptyState: {
     alignItems: 'center',

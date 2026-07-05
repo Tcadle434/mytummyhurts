@@ -102,7 +102,9 @@ export const tokens = {
           tint: '#67AD87',
         },
         medium: {
-          foreground: '#9A5E14',
+          // Burnt orange, not the old olive-brown: text-grade kin of the
+          // #FB913A tint (founder rejected #9A5E14 as "ugly brown yellow").
+          foreground: '#C05621',
           background: brand.status.mediumBackground,
           tint: brand.status.orange,
         },
@@ -124,7 +126,7 @@ export const tokens = {
           tint: brand.status.red,
         },
         suspect: {
-          foreground: '#9A5E14',
+          foreground: '#C05621',
           background: brand.status.mediumBackground,
           tint: brand.status.orange,
         },
