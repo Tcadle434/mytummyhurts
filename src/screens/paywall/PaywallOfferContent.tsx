@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Pip } from "../../components/common/Pip";
-import { HeroMetric, PrimaryButton, Wordmark } from "../../components/common/UI";
+import { PrimaryButton, Wordmark } from "../../components/common/UI";
+import { GutScoreVisual } from "../../components/score/GutScoreVisual";
 import { SubscriptionPlan } from "../../types/domain";
 import { RevenueCatPlanDisplay } from "../../services/billing/revenueCatMapping";
 import { palette, radii, spacing, tokens, type } from "../../theme";
@@ -84,31 +85,28 @@ export function PaywallOfferContent({
 
 			{caseFile ? (
 				<View style={styles.pictureCard}>
-					<Text style={styles.pictureKicker}>Your starting picture</Text>
-					<View style={styles.pictureRow}>
-						<View style={styles.pictureMetric}>
+					<View style={styles.pictureBody}>
+						<View style={styles.pictureCopy}>
+							<Text style={styles.pictureTitle}>Starting Gut Score</Text>
 							<View style={styles.pictureMetricRow}>
-								<HeroMetric
-									value={caseFile.startingScore}
-									color={tokens.color.surface.hero.onHero}
-								/>
+								<Text style={styles.pictureMetricValue}>{caseFile.startingScore}</Text>
 								<Text style={styles.pictureMetricUnit}>/100</Text>
 							</View>
-							<Text style={styles.pictureMetricCaption}>
-								starting Gut Score — higher means calmer
-							</Text>
 						</View>
-						<Pip state="joy" size={72} />
+						<GutScoreVisual score={caseFile.startingScore} />
 					</View>
 					{caseFile.suspects.length > 0 ? (
-						<Text style={styles.pictureLine}>
-							{"Foods we'll watch first: "}
-							<Text style={styles.pictureStrong}>{caseFile.suspects.join(", ")}</Text>
-						</Text>
+						<View style={styles.watchRow}>
+							<Text style={styles.watchLabel}>Watching first</Text>
+							<View style={styles.watchChips}>
+								{caseFile.suspects.map((food) => (
+									<View key={food} style={styles.watchChip}>
+										<Text style={styles.watchChipText}>{food}</Text>
+									</View>
+								))}
+							</View>
+						</View>
 					) : null}
-					<Text style={styles.pictureMeta}>
-						Built from your answers — every scan and check-in sharpens it.
-					</Text>
 				</View>
 			) : (
 				<View style={styles.trustBlock}>
@@ -119,24 +117,26 @@ export function PaywallOfferContent({
 				</View>
 			)}
 
-			<View style={styles.promiseBlock}>
-				<Text style={styles.promiseTitle}>Start free while Pip fills in the rest</Text>
-				<View style={styles.trialPill}>
-					<Ionicons name="sparkles" size={17} color={palette.primary} />
-					<Text style={styles.trialText}>7-day free trial</Text>
+			<View style={styles.offerBlock}>
+				<View style={styles.promiseBlock}>
+					<Text style={styles.promiseTitle}>Start free while Pip fills in the rest</Text>
+					<View style={styles.trialPill}>
+						<Ionicons name="sparkles" size={17} color={palette.primary} />
+						<Text style={styles.trialText}>7-day free trial</Text>
+					</View>
 				</View>
-			</View>
 
-			<View style={styles.planList}>
-				{(["annual", "monthly"] as const).map((plan) => (
-					<PlanRow
-						key={plan}
-						plan={plan}
-						display={planDisplay?.[plan]}
-						selected={selectedPlan === plan}
-						onPress={() => onSelectPlan(plan)}
-					/>
-				))}
+				<View style={styles.planList}>
+					{(["annual", "monthly"] as const).map((plan) => (
+						<PlanRow
+							key={plan}
+							plan={plan}
+							display={planDisplay?.[plan]}
+							selected={selectedPlan === plan}
+							onPress={() => onSelectPlan(plan)}
+						/>
+					))}
+				</View>
 			</View>
 
 			<View style={styles.ctaBlock}>
@@ -254,62 +254,74 @@ const styles = StyleSheet.create({
 		alignItems: "center",
 		gap: spacing.xs,
 	},
-	// The hero: the user's personalized starting picture, stated on the one
-	// evergreen block this screen gets. The Bricolage numeral is the biggest
-	// thing on the screen — "Pip already started on you" is the reason to
-	// subscribe, not an infomercial headline.
+	// The hero is the Home Gut Score card wearing its "starting" label: same
+	// ink numeral, same arc + Pip triple-encode (an anxious Pip may sit
+	// next to a low score — the face must agree with the number). The only
+	// other words allowed on it are the watch-list chips.
 	pictureCard: {
 		borderRadius: radii.xl,
 		backgroundColor: tokens.color.surface.hero.background,
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.md,
-		gap: spacing.xs,
+		gap: spacing.sm,
 		...tokens.shadow.lift,
 	},
-	pictureKicker: {
-		...tokens.type.label.eyebrow,
-		color: tokens.color.surface.hero.onHeroFaint,
-		textTransform: "uppercase",
-	},
-	pictureRow: {
+	pictureBody: {
 		flexDirection: "row",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: spacing.sm,
 	},
-	pictureMetric: {
+	pictureCopy: {
 		flex: 1,
+		minWidth: 0,
+	},
+	pictureTitle: {
+		...tokens.type.title.block,
+		color: tokens.color.surface.hero.onHero,
 	},
 	pictureMetricRow: {
 		flexDirection: "row",
 		alignItems: "flex-end",
+		marginTop: spacing.xs,
+	},
+	pictureMetricValue: {
+		...tokens.type.display.metric,
+		color: tokens.color.surface.hero.onHero,
 	},
 	pictureMetricUnit: {
 		color: tokens.color.surface.hero.onHeroMuted,
 		fontFamily: type.body.semibold,
-		fontSize: 17,
-		lineHeight: 23,
-		paddingBottom: 5,
+		fontSize: 18,
+		lineHeight: 24,
+		paddingBottom: 4,
 		marginLeft: 4,
 	},
-	pictureMetricCaption: {
-		...tokens.type.body.small,
-		fontFamily: type.body.medium,
-		color: tokens.color.surface.hero.onHeroMuted,
-		marginTop: 2,
+	watchRow: {
+		gap: spacing.xs,
 	},
-	pictureLine: {
-		...tokens.type.body.small,
-		fontFamily: type.body.medium,
-		color: tokens.color.surface.hero.onHeroMuted,
-	},
-	pictureStrong: {
-		fontFamily: type.body.bold,
-		color: tokens.color.surface.hero.onHero,
-	},
-	pictureMeta: {
-		...tokens.type.body.small,
+	watchLabel: {
 		color: tokens.color.surface.hero.onHeroFaint,
+		fontFamily: type.body.medium,
+		fontSize: 13,
+		lineHeight: 17,
+	},
+	watchChips: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: spacing.xs,
+	},
+	watchChip: {
+		borderRadius: radii.pill,
+		backgroundColor: tokens.color.surface.hero.raised,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 6,
+	},
+	watchChipText: {
+		color: tokens.color.text.accent,
+		fontFamily: type.body.semibold,
+		fontSize: 14,
+		lineHeight: 18,
 	},
 	trustedText: {
 		color: palette.textMuted,
@@ -317,6 +329,9 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 		lineHeight: 17,
 		textAlign: "center",
+	},
+	offerBlock: {
+		gap: spacing.md,
 	},
 	promiseBlock: {
 		alignItems: "center",

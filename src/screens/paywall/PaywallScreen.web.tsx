@@ -1,21 +1,47 @@
 import { NavigationProp, useNavigation } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Linking, StyleSheet } from 'react-native';
 
 import { AppScreen } from '../../components/common/UI';
 import { env } from '../../config/env';
+import { normalizeOnboardingAnswers } from '../../data/onboarding';
 import { trackEvent } from '../../services/analytics';
+import { computeGutScoreState } from '../../services/ai/scoring';
 import { useAppStore } from '../../store/useAppStore';
 import { spacing } from '../../theme';
 import { RootStackParamList } from '../../navigation/types';
-import { PaywallOfferContent } from './PaywallOfferContent';
+import { deriveStartingSuspects, hasCaseFileSignal } from '../../features/paywall/startingSuspects';
+import { PaywallOfferContent, type PaywallCaseFile } from './PaywallOfferContent';
 
 export function PaywallScreen() {
   const rootNavigation = useNavigation<NavigationProp<RootStackParamList>>();
   const billing = useAppStore((state) => state.billing);
   const selectPlan = useAppStore((state) => state.selectPlan);
+  const persistedAnswers = useAppStore((state) => state.onboardingAnswers);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [busyIntent, setBusyIntent] = useState<'subscribe' | 'restore' | null>(null);
+
+  // Same personalized case file the native paywall shows — the web preview
+  // must render the real hero, not the signed-out fallback.
+  const caseFile = useMemo<PaywallCaseFile | null>(() => {
+    const answers = normalizeOnboardingAnswers(persistedAnswers);
+    if (!hasCaseFileSignal(answers)) {
+      return null;
+    }
+
+    const startingGutScore = computeGutScoreState({
+      answers,
+      insights: [],
+      scans: [],
+      dailyReports: [],
+    });
+
+    return {
+      startingScore: startingGutScore.currentScore,
+      suspects: deriveStartingSuspects(answers, 3),
+      conditionCount: answers.conditions.length + answers.customConditions.length,
+    };
+  }, [persistedAnswers]);
 
   useEffect(() => {
     trackEvent('paywall_viewed', { surface: 'web_preview' });
@@ -37,6 +63,7 @@ export function PaywallScreen() {
         selectedPlan={billing.selectedPlan}
         busy={busyIntent !== null}
         statusMessage={statusMessage}
+        caseFile={caseFile}
         onSelectPlan={selectPlan}
         onContinue={() => void openPaywall('subscribe')}
         onRestore={() => void openPaywall('restore')}
@@ -46,6 +73,7 @@ export function PaywallScreen() {
         onPrivacy={() => {
           void openLegalSurface(env.privacyUrl, () => rootNavigation.navigate('LegalDocument', { document: 'privacy' }));
         }}
+        onScience={() => rootNavigation.navigate('LegalDocument', { document: 'science' })}
       />
     </AppScreen>
   );

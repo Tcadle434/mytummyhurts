@@ -1,0 +1,61 @@
+/* Standalone sheet for privacy.html / terms.html. These pages ship zero JS so
+   the App-Store-referenced URLs can never break from a bundle regression. */
+@import '@fontsource-variable/figtree';
+@import '@fontsource-variable/bricolage-grotesque';
+
+:root {
+  --ink: #1a2e26;
+  --ink-soft: #57635d;
+  --evergreen: #12402f;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #ffffff;
+  color: var(--ink);
+  font-family: 'Figtree Variable', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.legal-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 72px 24px 96px;
+  line-height: 1.65;
+}
+
+.legal-page h1 {
+  font-family: 'Bricolage Grotesque Variable', sans-serif;
+  font-weight: 800;
+  font-size: 34px;
+  letter-spacing: -0.02em;
+  color: var(--evergreen);
+}
+
+.legal-page .updated {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.legal-page h2 {
+  font-family: 'Bricolage Grotesque Variable', sans-serif;
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  margin-top: 36px;
+}
+
+.legal-page p { margin-top: 10px; font-size: 15px; }
+
+.legal-page .back {
+  display: inline-block;
+  margin-top: 48px;
+  color: var(--evergreen);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.legal-page .back:hover { text-decoration: underline; }
