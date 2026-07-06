@@ -104,6 +104,40 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
           return;
         }
 
+        // Heal BEFORE fetching home: the initial sync races RevenueCat
+        // entitlement, so a fresh account can reach the app with its
+        // onboarding answers still only on the device — the server would
+        // score a blank profile and the first Home paint would show an
+        // unpersonalized number. Push the answers first so the home response
+        // below is already personalized. If entitlement still hasn't
+        // resolved, updateProfile fails subscription-gated and getHome's own
+        // handling routes to the paywall; the flag stays unset so the next
+        // refresh retries.
+        if (!state.onboardingProfileSynced && hasOnboardingAnswerContent(state)) {
+          try {
+            const profileResponse = await apiClient.updateProfile(buildOnboardingProfileRequest(state));
+            set((currentState) => {
+              const nextInsights = profileResponse.insights ?? currentState.insights ?? [];
+              return {
+                profile: profileWithGutScoreFallback(profileResponse.profile ?? currentState.profile, currentState, nextInsights),
+                insights: nextInsights,
+                conditionInsights: profileResponse.conditionInsights ?? currentState.conditionInsights ?? [],
+                billing: profileResponse.billing ?? currentState.billing,
+                onboardingProfileSynced: true,
+              };
+            });
+            trackEvent('onboarding_profile_heal_pushed', {});
+            await queryClient.invalidateQueries({ queryKey: queryKeys.insights });
+          } catch (error) {
+            if (!isSubscriptionRequiredError(error)) {
+              set({
+                serverSyncError:
+                  error instanceof Error ? error.message : 'Your profile could not be synced.',
+              });
+            }
+          }
+        }
+
         let homeResponse: HomeResponse;
         try {
           homeResponse = await apiClient.getHome();
@@ -125,39 +159,6 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
         queryClient.setQueryData(queryKeys.home, normalizedHomeResponse);
         patchDailyReportsInHistoryCache(normalizedHomeResponse.dailyReports);
         set((currentState) => homeResponseStatePatch(currentState, normalizedHomeResponse));
-
-        // Heal: the initial sync races RevenueCat entitlement, so a fresh
-        // account can reach the app with its onboarding answers still only on
-        // the device (the server then scores a blank profile). getHome
-        // succeeding proves entitlement — push the answers once, now.
-        const postState = get();
-        if (!postState.onboardingProfileSynced && hasOnboardingAnswerContent(postState)) {
-          try {
-            const profileResponse = await apiClient.updateProfile(buildOnboardingProfileRequest(postState));
-            set((currentState) => {
-              const nextInsights = profileResponse.insights ?? currentState.insights ?? [];
-              return {
-                profile: profileWithGutScoreFallback(profileResponse.profile ?? currentState.profile, currentState, nextInsights),
-                insights: nextInsights,
-                conditionInsights: profileResponse.conditionInsights ?? currentState.conditionInsights ?? [],
-                billing: profileResponse.billing ?? currentState.billing,
-                onboardingProfileSynced: true,
-              };
-            });
-            trackEvent('onboarding_profile_heal_pushed', {});
-            await Promise.all([
-              queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
-              queryClient.invalidateQueries({ queryKey: queryKeys.home }),
-            ]);
-          } catch (error) {
-            // Leave the flag unset so the next refresh retries; surface the
-            // failure instead of swallowing it.
-            set({
-              serverSyncError:
-                error instanceof Error ? error.message : 'Your profile could not be synced.',
-            });
-          }
-        }
       },
       syncInitialAccountState: async () => {
         const state = get();
