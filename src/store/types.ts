@@ -15,6 +15,10 @@ export type AppStoreState = {
   insights: IngredientInsight[];
   conditionInsights: ConditionIngredientInsight[];
   initialServerSyncNeeded: boolean;
+  /** True once this device's onboarding answers have landed on the server.
+   * The initial sync races RevenueCat entitlement, so the push retries from
+   * refreshRemoteState until it succeeds — this flag makes it one-time. */
+  onboardingProfileSynced: boolean;
   serverSyncInFlight: boolean;
   serverSyncError: string | null;
   learningSyncInFlight: boolean;

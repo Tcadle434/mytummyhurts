@@ -463,7 +463,7 @@ function mostRecentDailyReport(reports: DailyGutReport[]) {
 
 export function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
   AppStoreState,
-  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'learningSyncInFlight' | 'learningSyncRequestId' | 'learningSyncError' | 'learningSyncSource' | 'initialServerSyncNeeded' | 'onboardingStage'
+  'authUser' | 'profile' | 'billing' | 'scans' | 'dailyReports' | 'insights' | 'conditionInsights' | 'remoteDataLoaded' | 'serverSyncError' | 'serverSyncInFlight' | 'learningSyncInFlight' | 'learningSyncRequestId' | 'learningSyncError' | 'learningSyncSource' | 'initialServerSyncNeeded' | 'onboardingProfileSynced' | 'onboardingStage'
 > {
   return {
     authUser: null,
@@ -484,6 +484,7 @@ export function clearRemoteState(keepSelectedPlan: SubscriptionPlan): Pick<
     learningSyncError: null,
     learningSyncSource: null,
     initialServerSyncNeeded: false,
+    onboardingProfileSynced: false,
     onboardingStage: 'auth',
   };
 }

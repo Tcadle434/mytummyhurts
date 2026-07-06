@@ -11,6 +11,48 @@ import { queryKeys } from '../../services/query/keys';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
 import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, patchProfileRequestInInsightsCache, apiErrorCode, profileWithGutScoreFallback, normalizeHomeResponse } from '../helpers';
 
+// The onboarding answers as an updateProfile request. One builder so the
+// initial sync and the refresh-time heal push identical payloads.
+function buildOnboardingProfileRequest(state: AppStoreState) {
+  return {
+    onboardingAnswers: {
+      displayName: state.onboardingAnswers.displayName.trim() || null,
+      conditions: state.onboardingAnswers.conditions,
+      customConditions: state.onboardingAnswers.customConditions,
+      ingredientSensitivities: state.onboardingAnswers.ingredientSensitivities,
+      customIngredientSensitivities: state.onboardingAnswers.customIngredientSensitivities,
+      foodCalibrations: state.onboardingAnswers.foodCalibrations ?? {},
+      lastBadMealText: state.onboardingAnswers.lastBadMealText?.trim() || undefined,
+      symptoms: state.onboardingAnswers.symptoms,
+      customSymptoms: state.onboardingAnswers.customSymptoms ?? [],
+      symptomFrequency: state.onboardingAnswers.symptomFrequency,
+      symptomSeverityBaseline: state.onboardingAnswers.symptomSeverityBaseline,
+      mealContexts: state.onboardingAnswers.mealContexts,
+      motivation: getOnboardingMotivationSummary(state.onboardingAnswers),
+      currentEatingPatterns: state.onboardingAnswers.currentEatingPatterns ?? [],
+      lifestyleFactors: state.onboardingAnswers.lifestyleFactors ?? [],
+      favoriteFoodsToReintroduce: state.onboardingAnswers.favoriteFoodsToReintroduce ?? '',
+      dietPreferenceKeys: state.onboardingAnswers.dietPreferenceKeys ?? [],
+    },
+  };
+}
+
+// Only push answers that carry signal — a reinstalled device with a blank
+// local store must never overwrite a populated server profile.
+function hasOnboardingAnswerContent(state: AppStoreState) {
+  const answers = state.onboardingAnswers;
+  return Boolean(
+    answers.conditions.length ||
+      answers.customConditions.length ||
+      answers.ingredientSensitivities.length ||
+      answers.customIngredientSensitivities.length ||
+      answers.symptoms.length ||
+      (answers.customSymptoms ?? []).length ||
+      answers.symptomFrequency ||
+      answers.symptomSeverityBaseline,
+  );
+}
+
 export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
   'syncAuthUser' | 'completeAuthSetup' | 'applyBillingState' | 'applyHomeResponse' | 'refreshRemoteState' | 'syncInitialAccountState' | 'updateProfileSettings' | 'signOut'
@@ -83,6 +125,39 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
         queryClient.setQueryData(queryKeys.home, normalizedHomeResponse);
         patchDailyReportsInHistoryCache(normalizedHomeResponse.dailyReports);
         set((currentState) => homeResponseStatePatch(currentState, normalizedHomeResponse));
+
+        // Heal: the initial sync races RevenueCat entitlement, so a fresh
+        // account can reach the app with its onboarding answers still only on
+        // the device (the server then scores a blank profile). getHome
+        // succeeding proves entitlement — push the answers once, now.
+        const postState = get();
+        if (!postState.onboardingProfileSynced && hasOnboardingAnswerContent(postState)) {
+          try {
+            const profileResponse = await apiClient.updateProfile(buildOnboardingProfileRequest(postState));
+            set((currentState) => {
+              const nextInsights = profileResponse.insights ?? currentState.insights ?? [];
+              return {
+                profile: profileWithGutScoreFallback(profileResponse.profile ?? currentState.profile, currentState, nextInsights),
+                insights: nextInsights,
+                conditionInsights: profileResponse.conditionInsights ?? currentState.conditionInsights ?? [],
+                billing: profileResponse.billing ?? currentState.billing,
+                onboardingProfileSynced: true,
+              };
+            });
+            trackEvent('onboarding_profile_heal_pushed', {});
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+              queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+            ]);
+          } catch (error) {
+            // Leave the flag unset so the next refresh retries; surface the
+            // failure instead of swallowing it.
+            set({
+              serverSyncError:
+                error instanceof Error ? error.message : 'Your profile could not be synced.',
+            });
+          }
+        }
       },
       syncInitialAccountState: async () => {
         const state = get();
@@ -121,27 +196,7 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
             return;
           }
 
-          const profileResponse = await apiClient.updateProfile({
-            onboardingAnswers: {
-              displayName: state.onboardingAnswers.displayName.trim() || null,
-              conditions: state.onboardingAnswers.conditions,
-              customConditions: state.onboardingAnswers.customConditions,
-              ingredientSensitivities: state.onboardingAnswers.ingredientSensitivities,
-              customIngredientSensitivities: state.onboardingAnswers.customIngredientSensitivities,
-              foodCalibrations: state.onboardingAnswers.foodCalibrations ?? {},
-              lastBadMealText: state.onboardingAnswers.lastBadMealText?.trim() || undefined,
-              symptoms: state.onboardingAnswers.symptoms,
-              customSymptoms: state.onboardingAnswers.customSymptoms ?? [],
-              symptomFrequency: state.onboardingAnswers.symptomFrequency,
-              symptomSeverityBaseline: state.onboardingAnswers.symptomSeverityBaseline,
-              mealContexts: state.onboardingAnswers.mealContexts,
-              motivation: getOnboardingMotivationSummary(state.onboardingAnswers),
-              currentEatingPatterns: state.onboardingAnswers.currentEatingPatterns ?? [],
-              lifestyleFactors: state.onboardingAnswers.lifestyleFactors ?? [],
-              favoriteFoodsToReintroduce: state.onboardingAnswers.favoriteFoodsToReintroduce ?? '',
-              dietPreferenceKeys: state.onboardingAnswers.dietPreferenceKeys ?? [],
-            },
-          });
+          const profileResponse = await apiClient.updateProfile(buildOnboardingProfileRequest(state));
 
           set((currentState) => {
             const nextBilling = profileResponse.billing ?? currentState.billing;
@@ -152,6 +207,7 @@ export function createAccountActions(set: AppStoreSet, get: AppStoreGet): Pick<
               conditionInsights: profileResponse.conditionInsights ?? currentState.conditionInsights ?? [],
               billing: nextBilling,
               initialServerSyncNeeded: false,
+              onboardingProfileSynced: true,
               serverSyncInFlight: false,
               serverSyncError: null,
               remoteDataLoaded: false,
