@@ -11,12 +11,17 @@ const config = getDefaultConfig(__dirname);
 config.resolver.unstable_enablePackageExports = false;
 config.resolver.useWatchman = false;
 
-// Keep the NestJS backend (server/) out of the React Native bundle graph. It
-// imports Node-only packages (@nestjs/*, pg, etc.) that must never be crawled
-// or bundled by Metro. Preserve any blockList the default Expo config set.
-const serverBlock = /[\\/]server[\\/].*/;
-// web/ hosts standalone web projects (landing page) with their own node_modules.
-const webBlock = /[\\/]web[\\/].*/;
+// Keep the NestJS backend (server/) and standalone web projects (web/) out of
+// the React Native bundle graph. They import Node-only packages that must
+// never be crawled by Metro. The patterns are anchored to the PROJECT ROOT:
+// an unanchored /[\\/]web[\\/]/ also matches package-internal folders like
+// node_modules/@shopify/react-native-skia/src/skia/web/ and breaks release
+// bundles ("Unable to resolve ./skia/web/JsiSkImage" during Archive).
+const escapeForRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const rootDirBlock = (dirName) =>
+  new RegExp(`^${escapeForRegExp(path.join(__dirname, dirName))}[\\/].*`);
+const serverBlock = rootDirBlock('server');
+const webBlock = rootDirBlock('web');
 config.resolver.blockList = config.resolver.blockList
   ? [].concat(config.resolver.blockList, serverBlock, webBlock)
   : [serverBlock, webBlock];
