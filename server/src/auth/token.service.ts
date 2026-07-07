@@ -54,6 +54,16 @@ export class TokenService {
     };
   }
 
+  /** A signed token is not enough: the account must still exist. Otherwise a
+   * deleted user keeps a working "ghost" session until the access TTL runs
+   * out, calling APIs against rows that no longer exist. */
+  async accessUserExists(userId: string): Promise<boolean> {
+    return this.db.service(async (sql) => {
+      const rows = await sql`select 1 from public.users where id = ${userId} limit 1`;
+      return rows.length > 0;
+    });
+  }
+
   private sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
   }

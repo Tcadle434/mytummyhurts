@@ -29,6 +29,9 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const claims = await this.tokens.verifyAccess(header.slice(7));
+      if (!(await this.tokens.accessUserExists(claims.sub))) {
+        throw new UnauthorizedException('unauthorized');
+      }
       req.user = { id: claims.sub, email: claims.email, provider: claims.provider };
       return true;
     } catch {
