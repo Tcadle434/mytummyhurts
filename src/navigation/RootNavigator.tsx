@@ -1,6 +1,7 @@
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useEffect } from 'react';
 
 import { CustomTabBar } from './CustomTabBar';
 import { MainTabParamList, OnboardingStackParamList, RootStackParamList } from './types';
@@ -45,6 +46,24 @@ function getInitialOnboardingRoute(onboardingStage: OnboardingStage): keyof Onbo
 function OnboardingNavigator({ initialRouteOverride }: { initialRouteOverride?: keyof OnboardingStackParamList }) {
   const onboardingStage = useAppStore((state) => state.onboardingStage);
   const initialRouteName = initialRouteOverride ?? getInitialOnboardingRoute(onboardingStage);
+
+  // The key-remount below normally realigns the stack when the stage changes,
+  // but a remount can be missed when the stage flips mid-auth (seen live:
+  // completeAuthSetup set 'paywall' while sign-out races from a dying session
+  // were still landing, and the user stayed on the auth screen). The stage is
+  // authoritative and persisted, so enforce it: if the paywall gate is the
+  // target and the focused route disagrees, navigate explicitly. Scoped to
+  // the paywall only — other routes (e.g. OnboardingSignIn) are legitimate
+  // detours within their stage.
+  useEffect(() => {
+    if (initialRouteName !== 'OnboardingPaywall' || !navigationRef.isReady()) {
+      return;
+    }
+    const currentRoute = navigationRef.getCurrentRoute()?.name;
+    if (currentRoute && currentRoute !== 'OnboardingPaywall') {
+      navigationRef.navigate('OnboardingStack', { screen: 'OnboardingPaywall' });
+    }
+  }, [initialRouteName]);
 
   return (
     <OnboardingStack.Navigator
