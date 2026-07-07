@@ -1,84 +1,85 @@
 {
-	"expo": {
-		"name": "MyTummyHurts",
-		"slug": "mytummyhurts",
-		"version": "1.0.0",
-		"orientation": "portrait",
-		"scheme": "mytummyhurts",
-		"icon": "./assets/icon.png",
-		"userInterfaceStyle": "light",
-		"splash": {
-			"image": "./assets/splash-icon.png",
-			"resizeMode": "contain",
-			"backgroundColor": "#f5efe3"
-		},
-		"ios": {
-			"supportsTablet": false,
-			"bundleIdentifier": "com.thomascadle.mytummyhurts",
-			"infoPlist": {
-				"NSCameraUsageDescription": "MyTummyHurts uses your camera to scan meals before you eat them.",
-				"NSPhotoLibraryUsageDescription": "MyTummyHurts uses your photo library so you can upload meal photos.",
-				"NSUserNotificationsUsageDescription": "MyTummyHurts uses notifications to follow up on scanned meals at the right time."
-			},
-			"privacyManifests": {
-				"NSPrivacyAccessedAPITypes": [
-					{
-						"NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-						"NSPrivacyAccessedAPITypeReasons": [
-							"CA92.1"
-						]
-					},
-					{
-						"NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
-						"NSPrivacyAccessedAPITypeReasons": [
-							"C617.1"
-						]
-					},
-					{
-						"NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
-						"NSPrivacyAccessedAPITypeReasons": [
-							"35F9.1"
-						]
-					},
-					{
-						"NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
-						"NSPrivacyAccessedAPITypeReasons": [
-							"E174.1"
-						]
-					}
-				]
-			}
-		},
-		"android": {
-			"adaptiveIcon": {
-				"backgroundColor": "#e2eee5",
-				"foregroundImage": "./assets/android-icon-foreground.png",
-				"backgroundImage": "./assets/android-icon-background.png",
-				"monochromeImage": "./assets/android-icon-monochrome.png"
-			},
-			"predictiveBackGestureEnabled": false
-		},
-		"web": {
-			"favicon": "./assets/favicon.png"
-		},
-		"plugins": [
-			[
-				"expo-build-properties",
-				{
-					"ios": {
-						"deploymentTarget": "15.1"
-					}
-				}
-			],
-			"./plugins/with-expo-modules-jsi-cxx20",
-			"expo-secure-store",
-			"expo-image",
-			"expo-font",
-			"expo-notifications",
-			"expo-camera",
-			"expo-image-picker",
-			"expo-video",
-			"@sentry/react-native/expo"
-		]
-	}
+  "expo": {
+    "name": "MyTummyHurts",
+    "slug": "mytummyhurts",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "mytummyhurts",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f5efe3"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.thomascadle.mytummyhurts",
+      "infoPlist": {
+        "NSCameraUsageDescription": "MyTummyHurts uses your camera to scan meals before you eat them.",
+        "NSPhotoLibraryUsageDescription": "MyTummyHurts uses your photo library so you can upload meal photos.",
+        "NSUserNotificationsUsageDescription": "MyTummyHurts uses notifications to follow up on scanned meals at the right time."
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1"
+            ]
+          }
+        ]
+      },
+      "buildNumber": "2"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#e2eee5",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ],
+      "./plugins/with-expo-modules-jsi-cxx20",
+      "expo-secure-store",
+      "expo-image",
+      "expo-font",
+      "expo-notifications",
+      "expo-camera",
+      "expo-image-picker",
+      "expo-video",
+      "@sentry/react-native/expo"
+    ]
+  }
 }
