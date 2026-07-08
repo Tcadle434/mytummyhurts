@@ -121,3 +121,23 @@ Typical shape for PE/SE roles at this stage of company:
 - Book the slot promptly — responsiveness is itself a signal for a client-facing role.
 
 Good luck. This role is basically "person who builds real integrations and can talk to humans about them" — which is what shipping this app solo demonstrates.
+
+---
+
+## 8. Hiring manager screen — draft answers
+
+**Walk me through your background (≤2 min):** full-stack engineer drawn to the seams between systems → shipped a consumer iOS app end-to-end (RN + NestJS/Postgres), favorite parts were the integrations (Apple/Google auth, RevenueCat webhook-driven billing sync, restores, reconciliation) → Partner Engineering is that work as the whole job.
+
+**Why Parafin (3 reasons):** distribution solved (Amazon/DoorDash/Walmart live, Goldman facility just closed) · integration surface is the full stack (data feeds, APIs, webhooks, embedded components) · personal reason [fill in].
+
+**Integration you owned end-to-end (STAR):** RevenueCat/StoreKit billing. Spend prep time on the Action section — one specific hard debugging moment, told as detective work across docs, dashboards, webhook logs. Result: production payments + regression tests gating billing paths.
+
+**Hard bug in code you didn't write:** Expo iOS pods incompatible with local Xcode → read pod source, wrote patch-package fixes, reproducible builds. Takeaway: third-party code isn't a black box.
+
+**Difficult stakeholder / explaining tech to non-tech:** [pick a real one tonight: their frustration → your translation → outcome]. If pressed on thin client-facing years: building a consumer product solo is continuous translation of technical constraints into user-facing decisions.
+
+**Questions for the HM:** partner load per engineer? hardest launch and why? where does PE influence roadmap? what separates great from fine in this role?
+
+**If Scala comes up:** haven't shipped it; routinely navigate unfamiliar code (patched vendored pods); comfortable learning in the codebase.
+
+**If integration design comes up:** four-pipe model — data in (underwriting), offers/UI out (embedded vs API vs hybrid), webhooks out (lifecycle events), repayment in (sales splits + reconciliation data stream).
