@@ -9,7 +9,7 @@ cd server
 cp .env.example .env          # fill secrets (OPENAI_API_KEY, etc.)
 docker compose up -d          # postgres+pgvector + minio
 npm install
-npm run db:migrate            # shim -> 39 supabase migrations -> auth/ai/rag/eval tables -> overrides
+npm run db:migrate            # shim -> numbered migrations -> auth/ai/rag/eval tables -> overrides
 npm run start:dev             # http://localhost:3000  (/healthz, /readyz)
 ```
 
@@ -22,11 +22,13 @@ npm run build && npm run eval -- --offline   # deterministic scoring goldens (0 
 
 ## Database migration model
 
-`scripts/migrate.mjs` replays, in order:
+`scripts/migrate.mjs` is the destructive local/CI reset tool. It rebuilds an empty database in this order:
 1. `db/00_selfhost_shim.sql` — compatibility shim. Redefines `auth.uid()` to read the `app.current_user_id` GUC, stubs `auth`/`storage` schemas + Supabase roles, enables `pgvector`. This is why the 39 existing Supabase migrations replay unchanged.
-2. `server/db/migrations/*.sql` — the 39-migration schema history (verbatim from the original project).
+2. `server/db/migrations/*.sql` - the numbered schema history.
 3. `db/10_selfhost_auth.sql`, `db/20_ai_rag_eval.sql` — new tables.
 4. `db/90_selfhost_overrides.sql` — app roles (`mth_app` under RLS, `mth_service` BYPASSRLS) + grants + `FORCE ROW LEVEL SECURITY`.
+
+Production uses `scripts/migrate-production.mjs`. It never drops schemas. On the first safe upgrade it verifies the known production baseline, bootstraps `public.schema_migrations`, and then applies only newer numbered migrations in transactions. Every applied filename and SHA-256 checksum is recorded, and deployment stops if an applied migration was edited later. Use `migrate.mjs` against production only when intentionally provisioning a brand-new empty database.
 
 ## Production deploy
 
@@ -48,8 +50,8 @@ cd server
 cp .env.example .env          # production secrets; set POSTGRES_PASSWORD, S3_*, JWT_ACCESS_SECRET, ADMIN_API_SECRET
 # Edit Caddyfile -> your real API domain.
 docker compose -f docker-compose.prod.yml up -d --build
-# Build the schema on the prod DB (replays server/db/migrations + self-host SQL):
-DATABASE_ADMIN_URL=postgres://mth:...@<vps-db>:5432/mth node server/scripts/migrate.mjs
+# Apply only pending production migrations without deleting data:
+DATABASE_ADMIN_URL=postgres://mth:...@<vps-db>:5432/mth node server/scripts/migrate-production.mjs
 ```
 
 Stack: Caddy (TLS) → `api` (NestJS, worker in-process) → `postgres` (pgvector) + `minio`. Redis/BullMQ is the documented scale-up path for multi-instance.

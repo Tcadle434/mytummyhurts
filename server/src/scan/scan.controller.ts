@@ -1,9 +1,10 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { IsArray, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
 import { ScanAnalysisService } from './scan-analysis.service';
+import { ScanAnalysisWorker } from './scan-analysis.worker';
 import { ScanCrudService } from './scan-crud.service';
 import { ScanProgressService } from './scan-progress.service';
 
@@ -13,9 +14,9 @@ const AI_HEAVY = { default: { limit: 20, ttl: 60_000 } };
 export class AnalyzeImageDto {
   @IsString() requestId!: string;
   @IsOptional() @IsString() imageDataUrl?: string;
-  @IsOptional() @IsArray() imageDataUrls?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(8) @IsString({ each: true }) imageDataUrls?: string[];
   @IsOptional() @IsString() imagePath?: string;
-  @IsOptional() @IsArray() imagePaths?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(8) @IsString({ each: true }) imagePaths?: string[];
   @IsOptional() @IsArray() thumbnailImagePaths?: (string | null)[];
   @IsOptional() @IsString() sourceType?: string;
   @IsOptional() @IsIn(['food', 'menu', 'grocery']) scanCategory?: 'food' | 'menu' | 'grocery';
@@ -33,6 +34,10 @@ class AnalyzeBarcodeDto {
 }
 
 class ScanIdDto {
+  @IsString() scanId!: string;
+}
+
+class ScanAnalysisResultDto {
   @IsString() scanId!: string;
 }
 
@@ -85,6 +90,7 @@ export class ScanController {
     private readonly analysis: ScanAnalysisService,
     private readonly crud: ScanCrudService,
     private readonly progress: ScanProgressService,
+    private readonly analysisWorker: ScanAnalysisWorker,
   ) {}
 
   @Throttle(AI_HEAVY)
@@ -104,6 +110,24 @@ export class ScanController {
   }
 
   @Throttle(AI_HEAVY)
+  @Post('scan-analysis-start')
+  async startImageAnalysis(@CurrentUser() user: AuthUser, @Body() dto: AnalyzeImageDto) {
+    const normalized = normalizeAnalyzeImageDto(dto);
+    const result = await this.analysis.startImage({
+      userId: user.id,
+      requestId: dto.requestId,
+      imageDataUrls: normalized.imageDataUrls,
+      imagePaths: normalized.imagePaths,
+      sourceType: dto.sourceType,
+      scanCategory: dto.scanCategory,
+      localDate: dto.localDate,
+      timezone: dto.timezone,
+    });
+    this.analysisWorker.kick();
+    return result;
+  }
+
+  @Throttle(AI_HEAVY)
   @Post('scan-analyze-barcode')
   analyzeBarcode(@CurrentUser() user: AuthUser, @Body() dto: AnalyzeBarcodeDto) {
     return this.analysis.analyzeBarcode({
@@ -115,8 +139,28 @@ export class ScanController {
     });
   }
 
-  // Lightweight display-only progress for the analyzing screen; the blocking
-  // analyze request stays the source of truth for completion.
+  @Throttle(AI_HEAVY)
+  @Post('scan-barcode-analysis-start')
+  async startBarcodeAnalysis(@CurrentUser() user: AuthUser, @Body() dto: AnalyzeBarcodeDto) {
+    const result = await this.analysis.startBarcode({
+      userId: user.id,
+      requestId: dto.requestId,
+      barcode: dto.barcode,
+      sourceType: dto.sourceType,
+      localDate: dto.localDate,
+      timezone: dto.timezone,
+    });
+    this.analysisWorker.kick();
+    return result;
+  }
+
+  @Post('scan-analysis-result')
+  analysisResult(@CurrentUser() user: AuthUser, @Body() dto: ScanAnalysisResultDto) {
+    return this.analysis.getResult(user.id, dto.scanId);
+  }
+
+  // Lightweight display-only progress for the analyzing screen. The durable
+  // result endpoint stays the source of truth for completion.
   @Post('scan-progress')
   scanProgress(@CurrentUser() user: AuthUser, @Body() dto: ScanProgressDto) {
     return this.progress.getProgress(user.id, dto.requestId);

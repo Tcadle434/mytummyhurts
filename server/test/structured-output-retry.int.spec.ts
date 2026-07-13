@@ -82,6 +82,40 @@ function menuPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function menuTranscription(overrides: Record<string, unknown> = {}) {
+  const full = menuPayload();
+  return {
+    isMenu: full.isMenu,
+    notMenuReason: full.notMenuReason,
+    menuTitle: full.menuTitle,
+    menuConfidence: full.menuConfidence,
+    items: full.items.map(({ id, name, description, section, price }) => ({
+      id,
+      name,
+      description,
+      section,
+      price,
+    })),
+    ...overrides,
+  };
+}
+
+function menuAnalysisBatch() {
+  const item = menuPayload().items[0];
+  return {
+    items: [{
+      id: item.id,
+      baseFoodCategory: item.baseFoodCategory,
+      riskModifiers: item.riskModifiers,
+      conditionSeverities: [{ condition: 'general', band: 'none', drivers: [] }],
+      dietFitHypotheses: item.dietFitHypotheses,
+      ingredientCallouts: item.ingredientCallouts,
+      prepStyle: item.prepStyle,
+      confidence: item.confidence,
+    }],
+  };
+}
+
 function riskAdjudicationCondition(condition: string) {
   return {
     condition,
@@ -206,11 +240,12 @@ describe('structured output retries', () => {
   it('regenerates a menu with a blank critical item identifier', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     vi.resetModules();
-    const invalidItem = { ...menuPayload().items[0], id: '   ' };
+    const invalidItem = { ...menuTranscription().items[0], id: '   ' };
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(responseWithOutput(menuPayload({ items: [invalidItem] }), 'resp-menu-invalid'))
-      .mockResolvedValueOnce(responseWithOutput(menuPayload(), 'resp-menu-valid'));
+      .mockResolvedValueOnce(responseWithOutput(menuTranscription({ items: [invalidItem] }), 'resp-menu-invalid'))
+      .mockResolvedValueOnce(responseWithOutput(menuTranscription(), 'resp-menu-valid'))
+      .mockResolvedValueOnce(responseWithOutput(menuAnalysisBatch(), 'resp-menu-analysis'));
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { extractMenuFromImagesWithAudit } = await import('../src/scan/engine/openai');
@@ -220,7 +255,7 @@ describe('structured output retries', () => {
       knownIngredients: [],
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(result.result.items[0]).toMatchObject({ id: 'item-1', name: 'Rice bowl' });
     expect(result.audits[0]?.requestMetadata).toMatchObject({ attemptCount: 2 });
   });

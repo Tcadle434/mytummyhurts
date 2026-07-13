@@ -171,6 +171,50 @@ export function buildMenuUserPrompt(context: ExtractionContext & { pageCount: nu
     .join('\n');
 }
 
+export function buildMenuTranscriptionSystemPrompt() {
+  return `You transcribe restaurant menu images into compact structured text. Return only JSON matching the provided schema. This stage is OCR and layout parsing only. Do not assess digestive risk, diets, or health. Read every column and section from top-left to bottom-right. Include every visible orderable food or drink item, including short rows, sides, add-ons, and items without descriptions or prices. Preserve the printed name, section, price, and a concise description of at most 12 words. Never merge neighboring rows. Extract at most ${MENU_ITEM_LIMIT} items and always return complete valid JSON.`;
+}
+
+export function buildMenuTranscriptionUserPrompt(pageIndex: number, totalPageCount: number) {
+  return [
+    `Transcribe menu page ${pageIndex + 1} of ${totalPageCount}.`,
+    'Assign stable short item identifiers unique within this page.',
+    'If this is not a restaurant menu or food item list, set isMenu false and return no items.',
+    'Return JSON matching the response schema.',
+  ].join('\n');
+}
+
+export interface MenuAnalysisPromptItem {
+  id: string;
+  name: string;
+  description: string | null;
+  section: string | null;
+}
+
+export function buildMenuAnalysisSystemPrompt() {
+  return `You analyze a bounded batch of already-transcribed restaurant menu items. Return only JSON matching the provided schema and exactly one result for every supplied item identifier. Use the printed text plus strong common culinary knowledge to identify the base food category, the five strongest risk modifiers, 0-3 ingredient callouts, and up to four prep cues. The LLM is responsible for the food interpretation and condition severity judgment for every item. Do not output numeric scores. Keep evidence sources short and do not make guaranteed allergy, celiac, or medical safety claims.
+
+${buildMenuRubricPromptText()}`;
+}
+
+export function buildMenuAnalysisUserPrompt(
+  items: MenuAnalysisPromptItem[],
+  context: ExtractionContext,
+) {
+  return [
+    'Analyze every menu item in this batch.',
+    `Menu items: ${JSON.stringify(items)}`,
+    knownIngredientsPromptLine(context),
+    MENU_LLM_BANDS
+      ? conditionPromptText(context.knownConditions, { includeRationale: false })
+      : 'Return an empty conditionSeverities array for every item.',
+    dietPromptText(context.dietPreferences ?? []),
+    'Return the exact supplied item identifiers, once each, in any order.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function buildTextSystemPrompt(includeBands: boolean) {
   return `You are ${PROMPT_VERSION}. Analyze a meal description for food recognition only. Return only JSON matching the provided schema. Use canonical ingredient names in singular lowercase when possible. Ingredient canonicalName values must be actual food or ingredient names, never rubric category keys such as spicy_heat, dairy_based, lean_meat_poultry, or wheat_grain_based; put those classifications only in baseFoodCategory or riskModifiers. Separate explicit ingredients from inferred ingredients conservatively. ${INGREDIENT_FIELDS_RULE} Ground everything in what the description actually states or what is a defining, standard component of the named dish. ${HEDGED_EXISTENCE_RULE} For whole foods and simple single-ingredient dishes, return the minimal ingredient set and an empty riskModifiers array unless a risk is unmistakably present. Classify the meal into exactly one baseFoodCategory and 0-10 riskModifiers from the controlled rubric below. If diet goals are provided, include dietFitHypotheses as food-fact hypotheses only. If no diet goals are provided, return dietFitHypotheses as an empty array. For text descriptions, set clarity to clear when the user provides a recognizable meal, menu item, or ingredient list, even if some ingredient placement is ambiguous; capture that ambiguity in notes instead. Set clarity to unclear only when the text is not a food/meal description or lacks enough usable food detail. ${foodBandsSystemLine(includeBands)} Do not provide medical advice or a final numeric risk score.
 

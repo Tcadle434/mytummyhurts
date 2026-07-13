@@ -1,6 +1,8 @@
 import { isLiveBackendConfigured } from '../../config/env';
 import { trackEvent } from '../../services/analytics';
 import { apiClient } from '../../services/api/client';
+import { ApiError } from '../../services/api/errors';
+import type { ScanAnalysisStartResponse } from '../../services/api/contracts';
 import { isEntitledSubscriptionStatus } from '../../features/access/appAccess';
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
@@ -22,9 +24,54 @@ import {
   removeScanFromHistoryCache,
 } from '../queryCacheHelpers';
 
+const SCAN_RESULT_POLL_INTERVAL_MS = 2_500;
+const SCAN_RESULT_WAIT_TIMEOUT_MS = 15 * 60_000;
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForScanAnalysis(start: ScanAnalysisStartResponse) {
+  const deadline = Date.now() + SCAN_RESULT_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const snapshot = await apiClient.getScanAnalysisResult(start.scanId);
+      if (snapshot.status === 'completed' && snapshot.result) {
+        return { ...snapshot.result, deduped: start.deduped };
+      }
+      if (snapshot.status === 'failed') {
+        throw new ApiError(
+          snapshot.error?.message ?? 'The AI service could not complete the scan. Please try again.',
+          {
+            code: snapshot.error?.code ?? 'ai_request_failed',
+            details: { terminalScanFailure: true },
+          },
+        );
+      }
+    } catch (error) {
+      if (
+        error instanceof ApiError
+        && (
+          error.details?.terminalScanFailure === true
+          || error.status === 400
+          || error.status === 401
+          || error.status === 403
+          || error.status === 404
+        )
+      ) {
+        throw error;
+      }
+    }
+    await wait(SCAN_RESULT_POLL_INTERVAL_MS);
+  }
+  throw new ApiError('The scan is still taking longer than expected. Please try again.', {
+    code: 'request_timeout',
+  });
+}
+
 export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
-  'updateScanConsumption' | 'cacheScanRecord' | 'analyzeScanInput' | 'deleteScanRecord'
+  'updateScanConsumption' | 'cacheScanRecord' | 'analyzeScanInput' | 'resumeActiveScanAnalysis' | 'deleteScanRecord'
 > {
   const refreshScanLearning = (scanId: string, eventType: string) => {
     if (!isLiveBackendConfigured || !get().authUser) {
@@ -74,6 +121,52 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
   };
 
   return {
+      resumeActiveScanAnalysis: async () => {
+        const state = get();
+        const active = state.activeScanAnalysis;
+        if (!active || state.scanAnalysisInFlight || !state.authUser || !isLiveBackendConfigured) {
+          return;
+        }
+        set({ scanAnalysisInFlight: true });
+        try {
+          const response = await waitForScanAnalysis(active);
+          set((currentState) => {
+            const nextInsights = response.insights ?? currentState.insights;
+            return {
+              scans: mergeById(currentState.scans, response.scan),
+              billing: response.billing,
+              profile: profileWithGutScoreFallback(
+                response.profile ?? currentState.profile,
+                currentState,
+                nextInsights,
+              ),
+              insights: nextInsights,
+              conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+              activeScanAnalysis: null,
+              scanAnalysisInFlight: false,
+            };
+          });
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.history }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.home }),
+          ]);
+          showToast({
+            message: 'Your scan is ready',
+            detail: 'You can open it from your recent scans.',
+            tone: 'success',
+          });
+          if (response.learningSyncStatus === 'queued') {
+            refreshScanLearning(response.scanId, 'scan_analyzed');
+          }
+        } catch (error) {
+          const terminal = error instanceof ApiError && error.details?.terminalScanFailure === true;
+          set({
+            scanAnalysisInFlight: false,
+            ...(terminal ? { activeScanAnalysis: null } : {}),
+          });
+        }
+      },
       updateScanConsumption: async ({ scanId, consumptionStatus, consumedMenuItemSourceIds, consumptionPortion }) => {
         const nextStatus = consumptionStatus ?? (consumedMenuItemSourceIds?.length ? 'consumed' : undefined);
         if (nextStatus) {
@@ -150,6 +243,7 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
           }
 
           try {
+            set({ scanAnalysisInFlight: true });
             const imageDataUrls = payload.imageDataUrls?.length
               ? payload.imageDataUrls
               : payload.imageDataUrl
@@ -157,8 +251,8 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
                 : [];
             // The backend persists inline images to object storage (MinIO/S3) and
             // returns the stored imagePath — the client no longer uploads directly.
-            const response = payload.barcode?.trim()
-              ? await apiClient.analyzeBarcode({
+            const start = payload.barcode?.trim()
+              ? await apiClient.startBarcodeAnalysis({
                   requestId,
                   barcode: payload.barcode.trim(),
                   sourceType: payload.sourceType,
@@ -166,14 +260,16 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
                   localDate,
                   timezone,
                 })
-                : await apiClient.analyzeImage({
-                    requestId,
-                    imageDataUrls,
-                    sourceType: payload.sourceType,
-                    scanCategory: requestedScanCategory,
-                    localDate,
-                    timezone,
-                  });
+              : await apiClient.startImageAnalysis({
+                  requestId,
+                  imageDataUrls,
+                  sourceType: payload.sourceType,
+                  scanCategory: requestedScanCategory,
+                  localDate,
+                  timezone,
+                });
+            set({ activeScanAnalysis: start });
+            const response = await waitForScanAnalysis(start);
 
             set((currentState) => {
               const nextInsights = response.insights ?? currentState.insights;
@@ -183,6 +279,8 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
                 profile: profileWithGutScoreFallback(response.profile ?? currentState.profile, currentState, nextInsights),
                 insights: nextInsights,
                 conditionInsights: response.conditionInsights ?? currentState.conditionInsights,
+                activeScanAnalysis: null,
+                scanAnalysisInFlight: false,
               };
             });
             await Promise.all([
@@ -206,6 +304,11 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
 
             return { scanId: response.scanId };
           } catch (error) {
+            const terminal = error instanceof ApiError && error.details?.terminalScanFailure === true;
+            set({
+              scanAnalysisInFlight: false,
+              ...(terminal ? { activeScanAnalysis: null } : {}),
+            });
             trackEvent('scan_analysis_failed', {
               request_id: requestId,
               source_type: payload.sourceType,

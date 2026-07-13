@@ -494,23 +494,43 @@ async function runSingleScan(session, scanCase, imageUrls, expectation, runIndex
   // (begin_scan_analysis returns failed_existing), so a retry must be a
   // genuinely new request or it just replays the original failure.
   const requestId = `eval-${runId}-${scanCase.id}-${expectation.profile}-${runIndex + 1}-a${attempt}`;
-  if (scanCase.barcode) {
-    return session.post('scan-analyze-barcode', {
-      requestId,
-      barcode: scanCase.barcode,
-      sourceType: 'barcode',
-      localDate: new Date().toISOString().slice(0, 10),
-      timezone: 'America/Denver',
-    });
+  const start = scanCase.barcode
+    ? await session.post('scan-barcode-analysis-start', {
+        requestId,
+        barcode: scanCase.barcode,
+        sourceType: 'barcode',
+        localDate: new Date().toISOString().slice(0, 10),
+        timezone: 'America/Denver',
+      })
+    : await session.post('scan-analysis-start', {
+        requestId,
+        imageDataUrls: imageUrls,
+        sourceType: 'upload',
+        ...(scanCase.autoClassify ? {} : { scanCategory: scanCase.scanCategory ?? 'food' }),
+        localDate: new Date().toISOString().slice(0, 10),
+        timezone: 'America/Denver',
+      });
+
+  const deadline = Date.now() + 15 * 60_000;
+  while (Date.now() < deadline) {
+    const snapshot = await session.post('scan-analysis-result', { scanId: start.scanId });
+    if (snapshot.status === 'completed' && snapshot.result) return snapshot.result;
+    if (snapshot.status === 'failed') {
+      throw new ApiRequestError(
+        'scan-analysis-result',
+        502,
+        snapshot.error?.code ?? 'ai_request_failed',
+        snapshot.error?.message ?? 'The scan analysis failed.',
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
-  return session.post('scan-analyze-image', {
-    requestId,
-    imageDataUrls: imageUrls,
-    sourceType: 'upload',
-    ...(scanCase.autoClassify ? {} : { scanCategory: scanCase.scanCategory ?? 'food' }),
-    localDate: new Date().toISOString().slice(0, 10),
-    timezone: 'America/Denver',
-  });
+  throw new ApiRequestError(
+    'scan-analysis-result',
+    0,
+    'request_timeout',
+    'The eval timed out waiting for the durable scan job.',
+  );
 }
 
 async function runExpectation(args, session, profile, scanCase, expectation, runId, reporter) {
@@ -854,11 +874,13 @@ function buildRunMetadata(args) {
     githubRunId: process.env.GITHUB_RUN_ID ?? null,
     models: {
       extraction: process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini',
-      menu: process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini',
+      menuTranscription: process.env.OPENAI_MENU_TRANSCRIPTION_MODEL ?? 'gpt-5.4-mini',
+      menuAnalysis: process.env.OPENAI_MENU_ANALYSIS_MODEL ?? 'gpt-5.4-mini',
       adjudication: process.env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-5-mini',
       embedding: process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
     },
     promptVersion: process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'n/a',
+    menuPromptVersion: process.env.OPENAI_MENU_PROMPT_VERSION ?? 'mytummyhurts_menu_v5',
     featureFlags: {
       ragRetrieval: process.env.RAG_RETRIEVAL_ENABLED ?? 'false',
       ragInfluence: process.env.RAG_INFLUENCE_ENABLED ?? 'false',

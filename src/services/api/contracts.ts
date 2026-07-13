@@ -47,6 +47,30 @@ export interface AnalyzeResponse {
   conditionInsights?: ConditionIngredientInsight[];
 }
 
+export interface ScanAnalysisStartResponse {
+  ok: true;
+  scanId: string;
+  requestId: string;
+  status: Exclude<ScanProgressStatus, 'not_found'>;
+  deduped: boolean;
+  tokensRemaining: number;
+}
+
+export interface ScanAnalysisResultResponse {
+  ok: true;
+  scanId: string;
+  requestId: string;
+  status: Exclude<ScanProgressStatus, 'not_found'>;
+  stage: ScanProgressStage | null;
+  ingredientsPreview: string[];
+  result: AnalyzeResponse | null;
+  error: {
+    code: 'ai_request_failed' | 'request_timeout';
+    message: string;
+    retryable: true;
+  } | null;
+}
+
 export type ScanProgressStage = 'received' | 'reading_ingredients' | 'scoring' | 'personalizing';
 
 export type ScanProgressStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'not_found';

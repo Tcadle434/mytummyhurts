@@ -23,14 +23,21 @@ import {
   FOOD_LLM_BANDS,
   IMAGE_DETAIL,
   IMAGE_EXTRACTION_MODEL,
-  MENU_EXTRACTION_MODEL,
+  MENU_ANALYSIS_MODEL,
   MENU_EXTRACTION_SCHEMA_VERSION,
   MENU_IMAGE_DETAIL,
+  MENU_LLM_BANDS,
+  MENU_PROMPT_VERSION,
+  MENU_TRANSCRIPTION_MODEL,
   OPENAI_API_KEY,
   OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS,
   OPENAI_IMAGE_MAX_OUTPUT_TOKENS,
-  OPENAI_MENU_MAX_OUTPUT_TOKENS,
-  OPENAI_MENU_TIMEOUT_MS,
+  OPENAI_MENU_ANALYSIS_BATCH_SIZE,
+  OPENAI_MENU_ANALYSIS_MAX_OUTPUT_TOKENS,
+  OPENAI_MENU_ANALYSIS_TIMEOUT_MS,
+  OPENAI_MENU_STAGE_CONCURRENCY,
+  OPENAI_MENU_TRANSCRIPTION_MAX_OUTPUT_TOKENS,
+  OPENAI_MENU_TRANSCRIPTION_TIMEOUT_MS,
   OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS,
   OPENAI_RISK_ADJUDICATION_TIMEOUT_MS,
   OPENAI_TEXT_MAX_OUTPUT_TOKENS,
@@ -44,7 +51,10 @@ import {
   foodMultiImageStructuredOutput,
   foodTextStructuredOutput,
   MENU_ITEM_LIMIT,
-  menuStructuredOutput,
+  menuAnalysisBatchStructuredOutput,
+  menuTranscriptionStructuredOutput,
+  type MenuAnalysisBatchPayload,
+  type MenuTranscriptionPayload,
   requestedRiskAdjudicationConditions,
   riskAdjudicationStructuredOutputForConditions,
   scanCategoryStructuredOutput,
@@ -58,8 +68,10 @@ import {
 import {
   buildImageSystemPrompt,
   buildImageUserPrompt,
-  buildMenuSystemPrompt,
-  buildMenuUserPrompt,
+  buildMenuAnalysisSystemPrompt,
+  buildMenuAnalysisUserPrompt,
+  buildMenuTranscriptionSystemPrompt,
+  buildMenuTranscriptionUserPrompt,
   buildMultiImageUserPrompt,
   buildRiskAdjudicationSystemPrompt,
   buildRiskAdjudicationUserPrompt,
@@ -68,15 +80,17 @@ import {
   buildTextSystemPrompt,
   buildTextUserPrompt,
 } from './openaiPrompts';
-import { combinedMenuAudit, combineMenuPageExtractions } from './openaiMenuMerge';
+import { combineMenuTranscriptionPages, mergeMenuAnalysisBatches } from './openaiMenuMerge';
 
 export {
   CLASSIFICATION_MODEL,
   EXTRACTION_MODEL,
   EXTRACTION_SCHEMA_VERSION,
   IMAGE_EXTRACTION_MODEL,
-  MENU_EXTRACTION_MODEL,
+  MENU_ANALYSIS_MODEL,
   MENU_EXTRACTION_SCHEMA_VERSION,
+  MENU_PROMPT_VERSION,
+  MENU_TRANSCRIPTION_MODEL,
   PROMPT_VERSION,
   RISK_ADJUDICATION_MODEL,
 } from './openaiConfig';
@@ -267,9 +281,9 @@ export async function classifyScanImagesWithAudit(
       ...verbosityField(CLASSIFICATION_MODEL),
       format: scanCategoryStructuredOutput.format,
     },
-    // Reasoning tokens count against max_output_tokens; minimal effort keeps
+    // Reasoning tokens count against max_output_tokens; low effort keeps
     // the small classification cap from being eaten before the JSON is emitted.
-    ...reasoningFields(CLASSIFICATION_MODEL, 'minimal'),
+    ...reasoningFields(CLASSIFICATION_MODEL, 'low'),
   };
 
   const inputRefs = imageUrls.map((imageUrl, index) => ({
@@ -451,15 +465,63 @@ export async function extractMealFromImagesWithAudit(
   };
 }
 
-async function requestMenuExtraction(
-  imageUrls: string[],
-  context: ExtractionContext,
-  options: { stage: string; pageOffset: number; totalPageCount: number; splitByPage: boolean },
+async function mapWithConcurrency<T, TResult>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T, index: number) => Promise<TResult>,
+): Promise<TResult[]> {
+  const results = new Array<TResult>(values.length);
+  let nextIndex = 0;
+  let firstError: unknown;
+  async function runWorker() {
+    while (nextIndex < values.length && firstError === undefined) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        results[index] = await mapper(values[index], index);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, () => runWorker()),
+  );
+  if (firstError !== undefined) throw firstError;
+  return results;
+}
+
+function chunksOf<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function uniqueTrimmed(values: string[], limit: number) {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(trimmed);
+    if (unique.length >= limit) break;
+  }
+  return unique;
+}
+
+async function requestMenuTranscription(
+  imageUrl: string,
+  pageIndex: number,
+  totalPageCount: number,
 ) {
-  const systemPrompt = buildMenuSystemPrompt();
-  const userPrompt = buildMenuUserPrompt({ ...context, pageCount: imageUrls.length });
+  const systemPrompt = buildMenuTranscriptionSystemPrompt();
+  const userPrompt = buildMenuTranscriptionUserPrompt(pageIndex, totalPageCount);
   const request = {
-    model: MENU_EXTRACTION_MODEL,
+    model: MENU_TRANSCRIPTION_MODEL,
     input: [
       {
         role: 'system',
@@ -469,56 +531,111 @@ async function requestMenuExtraction(
         role: 'user',
         content: [
           { type: 'input_text', text: userPrompt },
-          ...imageUrls.map((imageUrl) => ({
-            type: 'input_image',
-            image_url: imageUrl,
-            detail: MENU_IMAGE_DETAIL,
-          })),
+          { type: 'input_image', image_url: imageUrl, detail: MENU_IMAGE_DETAIL },
         ],
       },
     ],
     text: {
-      ...verbosityField(MENU_EXTRACTION_MODEL),
-      format: menuStructuredOutput.format,
+      ...verbosityField(MENU_TRANSCRIPTION_MODEL),
+      format: menuTranscriptionStructuredOutput.format,
     },
-    ...reasoningFields(MENU_EXTRACTION_MODEL, 'minimal'),
-    max_output_tokens: OPENAI_MENU_MAX_OUTPUT_TOKENS,
+    ...reasoningFields(MENU_TRANSCRIPTION_MODEL, 'low'),
+    max_output_tokens: OPENAI_MENU_TRANSCRIPTION_MAX_OUTPUT_TOKENS,
   };
-  const inputRefs = imageUrls.map((imageUrl, index) => ({
-    inputKind: 'image',
-    imageRole: 'menu_page',
-    pageIndex: options.pageOffset + index,
-    imageRef: imageRefKind(imageUrl),
-  }));
   const { parsed, audit } = await runResponsesRequestWithAuditRetry(
     request,
-    menuStructuredOutput,
+    menuTranscriptionStructuredOutput,
     {
-      stage: options.stage,
-      model: MENU_EXTRACTION_MODEL,
+      stage: totalPageCount === 1 ? 'menu_transcription' : 'menu_transcription_page',
+      model: MENU_TRANSCRIPTION_MODEL,
+      promptVersion: MENU_PROMPT_VERSION,
       systemPrompt,
       userPrompt,
-      jsonSchema: menuStructuredOutput.jsonSchema,
+      jsonSchema: menuTranscriptionStructuredOutput.jsonSchema,
       schemaVersion: MENU_EXTRACTION_SCHEMA_VERSION,
       requestMetadata: {
         imageDetail: MENU_IMAGE_DETAIL,
-        pageCount: imageUrls.length,
-        totalPageCount: options.totalPageCount,
-        pageOffset: options.pageOffset,
+        pageIndex,
+        totalPageCount,
         itemLimit: MENU_ITEM_LIMIT,
-        splitByPage: options.splitByPage,
       },
-      inputRefs,
+      inputRefs: [{
+        inputKind: 'image',
+        imageRole: 'menu_page',
+        pageIndex,
+        imageRef: imageRefKind(imageUrl),
+      }],
     },
-    { timeoutMs: OPENAI_MENU_TIMEOUT_MS },
+    { timeoutMs: OPENAI_MENU_TRANSCRIPTION_TIMEOUT_MS },
   );
+  return { parsed, audit: { ...audit, normalizedResponseJson: parsed } };
+}
 
-  const result = coerceMenuExtraction(parsed, imageUrls.length, context.knownIngredients);
-  return {
-    parsed,
-    result,
-    audit: { ...audit, normalizedResponseJson: result },
+async function requestMenuAnalysisBatch(
+  items: MenuTranscriptionPayload['items'],
+  context: ExtractionContext,
+  batchIndex: number,
+  batchCount: number,
+) {
+  const systemPrompt = buildMenuAnalysisSystemPrompt();
+  const requestedConditions = MENU_LLM_BANDS
+    ? uniqueTrimmed(context.knownConditions, 8)
+    : [];
+  if (MENU_LLM_BANDS && requestedConditions.length === 0) requestedConditions.push('general');
+  const selectedDietPreferences = (context.dietPreferences ?? []).slice(0, 10);
+  const requestedDietKeys = selectedDietPreferences.map((preference) => preference.key);
+  const userPrompt = buildMenuAnalysisUserPrompt(items, {
+    ...context,
+    knownConditions: requestedConditions[0] === 'general' ? [] : requestedConditions,
+    dietPreferences: selectedDietPreferences,
+  });
+  const structuredOutput = menuAnalysisBatchStructuredOutput(
+    items.map((item) => item.id),
+    requestedConditions,
+    requestedDietKeys,
+  );
+  const request = {
+    model: MENU_ANALYSIS_MODEL,
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: systemPrompt }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: userPrompt }],
+      },
+    ],
+    text: {
+      ...verbosityField(MENU_ANALYSIS_MODEL),
+      format: structuredOutput.format,
+    },
+    ...reasoningFields(MENU_ANALYSIS_MODEL, 'low'),
+    max_output_tokens: OPENAI_MENU_ANALYSIS_MAX_OUTPUT_TOKENS,
   };
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry(
+    request,
+    structuredOutput,
+    {
+      stage: 'menu_item_analysis_batch',
+      model: MENU_ANALYSIS_MODEL,
+      promptVersion: MENU_PROMPT_VERSION,
+      systemPrompt,
+      userPrompt,
+      jsonSchema: structuredOutput.jsonSchema,
+      schemaVersion: MENU_EXTRACTION_SCHEMA_VERSION,
+      requestMetadata: {
+        batchIndex,
+        batchCount,
+        itemCount: items.length,
+        itemIds: items.map((item) => item.id),
+        includeConditionBands: MENU_LLM_BANDS,
+      },
+      inputRefs: items.map((item) => ({ inputKind: 'menu_item_text', itemId: item.id })),
+    },
+    { timeoutMs: OPENAI_MENU_ANALYSIS_TIMEOUT_MS },
+  );
+  return { parsed, audit: { ...audit, normalizedResponseJson: parsed } };
 }
 
 export async function extractMenuFromImagesWithAudit(
@@ -599,27 +716,66 @@ export async function extractMenuFromImagesWithAudit(
     };
   }
 
-  if (imageUrls.length === 1) {
-    const pageResult = await requestMenuExtraction(imageUrls, context, {
-      stage: 'menu_image_extraction',
-      pageOffset: 0,
-      totalPageCount: 1,
-      splitByPage: false,
-    });
-    return { result: pageResult.result, audits: [pageResult.audit] };
-  }
+  const completedAudits: ExtractionWithAudit<MenuScanAnalysis>['audits'] = [];
+  try {
+    const pageResults = await mapWithConcurrency(
+      imageUrls,
+      OPENAI_MENU_STAGE_CONCURRENCY,
+      async (imageUrl, pageIndex) => {
+        const page = await requestMenuTranscription(imageUrl, pageIndex, imageUrls.length);
+        completedAudits.push(page.audit);
+        return page;
+      },
+    );
+    const transcription = combineMenuTranscriptionPages(
+      pageResults.map((page) => page.parsed),
+    );
+    completedAudits.splice(0, completedAudits.length, ...pageResults.map((page) => page.audit));
+    if (!transcription.isMenu || transcription.items.length === 0) {
+      const result = coerceMenuExtraction(
+        { ...transcription, items: [] },
+        imageUrls.length,
+        context.knownIngredients,
+      );
+      const lastAudit = completedAudits.at(-1);
+      if (lastAudit) lastAudit.normalizedResponseJson = result;
+      return { result, audits: completedAudits };
+    }
 
-  const pageResults = await Promise.all(
-    imageUrls.map((imageUrl, pageIndex) =>
-      requestMenuExtraction([imageUrl], context, {
-        stage: 'menu_image_extraction_page',
-        pageOffset: pageIndex,
-        totalPageCount: imageUrls.length,
-        splitByPage: true,
-      }),
-    ),
-  );
-  const result = combineMenuPageExtractions(pageResults, imageUrls.length);
-  const combinedAudit = combinedMenuAudit(pageResults, result, context, imageUrls);
-  return { result, audits: [combinedAudit, ...pageResults.map((entry) => entry.audit)] };
+    const batches = chunksOf(transcription.items, OPENAI_MENU_ANALYSIS_BATCH_SIZE);
+    const analysisResults = await mapWithConcurrency(
+      batches,
+      OPENAI_MENU_STAGE_CONCURRENCY,
+      async (batch, batchIndex) => {
+        const analysis = await requestMenuAnalysisBatch(
+          batch,
+          context,
+          batchIndex,
+          batches.length,
+        );
+        completedAudits.push(analysis.audit);
+        return analysis;
+      },
+    );
+    const merged = mergeMenuAnalysisBatches(
+      transcription,
+      analysisResults.map((batch) => batch.parsed as MenuAnalysisBatchPayload),
+    );
+    completedAudits.splice(
+      pageResults.length,
+      completedAudits.length - pageResults.length,
+      ...analysisResults.map((batch) => batch.audit),
+    );
+    const result = coerceMenuExtraction(merged, imageUrls.length, context.knownIngredients);
+    const lastAudit = completedAudits.at(-1);
+    if (lastAudit) lastAudit.normalizedResponseJson = result;
+    return { result, audits: completedAudits };
+  } catch (error) {
+    const carrier = error as { audit?: ExtractionWithAudit<MenuScanAnalysis>['audits'][number] };
+    const audits = [...completedAudits, ...(carrier.audit ? [carrier.audit] : [])];
+    throw Object.assign(error instanceof Error ? error : new Error('openai_request_failed'), {
+      audit: undefined,
+      audits,
+    });
+  }
 }

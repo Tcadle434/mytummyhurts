@@ -8,6 +8,8 @@ import { DatabaseModule } from '../src/database/database.module';
 import { LearningModule } from '../src/learning/learning.module';
 import { LlmModule } from '../src/llm/llm.module';
 import { ScanAnalysisService } from '../src/scan/scan-analysis.service';
+import { ScanAnalysisExecutorService } from '../src/scan/scan-analysis-executor.service';
+import { ScanAnalysisJobService } from '../src/scan/scan-analysis-job.service';
 import { ScanModule } from '../src/scan/scan.module';
 
 const adminUrl = process.env.DATABASE_ADMIN_URL ?? 'postgres://mth:mth@localhost:5432/mth';
@@ -15,10 +17,13 @@ const admin = postgres(adminUrl, { max: 2, onnotice: () => {} });
 const U = '55555555-5555-5555-5555-555555555555';
 
 let analysis: ScanAnalysisService;
+let executor: ScanAnalysisExecutorService;
+let jobs: ScanAnalysisJobService;
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
 
 beforeAll(async () => {
+  process.env.SCAN_ANALYSIS_WORKER_ENABLED = 'false';
   const moduleRef = await Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true }),
@@ -31,6 +36,8 @@ beforeAll(async () => {
   }).compile();
   await moduleRef.init();
   analysis = moduleRef.get(ScanAnalysisService);
+  executor = moduleRef.get(ScanAnalysisExecutorService);
+  jobs = moduleRef.get(ScanAnalysisJobService);
 
   await admin`delete from public.users where id = ${U}`;
   await admin`insert into public.users (id, email, subscription_status, current_token_balance)
@@ -142,5 +149,66 @@ describe('scan-analyze-image (end-to-end orchestration)', () => {
     const [scan] = await admin`
       select scan_category from public.scans where id = ${out.scanId}`;
     expect(scan.scan_category).toBe('menu');
+  });
+
+  it('starts asynchronously, stores only object keys, and returns the result after durable work completes', async () => {
+    const start = await analysis.startImage({
+      userId: U,
+      requestId: 'scan-async-1',
+      imageDataUrls: [PNG],
+      scanCategory: 'menu',
+      sourceType: 'camera',
+    });
+
+    expect(start.status).toBe('queued');
+    const before = await analysis.getResult(U, start.scanId);
+    expect(before).toMatchObject({ status: 'queued', result: null, error: null });
+
+    const [storedJob] = await admin`
+      select status, payload from public.scan_analysis_jobs where scan_id = ${start.scanId}`;
+    expect(storedJob.status).toBe('pending');
+    expect(JSON.stringify(storedJob.payload)).not.toContain('data:image');
+    expect(storedJob.payload.imageStoragePaths[0]).toMatch(new RegExp(`^${U}/`));
+
+    const [claimed] = await jobs.claimScan(start.scanId, 'integration-test');
+    expect(claimed).toBeTruthy();
+    await executor.execute(claimed);
+
+    const after = await analysis.getResult(U, start.scanId);
+    expect(after.status).toBe('completed');
+    expect(after.result?.scanId).toBe(start.scanId);
+    expect(after.result?.scan.menuResult.items.length).toBeGreaterThan(0);
+    const [completedJob] = await admin`
+      select status, attempt_count from public.scan_analysis_jobs where scan_id = ${start.scanId}`;
+    expect(completedJob).toMatchObject({ status: 'completed', attempt_count: 1 });
+  });
+
+  it('recovers a job whose worker disappeared while it was running', async () => {
+    const start = await analysis.startImage({
+      userId: U,
+      requestId: 'scan-async-stale-1',
+      imageDataUrls: [PNG],
+      scanCategory: 'food',
+      sourceType: 'camera',
+    });
+    await admin`
+      update public.scan_analysis_jobs
+      set status = 'running', locked_at = now() - interval '16 minutes', locked_by = 'dead-worker'
+      where scan_id = ${start.scanId}`;
+
+    await jobs.heartbeat((await admin`
+      select id from public.scan_analysis_jobs where scan_id = ${start.scanId}`)[0].id);
+    expect(await jobs.claimDue(1, 'replacement-worker')).toHaveLength(0);
+
+    await admin`
+      update public.scan_analysis_jobs
+      set locked_at = now() - interval '16 minutes', locked_by = 'dead-worker'
+      where scan_id = ${start.scanId}`;
+
+    const recovered = await jobs.claimDue(1, 'replacement-worker');
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]).toMatchObject({ scan_id: start.scanId, status: 'running' });
+    await executor.execute(recovered[0]);
+    expect((await analysis.getResult(U, start.scanId)).status).toBe('completed');
   });
 });

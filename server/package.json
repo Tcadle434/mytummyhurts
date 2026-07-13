@@ -10,6 +10,7 @@
     "start:prod": "node dist/main.js",
     "test": "vitest run",
     "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate:production": "node scripts/migrate-production.mjs",
     "db:isolation-check": "node scripts/isolation-check.mjs",
     "eval": "node scripts/eval/run.mjs",
     "eval:scans": "node scripts/eval/run-scan-evals.mjs",

@@ -24,6 +24,8 @@ import {
   ProfileUpdateResponse,
   ScanGetRequest,
   ScanGetResponse,
+  ScanAnalysisResultResponse,
+  ScanAnalysisStartResponse,
   ScanDeleteRequest,
   ScanDeleteResponse,
   ScanProgressRequest,
@@ -90,6 +92,24 @@ async function invokeFunction<TResponse>(
 }
 
 export const liveApiClient = {
+  startImageAnalysis(request: AnalyzeImageRequest) {
+    return invokeFunction<ScanAnalysisStartResponse>('scan-analysis-start', request, {
+      timeoutMs: 60_000,
+    });
+  },
+
+  startBarcodeAnalysis(request: AnalyzeBarcodeRequest) {
+    return invokeFunction<ScanAnalysisStartResponse>('scan-barcode-analysis-start', request, {
+      timeoutMs: 60_000,
+    });
+  },
+
+  getScanAnalysisResult(scanId: string) {
+    return invokeFunction<ScanAnalysisResultResponse>('scan-analysis-result', { scanId }, {
+      timeoutMs: 10_000,
+    });
+  },
+
   analyzeImage(request: AnalyzeImageRequest) {
     return invokeFunction<AnalyzeResponse>('scan-analyze-image', request, { timeoutMs: 300_000 });
   },
