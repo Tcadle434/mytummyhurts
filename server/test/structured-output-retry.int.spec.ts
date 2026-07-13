@@ -260,6 +260,35 @@ describe('structured output retries', () => {
     expect(result.audits[0]?.requestMetadata).toMatchObject({ attemptCount: 2 });
   });
 
+  it('keeps failed audits from every concurrently started menu page', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    vi.resetModules();
+    let responseIndex = 0;
+    const invalidItem = { ...menuTranscription().items[0], id: '   ' };
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      responseWithOutput(
+        menuTranscription({ items: [invalidItem] }),
+        `resp-menu-invalid-${responseIndex++}`,
+      ));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { extractMenuFromImagesWithAudit } = await import('../src/scan/engine/openai');
+
+    let failure: unknown;
+    try {
+      await extractMenuFromImagesWithAudit(
+        ['data:image/png;base64,page-one', 'data:image/png;base64,page-two'],
+        { knownConditions: [], knownIngredients: [] },
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    const audits = (failure as { audits?: unknown[] })?.audits;
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(audits).toHaveLength(2);
+  });
+
   it('retries malformed JSON and missing output before accepting a complete response', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     vi.resetModules();

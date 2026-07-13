@@ -42,7 +42,7 @@ Required repository configuration:
 - Actions variables: `PRODUCTION_SSH_HOST`, `PRODUCTION_SSH_USER`
 - GitHub environment: `production`
 
-The commands below remain the break-glass manual procedure. Manual deployment bypasses the automated release gate and should be reserved for recovery.
+The deploy script builds the replacement image, stops the API with an eight-minute drain window, applies migrations, refunds any legacy in-flight scan that could not finish draining, and starts the replacement. The commands below remain the break-glass manual procedure. Manual deployment bypasses the automated release gate and should be reserved for recovery.
 
 ```bash
 # On the VPS, in the repo:

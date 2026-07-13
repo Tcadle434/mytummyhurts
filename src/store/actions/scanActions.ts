@@ -31,6 +31,17 @@ function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function shouldDiscardActiveScanAnalysis(error: unknown) {
+  return error instanceof ApiError
+    && (
+      error.details?.terminalScanFailure === true
+      || error.status === 400
+      || error.status === 401
+      || error.status === 403
+      || error.status === 404
+    );
+}
+
 async function waitForScanAnalysis(start: ScanAnalysisStartResponse) {
   const deadline = Date.now() + SCAN_RESULT_WAIT_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -49,16 +60,7 @@ async function waitForScanAnalysis(start: ScanAnalysisStartResponse) {
         );
       }
     } catch (error) {
-      if (
-        error instanceof ApiError
-        && (
-          error.details?.terminalScanFailure === true
-          || error.status === 400
-          || error.status === 401
-          || error.status === 403
-          || error.status === 404
-        )
-      ) {
+      if (shouldDiscardActiveScanAnalysis(error)) {
         throw error;
       }
     }
@@ -160,7 +162,7 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
             refreshScanLearning(response.scanId, 'scan_analyzed');
           }
         } catch (error) {
-          const terminal = error instanceof ApiError && error.details?.terminalScanFailure === true;
+          const terminal = shouldDiscardActiveScanAnalysis(error);
           set({
             scanAnalysisInFlight: false,
             ...(terminal ? { activeScanAnalysis: null } : {}),
@@ -304,7 +306,7 @@ export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
 
             return { scanId: response.scanId };
           } catch (error) {
-            const terminal = error instanceof ApiError && error.details?.terminalScanFailure === true;
+            const terminal = shouldDiscardActiveScanAnalysis(error);
             set({
               scanAnalysisInFlight: false,
               ...(terminal ? { activeScanAnalysis: null } : {}),

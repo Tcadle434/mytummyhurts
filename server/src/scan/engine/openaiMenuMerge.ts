@@ -48,8 +48,8 @@ export function combineMenuTranscriptionPages(
       page.items.map((item, itemIndex) => ({
         ...item,
         id: pages.length === 1
-          ? item.id || `item-${itemIndex + 1}`
-          : `page-${pageIndex + 1}-${item.id || `item-${itemIndex + 1}`}`,
+          ? `item-${itemIndex + 1}`
+          : `page-${pageIndex + 1}-item-${itemIndex + 1}`,
       })),
     ),
   ).slice(0, MENU_ITEM_LIMIT);

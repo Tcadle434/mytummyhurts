@@ -60,6 +60,29 @@ create index if not exists scan_analysis_jobs_user_request_idx
 create index if not exists scan_analysis_jobs_status_updated_idx
   on public.scan_analysis_jobs (status, updated_at desc);
 
+do $$
+declare
+  orphaned_scan record;
+begin
+  for orphaned_scan in
+    select scans.id, scans.user_id
+    from public.scans scans
+    left join public.scan_analysis_jobs jobs on jobs.scan_id = scans.id
+    where scans.analysis_status = 'processing'
+      and jobs.id is null
+    for update of scans
+  loop
+    perform public.fail_reserved_scan_analysis(
+      orphaned_scan.user_id,
+      orphaned_scan.id,
+      'deployment_interrupted',
+      'The scan was interrupted during a service upgrade.',
+      true
+    );
+  end loop;
+end;
+$$;
+
 create or replace function public.begin_queued_scan_analysis(
   p_user_id uuid,
   p_request_id text,

@@ -34,6 +34,12 @@ export class DatabaseService implements OnModuleDestroy {
     return fn(this.serviceSql);
   }
 
+  serviceTransaction<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
+    return this.serviceSql.begin(
+      (transaction) => fn(transaction as unknown as Sql),
+    ) as Promise<T>;
+  }
+
   get serviceClient(): Sql {
     return this.serviceSql;
   }

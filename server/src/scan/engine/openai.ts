@@ -45,7 +45,7 @@ import {
   RISK_ADJUDICATION_MODEL,
   verbosityField,
 } from './openaiConfig';
-import type { ExtractionContext, ExtractionWithAudit } from './openaiTypes';
+import type { ExtractionContext, ExtractionWithAudit, OpenAiAuditLog } from './openaiTypes';
 import {
   foodImageStructuredOutput,
   foodMultiImageStructuredOutput,
@@ -473,6 +473,7 @@ async function mapWithConcurrency<T, TResult>(
   const results = new Array<TResult>(values.length);
   let nextIndex = 0;
   let firstError: unknown;
+  const additionalErrors: unknown[] = [];
   async function runWorker() {
     while (nextIndex < values.length && firstError === undefined) {
       const index = nextIndex;
@@ -480,15 +481,45 @@ async function mapWithConcurrency<T, TResult>(
       try {
         results[index] = await mapper(values[index], index);
       } catch (error) {
-        firstError ??= error;
+        if (firstError === undefined) firstError = error;
+        else additionalErrors.push(error);
       }
     }
   }
   await Promise.all(
     Array.from({ length: Math.min(concurrency, values.length) }, () => runWorker()),
   );
-  if (firstError !== undefined) throw firstError;
+  if (firstError !== undefined) {
+    const throwable = firstError instanceof Error ? firstError : new Error('openai_request_failed');
+    throw Object.assign(throwable, { concurrentErrors: additionalErrors });
+  }
   return results;
+}
+
+function failedAudits(error: unknown): OpenAiAuditLog[] {
+  const audits: OpenAiAuditLog[] = [];
+  const seenErrors = new Set<unknown>();
+  const seenAudits = new Set<OpenAiAuditLog>();
+  const visit = (candidate: unknown) => {
+    if (!candidate || seenErrors.has(candidate)) return;
+    seenErrors.add(candidate);
+    const carrier = candidate as {
+      audit?: OpenAiAuditLog;
+      audits?: OpenAiAuditLog[];
+      concurrentErrors?: unknown[];
+    };
+    for (const audit of [
+      ...(Array.isArray(carrier.audits) ? carrier.audits : []),
+      ...(carrier.audit ? [carrier.audit] : []),
+    ]) {
+      if (seenAudits.has(audit)) continue;
+      seenAudits.add(audit);
+      audits.push(audit);
+    }
+    if (Array.isArray(carrier.concurrentErrors)) carrier.concurrentErrors.forEach(visit);
+  };
+  visit(error);
+  return audits;
 }
 
 function chunksOf<T>(values: T[], size: number): T[][] {
@@ -771,8 +802,7 @@ export async function extractMenuFromImagesWithAudit(
     if (lastAudit) lastAudit.normalizedResponseJson = result;
     return { result, audits: completedAudits };
   } catch (error) {
-    const carrier = error as { audit?: ExtractionWithAudit<MenuScanAnalysis>['audits'][number] };
-    const audits = [...completedAudits, ...(carrier.audit ? [carrier.audit] : [])];
+    const audits = [...completedAudits, ...failedAudits(error)];
     throw Object.assign(error instanceof Error ? error : new Error('openai_request_failed'), {
       audit: undefined,
       audits,

@@ -176,10 +176,6 @@ export class ScanAnalysisExecutorService {
       insights,
       onStage,
     });
-    if (payload.autoClassify && workflowResult.scanCategory !== payload.scanCategory) {
-      await this.reservation.setCategory(job.user_id, job.scan_id, workflowResult.scanCategory);
-    }
-
     const imageRole = workflowResult.scanCategory === 'menu' ? 'menu_page' : 'meal';
     const inputRefs = payload.imageStoragePaths.map((storagePath, pageIndex) => ({
       input_kind: 'image',
@@ -202,7 +198,18 @@ export class ScanAnalysisExecutorService {
           await this.computeDayLoad(job.user_id, job.scan_id, workflowResult.finalResult),
         );
 
-    await this.reservation.complete(completion);
+    const completed = await this.jobs.complete(job.id, job.attempt_count, async (sql) => {
+      if (payload.autoClassify && workflowResult.scanCategory !== payload.scanCategory) {
+        await this.reservation.setCategory(
+          job.user_id,
+          job.scan_id,
+          workflowResult.scanCategory,
+          sql,
+        );
+      }
+      await this.reservation.complete(completion, sql);
+    });
+    if (!completed) return workflowResult.scanCategory;
     await this.enqueueLearning(job.user_id, job.scan_id);
     await this.recordScanTraceSafely({
       userId: job.user_id,
@@ -222,7 +229,6 @@ export class ScanAnalysisExecutorService {
     const onStage = this.stageNotifier(job.user_id, job.scan_id);
     onStage('received');
     const productText = await this.lookupBarcode(barcode);
-    await this.jobs.setInputText(job.user_id, job.scan_id, productText);
     const { profile, insights } = await this.loadContext(job.user_id);
     const workflowResult = await this.workflow.run({
       userId: job.user_id,
@@ -234,12 +240,15 @@ export class ScanAnalysisExecutorService {
       insights,
       onStage,
     });
-    await this.reservation.complete(
-      this.withDayLoad(
-        buildFoodCompletionInput(job.user_id, job.scan_id, workflowResult.finalResult),
-        await this.computeDayLoad(job.user_id, job.scan_id, workflowResult.finalResult),
-      ),
+    const completion = this.withDayLoad(
+      buildFoodCompletionInput(job.user_id, job.scan_id, workflowResult.finalResult),
+      await this.computeDayLoad(job.user_id, job.scan_id, workflowResult.finalResult),
     );
+    const completed = await this.jobs.complete(job.id, job.attempt_count, async (sql) => {
+      await this.jobs.setInputText(job.user_id, job.scan_id, productText, sql);
+      await this.reservation.complete(completion, sql);
+    });
+    if (!completed) return 'grocery';
     await this.enqueueLearning(job.user_id, job.scan_id);
     await this.recordScanTraceSafely({
       userId: job.user_id,
@@ -257,7 +266,7 @@ export class ScanAnalysisExecutorService {
 
   async execute(job: ScanAnalysisJobRow): Promise<void> {
     const heartbeat = setInterval(() => {
-      void this.jobs.heartbeat(job.id).catch((error) => {
+      void this.jobs.heartbeat(job.id, job.attempt_count).catch((error) => {
         this.logger.warn(`heartbeat failed for scan job ${job.id}: ${(error as Error).message}`);
       });
     }, JOB_HEARTBEAT_INTERVAL_MS);
@@ -271,11 +280,16 @@ export class ScanAnalysisExecutorService {
   private async executeClaimedJob(job: ScanAnalysisJobRow): Promise<void> {
     const existingStatus = await this.jobs.getScanStatus(job.scan_id);
     if (existingStatus === 'completed') {
-      await this.jobs.complete(job.id);
+      await this.jobs.complete(job.id, job.attempt_count);
       return;
     }
     if (existingStatus === 'failed') {
-      await this.jobs.fail(job.id, 'openai_request_failed', 'The scan already failed.');
+      await this.jobs.fail(
+        job.id,
+        job.attempt_count,
+        'openai_request_failed',
+        'The scan already failed.',
+      );
       return;
     }
 
@@ -293,17 +307,17 @@ export class ScanAnalysisExecutorService {
       const message = failureMessage(code);
       this.logger.error(`scan analysis job ${job.id} failed with ${code}`);
       await this.recordFailedScanTrace(job, scanCategory, error);
-      await this.jobs.fail(job.id, code, message).catch((jobError) => {
+      await this.jobs.fail(
+        job.id,
+        job.attempt_count,
+        code,
+        message,
+        (sql) => this.reservation.fail(job.user_id, job.scan_id, code, message, true, sql),
+      ).catch((jobError) => {
         this.logger.error(`could not mark scan analysis job ${job.id} failed: ${(jobError as Error).message}`);
-      });
-      await this.reservation.fail(job.user_id, job.scan_id, code, message, true).catch((scanError) => {
-        this.logger.error(`could not mark scan ${job.scan_id} failed: ${(scanError as Error).message}`);
       });
       return;
     }
-    await this.jobs.complete(job.id).catch((error) => {
-      this.logger.error(`could not mark scan analysis job ${job.id} completed: ${(error as Error).message}`);
-    });
   }
 
   private async lookupBarcode(barcode: string): Promise<string> {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Sql } from 'postgres';
 
 import { DatabaseService } from '../database/database.service';
 import type {
@@ -32,6 +33,8 @@ export interface ScanAnalysisStateRow {
   job_error_code: string | null;
   job_last_error: string | null;
 }
+
+type LeaseFinalizer = (sql: Sql) => Promise<unknown>;
 
 @Injectable()
 export class ScanAnalysisJobService {
@@ -70,9 +73,18 @@ export class ScanAnalysisJobService {
     });
   }
 
-  complete(jobId: string) {
-    return this.db.service(
-      (sql) => sql`
+  complete(jobId: string, attemptCount: number, finalize?: LeaseFinalizer): Promise<boolean> {
+    return this.db.serviceTransaction(async (sql) => {
+      const owned = await sql`
+        select id
+        from public.scan_analysis_jobs
+        where id = ${jobId}
+          and status = 'running'
+          and attempt_count = ${attemptCount}
+        for update`;
+      if (!owned.length) return false;
+      if (finalize) await finalize(sql);
+      const rows = await sql`
         update public.scan_analysis_jobs
         set status = 'completed',
             completed_at = now(),
@@ -81,13 +93,32 @@ export class ScanAnalysisJobService {
             error_code = null,
             last_error = null,
             updated_at = now()
-        where id = ${jobId}`,
-    );
+        where id = ${jobId}
+          and status = 'running'
+          and attempt_count = ${attemptCount}
+        returning id`;
+      return rows.length === 1;
+    });
   }
 
-  fail(jobId: string, errorCode: string, errorMessage: string) {
-    return this.db.service(
-      (sql) => sql`
+  fail(
+    jobId: string,
+    attemptCount: number,
+    errorCode: string,
+    errorMessage: string,
+    finalize?: LeaseFinalizer,
+  ): Promise<boolean> {
+    return this.db.serviceTransaction(async (sql) => {
+      const owned = await sql`
+        select id
+        from public.scan_analysis_jobs
+        where id = ${jobId}
+          and status = 'running'
+          and attempt_count = ${attemptCount}
+        for update`;
+      if (!owned.length) return false;
+      if (finalize) await finalize(sql);
+      const rows = await sql`
         update public.scan_analysis_jobs
         set status = 'failed',
             failed_at = now(),
@@ -96,19 +127,26 @@ export class ScanAnalysisJobService {
             error_code = ${errorCode.slice(0, 100)},
             last_error = ${errorMessage.slice(0, 500)},
             updated_at = now()
-        where id = ${jobId}`,
-    );
+        where id = ${jobId}
+          and status = 'running'
+          and attempt_count = ${attemptCount}
+        returning id`;
+      return rows.length === 1;
+    });
   }
 
-  heartbeat(jobId: string) {
-    return this.db.service(
-      (sql) => sql`
+  heartbeat(jobId: string, attemptCount: number): Promise<boolean> {
+    return this.db.service(async (sql) => {
+      const rows = await sql`
         update public.scan_analysis_jobs
         set locked_at = now(),
             updated_at = now()
         where id = ${jobId}
-          and status = 'running'`,
-    );
+          and status = 'running'
+          and attempt_count = ${attemptCount}
+        returning id`;
+      return rows.length === 1;
+    });
   }
 
   getScanStatus(scanId: string): Promise<string | null> {
@@ -118,13 +156,12 @@ export class ScanAnalysisJobService {
     });
   }
 
-  setInputText(userId: string, scanId: string, inputText: string) {
-    return this.db.service(
-      (sql) => sql`
+  setInputText(userId: string, scanId: string, inputText: string, client?: Sql) {
+    const update = (sql: Sql) => sql`
         update public.scans
         set input_text = ${inputText}
-        where id = ${scanId} and user_id = ${userId} and analysis_status = 'processing'`,
-    );
+        where id = ${scanId} and user_id = ${userId} and analysis_status = 'processing'`;
+    return client ? update(client) : this.db.service(update);
   }
 
   getState(userId: string, scanId: string): Promise<ScanAnalysisStateRow | null> {

@@ -286,6 +286,26 @@ describe('menu extraction schema', () => {
     ]);
   });
 
+  it('assigns stable unique identifiers before analyzing transcribed items', async () => {
+    const { combineMenuTranscriptionPages } = await import('../src/scan/engine/openaiMenuMerge');
+    const first = {
+      id: 'duplicate',
+      name: 'Rice bowl',
+      description: 'Rice and chicken',
+      section: 'Mains',
+      price: '$12',
+    };
+    const combined = combineMenuTranscriptionPages([{
+      isMenu: true,
+      notMenuReason: null,
+      menuTitle: 'Dinner',
+      menuConfidence: 'high',
+      items: [first, { ...first, name: 'Soup', price: '$8' }],
+    }]);
+
+    expect(combined.items.map((item) => item.id)).toEqual(['item-1', 'item-2']);
+  });
+
   it('requires one LLM judgment per item, condition, and selected diet', () => {
     const definition = menuAnalysisBatchStructuredOutput(
       ['item-1'],

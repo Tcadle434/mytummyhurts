@@ -196,8 +196,9 @@ describe('scan-analyze-image (end-to-end orchestration)', () => {
       set status = 'running', locked_at = now() - interval '16 minutes', locked_by = 'dead-worker'
       where scan_id = ${start.scanId}`;
 
-    await jobs.heartbeat((await admin`
-      select id from public.scan_analysis_jobs where scan_id = ${start.scanId}`)[0].id);
+    const [activeJob] = await admin`
+      select id, attempt_count from public.scan_analysis_jobs where scan_id = ${start.scanId}`;
+    await jobs.heartbeat(activeJob.id, activeJob.attempt_count);
     expect(await jobs.claimDue(1, 'replacement-worker')).toHaveLength(0);
 
     await admin`
@@ -210,5 +211,47 @@ describe('scan-analyze-image (end-to-end orchestration)', () => {
     expect(recovered[0]).toMatchObject({ scan_id: start.scanId, status: 'running' });
     await executor.execute(recovered[0]);
     expect((await analysis.getResult(U, start.scanId)).status).toBe('completed');
+  });
+
+  it('prevents an expired worker lease from completing reclaimed work', async () => {
+    const start = await analysis.startImage({
+      userId: U,
+      requestId: 'scan-async-fenced-1',
+      imageDataUrls: [PNG],
+      scanCategory: 'food',
+      sourceType: 'camera',
+    });
+    const [expired] = await jobs.claimScan(start.scanId, 'expired-worker');
+    await admin`
+      update public.scan_analysis_jobs
+      set locked_at = now() - interval '16 minutes'
+      where id = ${expired.id}`;
+    const [replacement] = await jobs.claimDue(1, 'replacement-worker');
+    expect(replacement).toMatchObject({ id: expired.id, attempt_count: 2 });
+
+    expect(await jobs.heartbeat(expired.id, expired.attempt_count)).toBe(false);
+    let staleFinalizerRan = false;
+    expect(await jobs.complete(expired.id, expired.attempt_count, async () => {
+      staleFinalizerRan = true;
+    })).toBe(false);
+    expect(staleFinalizerRan).toBe(false);
+    expect(
+      await jobs.fail(
+        expired.id,
+        expired.attempt_count,
+        'stale_worker',
+        'The expired worker failed.',
+      ),
+    ).toBe(false);
+
+    const [job] = await admin`
+      select status, attempt_count, locked_by
+      from public.scan_analysis_jobs
+      where id = ${expired.id}`;
+    expect(job).toMatchObject({
+      status: 'running',
+      attempt_count: 2,
+      locked_by: 'replacement-worker',
+    });
   });
 });
