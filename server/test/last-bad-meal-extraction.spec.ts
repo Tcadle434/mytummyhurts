@@ -10,6 +10,7 @@ class FakeDatabaseService {
   };
   updatedIngredients: string[] | null = null;
   costEventCount = 0;
+  costTotalTokens: number | null = null;
 
   service<T>(fn: (sql: unknown) => Promise<T>): Promise<T> {
     const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -25,6 +26,7 @@ class FakeDatabaseService {
       }
       if (query.includes('insert into public.ai_cost_events')) {
         this.costEventCount += 1;
+        this.costTotalTokens = values[6] as number | null;
         return Promise.resolve([]);
       }
       throw new Error(`unexpected query: ${query}`);
@@ -34,15 +36,49 @@ class FakeDatabaseService {
   }
 }
 
+function responseWithOutput(output: unknown, id: string) {
+  return new Response(JSON.stringify({
+    id,
+    status: 'completed',
+    output_text: JSON.stringify(output),
+    usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+  }), { status: 200 });
+}
+
+function validPayload() {
+  return {
+    dishNames: ['chicken alfredo', 'garlic bread'],
+    suspectIngredients: [
+      {
+        canonicalName: 'cream sauce',
+        confidence: 'high',
+        source: 'dish_name',
+        mechanisms: ['creamy_or_lactose', 'high_fat_or_rich'],
+      },
+      {
+        canonicalName: 'Garlic',
+        confidence: 'medium',
+        source: 'explicit_text',
+        mechanisms: ['allium_garlic_onion'],
+      },
+    ],
+    notes: [],
+  };
+}
+
 function service(db = new FakeDatabaseService(), apiKey = 'test-key') {
+  const config = {
+    get: (key: string, fallback?: unknown) => ({
+      OPENAI_API_KEY: apiKey,
+      OPENAI_LAST_BAD_MEAL_EXTRACTION_MODEL: 'gpt-test',
+      OPENAI_LAST_BAD_MEAL_EXTRACTION_TIMEOUT_MS: '1000',
+    } as Record<string, unknown>)[key] ?? fallback,
+  } as ConfigService;
+
   return {
     db,
     extractor: new LastBadMealExtractionService(
-      new ConfigService({
-        OPENAI_API_KEY: apiKey,
-        OPENAI_LAST_BAD_MEAL_EXTRACTION_MODEL: 'gpt-test',
-        OPENAI_LAST_BAD_MEAL_EXTRACTION_TIMEOUT_MS: '1000',
-      }),
+      config,
       db as never,
     ),
   };
@@ -130,5 +166,94 @@ describe('LastBadMealExtractionService', () => {
 
     expect(result).toEqual({ status: 'skipped', reason: 'missing_openai_api_key' });
     expect(db.updatedIngredients).toBeNull();
+  });
+
+  it('retries invalid extraction before persisting and aggregates retry cost usage', async () => {
+    const { db, extractor } = service();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(responseWithOutput({
+        ...validPayload(),
+        suspectIngredients: [{
+          canonicalName: '',
+          confidence: 'high',
+          source: 'dish_name',
+          mechanisms: [],
+        }],
+      }, 'resp-invalid'))
+      .mockResolvedValueOnce(responseWithOutput(validPayload(), 'resp-valid'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await extractor.extractAndPersistIfNeeded('11111111-1111-1111-1111-111111111111');
+
+    expect(result.status).toBe('completed');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(db.updatedIngredients).toEqual(['cream sauce', 'garlic']);
+    expect(db.costEventCount).toBe(1);
+    expect(db.costTotalTokens).toBe(280);
+  });
+
+  it('does not record a zero-usage cost event after network retry exhaustion', async () => {
+    const { db, extractor } = service();
+    const fetchMock = vi.fn(async () => {
+      throw new Error('socket unavailable');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      extractor.extractAndPersistIfNeeded('11111111-1111-1111-1111-111111111111'),
+    ).rejects.toThrow('openai_request_failed');
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(db.costEventCount).toBe(0);
+    expect(db.costTotalTokens).toBeNull();
+    expect(db.updatedIngredients).toBeNull();
+  });
+
+  it('does not record a zero-usage cost event for a refusal with a response ID', async () => {
+    const { db, extractor } = service();
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: 'resp-refusal-no-usage',
+      status: 'completed',
+      output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'cannot comply' }] }],
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      extractor.extractAndPersistIfNeeded('11111111-1111-1111-1111-111111111111'),
+    ).rejects.toThrow('openai_request_failed');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(db.costEventCount).toBe(0);
+    expect(db.costTotalTokens).toBeNull();
+    expect(db.updatedIngredients).toBeNull();
+  });
+
+  it('does not persist or mark extraction complete after three invalid responses', async () => {
+    const { db, extractor } = service();
+    const fetchMock = vi.fn(async () => responseWithOutput({
+      ...validPayload(),
+      suspectIngredients: [{
+        canonicalName: '',
+        confidence: 'high',
+        source: 'dish_name',
+        mechanisms: [],
+      }],
+    }, 'resp-invalid'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      extractor.extractAndPersistIfNeeded('11111111-1111-1111-1111-111111111111'),
+    ).rejects.toThrow('openai_request_failed');
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(db.updatedIngredients).toBeNull();
+    expect(db.costEventCount).toBe(1);
+    expect(db.costTotalTokens).toBe(420);
+    expect(db.row.last_bad_meal_extracted_at).toBeNull();
   });
 });

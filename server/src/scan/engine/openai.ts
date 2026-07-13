@@ -8,13 +8,13 @@ import {
   IngredientConfidence,
   IngredientProminence,
   IngredientRole,
-  IngredientEvidence,
   MenuItemAnalysis,
   MenuScanAnalysis,
   MealComponent,
   ConditionSeverity,
   ConditionSeverityBand,
 } from './domain';
+import type { z } from 'zod';
 import {
   buildMenuRubricPromptText,
   isMenuRubricClassificationKey,
@@ -31,25 +31,49 @@ import {
 } from './menuRubric';
 import {
   dietFitStatusValues,
-  dietPreferenceKeys,
   dietPromptText,
   normalizeDietPreferenceKey,
 } from './dietRubric';
 import {
   aggregateOpenAiCostSnapshots,
   estimateOpenAiCost,
+  estimateOpenAiRetryCost,
   extractOpenAiUsage,
   type OpenAiCostSnapshot,
 } from './openaiPricing';
 import {
-  CONDITION_SEVERITY_BANDS,
   fallbackRiskAdjudicationPayload,
   RISK_ADJUDICATION_PROMPT_VERSION,
   type RiskAdjudicationPayload,
   type RiskAdjudicationRequest,
 } from './riskAdjudication';
 import { fallbackExtractionFromImage, fallbackExtractionFromText } from './scoring';
-import { withRetry } from './retry';
+import {
+  isRetryableOpenAiError,
+  requestStructuredOutput,
+  StructuredOutputError,
+  type StructuredOutputAttempt,
+  type StructuredOutputDefinition,
+} from '../../llm/structured-output';
+import {
+  foodImageStructuredOutput,
+  foodMultiImageStructuredOutput,
+  foodTextStructuredOutput,
+  MENU_ITEM_LIMIT,
+  menuStructuredOutput,
+  requestedRiskAdjudicationConditions,
+  riskAdjudicationStructuredOutputForConditions,
+  scanCategoryStructuredOutput,
+  type DietFitHypothesisPayload as RawDietFitHypothesisPayload,
+  type IngredientPayload as RawIngredientPayload,
+  type MealComponentPayload as RawComponentPayload,
+  type MealExtractionPayload as RawExtractionPayload,
+  type MenuBaseFoodCategoryPayload as RawMenuBaseCategoryPayload,
+  type MenuExtractionPayload as RawMenuPayload,
+  type MenuItemPayload as RawMenuItemPayload,
+  type MenuRiskModifierPayload as RawMenuRiskModifierPayload,
+  type ScanCategoryClassificationPayload as RawScanCategoryClassificationPayload,
+} from './openaiSchemas';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
 // Demo fallbacks (fabricated dish-library extractions) are opt-in only: without
@@ -119,7 +143,6 @@ const OPENAI_IMAGE_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_IMAGE_MAX_OUTPU
 const OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS', 300);
 const OPENAI_RISK_ADJUDICATION_TIMEOUT_MS = positiveNumberEnv('OPENAI_RISK_ADJUDICATION_TIMEOUT_MS', 30_000);
 const OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS', 3_000);
-const MENU_ITEM_LIMIT = 100;
 // When off, menu extraction skips per-condition LLM bands and the engine falls
 // back to mechanism-only scoring for menus (revert lever for cost/latency).
 const MENU_LLM_BANDS = (process.env.MENU_LLM_BANDS ?? 'on') !== 'off';
@@ -192,10 +215,6 @@ type ResponseAuditDescriptor = {
   inputRefs?: unknown[];
 };
 
-function openAiCostSnapshotFromResponse(model: string, rawResponseJson: unknown): OpenAiCostSnapshot {
-  return estimateOpenAiCost(model, extractOpenAiUsage(rawResponseJson));
-}
-
 function openAiCostFieldsFromSnapshot(snapshot: OpenAiCostSnapshot) {
   return {
     openaiResponseId: snapshot.usage.responseId,
@@ -237,414 +256,6 @@ function positiveNumberEnv(name: string, fallback: number) {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
-
-type RawIngredientPayload = {
-  rawName?: unknown;
-  canonicalName?: unknown;
-  confidence?: unknown;
-  component?: unknown;
-  evidence?: unknown;
-  role?: unknown;
-  prominence?: unknown;
-  amountEstimate?: unknown;
-  amountBasis?: unknown;
-};
-
-type RawComponentPayload = {
-  name?: unknown;
-  confidence?: unknown;
-  prepStyle?: unknown;
-};
-
-type RawExtractionPayload = {
-  dishName?: unknown;
-  dishConfidence?: unknown;
-  clarity?: unknown;
-  unclearReason?: unknown;
-  components?: unknown;
-  visibleIngredients?: unknown;
-  inferredIngredients?: unknown;
-  prepStyle?: unknown;
-  notes?: unknown;
-  baseFoodCategory?: unknown;
-  riskModifiers?: unknown;
-  conditionSeverities?: unknown;
-  dietFitHypotheses?: unknown;
-};
-
-type RawScanCategoryClassificationPayload = {
-  category?: unknown;
-  confidence?: unknown;
-  reason?: unknown;
-};
-
-type RawMenuPayload = {
-  isMenu?: unknown;
-  notMenuReason?: unknown;
-  menuTitle?: unknown;
-  menuConfidence?: unknown;
-  items?: unknown;
-};
-
-type RawMenuItemPayload = {
-  id?: unknown;
-  name?: unknown;
-  description?: unknown;
-  section?: unknown;
-  price?: unknown;
-  baseFoodCategory?: unknown;
-  riskModifiers?: unknown;
-  conditionSeverities?: unknown;
-  dietFitHypotheses?: unknown;
-  ingredientCallouts?: unknown;
-  explicitIngredients?: unknown;
-  inferredIngredients?: unknown;
-  prepStyle?: unknown;
-  confidence?: unknown;
-};
-
-type RawMenuBaseCategoryPayload = {
-  key?: unknown;
-  confidence?: unknown;
-  evidence?: unknown;
-  source?: unknown;
-};
-
-type RawMenuRiskModifierPayload = {
-  key?: unknown;
-  confidence?: unknown;
-  evidence?: unknown;
-  source?: unknown;
-};
-
-type RawDietFitHypothesisPayload = {
-  dietKey?: unknown;
-  status?: unknown;
-  confidence?: unknown;
-  evidence?: unknown;
-  conflicts?: unknown;
-  missingInfo?: unknown;
-  reason?: unknown;
-};
-
-const dietFitHypothesisSchema = {
-  type: 'array',
-  maxItems: 10,
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      dietKey: { type: 'string', enum: dietPreferenceKeys },
-      status: { type: 'string', enum: dietFitStatusValues },
-      confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-      evidence: {
-        type: 'array',
-        maxItems: 4,
-        items: { type: 'string' },
-      },
-      conflicts: {
-        type: 'array',
-        maxItems: 4,
-        items: { type: 'string' },
-      },
-      missingInfo: {
-        type: 'array',
-        maxItems: 4,
-        items: { type: 'string' },
-      },
-      reason: { type: 'string' },
-    },
-    required: ['dietKey', 'status', 'confidence', 'evidence', 'conflicts', 'missingInfo', 'reason'],
-  },
-} as const;
-
-// Field anchors live in the schema (delivered with every structured-output
-// call) instead of being restated in prose prompts (Phase 2 item 3).
-const ROLE_FIELD_DESCRIPTION =
-  'Culinary role in this meal: main = a central protein or star item, side = an accompanying item, condiment = sauce/spread/dressing, garnish = a small finishing touch, base = the starch or foundation. A splash of vinegar, sauce, or pickled garnish is a condiment or garnish, not a main.';
-const PROMINENCE_FIELD_DESCRIPTION =
-  'Visual salience: primary = a defining, immediately obvious element; secondary = clearly present but not defining; trace = barely visible. Prominence is about how noticeable the ingredient is; amountEstimate is about how much of it there is.';
-const AMOUNT_ESTIMATE_FIELD_DESCRIPTION =
-  'How much of the meal the ingredient occupies: trace = barely present or seasoning-level, small = visible but minor, standard = a normal component, large = an unusually large share, dominant = the main base or defining ingredient.';
-const AMOUNT_BASIS_FIELD_DESCRIPTION =
-  'Short phrase citing the evidence for amountEstimate (e.g. "thin drizzle across the bowl", "covers most of the plate").';
-const CANONICAL_NAME_FIELD_DESCRIPTION =
-  'Canonical food name, singular lowercase. Must be an actual food or ingredient name, never a rubric category key such as spicy_heat or dairy_based.';
-
-function extractedIngredientArraySchema(evidence: 'visible' | 'inferred') {
-  return {
-    type: 'array',
-    items: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        rawName: { type: 'string' },
-        canonicalName: { type: 'string', description: CANONICAL_NAME_FIELD_DESCRIPTION },
-        confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-        component: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-        evidence: { type: 'string', enum: [evidence] },
-        role: {
-          description: ROLE_FIELD_DESCRIPTION,
-          anyOf: [{ type: 'string', enum: ['main', 'side', 'condiment', 'garnish', 'base'] }, { type: 'null' }],
-        },
-        prominence: {
-          description: PROMINENCE_FIELD_DESCRIPTION,
-          anyOf: [{ type: 'string', enum: ['primary', 'secondary', 'trace'] }, { type: 'null' }],
-        },
-        amountEstimate: {
-          description: AMOUNT_ESTIMATE_FIELD_DESCRIPTION,
-          anyOf: [{ type: 'string', enum: ['trace', 'small', 'standard', 'large', 'dominant'] }, { type: 'null' }],
-        },
-        amountBasis: {
-          description: AMOUNT_BASIS_FIELD_DESCRIPTION,
-          anyOf: [{ type: 'string' }, { type: 'null' }],
-        },
-      },
-      required: ['rawName', 'canonicalName', 'confidence', 'component', 'evidence', 'role', 'prominence', 'amountEstimate', 'amountBasis'],
-    },
-  } as const;
-}
-
-// Food scans keep the one-line rationale; menu items are band + drivers only
-// (Phase 2 item 5 — up to 100 items x conditions makes rationale a pure cost).
-function conditionSeverityArraySchema(options: { includeRationale: boolean }) {
-  return {
-    type: 'array',
-    maxItems: 8,
-    items: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        condition: { type: 'string' },
-        band: { type: 'string', enum: ['none', 'mild', 'moderate', 'high', 'severe'] },
-        drivers: {
-          type: 'array',
-          maxItems: 6,
-          items: { type: 'string' },
-          description: 'Extracted ingredients or prep facts that justify the band. Required non-empty for any band above none.',
-        },
-        ...(options.includeRationale ? { rationale: { type: 'string' } } : {}),
-      },
-      required: options.includeRationale
-        ? ['condition', 'band', 'drivers', 'rationale']
-        : ['condition', 'band', 'drivers'],
-    },
-  } as const;
-}
-
-const foodConditionSeveritySchema = conditionSeverityArraySchema({ includeRationale: true });
-const menuConditionSeveritySchema = conditionSeverityArraySchema({ includeRationale: false });
-
-const extractionSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    dishName: { type: 'string' },
-    dishConfidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-    clarity: { type: 'string', enum: ['clear', 'unclear'] },
-    unclearReason: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-    components: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          name: { type: 'string' },
-          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-          prepStyle: {
-            type: 'array',
-            items: { type: 'string' },
-          },
-        },
-        required: ['name', 'confidence', 'prepStyle'],
-      },
-    },
-    visibleIngredients: extractedIngredientArraySchema('visible'),
-    inferredIngredients: extractedIngredientArraySchema('inferred'),
-    prepStyle: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    notes: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    baseFoodCategory: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        key: { type: 'string', enum: menuBaseFoodCategoryKeys },
-        confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-        evidence: { type: 'string', enum: menuRubricEvidenceValues },
-        source: { type: 'string' },
-      },
-      required: ['key', 'confidence', 'evidence', 'source'],
-    },
-    riskModifiers: {
-      type: 'array',
-      maxItems: 10,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          key: { type: 'string', enum: menuRiskModifierKeys },
-          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-          evidence: { type: 'string', enum: menuRubricEvidenceValues },
-          source: { type: 'string' },
-        },
-        required: ['key', 'confidence', 'evidence', 'source'],
-      },
-    },
-    conditionSeverities: foodConditionSeveritySchema,
-    dietFitHypotheses: dietFitHypothesisSchema,
-  },
-  required: [
-    'dishName',
-    'dishConfidence',
-    'clarity',
-    'unclearReason',
-    'components',
-    'visibleIngredients',
-    'inferredIngredients',
-    'prepStyle',
-    'notes',
-    'baseFoodCategory',
-    'riskModifiers',
-    'conditionSeverities',
-    'dietFitHypotheses',
-  ],
-} as const;
-
-const scanCategoryClassificationSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    category: { type: 'string', enum: ['food', 'menu'] },
-    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-    reason: { type: 'string' },
-  },
-  required: ['category', 'confidence', 'reason'],
-} as const;
-
-const riskAdjudicationSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    conditionSeverities: {
-      type: 'array',
-      maxItems: 8,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          condition: { type: 'string' },
-          genericBand: { type: 'string', enum: CONDITION_SEVERITY_BANDS },
-          personalizedBand: { type: 'string', enum: CONDITION_SEVERITY_BANDS },
-          finalBand: { type: 'string', enum: CONDITION_SEVERITY_BANDS },
-          drivers: { type: 'array', maxItems: 6, items: { type: 'string' } },
-          protectiveEvidence: { type: 'array', maxItems: 6, items: { type: 'string' } },
-          citationChunkIds: { type: 'array', maxItems: 8, items: { type: 'string' } },
-          personalEvidenceUsed: { type: 'array', maxItems: 6, items: { type: 'string' } },
-          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-          rationale: { type: 'string' },
-        },
-        required: [
-          'condition',
-          'genericBand',
-          'personalizedBand',
-          'finalBand',
-          'drivers',
-          'protectiveEvidence',
-          'citationChunkIds',
-          'personalEvidenceUsed',
-          'confidence',
-          'rationale',
-        ],
-      },
-    },
-  },
-  required: ['conditionSeverities'],
-} as const;
-
-const menuExtractionSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    isMenu: { type: 'boolean' },
-    notMenuReason: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-    menuTitle: { type: 'string' },
-    menuConfidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-    items: {
-      type: 'array',
-      maxItems: MENU_ITEM_LIMIT,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string' },
-          name: { type: 'string' },
-          description: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          section: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          price: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-          baseFoodCategory: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              key: { type: 'string', enum: menuBaseFoodCategoryKeys },
-              confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-              evidence: { type: 'string', enum: menuRubricEvidenceValues },
-              source: { type: 'string' },
-            },
-            required: ['key', 'confidence', 'evidence', 'source'],
-          },
-          riskModifiers: {
-            type: 'array',
-            maxItems: 5,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                key: { type: 'string', enum: menuRiskModifierKeys },
-                confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-                evidence: { type: 'string', enum: menuRubricEvidenceValues },
-                source: { type: 'string' },
-              },
-              required: ['key', 'confidence', 'evidence', 'source'],
-            },
-          },
-          conditionSeverities: menuConditionSeveritySchema,
-          dietFitHypotheses: dietFitHypothesisSchema,
-          ingredientCallouts: {
-            type: 'array',
-            maxItems: 3,
-            items: { type: 'string' },
-          },
-          prepStyle: {
-            type: 'array',
-            maxItems: 4,
-            items: { type: 'string' },
-          },
-          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-        },
-        required: [
-          'id',
-          'name',
-          'description',
-          'section',
-          'price',
-          'baseFoodCategory',
-          'riskModifiers',
-          'conditionSeverities',
-          'dietFitHypotheses',
-          'ingredientCallouts',
-          'prepStyle',
-          'confidence',
-        ],
-      },
-    },
-  },
-  required: ['isMenu', 'notMenuReason', 'menuTitle', 'menuConfidence', 'items'],
-} as const;
 
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -832,7 +443,7 @@ function buildMenuTextIngredients(
 function inferMenuPrepStyle(text: string) {
   const prepStyle: string[] = [];
   const normalized = normalizeMenuText(text);
-  const checks: Array<[string, string[]]> = [
+  const checks: [string, string[]][] = [
     ['fried', ['fried', 'tempura', 'crispy']],
     ['spicy', ['spicy', 'firecracker', 'jalapeno', 'chili', 'sriracha']],
     ['creamy', ['cream', 'creamy', 'mayo', 'aioli']],
@@ -910,18 +521,6 @@ function coerceIngredient(value: RawIngredientPayload, evidence: 'visible' | 'in
     amountEstimate: asIngredientAmountEstimate(value.amountEstimate) ?? defaultAmountEstimate(role, prominence),
     amountBasis: amountBasis || undefined,
   };
-}
-
-function coerceMenuIngredient(value: RawIngredientPayload, evidence: 'visible' | 'inferred', component: string): ExtractedIngredient | null {
-  const ingredient = coerceIngredient(
-    {
-      ...value,
-      component,
-      evidence,
-    },
-    evidence,
-  );
-  return ingredient;
 }
 
 function coerceMenuBaseFoodCategory(value: RawMenuBaseCategoryPayload | undefined, itemName: string): MenuBaseFoodCategory | null {
@@ -1103,16 +702,8 @@ function coerceMenuItem(value: RawMenuItemPayload, index: number, knownIngredien
 
   const rawId = String(value.id ?? '').trim();
   const id = rawId || `item-${index + 1}`;
-  const extractedIngredients = Array.isArray(value.explicitIngredients)
-    ? value.explicitIngredients
-        .map((entry) => coerceMenuIngredient(entry as RawIngredientPayload, 'visible', name))
-        .filter((entry): entry is ExtractedIngredient => Boolean(entry))
-    : [];
-  const inferredIngredients = Array.isArray(value.inferredIngredients)
-    ? value.inferredIngredients
-        .map((entry) => coerceMenuIngredient(entry as RawIngredientPayload, 'inferred', name))
-        .filter((entry): entry is ExtractedIngredient => Boolean(entry))
-    : [];
+  const extractedIngredients: ExtractedIngredient[] = [];
+  const inferredIngredients: ExtractedIngredient[] = [];
   const description = String(value.description ?? '').trim() || undefined;
   const section = String(value.section ?? '').trim() || undefined;
   const prepStyle = asStringArray(value.prepStyle);
@@ -1252,236 +843,119 @@ function coerceExtraction(
   };
 }
 
-function extractOutputText(payload: Record<string, unknown>) {
-  const direct = payload.output_text;
-  if (typeof direct === 'string' && direct.trim()) {
-    return direct;
-  }
-
-  const output = Array.isArray(payload.output) ? payload.output : [];
-  const textChunks: string[] = [];
-
-  for (const item of output) {
-    if (!item || typeof item !== 'object') {
-      continue;
-    }
-
-    const content = Array.isArray((item as Record<string, unknown>).content)
-      ? ((item as Record<string, unknown>).content as Array<Record<string, unknown>>)
-      : [];
-
-    for (const chunk of content) {
-      const text = chunk.text;
-      if (typeof text === 'string' && text.trim()) {
-        textChunks.push(text);
-      }
-    }
-  }
-
-  return textChunks.join('\n').trim();
+function rawResponseJsonFromAttempts(attempts: StructuredOutputAttempt[]) {
+  const responses = attempts
+    .map((attempt) => attempt.rawResponseJson)
+    .filter((response) => response !== null);
+  if (responses.length <= 1) return responses[0] ?? null;
+  return { attempts: responses };
 }
 
-async function runResponsesRequestWithAudit<TPayload extends object>(
-  input: unknown,
+function rawResponseTextFromAttempts(attempts: StructuredOutputAttempt[]) {
+  const finalAttempt = attempts.at(-1);
+  return finalAttempt?.outputText ?? finalAttempt?.rawResponseText ?? null;
+}
+
+function openAiCostSnapshotFromAttempts(model: string, attempts: StructuredOutputAttempt[]): OpenAiCostSnapshot {
+  return estimateOpenAiRetryCost(
+    model,
+    attempts.map((attempt) => attempt.rawResponseJson),
+  ) ?? estimateOpenAiCost(model, extractOpenAiUsage(null));
+}
+
+function structuredOutputRequestMetadata(
+  metadata: Record<string, unknown>,
+  attemptCount: number,
+  validationIssues: { path: string; message: string }[],
+) {
+  return {
+    ...metadata,
+    attemptCount,
+    validationIssues,
+  };
+}
+
+async function runResponsesRequestWithAudit<TSchema extends z.ZodTypeAny>(
+  input: Record<string, unknown>,
+  definition: StructuredOutputDefinition<TSchema>,
   audit: ResponseAuditDescriptor,
   options: { timeoutMs?: number } = {},
-): Promise<{ parsed: TPayload; audit: OpenAiAuditLog }> {
-  const startedAt = Date.now();
+): Promise<{ parsed: z.infer<TSchema>; audit: OpenAiAuditLog }> {
   const completeAudit = {
     ...audit,
     requestMetadata: audit.requestMetadata ?? {},
     inputRefs: audit.inputRefs ?? [],
   };
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? OPENAI_TIMEOUT_MS);
-  let response: Response;
 
   try {
-    response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
+    const result = await requestStructuredOutput({
+      apiKey: OPENAI_API_KEY,
+      stage: completeAudit.stage,
+      request: input,
+      definition,
+      timeoutMs: options.timeoutMs ?? OPENAI_TIMEOUT_MS,
+    });
+    const costSnapshot = openAiCostSnapshotFromAttempts(completeAudit.model, result.attempts);
+    return {
+      parsed: result.value,
+      audit: {
+        ...completeAudit,
+        provider: 'openai',
+        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
+        requestMetadata: structuredOutputRequestMetadata(
+          completeAudit.requestMetadata,
+          result.attemptCount,
+          result.validationIssues,
+        ),
+        rawResponseText: rawResponseTextFromAttempts(result.attempts),
+        rawResponseJson: rawResponseJsonFromAttempts(result.attempts),
+        parsedResponseJson: result.value,
+        status: 'completed',
+        latencyMs: result.latencyMs,
+        ...openAiCostFieldsFromSnapshot(costSnapshot),
       },
-      body: JSON.stringify(input),
-      signal: controller.signal,
-    });
+    };
   } catch (error) {
-    const errorName =
-      error && typeof error === 'object' && 'name' in error
-        ? String((error as { name?: unknown }).name)
-        : '';
-    const code = errorName === 'AbortError' ? 'openai_timeout' : 'openai_request_failed';
-    const message = error instanceof Error ? error.message : String(error);
-    const costSnapshot = openAiCostSnapshotFromResponse(completeAudit.model, null);
-    throw Object.assign(new Error(code), {
-      audit: {
-        ...completeAudit,
-        provider: 'openai' as const,
-        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
-        rawResponseText: null,
-        rawResponseJson: null,
-        parsedResponseJson: null,
-        status: 'failed' as const,
-        errorCode: code,
-        errorMessage: message,
-        latencyMs: Date.now() - startedAt,
-        ...openAiCostFieldsFromSnapshot(costSnapshot),
-      } satisfies OpenAiAuditLog,
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  const rawResponseText = await response.text();
-  let rawResponseJson: unknown = null;
-  try {
-    rawResponseJson = rawResponseText ? JSON.parse(rawResponseText) : null;
-  } catch {
-    rawResponseJson = { rawText: rawResponseText };
-  }
-  const costSnapshot = openAiCostSnapshotFromResponse(completeAudit.model, rawResponseJson);
-
-  if (!response.ok) {
-    throw Object.assign(new Error(`openai_error:${response.status}:${rawResponseText}`), {
-      audit: {
-        ...completeAudit,
-        provider: 'openai' as const,
-        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
-        rawResponseText,
-        rawResponseJson,
-        parsedResponseJson: null,
-        status: 'failed' as const,
-        errorCode: `openai_error_${response.status}`,
-        errorMessage: rawResponseText,
-        latencyMs: Date.now() - startedAt,
-        ...openAiCostFieldsFromSnapshot(costSnapshot),
-      } satisfies OpenAiAuditLog,
-    });
-  }
-
-  const payload = rawResponseJson && typeof rawResponseJson === 'object' ? (rawResponseJson as Record<string, unknown>) : {};
-  const outputText = extractOutputText(payload);
-
-  if (!outputText) {
-    throw Object.assign(new Error('openai_missing_output'), {
-      audit: {
-        ...completeAudit,
-        provider: 'openai' as const,
-        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
-        rawResponseText,
-        rawResponseJson,
-        parsedResponseJson: null,
-        status: 'failed' as const,
-        errorCode: 'openai_missing_output',
-        errorMessage: 'OpenAI response did not include output_text.',
-        latencyMs: Date.now() - startedAt,
-        ...openAiCostFieldsFromSnapshot(costSnapshot),
-      } satisfies OpenAiAuditLog,
-    });
-  }
-
-  const responseStatus = typeof payload.status === 'string' ? payload.status : null;
-  const incompleteDetails = payload.incomplete_details;
-  if (responseStatus === 'incomplete' || incompleteDetails) {
-    const errorMessage = `OpenAI response was incomplete${incompleteDetails ? `: ${JSON.stringify(incompleteDetails)}` : '.'}`;
-    throw Object.assign(new Error('openai_incomplete_output'), {
-      audit: {
-        ...completeAudit,
-        provider: 'openai' as const,
-        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
-        rawResponseText: outputText,
-        rawResponseJson,
-        parsedResponseJson: null,
-        status: 'failed' as const,
-        errorCode: 'openai_incomplete_output',
-        errorMessage,
-        latencyMs: Date.now() - startedAt,
-        ...openAiCostFieldsFromSnapshot(costSnapshot),
-      } satisfies OpenAiAuditLog,
-    });
-  }
-
-  let parsed: TPayload;
-  try {
-    parsed = JSON.parse(outputText) as TPayload;
-  } catch (error) {
-    throw Object.assign(new Error('openai_invalid_json'), {
-      audit: {
-        ...completeAudit,
-        provider: 'openai' as const,
-        promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
-        rawResponseText: outputText,
-        rawResponseJson,
-        parsedResponseJson: null,
-        status: 'failed' as const,
-        errorCode: 'openai_invalid_json',
-        errorMessage: error instanceof Error ? error.message : String(error),
-        latencyMs: Date.now() - startedAt,
-        ...openAiCostFieldsFromSnapshot(costSnapshot),
-      } satisfies OpenAiAuditLog,
-    });
-  }
-
-  return {
-    parsed,
-    audit: {
+    const structured = error instanceof StructuredOutputError ? error : null;
+    const attempts = structured?.attempts ?? [];
+    const costSnapshot = openAiCostSnapshotFromAttempts(completeAudit.model, attempts);
+    const failedAudit: OpenAiAuditLog = {
       ...completeAudit,
       provider: 'openai',
       promptVersion: completeAudit.promptVersion ?? PROMPT_VERSION,
-      rawResponseText: outputText,
-      rawResponseJson,
-      parsedResponseJson: parsed,
-      status: 'completed',
-      latencyMs: Date.now() - startedAt,
+      requestMetadata: structuredOutputRequestMetadata(
+        completeAudit.requestMetadata,
+        structured?.attempts.length ?? 1,
+        structured?.validationIssues ?? [],
+      ),
+      rawResponseText: rawResponseTextFromAttempts(attempts),
+      rawResponseJson: rawResponseJsonFromAttempts(attempts),
+      parsedResponseJson: null,
+      status: 'failed',
+      errorCode: structured?.code ?? 'openai_request_failed',
+      errorMessage: structured?.validationIssues.length
+        ? 'OpenAI structured output failed validation.'
+        : error instanceof Error ? error.message : 'OpenAI request failed.',
+      latencyMs: structured?.latencyMs ?? 0,
       ...openAiCostFieldsFromSnapshot(costSnapshot),
-    },
-  };
+    };
+    const throwable = error instanceof Error ? error : new Error('openai_request_failed');
+    throw Object.assign(throwable, { audit: failedAudit });
+  }
 }
-
-// Non-HTTP failure codes worth one more try: timeouts, malformed/truncated
-// model output, and network-layer fetch rejections (ECONNRESET / socket hang
-// up surface as "fetch failed" with code openai_request_failed BEFORE any HTTP
-// status exists) are usually transient. A real outage still fails after the
-// capped attempts. Attempts stay capped by withRetry.
-const RETRYABLE_OPENAI_ERROR_CODES = new Set([
-  'openai_timeout',
-  'openai_invalid_json',
-  'openai_incomplete_output',
-  'openai_request_failed',
-]);
 
 export function isTransientOpenAiError(error: unknown) {
-  if (!(error instanceof Error)) {
-    return true;
-  }
-
-  if (RETRYABLE_OPENAI_ERROR_CODES.has(error.message)) {
-    return true;
-  }
-
-  const match = error.message.match(/^openai_error:(\d+):/);
-  if (!match) {
-    return false;
-  }
-
-  const status = Number(match[1]);
-  return status === 408 || status === 409 || status === 429 || status >= 500;
+  return isRetryableOpenAiError(error);
 }
 
-async function runResponsesRequestWithAuditRetry<TPayload extends object>(
-  input: unknown,
+async function runResponsesRequestWithAuditRetry<TSchema extends z.ZodTypeAny>(
+  input: Record<string, unknown>,
+  definition: StructuredOutputDefinition<TSchema>,
   audit: ResponseAuditDescriptor,
   options: { timeoutMs?: number } = {},
 ) {
-  return withRetry(() => runResponsesRequestWithAudit<TPayload>(input, audit, options), {
-    attempts: 3,
-    delayMs: 350,
-    shouldRetry: isTransientOpenAiError,
-    onRetry: (error, attempt) => console.warn('[openai] retrying request', { attempt, error }),
-  });
+  return runResponsesRequestWithAudit(input, definition, audit, options);
 }
-
 // Five one-line band anchors with concrete dishes so band choice is calibrated
 // against fixed reference points instead of run-to-run vibes (Phase 2 item 1).
 // Shared by food scans and menu items.
@@ -1742,12 +1216,15 @@ function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
 export async function adjudicateScanRiskWithAudit(
   input: RiskAdjudicationRequest,
 ): Promise<ExtractionWithAudit<RiskAdjudicationPayload>> {
+  const knownConditions = requestedRiskAdjudicationConditions(input.knownConditions);
+  const adjudicationInput = { ...input, knownConditions };
   if (!OPENAI_API_KEY) {
-    return { result: fallbackRiskAdjudicationPayload(input), audits: [] };
+    return { result: fallbackRiskAdjudicationPayload(adjudicationInput), audits: [] };
   }
 
   const systemPrompt = buildRiskAdjudicationSystemPrompt();
-  const userPrompt = buildRiskAdjudicationUserPrompt(input);
+  const userPrompt = buildRiskAdjudicationUserPrompt(adjudicationInput);
+  const structuredOutput = riskAdjudicationStructuredOutputForConditions(knownConditions);
   const request = {
     model: RISK_ADJUDICATION_MODEL,
     max_output_tokens: OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS,
@@ -1763,28 +1240,24 @@ export async function adjudicateScanRiskWithAudit(
     ],
     text: {
       ...verbosityField(RISK_ADJUDICATION_MODEL),
-      format: {
-        type: 'json_schema',
-        name: 'risk_adjudication',
-        schema: riskAdjudicationSchema,
-        strict: true,
-      },
+      format: structuredOutput.format,
     },
     ...reasoningFields(RISK_ADJUDICATION_MODEL, 'low'),
   };
 
-  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RiskAdjudicationPayload>(
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry(
     request,
+    structuredOutput,
     {
       stage: 'risk_adjudication',
       model: RISK_ADJUDICATION_MODEL,
       promptVersion: RISK_ADJUDICATION_PROMPT_VERSION,
       systemPrompt,
       userPrompt,
-      jsonSchema: riskAdjudicationSchema,
+      jsonSchema: structuredOutput.jsonSchema,
       schemaVersion: 'risk_adjudication_v1',
       requestMetadata: {
-        conditionCount: input.knownConditions.length,
+        conditionCount: knownConditions.length,
         ragChunkCount: input.ragEvidence.length,
         personalEvidenceCount: input.personalEvidence.length,
       },
@@ -1846,22 +1319,17 @@ export async function extractMealFromTextWithAudit(
     max_output_tokens: OPENAI_TEXT_MAX_OUTPUT_TOKENS,
     text: {
       ...verbosityField(EXTRACTION_MODEL),
-      format: {
-        type: 'json_schema',
-        name: 'meal_extraction_text',
-        schema: extractionSchema,
-        strict: true,
-      },
+      format: foodTextStructuredOutput.format,
     },
     ...reasoningFields(EXTRACTION_MODEL, 'low'),
   };
 
-  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry(request, foodTextStructuredOutput, {
     stage: 'food_text_extraction',
     model: EXTRACTION_MODEL,
     systemPrompt,
     userPrompt,
-    jsonSchema: extractionSchema,
+    jsonSchema: foodTextStructuredOutput.jsonSchema,
     schemaVersion: EXTRACTION_SCHEMA_VERSION,
     requestMetadata: { source: 'text', includeConditionBands: includeBands },
     inputRefs: [{ inputKind: 'text' }],
@@ -1918,12 +1386,7 @@ export async function classifyScanImagesWithAudit(
     ],
     text: {
       ...verbosityField(CLASSIFICATION_MODEL),
-      format: {
-        type: 'json_schema',
-        name: 'scan_category_classification',
-        schema: scanCategoryClassificationSchema,
-        strict: true,
-      },
+      format: scanCategoryStructuredOutput.format,
     },
     // Reasoning tokens count against max_output_tokens; minimal effort keeps
     // the small classification cap from being eaten before the JSON is emitted.
@@ -1935,12 +1398,12 @@ export async function classifyScanImagesWithAudit(
     pageIndex: index,
     imageRef: imageRefKind(imageUrl),
   }));
-  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawScanCategoryClassificationPayload>(request, {
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry(request, scanCategoryStructuredOutput, {
     stage: 'scan_category_classification',
     model: CLASSIFICATION_MODEL,
     systemPrompt,
     userPrompt,
-    jsonSchema: scanCategoryClassificationSchema,
+    jsonSchema: scanCategoryStructuredOutput.jsonSchema,
     schemaVersion: 'scan_category_classification_v1',
     requestMetadata: { imageCount: imageUrls.length, imageDetail: 'low' },
     inputRefs,
@@ -1993,23 +1456,18 @@ export async function extractMealFromImageWithAudit(
     ],
     text: {
       ...verbosityField(IMAGE_EXTRACTION_MODEL),
-      format: {
-        type: 'json_schema',
-        name: 'meal_extraction_image',
-        schema: extractionSchema,
-        strict: true,
-      },
+      format: foodImageStructuredOutput.format,
     },
     ...reasoningFields(IMAGE_EXTRACTION_MODEL, 'low'),
   };
 
   const inputRefs = [{ inputKind: 'image', imageRef: imageRefKind(imageUrl) }];
-  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry(request, foodImageStructuredOutput, {
     stage: 'food_image_extraction',
     model: IMAGE_EXTRACTION_MODEL,
     systemPrompt,
     userPrompt,
-    jsonSchema: extractionSchema,
+    jsonSchema: foodImageStructuredOutput.jsonSchema,
     schemaVersion: EXTRACTION_SCHEMA_VERSION,
     requestMetadata: { imageDetail: IMAGE_DETAIL, includeConditionBands: includeBands },
     inputRefs,
@@ -2065,12 +1523,7 @@ export async function extractMealFromImagesWithAudit(
     ],
     text: {
       ...verbosityField(IMAGE_EXTRACTION_MODEL),
-      format: {
-        type: 'json_schema',
-        name: 'meal_extraction_images',
-        schema: extractionSchema,
-        strict: true,
-      },
+      format: foodMultiImageStructuredOutput.format,
     },
     ...reasoningFields(IMAGE_EXTRACTION_MODEL, 'low'),
   };
@@ -2081,12 +1534,12 @@ export async function extractMealFromImagesWithAudit(
     pageIndex: index,
     imageRef: imageRefKind(imageUrl),
   }));
-  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawExtractionPayload>(request, {
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry(request, foodMultiImageStructuredOutput, {
     stage: 'food_multi_image_extraction',
     model: IMAGE_EXTRACTION_MODEL,
     systemPrompt,
     userPrompt,
-    jsonSchema: extractionSchema,
+    jsonSchema: foodMultiImageStructuredOutput.jsonSchema,
     schemaVersion: EXTRACTION_SCHEMA_VERSION,
     requestMetadata: { imageDetail: IMAGE_DETAIL, imageCount: imageUrls.length, includeConditionBands: includeBands },
     inputRefs,
@@ -2131,12 +1584,7 @@ async function requestMenuExtraction(
     ],
     text: {
       ...verbosityField(MENU_EXTRACTION_MODEL),
-      format: {
-        type: 'json_schema',
-        name: 'menu_extraction_image',
-        schema: menuExtractionSchema,
-        strict: true,
-      },
+      format: menuStructuredOutput.format,
     },
     ...reasoningFields(MENU_EXTRACTION_MODEL, 'minimal'),
     max_output_tokens: OPENAI_MENU_MAX_OUTPUT_TOKENS,
@@ -2147,12 +1595,12 @@ async function requestMenuExtraction(
     pageIndex: options.pageOffset + index,
     imageRef: imageRefKind(imageUrl),
   }));
-  const { parsed, audit } = await runResponsesRequestWithAuditRetry<RawMenuPayload>(request, {
+  const { parsed, audit } = await runResponsesRequestWithAuditRetry(request, menuStructuredOutput, {
     stage: options.stage,
     model: MENU_EXTRACTION_MODEL,
     systemPrompt,
     userPrompt,
-    jsonSchema: menuExtractionSchema,
+    jsonSchema: menuStructuredOutput.jsonSchema,
     schemaVersion: MENU_EXTRACTION_SCHEMA_VERSION,
     requestMetadata: {
       imageDetail: MENU_IMAGE_DETAIL,
@@ -2223,7 +1671,7 @@ function dedupeMenuItemsByNameAndPrice<T extends { name?: unknown; price?: unkno
   return deduped;
 }
 
-function combineMenuPageExtractions(pageResults: Array<{ result: MenuScanAnalysis }>, inputPageCount: number): MenuScanAnalysis {
+function combineMenuPageExtractions(pageResults: { result: MenuScanAnalysis }[], inputPageCount: number): MenuScanAnalysis {
   const pages = pageResults.map((entry) => entry.result);
   const rawItems = pages.flatMap((page, pageIndex) =>
       page.items.map((item, itemIndex) => ({
@@ -2247,7 +1695,7 @@ function combineMenuPageExtractions(pageResults: Array<{ result: MenuScanAnalysi
 }
 
 function combinedMenuAudit(
-  pageResults: Array<{ parsed: RawMenuPayload; audit: OpenAiAuditLog }>,
+  pageResults: { parsed: RawMenuPayload; audit: OpenAiAuditLog }[],
   result: MenuScanAnalysis,
   context: ExtractionContext,
   imageUrls: string[],
@@ -2289,7 +1737,7 @@ function combinedMenuAudit(
     schemaVersion: MENU_EXTRACTION_SCHEMA_VERSION,
     systemPrompt,
     userPrompt,
-    jsonSchema: menuExtractionSchema,
+    jsonSchema: menuStructuredOutput.jsonSchema,
     requestMetadata: {
       imageDetail: MENU_IMAGE_DETAIL,
       pageCount: imageUrls.length,
@@ -2346,12 +1794,16 @@ export async function extractMenuFromImagesWithAudit(
             description: 'Salmon with rice, cucumber, greens, and lemon.',
             section: 'Entrees',
             price: '$18',
-            explicitIngredients: [
-              { rawName: 'salmon', canonicalName: 'salmon', confidence: 'high' },
-              { rawName: 'rice', canonicalName: 'rice', confidence: 'high' },
-              { rawName: 'cucumber', canonicalName: 'cucumber', confidence: 'medium' },
-            ],
-            inferredIngredients: [],
+            baseFoodCategory: {
+              key: 'mixed_dish_or_entree',
+              confidence: 'medium',
+              evidence: 'common_dish_knowledge',
+              source: 'salmon bowl',
+            },
+            riskModifiers: [],
+            conditionSeverities: [],
+            dietFitHypotheses: [],
+            ingredientCallouts: ['salmon', 'rice', 'cucumber'],
             prepStyle: ['grilled'],
             confidence: 'medium',
           },
@@ -2361,12 +1813,16 @@ export async function extractMenuFromImagesWithAudit(
             description: 'Pasta with tomato cream sauce, garlic, and parmesan.',
             section: 'Pasta',
             price: '$16',
-            explicitIngredients: [
-              { rawName: 'tomato', canonicalName: 'tomato', confidence: 'high' },
-              { rawName: 'cream', canonicalName: 'cream', confidence: 'high' },
-              { rawName: 'garlic', canonicalName: 'garlic', confidence: 'high' },
-            ],
-            inferredIngredients: [{ rawName: 'pasta', canonicalName: 'pasta', confidence: 'medium' }],
+            baseFoodCategory: {
+              key: 'wheat_grain_based',
+              confidence: 'high',
+              evidence: 'name',
+              source: 'pasta',
+            },
+            riskModifiers: [],
+            conditionSeverities: [],
+            dietFitHypotheses: [],
+            ingredientCallouts: ['tomato', 'cream', 'garlic'],
             prepStyle: ['creamy'],
             confidence: 'medium',
           },

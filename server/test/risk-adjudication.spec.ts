@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { IngredientInsight, StructuredAnalysisV2 } from '../src/scan/engine/domain';
 import {
   buildRiskAdjudicationRequest,
+  fallbackRiskAdjudicationPayload,
   validateRiskAdjudication,
   type RiskAdjudicationPayload,
 } from '../src/scan/engine/riskAdjudication';
@@ -117,6 +118,43 @@ function payload(
 }
 
 describe('risk adjudication validation', () => {
+  it('uses one canonical condition list for requests, fallbacks, and validation', () => {
+    const input = buildRiskAdjudicationRequest({
+      structuredAnalysis: structured(),
+      profile: { ...ibsProfile(), knownConditions: [' GERD ', 'acid reflux', ' '] },
+      insights: [],
+      ragEvidence: [],
+    });
+    const fallback = fallbackRiskAdjudicationPayload(input);
+    const validated = validateRiskAdjudication({
+      conditionSeverities: [{ ...fallback.conditionSeverities[0]!, condition: 'acid reflux' }],
+    }, input, { source: 'fallback' });
+
+    expect(input.knownConditions).toEqual(['GERD / Acid reflux']);
+    expect(fallback.conditionSeverities).toHaveLength(1);
+    expect(fallback.conditionSeverities[0]).toMatchObject({
+      condition: 'GERD / Acid reflux',
+      finalBand: 'mild',
+    });
+    expect(validated?.conditionSeverities).toEqual([
+      expect.objectContaining({ condition: 'GERD / Acid reflux', band: 'mild' }),
+    ]);
+  });
+
+  it('uses general when a profile contains only blank conditions', () => {
+    const input = buildRiskAdjudicationRequest({
+      structuredAnalysis: structured(),
+      profile: { ...ibsProfile(), knownConditions: [' ', '\t'] },
+      insights: [],
+      ragEvidence: [],
+    });
+
+    expect(input.knownConditions).toEqual(['general']);
+    expect(fallbackRiskAdjudicationPayload(input).conditionSeverities).toEqual([
+      expect.objectContaining({ condition: 'general' }),
+    ]);
+  });
+
   it('accepts adjudicated bands with valid ingredients, citations, and high-confidence personal evidence', () => {
     const input = buildRiskAdjudicationRequest({
       structuredAnalysis: structured(),
@@ -140,6 +178,26 @@ describe('risk adjudication validation', () => {
     expect(out?.conditionSeverities[0]).toMatchObject({ condition: 'IBS', band: 'mild', drivers: ['bread'] });
     expect(out?.metadata.ragRetrievalRunId).toBe('rag-1');
     expect(out?.evidenceCitations[0].chunkId).toBe('chunk-1');
+  });
+
+  it('rejects omitted and duplicate canonical condition rows', () => {
+    const input = {
+      ...buildRiskAdjudicationRequest({
+        structuredAnalysis: structured(),
+        profile: ibsProfile(),
+        insights: [insight()],
+        ragEvidence: [],
+      }),
+      knownConditions: ['IBS', 'GERD'],
+    };
+    const ibs = payload('mild', []).conditionSeverities[0];
+    const gerd = { ...ibs, condition: 'GERD' };
+
+    expect(validateRiskAdjudication({ conditionSeverities: [ibs, gerd] }, input)).not.toBeNull();
+    expect(validateRiskAdjudication({ conditionSeverities: [ibs] }, input)).toBeNull();
+    expect(validateRiskAdjudication({
+      conditionSeverities: [ibs, { ...ibs, condition: ' ibs ' }, gerd],
+    }, input)).toBeNull();
   });
 
   it('drops invented citation ids without rejecting otherwise valid adjudication', () => {

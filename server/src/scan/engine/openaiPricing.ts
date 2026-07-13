@@ -174,7 +174,63 @@ export function aggregateOpenAiCostSnapshots(model: string, snapshots: OpenAiCos
   };
 }
 
-function sumNullable(values: Array<number | null>): number | null {
+export function hasOpenAiTokenUsage(usage: OpenAiUsageSnapshot): boolean {
+  return [
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.totalTokens,
+  ].some((value) => typeof value === 'number' && value > 0);
+}
+
+export function estimateOpenAiRetryCost(
+  model: string,
+  rawResponses: unknown[],
+): OpenAiCostSnapshot | null {
+  const usageSnapshots = rawResponses.map(extractOpenAiUsage);
+  const responseId = usageSnapshots.reduce<string | null>(
+    (latest, usage) => usage.responseId ?? latest,
+    null,
+  );
+  const snapshots = usageSnapshots
+    .filter(hasOpenAiTokenUsage)
+    .map((usage) => estimateOpenAiCost(model, usage));
+  if (!snapshots.length) {
+    if (!responseId) return null;
+    return estimateOpenAiCost(model, {
+      responseId,
+      inputTokens: null,
+      cachedInputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+    });
+  }
+  if (snapshots.length === 1) {
+    return {
+      ...snapshots[0],
+      usage: {
+        ...snapshots[0].usage,
+        responseId,
+      },
+    };
+  }
+
+  const aggregate = aggregateOpenAiCostSnapshots(model, snapshots);
+  return {
+    ...aggregate,
+    usage: {
+      ...aggregate.usage,
+      responseId,
+    },
+    pricingSnapshot: {
+      ...aggregate.pricingSnapshot,
+      note: 'Synthetic aggregate of structured-output retry attempts.',
+    },
+    billable: snapshots.some((snapshot) => snapshot.billable),
+  };
+}
+
+function sumNullable(values: (number | null)[]): number | null {
   const numericValues = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   return numericValues.length ? numericValues.reduce((total, value) => total + value, 0) : null;
 }

@@ -7,6 +7,7 @@ export async function withRetry<T>(
   options: {
     attempts?: number;
     delayMs?: number;
+    deadlineAt?: number;
     shouldRetry?: (error: unknown) => boolean;
     onRetry?: (error: unknown, attempt: number) => void;
   } = {},
@@ -23,8 +24,12 @@ export async function withRetry<T>(
         throw error;
       }
 
+      const retryDelayMs = delayMs * attempt;
+      if (options.deadlineAt !== undefined && Date.now() + retryDelayMs >= options.deadlineAt) {
+        throw error;
+      }
       options.onRetry?.(error, attempt);
-      await sleep(delayMs * attempt);
+      await sleep(retryDelayMs);
     }
   }
 
