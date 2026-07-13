@@ -16,6 +16,8 @@ import {
   normalizeContext,
   overallRiskScore,
   scoreInRange,
+  syncDataset,
+  validateExpectation,
 } from '../scripts/eval/langsmith-lib.mjs';
 
 const profilesDoc = {
@@ -166,6 +168,8 @@ describe('experiment metadata', () => {
       extractionModel: 'gpt-x',
       menuModel: 'gpt-menu',
       extractionPromptVersion: 'v9',
+      commitSha: 'unknown',
+      ragRetrievalEnabled: 'false',
     });
   });
 
@@ -174,6 +178,60 @@ describe('experiment metadata', () => {
     expect(metadata.extractionModel).toBe('gpt-5.4-mini');
     expect(metadata.menuModel).toBe('gpt-5-mini');
     expect(metadata.extractionPromptVersion).toBe('n/a');
+  });
+});
+
+describe('multi-modal expectation validation', () => {
+  it('validates menu routing, page count, item coverage, score spread, and false-low guards', () => {
+    const expectation = {
+      expectedScanCategory: 'menu',
+      menu: {
+        inputPageCount: 2,
+        minItems: 3,
+        requiredNamePatterns: ['tempura'],
+        falseLowNamePatterns: ['fried'],
+        falseLowMinScore: 37,
+        minScoreSpread: 25,
+      },
+    };
+    const run = {
+      scanCategory: 'menu',
+      score: 50,
+      level: 'medium',
+      menu: {
+        inputPageCount: 2,
+        items: [
+          { name: 'Plain Rice', riskScore: 10 },
+          { name: 'Shrimp Tempura', riskScore: 65 },
+          { name: 'Fried Roll', riskScore: 70 },
+        ],
+      },
+    };
+    expect(validateExpectation(expectation, [run], [])).toMatchObject({ passed: true });
+  });
+
+  it('fails unsafe menu output and an incorrect router category', () => {
+    const result = validateExpectation(
+      {
+        expectedScanCategory: 'menu',
+        menu: { minItems: 2, falseLowNamePatterns: ['fried'], falseLowMinScore: 37 },
+      },
+      [{ scanCategory: 'food', score: 10, level: 'low', menu: { items: [{ name: 'Fried Roll', riskScore: 5 }] } }],
+      [],
+    );
+    expect(result.passed).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/scan category/);
+    expect(result.errors.join(' ')).toMatch(/below 37/);
+  });
+
+  it('validates the safe unclear fallback for non-food inputs', () => {
+    expect(
+      validateExpectation(
+        { expectedScanCategory: 'food', expectedClarity: 'unclear' },
+        [{ scanCategory: 'food', clarity: 'unclear', score: 0, level: 'low' }],
+        [],
+      ).passed,
+    ).toBe(true);
   });
 });
 
@@ -194,6 +252,41 @@ describe('key-absent skip', () => {
       suffix: 's1',
     });
     expect(reporter).toBeNull();
+  });
+});
+
+describe('LangSmith dataset synchronization', () => {
+  it('updates changed expectations instead of retaining stale reference outputs', async () => {
+    const updates: unknown[] = [];
+    const client = {
+      hasDataset: async () => true,
+      readDataset: async () => ({ id: 'dataset-1' }),
+      async *listExamples() {
+        yield {
+          id: 'example-1',
+          inputs: { caseId: 'pizza_001', profileKey: 'ibs', profile: {} },
+          outputs: { expectation: { expectedBands: ['low'] } },
+        };
+      },
+      createExamples: async () => [],
+      updateExample: async (id: string, update: unknown) => updates.push({ id, update }),
+    };
+    const examples = [{
+      key: 'pizza_001::ibs',
+      inputs: { profile: {}, profileKey: 'ibs', caseId: 'pizza_001' },
+      outputs: { expectation: { expectedBands: ['high'] } },
+    }];
+
+    const result = await syncDataset(client, 'dataset', examples);
+
+    expect(result).toMatchObject({ added: 0, updated: 1, total: 1 });
+    expect(updates).toEqual([{
+      id: 'example-1',
+      update: {
+        inputs: examples[0].inputs,
+        outputs: examples[0].outputs,
+      },
+    }]);
   });
 });
 

@@ -58,6 +58,19 @@ export class ScanReservationService {
     });
   }
 
+  setCategory(userId: string, scanId: string, scanCategory: 'food' | 'menu' | 'grocery') {
+    return this.db.service(async (sql) => {
+      const rows = await sql`
+        update public.scans
+        set scan_category = ${scanCategory}
+        where id = ${scanId}
+          and user_id = ${userId}
+          and analysis_status = 'processing'
+        returning id`;
+      if (!rows.length) throw new Error('scan_category_update_failed');
+    });
+  }
+
   complete(input: ScanCompletionInput) {
     return this.db.service(async (sql) => {
       const j = (v: unknown) => (v === undefined || v === null ? null : sql.json(v as never));

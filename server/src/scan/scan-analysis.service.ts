@@ -231,6 +231,9 @@ export class ScanAnalysisService {
         insights,
         onStage,
       });
+      if (!req.scanCategory && wf.scanCategory !== 'food') {
+        await this.reservation.setCategory(req.userId, scanId, wf.scanCategory);
+      }
       const imageRole = wf.scanCategory === 'menu' ? 'menu_page' : 'meal';
       const inputRefs = keys.map((k, i) => ({
         input_kind: 'image',

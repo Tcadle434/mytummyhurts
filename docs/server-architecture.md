@@ -11,7 +11,7 @@ Replaces the Supabase Edge Functions with a NestJS backend on a VPS. See the mig
 - `scan/`
   - `engine/`: `scoring.ts` (deterministic engine, **48 regression tests pass**), `openai.ts` (Responses API orchestration and audit capture), `openaiSchemas.ts` (scan Zod contracts), `menuRubric`, `dietRubric`, `openaiPricing`, `domain`.
   - `workflow/` — `@langchain/langgraph` deterministic DAG: loadUserContext → generate (extract) → score → ragAdjust. Proven to add no score drift.
-  - `scan-reservation.service.ts` — begin/complete/fail RPC wrappers. `scan-analysis.service.ts` — orchestrator. `scan.controller.ts` — image, barcode, history, delete, and consumption endpoints.
+  - `scan-reservation.service.ts` — begin/complete/fail RPC wrappers and auto-routed scan-category persistence. `scan-analysis.service.ts` — orchestrator. `scan.controller.ts` — image, barcode, history, delete, and consumption endpoints.
 - `rag/` — chunking, `OpenAiEmbedder`, hybrid `RagRetrievalService` (pgvector + tsvector + synonym expansion), `FallbackReranker`, `RagIngestionService` (curation gate), `rag-influence.ts` (bounded within-band nudge + band-cross guard).
 - `eval/` — golden dataset (high-trigger + low-safe controls), `EvalRunnerService` (structured offline + workflow online), persists `eval_runs`/`eval_results`.
 - `admin/` — `InternalSecretGuard` + doc ingest/publish, trace inspection, eval run, cost rollup.

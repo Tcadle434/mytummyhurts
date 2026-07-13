@@ -1,0 +1,35 @@
+name: ai-eval-smoke
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, labeled, synchronize]
+    paths:
+      - '.github/workflows/ai-eval-smoke.yml'
+      - '.github/workflows/scan-evals.yml'
+      - 'server/data/corpus/**'
+      - 'server/evals/**'
+      - 'server/scripts/eval/**'
+      - 'server/src/eval/**'
+      - 'server/src/learning/last-bad-meal*'
+      - 'server/src/llm/**'
+      - 'server/src/rag/**'
+      - 'server/src/scan/**'
+      - 'server/src/taxonomy/**'
+      - 'server/package.json'
+      - 'server/package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: >-
+      github.event.action == 'ready_for_review' ||
+      (github.event.action == 'opened' && !github.event.pull_request.draft) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'run-ai-evals') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'run-ai-evals'))
+    uses: ./.github/workflows/scan-evals.yml
+    with:
+      tier: smoke
+      repeat: '1'
+    secrets: inherit

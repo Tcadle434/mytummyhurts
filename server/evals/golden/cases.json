@@ -2327,6 +2327,106 @@
           "requiredIngredientMinRuns": 1
         }
       ]
+    },
+    {
+      "id": "sushi_den_menu_001",
+      "images": [
+        "assets/tests/sushi_den_menu_1.png",
+        "assets/tests/sushi_den_menu_2.png"
+      ],
+      "assetRoot": "repo",
+      "autoClassify": true,
+      "description": "Two-page Sushi Den menu fixture exercising automatic routing, multi-image extraction, ranking, and persistence.",
+      "source": {
+        "type": "curated_test_fixture",
+        "note": "Existing repository fixture, not production user data."
+      },
+      "repeat": 1,
+      "releaseEligible": true,
+      "nightlyEligible": true,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedScanCategory": "menu",
+          "menu": {
+            "inputPageCount": 2,
+            "minItems": 12,
+            "requiredNamePatterns": [
+              "sushi",
+              "tempura"
+            ],
+            "falseLowNamePatterns": [
+              "tempura",
+              "katsu",
+              "fried",
+              "crispy",
+              "agedashi",
+              "spicy"
+            ],
+            "falseLowMinScore": 37,
+            "minScoreSpread": 25
+          },
+          "notes": "Independent repository fixture with deterministic menu safety assertions. Thresholds (minItems 12, falseLowMinScore 37, minScoreSpread 25) were set from the reviewed live end-to-end calibration run (2026-07) that also surfaced the auto-routed menu category persistence fix, so the case is enabled as a release anchor and for nightly rotation."
+        }
+      ]
+    },
+    {
+      "id": "kind_breakfast_barcode_001",
+      "barcode": "602652673955",
+      "description": "KIND Breakfast Protein Peanut Butter barcode regression for speculative-driver inflation.",
+      "source": {
+        "type": "curated_test_fixture",
+        "note": "Existing repository barcode fixture. Product metadata comes from Open Food Facts."
+      },
+      "repeat": 1,
+      "releaseEligible": false,
+      "nightlyEligible": true,
+      "expectations": [
+        {
+          "profile": "ibs_gerd",
+          "expectedScanCategory": "grocery",
+          "expectedBands": [
+            "low",
+            "medium"
+          ],
+          "expectedScoreRange": [
+            30,
+            58
+          ],
+          "maxRunScoreRange": 28,
+          "requiredIngredients": [
+            "peanut"
+          ],
+          "forbiddenMechanisms": [
+            "allium_garlic_onion",
+            "legume_gos"
+          ],
+          "notes": "Existing barcode expectation promoted into the live runner. Nightly-eligible so rotation observes external Open Food Facts metadata stability; deliberately held out of the release gate (releaseEligible false) until that stability is confirmed, so a metadata change can never block a production deploy."
+        }
+      ]
+    },
+    {
+      "id": "non_food_onboarding_screen_001",
+      "images": [
+        "assets/ui/barcode_scanning_onboarding.png"
+      ],
+      "assetRoot": "repo",
+      "autoClassify": true,
+      "description": "Non-food onboarding artwork exercising the router and unclear-input fallback without production user data.",
+      "source": {
+        "type": "repository_asset"
+      },
+      "repeat": 1,
+      "releaseEligible": true,
+      "nightlyEligible": true,
+      "expectations": [
+        {
+          "profile": "unknown_discomfort",
+          "expectedScanCategory": "food",
+          "expectedClarity": "unclear",
+          "notes": "The current router is binary food/menu. This verifies that a non-menu UI image takes the safe unclear-food path."
+        }
+      ]
     }
   ]
 }

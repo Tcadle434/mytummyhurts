@@ -53,6 +53,11 @@ export function buildExperimentMetadata({ api, context, env = process.env }) {
     menuModel: env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini',
     riskAdjudicationModel: env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-5-mini',
     extractionPromptVersion: env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'n/a',
+    commitSha: env.GITHUB_SHA ?? env.EVAL_COMMIT_SHA ?? 'unknown',
+    corpusTreeSha: env.EVAL_CORPUS_VERSION ?? 'unknown',
+    ragRetrievalEnabled: env.RAG_RETRIEVAL_ENABLED ?? 'false',
+    ragInfluenceEnabled: env.RAG_INFLUENCE_ENABLED ?? 'false',
+    riskAdjudicationEnabled: env.SCAN_RISK_ADJUDICATION_ENABLED ?? 'false',
   };
 }
 
@@ -111,6 +116,19 @@ export function validateExpectation(expectation, runs, failures) {
   }
 
   const stats = runScoreStats(completed);
+  if (expectation.expectedScanCategory) {
+    const bad = completed.filter((run) => run.scanCategory !== expectation.expectedScanCategory);
+    if (bad.length) {
+      errors.push(`unexpected scan category: ${bad.map((run) => run.scanCategory ?? 'missing').join(', ')}`);
+    }
+  }
+  if (expectation.expectedClarity) {
+    const allowed = Array.isArray(expectation.expectedClarity)
+      ? expectation.expectedClarity
+      : [expectation.expectedClarity];
+    const bad = completed.filter((run) => !allowed.includes(run.clarity));
+    if (bad.length) errors.push(`unexpected clarity: ${bad.map((run) => run.clarity ?? 'missing').join(', ')}`);
+  }
   const expectedBands = expectation.expectedBands ?? (expectation.expectedBand ? [expectation.expectedBand] : []);
   if (expectedBands.length) {
     const bad = completed.filter((run) => !expectedBands.includes(run.level));
@@ -148,6 +166,53 @@ export function validateExpectation(expectation, runs, failures) {
     if (hitCount > 0) errors.push(`forbidden ingredient "${ingredient}" appeared in ${hitCount}/${completed.length} runs`);
   }
 
+  if (expectation.menu) {
+    for (const run of completed) {
+      const menu = run.menu;
+      if (!menu) {
+        errors.push('expected a menu result but none was returned');
+        continue;
+      }
+      const items = menu.items ?? [];
+      if (Number.isInteger(expectation.menu.minItems) && items.length < expectation.menu.minItems) {
+        errors.push(`menu returned ${items.length} item(s); required at least ${expectation.menu.minItems}`);
+      }
+      if (
+        Number.isInteger(expectation.menu.inputPageCount) &&
+        menu.inputPageCount !== expectation.menu.inputPageCount
+      ) {
+        errors.push(`menu used ${menu.inputPageCount ?? 'unknown'} page(s); expected ${expectation.menu.inputPageCount}`);
+      }
+      const normalizedNames = items.map((item) => String(item.name ?? '').toLowerCase());
+      for (const pattern of expectation.menu.requiredNamePatterns ?? []) {
+        const needle = String(pattern).toLowerCase();
+        if (!normalizedNames.some((name) => name.includes(needle))) {
+          errors.push(`menu did not include an item matching "${pattern}"`);
+        }
+      }
+      const scores = items.map((item) => item.riskScore).filter((score) => typeof score === 'number');
+      if (typeof expectation.menu.minScoreSpread === 'number') {
+        const spread = scores.length ? Math.max(...scores) - Math.min(...scores) : 0;
+        if (spread < expectation.menu.minScoreSpread) {
+          errors.push(`menu score spread ${spread} is below ${expectation.menu.minScoreSpread}`);
+        }
+      }
+      const falseLowMinScore = Number(expectation.menu.falseLowMinScore ?? 37);
+      for (const pattern of expectation.menu.falseLowNamePatterns ?? []) {
+        const needle = String(pattern).toLowerCase();
+        const falseLow = items.filter(
+          (item) => String(item.name ?? '').toLowerCase().includes(needle) && item.riskScore < falseLowMinScore,
+        );
+        if (falseLow.length) {
+          errors.push(
+            `menu item(s) matching "${pattern}" scored below ${falseLowMinScore}: ` +
+              falseLow.map((item) => `${item.name}:${item.riskScore}`).join(', '),
+          );
+        }
+      }
+    }
+  }
+
   return { passed: errors.length === 0, errors, stats };
 }
 
@@ -168,7 +233,11 @@ export function buildExamples(casesDoc, profilesDoc, caseIds) {
           caseId: scanCase.id,
           description: scanCase.description,
           profileKey: expectation.profile,
-          image: scanCase.image,
+          image: scanCase.image ?? null,
+          images: scanCase.images ?? null,
+          barcode: scanCase.barcode ?? null,
+          scanCategory: scanCase.scanCategory ?? null,
+          autoClassify: Boolean(scanCase.autoClassify),
           profile,
         },
         outputs: { expectation },
@@ -182,11 +251,24 @@ function exampleKeyFromInputs(inputs) {
   return inputs?.caseId && inputs?.profileKey ? `${inputs.caseId}::${inputs.profileKey}` : null;
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(
+        ([key, entry]) => [key, canonicalJson(entry)],
+      ),
+    );
+  }
+  return value;
+}
+
 /**
- * Create the dataset if missing, additively upload any examples not yet
- * present, and map example key -> LangSmith example id (runs reference it).
+ * Create the dataset if missing, upload any examples not yet present, update
+ * examples whose inputs/outputs changed, and map example key -> LangSmith
+ * example id (runs reference it).
  */
-async function syncDataset(client, datasetName, examples) {
+export async function syncDataset(client, datasetName, examples) {
   const exists = await client.hasDataset({ datasetName });
   const dataset = exists
     ? await client.readDataset({ datasetName })
@@ -194,23 +276,47 @@ async function syncDataset(client, datasetName, examples) {
         description: 'MyTummyHurts golden scan cases (curated, no PII). Auto-synced from evals/golden/cases.json.',
       });
 
-  const exampleIds = new Map();
+  const existingByKey = new Map();
   for await (const example of client.listExamples({ datasetName })) {
     const key = exampleKeyFromInputs(example.inputs);
-    if (key) exampleIds.set(key, example.id);
+    if (key) existingByKey.set(key, example);
   }
 
-  const missing = examples.filter((example) => !exampleIds.has(example.key));
+  const missing = examples.filter((example) => !existingByKey.has(example.key));
   if (missing.length) {
     const created = await client.createExamples(
       missing.map((example) => ({ inputs: example.inputs, outputs: example.outputs, datasetId: dataset.id })),
     );
     for (const example of created ?? []) {
       const key = exampleKeyFromInputs(example.inputs);
-      if (key) exampleIds.set(key, example.id);
+      if (key) existingByKey.set(key, example);
     }
   }
-  return { datasetId: dataset.id, created: !exists, added: missing.length, total: examples.length, exampleIds };
+
+  const changed = examples.filter((example) => {
+    const current = existingByKey.get(example.key);
+    return current && (
+      JSON.stringify(canonicalJson(current.inputs)) !== JSON.stringify(canonicalJson(example.inputs)) ||
+      JSON.stringify(canonicalJson(current.outputs)) !== JSON.stringify(canonicalJson(example.outputs))
+    );
+  });
+  await Promise.all(changed.map(async (example) => {
+    const current = existingByKey.get(example.key);
+    await client.updateExample(current.id, { inputs: example.inputs, outputs: example.outputs });
+    existingByKey.set(example.key, { ...current, inputs: example.inputs, outputs: example.outputs });
+  }));
+
+  const exampleIds = new Map(
+    [...existingByKey.entries()].map(([key, example]) => [key, example.id]),
+  );
+  return {
+    datasetId: dataset.id,
+    created: !exists,
+    added: missing.length,
+    updated: changed.length,
+    total: examples.length,
+    exampleIds,
+  };
 }
 
 // ---- Evaluators (deterministic; each returns a 0..1 score or a raw metric) ----

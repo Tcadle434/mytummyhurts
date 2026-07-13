@@ -1,0 +1,46 @@
+name: deploy-production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  release-evals:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/scan-evals.yml
+    with:
+      tier: release
+      repeat: '1'
+    secrets: inherit
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: release-evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Configure dedicated deployment credential
+        env:
+          PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$PRIVATE_KEY" > ~/.ssh/mth_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/mth_deploy ~/.ssh/known_hosts
+      - name: Deploy evaluated commit
+        env:
+          HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+          USER: ${{ vars.PRODUCTION_SSH_USER }}
+        run: ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.ssh/mth_deploy "$USER@$HOST" "deploy $GITHUB_SHA"
+      - name: Verify production readiness
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-all-errors https://api.mytummyhurts.app/healthz
+          curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-all-errors https://api.mytummyhurts.app/readyz

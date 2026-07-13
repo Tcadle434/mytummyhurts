@@ -30,6 +30,18 @@ npm run build && npm run eval -- --offline   # deterministic scoring goldens (0 
 
 ## Production deploy
 
+The supported deployment path is GitHub Actions -> `deploy-production` from the `main` branch. It runs the blocking release evaluation first, deploys only the exact evaluated commit, runs migrations using the newly built image, recreates the API container, and checks both production health endpoints.
+
+GitHub uses a dedicated SSH key restricted to `/usr/local/sbin/mth-deploy-github`. The key cannot open a shell or forward ports. The server wrapper accepts only `deploy <full-main-commit-sha>` and executes the versioned `server/scripts/deploy-production.sh` from that evaluated commit.
+
+Required repository configuration:
+
+- Actions secrets: `OPENAI_API_KEY`, `LANGSMITH_API_KEY`, `PRODUCTION_SSH_PRIVATE_KEY`, `PRODUCTION_SSH_KNOWN_HOSTS`
+- Actions variables: `PRODUCTION_SSH_HOST`, `PRODUCTION_SSH_USER`
+- GitHub environment: `production`
+
+The commands below remain the break-glass manual procedure. Manual deployment bypasses the automated release gate and should be reserved for recovery.
+
 ```bash
 # On the VPS, in the repo:
 cd server

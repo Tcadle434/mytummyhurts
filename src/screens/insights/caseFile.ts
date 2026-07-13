@@ -29,8 +29,8 @@ export type CaseScanInput = {
   scanCategory?: string;
   possibleTriggers: string[];
   structuredAnalysis: {
-    visibleIngredients: Array<{ canonicalName: string }>;
-    inferredIngredients: Array<{ canonicalName: string }>;
+    visibleIngredients: { canonicalName: string }[];
+    inferredIngredients: { canonicalName: string }[];
   };
 };
 

@@ -44,6 +44,8 @@ npm test                              # unit/integration suite (incl. the 48 sco
 node scripts/eval/run.mjs --offline   # golden risk-band evals; fails on any false-low / false-positive
 ```
 
+Live-model evals are tiered (smoke/release/nightly/full) and gate the production deploy; see [docs/evals.md](docs/evals.md).
+
 ## Still requires credentials for production wiring
 
 - Optional hosted privacy policy URL if you want an external link instead of the in-app draft policy
