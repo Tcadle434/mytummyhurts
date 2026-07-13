@@ -29,6 +29,7 @@ beforeAll(async () => {
       ScanModule,
     ],
   }).compile();
+  await moduleRef.init();
   analysis = moduleRef.get(ScanAnalysisService);
 
   await admin`delete from public.users where id = ${U}`;
