@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-
 import { defaultOnboardingAnswers } from '../../data/onboarding';
 import { buildUserProfile } from '../../services/ai/scoring';
 import type { AppStoreState } from '../types';

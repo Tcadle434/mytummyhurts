@@ -1,6 +1,6 @@
 import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   AppScreen,
@@ -38,6 +38,19 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 import { radii, spacing, tokens, type } from '../../theme';
 import { describeProfileForPip } from './profileSummary';
+import { openDeleteConfirmation, openIfPresent, openLegalSurface } from './settingsActions';
+import {
+  accountMetaLine,
+  prettyStatus,
+  splitByCatalog,
+  summarizeDietPreferences,
+  summarizeHealthList,
+} from './settingsFormatting';
+import {
+  CHECKIN_TIME_PRESETS,
+  CUSTOM_CATEGORY_COPY,
+  type CustomCategory,
+} from './settingsOptions';
 import { SettingsExpandedBlock } from './SettingsExpandedBlock';
 import { SettingsMetricRow } from './SettingsMetricRow';
 import { SettingsRow } from './SettingsRow';
@@ -60,8 +73,6 @@ type BusySection =
   | 'notifications'
   | 'delete'
   | null;
-type CustomCategory = 'conditions' | 'sensitivities' | 'symptoms';
-
 // Save confirmations render adjacent to the section they belong to — never
 // below the danger zone at the bottom of the screen.
 type StatusPlacement = 'account' | 'health' | 'general';
@@ -69,34 +80,6 @@ type StatusFeedback = {
   placement: StatusPlacement;
   message: string;
   tone: 'soft' | 'warm';
-};
-
-const CHECKIN_TIME_PRESETS: { label: string; hour: number }[] = [
-  { label: 'Morning · 9am', hour: 9 },
-  { label: 'Midday · 1pm', hour: 13 },
-  { label: 'Evening · 6pm', hour: 18 },
-  { label: 'Night · 9pm', hour: 21 },
-];
-
-const CUSTOM_CATEGORY_COPY: Record<
-  CustomCategory,
-  { title: string; subtitle: string; placeholder: string }
-> = {
-  conditions: {
-    title: 'Add a custom condition',
-    subtitle: 'Add anything we should consider when personalizing your scans.',
-    placeholder: "Example: SIBO, gastritis, Crohn's",
-  },
-  sensitivities: {
-    title: 'Add a custom sensitivity',
-    subtitle: 'Add any food or ingredient you think might bother you.',
-    placeholder: 'Example: eggs, soy, coffee',
-  },
-  symptoms: {
-    title: 'Add a custom symptom',
-    subtitle: 'Add any symptom you want your daily reports to track.',
-    placeholder: 'Example: cramping, burping, trapped gas',
-  },
 };
 
 export function SettingsScreen() {
@@ -816,80 +799,6 @@ export function SettingsScreen() {
         }}
       />
     </AppScreen>
-  );
-}
-
-function splitByCatalog(values: string[], catalog: readonly string[]) {
-  const catalogLower = new Set(catalog.map((entry) => entry.toLowerCase()));
-  const predefined: string[] = [];
-  const custom: string[] = [];
-  for (const value of values) {
-    if (catalogLower.has(value.toLowerCase())) {
-      predefined.push(value);
-    } else {
-      custom.push(value);
-    }
-  }
-  return { predefined, custom };
-}
-
-// Never renders a blank line when the display name is unset — users who
-// skipped naming themselves just see their email.
-function accountMetaLine(displayName?: string | null, email?: string | null) {
-  const parts = [displayName?.trim(), email?.trim()].filter(Boolean);
-  if (parts.length === 0) {
-    return 'No active session';
-  }
-  return parts.join(' · ');
-}
-
-function prettyStatus(status: string) {
-  if (!status) return '—';
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function summarizeHealthList(values: string[] | null | undefined) {
-  if (!values?.length) return 'Tap to configure';
-  if (values.length === 1) return values[0] ?? 'Configured';
-  if (values.length === 2) return values.join(', ');
-  return `${values.slice(0, 2).join(', ')} +${values.length - 2}`;
-}
-
-function summarizeDietPreferences(profileDietPreferences: { label: string }[] | null | undefined) {
-  if (!profileDietPreferences?.length) {
-    return 'No specific diet';
-  }
-
-  if (profileDietPreferences.length === 1) {
-    return profileDietPreferences[0]?.label ?? 'Configured';
-  }
-
-  return `${profileDietPreferences.length} diet goals`;
-}
-
-async function openIfPresent(url: string) {
-  await Linking.openURL(url);
-}
-
-function openLegalSurface(url: string, fallback: () => void) {
-  if (!url || url.includes('example.com')) {
-    fallback();
-    return;
-  }
-
-  void openIfPresent(url).catch(() => {
-    fallback();
-  });
-}
-
-function openDeleteConfirmation(onConfirm: () => void) {
-  Alert.alert(
-    'Delete account?',
-    'This permanently removes your scans, history, insights, and saved profile data.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: onConfirm },
-    ],
   );
 }
 
