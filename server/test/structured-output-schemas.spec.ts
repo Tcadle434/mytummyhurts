@@ -274,9 +274,6 @@ describe('risk adjudication schema', () => {
       {
         conditionSeverities: [{ ...valid.conditionSeverities[0], condition: '   ' }],
       },
-      {
-        conditionSeverities: Array.from({ length: 9 }, () => valid.conditionSeverities[0]),
-      },
       { conditionSeverities: [null] },
       {
         conditionSeverities: [{ ...valid.conditionSeverities[0], drivers: [] }],
@@ -309,6 +306,35 @@ describe('risk adjudication schema', () => {
       { conditionSeverities: [gerd] },
       { conditionSeverities: [gerd, { ...gerd, condition: ' gerd ' }, ibs] },
     ]);
+  });
+
+  it('matches contextual schema cardinality to more than eight unique conditions', () => {
+    const conditions = Array.from({ length: 9 }, (_, index) => `Condition ${index + 1}`);
+    const definition = riskAdjudicationStructuredOutputForConditions(conditions);
+    const template = validRiskAdjudication().conditionSeverities[0];
+    const conditionSeverities = conditions.map((condition) => ({ ...template, condition }));
+
+    expect(definition.schema.safeParse({ conditionSeverities }).success).toBe(true);
+    expect(definition.format.schema).toMatchObject({
+      properties: {
+        conditionSeverities: {
+          minItems: conditions.length,
+          maxItems: conditions.length,
+        },
+      },
+    });
+  });
+
+  it('preserves Unicode-only requested conditions during canonical matching', () => {
+    const template = validRiskAdjudication().conditionSeverities[0];
+    const unicode = { ...template, condition: '胃食管反流' };
+    const gerd = { ...template, condition: 'GERD' };
+    const unicodeDefinition = riskAdjudicationStructuredOutputForConditions(['胃食管反流']);
+    const mixedDefinition = riskAdjudicationStructuredOutputForConditions(['胃食管反流', 'GERD']);
+
+    expect(unicodeDefinition.schema.safeParse({ conditionSeverities: [unicode] }).success).toBe(true);
+    expect(mixedDefinition.schema.safeParse({ conditionSeverities: [unicode, gerd] }).success).toBe(true);
+    expect(mixedDefinition.schema.safeParse({ conditionSeverities: [gerd] }).success).toBe(false);
   });
 });
 

@@ -438,13 +438,13 @@ export async function requestStructuredOutput<TSchema extends z.ZodTypeAny>(inpu
           validationIssues = addIssues(validationIssues, issues);
           feedback = correctiveFeedback(issues);
           attempt.errorCode = 'openai_validation_failed';
-          throw makeError({ code: 'openai_validation_failed', cause: error });
+          throw makeError({ code: 'openai_validation_failed' });
         }
         const issues = [{ path: '$', message: 'Response must be valid JSON.' }];
         validationIssues = addIssues(validationIssues, issues);
         feedback = correctiveFeedback(issues);
         attempt.errorCode = 'openai_invalid_json';
-        throw makeError({ code: 'openai_invalid_json', cause: error });
+        throw makeError({ code: 'openai_invalid_json' });
       }
     }, {
       attempts: input.attempts ?? DEFAULT_ATTEMPTS,

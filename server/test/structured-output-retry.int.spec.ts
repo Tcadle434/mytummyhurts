@@ -335,6 +335,47 @@ describe('structured output retries', () => {
     });
   });
 
+  it('keeps raw model values out of validation error cause chains', async () => {
+    const definition = defineStructuredOutput(
+      'sanitized_validation_failure',
+      z.object({ category: z.enum(['food', 'menu']) }).strict(),
+    );
+    const fetchMock = vi.fn(async () => responseWithOutput({
+      category: 'SECRET_MODEL_VALUE',
+    }, 'resp-secret-invalid'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    let thrown: unknown;
+    try {
+      await requestStructuredOutput({
+        apiKey: 'test-key',
+        stage: 'sanitized_validation_failure',
+        timeoutMs: 1_000,
+        attempts: 1,
+        retryDelayMs: 0,
+        definition,
+        request: {
+          model: 'gpt-test',
+          input: 'ORIGINAL_INPUT',
+          text: { format: definition.format },
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    const causeMessages: string[] = [];
+    let cause = thrown;
+    while (cause instanceof Error) {
+      causeMessages.push(cause.message);
+      cause = cause.cause;
+    }
+    expect(causeMessages).toEqual(['openai_request_failed', 'openai_validation_failed']);
+    expect(causeMessages.join(' ')).not.toContain('SECRET_MODEL_VALUE');
+  });
+
   it('retries a transient HTTP error but not a hard 4xx or model refusal', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     vi.resetModules();

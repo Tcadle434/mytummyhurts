@@ -14,7 +14,6 @@ import {
   menuRubricEvidenceValues,
 } from './menuRubric';
 import type { ConditionSeverityBand } from './domain';
-import { normalize } from './text-utils';
 
 export const MENU_ITEM_LIMIT = 100;
 
@@ -148,9 +147,16 @@ export const riskAdjudicationConditionSchema = z.object({
   }
 });
 
-export const riskAdjudicationSchema = z.object({
-  conditionSeverities: z.array(riskAdjudicationConditionSchema).max(8),
-}).strict();
+function riskAdjudicationPayloadSchema(conditionCount?: number) {
+  const conditionSeverities = z.array(riskAdjudicationConditionSchema);
+  return z.object({
+    conditionSeverities: conditionCount === undefined
+      ? conditionSeverities
+      : conditionSeverities.length(conditionCount),
+  }).strict();
+}
+
+export const riskAdjudicationSchema = riskAdjudicationPayloadSchema();
 
 export const menuItemPayloadSchema = z.object({
   id: nonblankString,
@@ -198,15 +204,20 @@ export const menuStructuredOutput = defineStructuredOutput('menu_extraction_imag
 export const riskAdjudicationStructuredOutput = defineStructuredOutput('risk_adjudication', riskAdjudicationSchema);
 
 export function riskAdjudicationConditionKey(condition: string) {
-  const key = normalize(condition);
+  const normalized = condition.trim().normalize('NFKC').toLowerCase();
+  const key = normalized
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim() || normalized;
   if (key === 'gerd' || key.includes('acid reflux') || key.includes('reflux')) return 'gerd acid reflux';
   if (key === 'ibs' || key.includes('irritable bowel')) return 'ibs';
   return key;
 }
 
 export function requestedRiskAdjudicationConditionKeys(conditions: string[]) {
-  const keys = conditions.map(riskAdjudicationConditionKey).filter(Boolean);
-  return new Set(keys.length ? keys : ['general']);
+  const nonblankConditions = conditions.filter((condition) => condition.trim());
+  if (!nonblankConditions.length) return new Set(['general']);
+  return new Set(nonblankConditions.map(riskAdjudicationConditionKey));
 }
 
 export function hasExactRiskAdjudicationConditions(
@@ -228,7 +239,7 @@ export function hasExactRiskAdjudicationConditions(
 
 export function riskAdjudicationStructuredOutputForConditions(conditions: string[]) {
   const allowedConditions = requestedRiskAdjudicationConditionKeys(conditions);
-  const schema = riskAdjudicationSchema.superRefine((payload, context) => {
+  const schema = riskAdjudicationPayloadSchema(allowedConditions.size).superRefine((payload, context) => {
     payload.conditionSeverities.forEach((severity, index) => {
       if (!allowedConditions.has(riskAdjudicationConditionKey(severity.condition))) {
         context.addIssue({
