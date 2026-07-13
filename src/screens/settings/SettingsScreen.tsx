@@ -1,16 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import { ComponentProps, useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  LayoutChangeEvent,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   AppScreen,
@@ -46,10 +36,14 @@ import {
   getNotificationPermissionState,
 } from '../../services/notifications';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, radii, spacing, tokens, type } from '../../theme';
+import { radii, spacing, tokens, type } from '../../theme';
 import { describeProfileForPip } from './profileSummary';
+import { SettingsExpandedBlock } from './SettingsExpandedBlock';
+import { SettingsMetricRow } from './SettingsMetricRow';
+import { SettingsRow } from './SettingsRow';
+import { SettingsRowDivider } from './SettingsRowDivider';
+import { SettingsSectionGroup } from './SettingsSectionGroup';
 
-type IoniconName = ComponentProps<typeof Ionicons>['name'];
 type ExpandedSection = SettingsSection | null;
 const HEALTH_PROFILE_SECTIONS: SettingsSection[] = [
   'conditions',
@@ -499,7 +493,7 @@ export function SettingsScreen() {
         <Text style={styles.profileSummary}>{profileSummary}</Text>
       </View>
 
-      <SectionGroup label="Account">
+      <SettingsSectionGroup label="Account">
         <SettingsRow
           icon="person-outline"
           label="Display name"
@@ -508,7 +502,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('account')}
         />
         {expandedSection === 'account' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <InputField
               value={displayNameDraft}
               placeholder="Enter a display name"
@@ -522,10 +516,10 @@ export function SettingsScreen() {
               onPress={() => void handleSaveAccount()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
 
-        <RowDivider />
+        <SettingsRowDivider />
 
         <SettingsRow
           icon="diamond-outline"
@@ -535,19 +529,19 @@ export function SettingsScreen() {
           onPress={() => toggleSection('subscription')}
         />
         {expandedSection === 'subscription' ? (
-          <ExpandedBlock>
-            <MetricRow label="Status" value={prettyStatus(billing.subscriptionStatus)} />
-            <MetricRow label="Plan" value={billing.selectedPlan} />
-            <MetricRow
+          <SettingsExpandedBlock>
+            <SettingsMetricRow label="Status" value={prettyStatus(billing.subscriptionStatus)} />
+            <SettingsMetricRow label="Plan" value={billing.selectedPlan} />
+            <SettingsMetricRow
               label="Trial ends"
               value={
                 billing.trialEndsAt ? new Date(billing.trialEndsAt).toLocaleDateString() : '—'
               }
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
 
-        <RowDivider />
+        <SettingsRowDivider />
 
         <SettingsRow
           icon="notifications-outline"
@@ -557,7 +551,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('notifications')}
         />
         {expandedSection === 'notifications' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <Text style={styles.helperText}>
               One evening check-in reminder a day, plus a weekly gut report. Answer the reminder
               with a single tap.
@@ -585,15 +579,15 @@ export function SettingsScreen() {
               onPress={() => void handleEnableNotifications()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
-      </SectionGroup>
+      </SettingsSectionGroup>
 
       {status?.placement === 'account' ? (
         <InfoPill label={status.message} tone={status.tone} />
       ) : null}
 
-      <SectionGroup
+      <SettingsSectionGroup
         label="Health profile"
         onLayout={(event) => {
           healthProfileOffset.current = event.nativeEvent.layout.y;
@@ -607,7 +601,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('conditions')}
         />
         {expandedSection === 'conditions' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <View style={styles.pickerStack}>
               {conditionOptions.map((option) => (
                 <OnboardingPickerOption
@@ -631,10 +625,10 @@ export function SettingsScreen() {
               onPress={() => void handleSaveConditions()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
 
-        <RowDivider />
+        <SettingsRowDivider />
 
         <SettingsRow
           icon="alert-circle-outline"
@@ -644,7 +638,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('sensitivities')}
         />
         {expandedSection === 'sensitivities' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <View style={styles.pickerStack}>
               {ingredientSensitivityOptions.map((option) => (
                 <OnboardingPickerOption
@@ -672,10 +666,10 @@ export function SettingsScreen() {
               onPress={() => void handleSaveSensitivities()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
 
-        <RowDivider />
+        <SettingsRowDivider />
 
         <SettingsRow
           icon="pulse-outline"
@@ -685,7 +679,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('symptoms')}
         />
         {expandedSection === 'symptoms' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <View style={styles.pickerStack}>
               {symptomOptions.map((option) => (
                 <OnboardingPickerOption
@@ -709,10 +703,10 @@ export function SettingsScreen() {
               onPress={() => void handleSaveSymptoms()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
 
-        <RowDivider />
+        <SettingsRowDivider />
 
         <SettingsRow
           icon="nutrition-outline"
@@ -722,7 +716,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('diet')}
         />
         {expandedSection === 'diet' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <Text style={styles.helperText}>
               We keep your gut-risk score separate, then check scans against this diet goal.
             </Text>
@@ -754,21 +748,21 @@ export function SettingsScreen() {
               onPress={() => void handleSaveDiet()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
-      </SectionGroup>
+      </SettingsSectionGroup>
 
       {status?.placement === 'health' ? (
         <InfoPill label={status.message} tone={status.tone} />
       ) : null}
 
-      <SectionGroup label="Support & legal">
+      <SettingsSectionGroup label="Support & legal">
         <SettingsRow
           icon="help-circle-outline"
           label="Help & support"
           onPress={() => void openIfPresent(`mailto:${env.supportEmail}`)}
         />
-        <RowDivider />
+        <SettingsRowDivider />
         <SettingsRow
           icon="shield-checkmark-outline"
           label="Privacy & security"
@@ -778,7 +772,7 @@ export function SettingsScreen() {
             )
           }
         />
-        <RowDivider />
+        <SettingsRowDivider />
         <SettingsRow
           icon="download-outline"
           label="Export my data"
@@ -788,16 +782,16 @@ export function SettingsScreen() {
             )
           }
         />
-      </SectionGroup>
+      </SettingsSectionGroup>
 
-      <SectionGroup label="Danger zone">
+      <SettingsSectionGroup label="Danger zone">
         <SettingsRow
           icon="trash-outline"
           label="Delete my data"
           danger
           onPress={() => openDeleteConfirmation(() => void handleDeleteAccount())}
         />
-      </SectionGroup>
+      </SettingsSectionGroup>
 
       {status?.placement === 'general' ? (
         <InfoPill label={status.message} tone={status.tone} />
@@ -823,97 +817,6 @@ export function SettingsScreen() {
       />
     </AppScreen>
   );
-}
-
-function SectionGroup({
-  label,
-  children,
-  onLayout,
-}: {
-  label: string;
-  children: React.ReactNode;
-  onLayout?: (event: LayoutChangeEvent) => void;
-}) {
-  return (
-    <View style={styles.groupBlock} onLayout={onLayout}>
-      <Text style={styles.groupLabel}>{label.toUpperCase()}</Text>
-      <View style={styles.groupCard}>{children}</View>
-    </View>
-  );
-}
-
-function ExpandedBlock({ children }: { children: React.ReactNode }) {
-  return <View style={styles.expandedBlock}>{children}</View>;
-}
-
-function SettingsRow({
-  icon,
-  label,
-  value,
-  badge,
-  onPress,
-  expanded,
-  danger,
-}: {
-  icon: IoniconName;
-  label: string;
-  value?: string;
-  badge?: string;
-  onPress: () => void;
-  expanded?: boolean;
-  danger?: boolean;
-}) {
-  const accessibilityLabel = [label, value ?? badge].filter(Boolean).join(', ');
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => [styles.row, pressed && { opacity: 0.78 }]}
-    >
-      <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <Ionicons
-          name={icon}
-          size={18}
-          color={danger ? tokens.color.status.danger.foreground : palette.primary}
-        />
-      </View>
-      <View style={styles.rowCopy}>
-        <Text style={[styles.rowLabel, danger && { color: tokens.color.status.danger.foreground }]}>
-          {label}
-        </Text>
-        {value ? (
-          <Text style={styles.rowValue} numberOfLines={1}>
-            {value}
-          </Text>
-        ) : null}
-      </View>
-      {badge ? (
-        <View style={styles.rowBadge}>
-          <Text style={styles.rowBadgeLabel}>{badge}</Text>
-        </View>
-      ) : null}
-      <Ionicons
-        name={expanded ? 'chevron-up' : 'chevron-forward'}
-        size={18}
-        color={tokens.color.icon.muted}
-      />
-    </Pressable>
-  );
-}
-
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.metricRow}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-    </View>
-  );
-}
-
-function RowDivider() {
-  return <View style={styles.divider} />;
 }
 
 function splitByCatalog(values: string[], catalog: readonly string[]) {
@@ -1025,82 +928,6 @@ const styles = StyleSheet.create({
     ...tokens.type.display.accent,
     color: tokens.color.text.primary,
   },
-  groupBlock: {
-    gap: spacing.xs,
-  },
-  groupLabel: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.bold,
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 0.8,
-    paddingHorizontal: spacing.sm,
-  },
-  groupCard: {
-    borderRadius: radii.lg,
-    backgroundColor: tokens.color.surface.card.default,
-    ...tokens.shadow.card,
-  },
-  row: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: tokens.color.status.success.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowIconDanger: {
-    backgroundColor: tokens.color.status.danger.background,
-  },
-  rowCopy: {
-    flex: 1,
-    gap: 1,
-  },
-  rowLabel: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  rowValue: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.medium,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  rowBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radii.pill,
-    backgroundColor: tokens.color.status.success.background,
-  },
-  rowBadgeLabel: {
-    color: tokens.color.text.accent,
-    fontFamily: type.body.bold,
-    fontSize: 11,
-    lineHeight: 14,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: tokens.color.border.subtle,
-    marginLeft: spacing.md + 34 + spacing.sm,
-  },
-  expandedBlock: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    paddingTop: spacing.xs,
-    gap: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: tokens.color.border.subtle,
-  },
   helperText: {
     color: tokens.color.text.tertiary,
     fontFamily: type.body.medium,
@@ -1109,24 +936,6 @@ const styles = StyleSheet.create({
   },
   pickerStack: {
     gap: spacing.xs,
-  },
-  metricRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: 4,
-  },
-  metricLabel: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.medium,
-    fontSize: 13,
-  },
-  metricValue: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
-    textTransform: 'capitalize',
   },
   versionLabel: {
     alignSelf: 'center',
