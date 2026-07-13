@@ -14,11 +14,13 @@ import {
   learningResponseStatePatch,
   mergeById,
   mergeDailyReportByLocalDate,
-  patchDailyReportInQueryCaches,
-  patchLearningResponseInQueryCaches,
   pollHomeSnapshotUntilIdle,
   rebuildLocalLearningState,
 } from '../helpers';
+import {
+  patchDailyReportInQueryCaches,
+  patchLearningResponseInQueryCaches,
+} from '../queryCacheHelpers';
 
 export function createReportActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,

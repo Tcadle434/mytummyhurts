@@ -21,20 +21,21 @@ import {
   hasPairedEvidence,
 } from '@mth/shared-domain';
 import type { MenuRiskModifierKey } from './menuRubric';
+import {
+  MECHANISMS,
+  firstTerm,
+  textHasTerm,
+} from './mechanismCatalog';
+import type { ConditionGroup, MechanismDefinition } from './mechanismCatalog';
+import { buildMechanismScoreContributors } from './mechanismScoringContributors';
 import { normalize } from './text-utils';
 
+export {
+  mechanismLabelForKey,
+  riskMechanismKeysForIngredientNames,
+} from './mechanismCatalog';
+
 export const MECHANISM_SCORING_MODEL_VERSION = 'mechanism_v1' as const;
-
-type ConditionGroup = 'IBS' | 'GERD' | 'LACTOSE' | 'GLUTEN';
-
-type MechanismDefinition = {
-  key: MenuRiskModifierKey | 'processed_meat';
-  label: string;
-  terms: readonly string[];
-  prepTerms?: readonly string[];
-  basePoints: Partial<Record<ConditionGroup, number>>;
-  protective?: boolean;
-};
 
 export interface MechanismScoringResult {
   overallRiskScore: number;
@@ -93,182 +94,6 @@ const MEAL_WIDE_PREP_MECHANISMS = new Set<MenuRiskModifierKey | 'processed_meat'
   'fried_or_crispy',
   'raw_or_undercooked',
 ]);
-
-const MECHANISMS: readonly MechanismDefinition[] = [
-  {
-    key: 'wheat_fructan_or_gluten',
-    label: 'Wheat/fructan',
-    // Named pasta shapes included: extractions say "spaghetti"/"macaroni"
-    // without the word "pasta" (mac & cheese was a known wheat miss).
-    terms: ['wheat', 'bread', 'bun', 'roll', 'sub roll', 'pasta', 'spaghetti', 'macaroni', 'lasagna', 'penne', 'fettuccine', 'linguine', 'couscous', 'ramen', 'udon', 'noodle', 'flour tortilla', 'tortilla', 'naan', 'pita', 'flatbread', 'pizza crust', 'pizza', 'pastry', 'pancake', 'waffle', 'dough', 'crust', 'breadcrumbs', 'gluten'],
-    basePoints: { IBS: 7, GLUTEN: 24 },
-  },
-  {
-    key: 'creamy_or_lactose',
-    label: 'Dairy/lactose',
-    terms: ['milk', 'cream', 'cheese', 'mozzarella', 'queso', 'sour cream', 'yogurt', 'ranch', 'ice cream', 'dairy'],
-    basePoints: { IBS: 10, GERD: 8, LACTOSE: 24 },
-  },
-  {
-    key: 'high_fat_or_rich',
-    label: 'Fat/richness',
-    terms: ['rich', 'butter', 'cream', 'creamy', 'mayo', 'mayonnaise', 'aioli', 'loaded', 'smothered', 'pork belly', 'ribeye', 'bacon', 'pepperoni', 'sausage', 'queso', 'cheese', 'cheese sauce', 'avocado', 'oil', 'greasy'],
-    basePoints: { GERD: 16, IBS: 5 },
-  },
-  {
-    key: 'processed_meat',
-    label: 'Processed meat',
-    terms: ['deli meat', 'cold cut', 'lunch meat', 'ham', 'bacon', 'sausage', 'pepperoni', 'salami', 'hot dog', 'chorizo', 'pastrami'],
-    basePoints: { GERD: 8, IBS: 6 },
-  },
-  {
-    key: 'acidic_tomato_citrus_vinegar',
-    label: 'Acidic tomato/citrus/vinegar',
-    terms: ['tomato', 'tomato sauce', 'marinara', 'pizza sauce', 'salsa', 'ketchup', 'citrus', 'lemon', 'lime', 'orange', 'vinegar', 'pickle', 'pickled', 'mustard', 'ponzu'],
-    basePoints: { GERD: 14 },
-  },
-  {
-    key: 'allium_garlic_onion',
-    label: 'Garlic/onion/allium',
-    terms: ['garlic', 'onion', 'shallot', 'scallion', 'green onion', 'leek', 'chive', 'onion powder', 'garlic powder', 'sofrito'],
-    basePoints: { IBS: 18, GERD: 4 },
-  },
-  {
-    key: 'legume_gos',
-    label: 'Beans/legumes/GOS',
-    terms: ['bean', 'beans', 'lentil', 'lentils', 'chickpea', 'hummus', 'edamame', 'soybean', 'soy bean', 'pea', 'dal', 'falafel'],
-    basePoints: { IBS: 14 },
-  },
-  {
-    key: 'high_fiber_or_gassy',
-    label: 'Gassy high-fiber plant',
-    terms: ['broccoli', 'cauliflower', 'cabbage', 'brussels sprout', 'asparagus', 'artichoke', 'mushroom', 'kale', 'coleslaw', 'bran', 'large salad'],
-    basePoints: { IBS: 8 },
-  },
-  {
-    key: 'spicy_heat',
-    label: 'Spicy heat',
-    terms: ['spicy', 'hot sauce', 'buffalo', 'jalapeno', 'habanero', 'chili', 'chilli', 'sriracha', 'wasabi', 'gochujang', 'harissa', 'pepper heat'],
-    basePoints: { GERD: 18, IBS: 8 },
-  },
-  {
-    key: 'unknown_sauce_or_marinade',
-    label: 'Compound sauce/marinade',
-    terms: ['sauce', 'gravy', 'curry', 'masala', 'marinade', 'dressing', 'glaze', 'stew sauce', 'simmer sauce'],
-    basePoints: { GERD: 24, IBS: 10 },
-  },
-  {
-    key: 'fried_or_crispy',
-    label: 'Fried/crispy prep',
-    terms: ['fried', 'deep fried', 'tempura', 'battered', 'breaded', 'fries', 'chips', 'onion ring', 'katsu', 'fritter'],
-    prepTerms: ['fried', 'deep fried', 'tempura', 'battered', 'breaded'],
-    basePoints: { GERD: 18, IBS: 8 },
-  },
-  {
-    key: 'high_fructose',
-    label: 'High fructose',
-    terms: ['honey', 'agave', 'apple', 'pear', 'mango', 'watermelon', 'fruit juice', 'juice', 'dried fruit', 'high fructose corn syrup'],
-    basePoints: { IBS: 10 },
-  },
-  {
-    key: 'sweet_polyol',
-    label: 'Sugar alcohol/polyol',
-    terms: ['sugar free', 'diet', 'sorbitol', 'mannitol', 'xylitol', 'maltitol', 'erythritol', 'isomalt', 'sugar alcohol', 'polyol'],
-    basePoints: { IBS: 14 },
-  },
-  {
-    key: 'caffeine',
-    label: 'Caffeine',
-    terms: ['coffee', 'espresso', 'tea', 'matcha', 'cola', 'energy drink', 'yerba mate', 'caffeine'],
-    basePoints: { GERD: 10, IBS: 6 },
-  },
-  {
-    key: 'carbonation',
-    label: 'Carbonation',
-    terms: ['soda', 'sparkling', 'seltzer', 'tonic', 'carbonated', 'fizzy', 'kombucha', 'beer', 'hard seltzer'],
-    basePoints: { GERD: 8, IBS: 5 },
-  },
-  {
-    key: 'alcohol',
-    label: 'Alcohol',
-    terms: ['beer', 'wine', 'sake', 'cider', 'cocktail', 'liquor', 'vodka', 'whiskey', 'tequila', 'rum', 'gin'],
-    basePoints: { GERD: 18, IBS: 8 },
-  },
-  {
-    key: 'chocolate_or_mint',
-    label: 'Chocolate/mint',
-    terms: ['chocolate', 'cocoa', 'peppermint', 'spearmint', 'mint'],
-    basePoints: { GERD: 8 },
-  },
-  {
-    key: 'fermented_or_histamine',
-    label: 'Fermented/aged',
-    terms: ['fermented', 'aged', 'cured', 'pickled', 'kimchi', 'sauerkraut', 'miso', 'soy sauce', 'fish sauce', 'kombucha', 'aged cheese'],
-    basePoints: { GERD: 4, IBS: 3 },
-  },
-  {
-    key: 'raw_or_undercooked',
-    label: 'Raw/undercooked animal food',
-    terms: ['sashimi', 'raw fish', 'raw shellfish', 'tartare', 'ceviche', 'rare steak', 'rare meat', 'runny egg', 'unpasteurized', 'undercooked'],
-    prepTerms: ['sashimi', 'tartare', 'ceviche', 'rare', 'runny', 'unpasteurized', 'undercooked'],
-    basePoints: { IBS: 5, GERD: 3 },
-  },
-  {
-    key: 'rice_or_simple_starch',
-    label: 'Rice/simple starch',
-    terms: ['rice', 'sushi rice', 'steamed rice', 'plain rice', 'oats', 'oatmeal', 'polenta', 'quinoa', 'plain potato'],
-    basePoints: { IBS: -5, GERD: -3 },
-    protective: true,
-  },
-  {
-    key: 'lean_protein',
-    label: 'Lean protein',
-    terms: ['chicken breast', 'turkey', 'cod', 'white fish', 'halibut', 'tuna', 'shrimp', 'crab', 'scallop', 'octopus'],
-    basePoints: { IBS: -4, GERD: -4 },
-    protective: true,
-  },
-  {
-    key: 'low_fermentation_plant',
-    label: 'Lower-fermentation plant',
-    terms: ['lettuce', 'cucumber', 'carrot', 'zucchini', 'spinach', 'bok choy', 'seaweed', 'nori', 'bell pepper'],
-    basePoints: { IBS: -3, GERD: -2 },
-    protective: true,
-  },
-  {
-    key: 'simple_prep',
-    label: 'Simple prep',
-    terms: ['steamed', 'grilled', 'broiled', 'baked', 'roasted', 'poached', 'boiled', 'plain'],
-    prepTerms: ['steamed', 'grilled', 'broiled', 'baked', 'roasted', 'poached', 'boiled', 'plain'],
-    basePoints: { IBS: -5, GERD: -5 },
-    protective: true,
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Name-only mechanism matching (day-load support). Prior consumed meals come
-// back from scan_ingredient_risks as bare canonical names — no roles, amounts,
-// or prep context — so this matches names against the same MECHANISMS term
-// table the scorer uses, risk (non-protective) mechanisms only.
-// ---------------------------------------------------------------------------
-
-/** Risk mechanism keys present in any of the given food names. */
-export function riskMechanismKeysForIngredientNames(names: readonly string[]): Set<string> {
-  const keys = new Set<string>();
-  for (const name of names) {
-    const text = normalize(name);
-    if (!text) continue;
-    for (const def of MECHANISMS) {
-      if (def.protective) continue;
-      if (textHasTerm(text, def.terms)) keys.add(def.key);
-    }
-  }
-  return keys;
-}
-
-/** Human label for a mechanism key ('creamy_or_lactose' -> 'Dairy/lactose'). */
-export function mechanismLabelForKey(key: string): string | undefined {
-  return MECHANISMS.find((def) => def.key === key)?.label;
-}
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -363,17 +188,6 @@ function effectiveExposureContext(ingredient: ExtractedIngredient) {
 
 function ingredientText(ingredient: ExtractedIngredient) {
   return normalize([ingredient.rawName, ingredient.canonicalName].filter(Boolean).join(' '));
-}
-
-function textHasTerm(text: string, terms: readonly string[]) {
-  return terms.some((term) => {
-    const normalized = normalize(term);
-    return normalized && ` ${text} `.includes(` ${normalized} `);
-  });
-}
-
-function firstTerm(text: string, terms: readonly string[]) {
-  return terms.map(normalize).filter(Boolean).find((term) => ` ${text} `.includes(` ${term} `));
 }
 
 function confidenceMultiplier(confidence: IngredientConfidence, protective: boolean) {
@@ -573,18 +387,6 @@ function dedupeExposures(exposures: MechanismExposure[]) {
   return [...byKey.values()];
 }
 
-function dedupeContributorExposures(exposures: MechanismExposure[]) {
-  const byKey = new Map<string, MechanismExposure>();
-  for (const exposure of exposures) {
-    const key = `${exposure.mechanismKey}:${exposure.ingredient}`;
-    const existing = byKey.get(key);
-    if (!existing || Math.abs(exposure.points) > Math.abs(existing.points)) {
-      byKey.set(key, exposure);
-    }
-  }
-  return [...byKey.values()];
-}
-
 function namesMatch(left: string, right: string) {
   const a = normalize(left);
   const b = normalize(right);
@@ -720,72 +522,6 @@ function highRiskGate(condition: string, exposures: MechanismExposure[], adjustm
   return true;
 }
 
-function scoreContributorFromExposure(exposure: MechanismExposure): ScoreContributor {
-  return {
-    key: exposure.mechanismKey,
-    label: displayLabelForExposure(exposure),
-    points: exposure.points,
-    evidence: exposure.points < 0 ? 'protective' : exposure.mechanismKey === 'fried_or_crispy' || exposure.mechanismKey === 'raw_or_undercooked' ? 'prep' : 'ingredient',
-    source: exposure.ingredient,
-    reason: exposure.reason,
-  };
-}
-
-function titleCaseFood(value: string) {
-  const text = normalize(value);
-  if (!text) return 'Food signal';
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-function displayLabelForExposure(exposure: MechanismExposure) {
-  const source = titleCaseFood(exposure.ingredient);
-  const sourceText = normalize(exposure.ingredient);
-
-  switch (exposure.mechanismKey) {
-    case 'wheat_fructan_or_gluten':
-      if (textHasTerm(sourceText, ['crust', 'dough', 'flour'])) return 'Wheat crust';
-      if (textHasTerm(sourceText, ['bread', 'bun', 'roll'])) return 'Wheat bread';
-      if (textHasTerm(sourceText, ['pasta', 'noodle', 'ramen', 'udon'])) return 'Wheat pasta';
-      return source;
-    case 'creamy_or_lactose':
-      return `${source} dairy`;
-    case 'high_fat_or_rich':
-      return `${source} richness`;
-    case 'acidic_tomato_citrus_vinegar':
-    case 'processed_meat':
-    case 'spicy_heat':
-    case 'alcohol':
-    case 'carbonation':
-    case 'caffeine':
-      return source;
-    case 'fried_or_crispy':
-      return 'Fried prep';
-    case 'unknown_sauce_or_marinade':
-      return sourceText === 'sauce' || sourceText === 'marinade' || sourceText === 'dressing' ? 'Unclear sauce' : source;
-    case 'reflux_mechanism_stack':
-      return 'Acid + richness';
-    case 'rice_or_simple_starch':
-      return source === 'Food signal' ? 'Simple starch' : source;
-    case 'lean_protein':
-      return source === 'Food signal' ? 'Lean protein' : source;
-    case 'simple_prep':
-      return 'Simple prep';
-    default:
-      return source;
-  }
-}
-
-function scoreContributorFromAdjustment(adjustment: PersonalMechanismAdjustment): ScoreContributor {
-  return {
-    key: `personal_${adjustment.mechanismKey}`,
-    label: adjustment.points > 0 ? `Your history: ${adjustment.ingredient}` : `Usually gentler: ${adjustment.ingredient}`,
-    points: adjustment.points,
-    evidence: 'learning',
-    source: adjustment.ingredient,
-    reason: adjustment.reason,
-  };
-}
-
 function combineOverall(scores: number[]) {
   const sorted = [...scores].sort((left, right) => right - left);
   if (!sorted.length) return 0;
@@ -857,21 +593,7 @@ export function computeMechanismScoring(
   const overallRiskScore = hasHighCondition
     ? combineOverall(allConditionScores)
     : Math.min(UNGATED_HIGH_BAND_CEILING, combineOverall(allConditionScores));
-  const baselineContributor: ScoreContributor = {
-    key: 'base_menu_risk',
-    label: 'Base menu risk',
-    points: basePoints,
-    evidence: 'rubric',
-    source: 'mechanism scoring baseline',
-    reason: 'Every scan starts with a small baseline before food exposure is applied.',
-  };
-  const contributors: ScoreContributor[] = [
-    baselineContributor,
-    ...dedupeContributorExposures(allExposures).map(scoreContributorFromExposure),
-    ...personalAdjustments.map(scoreContributorFromAdjustment),
-  ].filter((entry) => entry.points !== 0)
-    .sort((left, right) => Math.abs(right.points) - Math.abs(left.points) || right.points - left.points)
-    .slice(0, 12);
+  const contributors = buildMechanismScoreContributors(allExposures, personalAdjustments, basePoints);
 
   const conditionSeverities = supported.map(({ condition }) => {
     const score = conditionScores[condition]?.score ?? 0;

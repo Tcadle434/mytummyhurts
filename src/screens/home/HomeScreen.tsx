@@ -5,7 +5,7 @@ import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 
-import { AppScreen, SectionCard, SkeletonBlock, Wordmark } from "../../components/common/UI";
+import { AppScreen, SkeletonBlock, Wordmark } from "../../components/common/UI";
 import { TriggersSummaryRow } from "../../components/home/TriggersSummaryRow";
 import { WeeklyProgressCard } from "../../components/progress/WeeklyProgressCard";
 import { isLiveBackendConfigured } from "../../config/env";
@@ -29,6 +29,10 @@ import {
 } from "../../utils/weeklyProgress";
 import { GutScoreHomeCard } from "./GutScoreHomeCard";
 import { GutScoreInfoModal } from "./GutScoreInfoModal";
+import {
+	GutScoreHomeCardSkeleton,
+	WeeklyProgressCardSkeleton,
+} from "./HomeScreenSkeletons";
 
 const DAILY_REPORT_PROMPT_DISMISSED_KEY = "home.dailyReportPromptDismissedDate";
 const EMPTY_SCANS: ScanHistorySummary[] = [];
@@ -359,69 +363,6 @@ export function HomeScreen() {
 	);
 }
 
-function GutScoreHomeCardSkeleton() {
-	return (
-		<SectionCard style={styles.gutScoreSkeletonCard}>
-			<View style={styles.skeletonCopyColumn}>
-				<View style={styles.skeletonHeaderRow}>
-					<SkeletonBlock width={84} height={22} radius={radii.sm} />
-					<SkeletonBlock width={26} height={26} radius={13} />
-				</View>
-				<View style={styles.skeletonScoreRow}>
-					<SkeletonBlock width={68} height={44} radius={radii.md} />
-					<SkeletonBlock
-						width={44}
-						height={22}
-						radius={radii.sm}
-						style={styles.skeletonScoreScale}
-					/>
-				</View>
-				<SkeletonBlock width={138} height={36} radius={radii.sm} />
-				<View style={styles.skeletonTrendRow}>
-					<SkeletonBlock width={14} height={14} radius={7} />
-					<SkeletonBlock width={108} height={14} radius={radii.sm} />
-				</View>
-			</View>
-			<View style={styles.skeletonVisualWrap}>
-				<SkeletonBlock width={124} height={96} radius={radii.xxl} />
-				<SkeletonBlock width={78} height={28} radius={radii.pill} />
-			</View>
-		</SectionCard>
-	);
-}
-
-function WeeklyProgressCardSkeleton() {
-	return (
-		<SectionCard style={styles.weeklyProgressSkeletonCard}>
-			<View style={styles.weeklyProgressSkeletonHeader}>
-				<View style={styles.skeletonCopyColumn}>
-					<SkeletonBlock width={118} height={20} radius={radii.sm} />
-				</View>
-				<SkeletonBlock width={16} height={16} radius={8} />
-			</View>
-			<View style={styles.weeklyProgressSkeletonFeature}>
-				<SkeletonBlock width={92} height={92} radius={46} />
-				<View style={styles.weeklyProgressSkeletonFeatureCopy}>
-					<SkeletonBlock width={108} height={14} radius={radii.sm} />
-					<SkeletonBlock width="90%" height={16} radius={radii.sm} />
-					<SkeletonBlock width="82%" height={16} radius={radii.sm} />
-				</View>
-			</View>
-			<View style={styles.weeklyProgressSkeletonDays}>
-				{[0, 1, 2, 3, 4, 5, 6].map((item) => (
-					<View key={item} style={styles.weeklyProgressSkeletonDay}>
-						<SkeletonBlock width={12} height={12} radius={radii.sm} />
-						<SkeletonBlock width={24} height={24} radius={12} />
-						<SkeletonBlock width={14} height={14} radius={7} />
-						<SkeletonBlock width={20} height={12} radius={radii.sm} />
-					</View>
-				))}
-			</View>
-			<SkeletonBlock width="78%" height={12} radius={radii.sm} />
-		</SectionCard>
-	);
-}
-
 const styles = StyleSheet.create({
 	headerStack: {
 		gap: spacing.md,
@@ -501,77 +442,6 @@ const styles = StyleSheet.create({
 		borderRadius: 15,
 		alignItems: "center",
 		justifyContent: "center",
-	},
-	gutScoreSkeletonCard: {
-		minHeight: 168,
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: spacing.sm,
-		paddingVertical: spacing.md,
-	},
-	skeletonCopyColumn: {
-		flex: 1,
-		minWidth: 0,
-		gap: spacing.xs,
-	},
-	skeletonHeaderRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.xs,
-		marginBottom: spacing.xs,
-	},
-	skeletonScoreRow: {
-		flexDirection: "row",
-		alignItems: "flex-end",
-		gap: spacing.xs,
-	},
-	skeletonScoreScale: {
-		marginBottom: 8,
-	},
-	skeletonTrendRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 5,
-		marginTop: spacing.xs,
-	},
-	skeletonVisualWrap: {
-		width: 132,
-		alignItems: "center",
-		justifyContent: "center",
-		gap: spacing.xs,
-	},
-	weeklyProgressSkeletonCard: {
-		gap: spacing.sm,
-		padding: spacing.sm,
-	},
-	weeklyProgressSkeletonHeader: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		justifyContent: "space-between",
-		gap: spacing.md,
-	},
-	weeklyProgressSkeletonFeature: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.md,
-	},
-	weeklyProgressSkeletonFeatureCopy: {
-		flex: 1,
-		gap: spacing.xs,
-	},
-	weeklyProgressSkeletonDays: {
-		flexDirection: "row",
-		gap: spacing.xs,
-	},
-	weeklyProgressSkeletonDay: {
-		flex: 1,
-		minHeight: 108,
-		alignItems: "center",
-		justifyContent: "space-between",
-		paddingVertical: spacing.xs,
-		borderRadius: radii.md,
-		backgroundColor: tokens.color.surface.app.default,
 	},
 	// The screen's saturated pill action: the original mint gradient,
 	// deliberately a different shape (pill) from the hero card above it.

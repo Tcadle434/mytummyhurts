@@ -9,7 +9,23 @@ import { getRevenueCatBillingSyncRequest } from '../../services/billing/revenueC
 import { queryClient } from '../../services/query/client';
 import { queryKeys } from '../../services/query/keys';
 import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
-import { isSubscriptionRequiredError, isDisplayNameOnlyProfileRequest, patchDisplayNameInInsightsCache, patchDailyReportsInHistoryCache, homeResponseStatePatch, createLocalProfile, clearRemoteState, applyProfileRequestLocally, revertProfileRequestLocally, patchProfileRequestInInsightsCache, apiErrorCode, profileWithGutScoreFallback, normalizeHomeResponse } from '../helpers';
+import {
+  apiErrorCode,
+  applyProfileRequestLocally,
+  clearRemoteState,
+  createLocalProfile,
+  homeResponseStatePatch,
+  isDisplayNameOnlyProfileRequest,
+  isSubscriptionRequiredError,
+  normalizeHomeResponse,
+  patchProfileRequestInInsightsCache,
+  profileWithGutScoreFallback,
+  revertProfileRequestLocally,
+} from '../helpers';
+import {
+  patchDailyReportsInHistoryCache,
+  patchDisplayNameInInsightsCache,
+} from '../queryCacheHelpers';
 
 // The onboarding answers as an updateProfile request. One builder so the
 // initial sync and the refresh-time heal push identical payloads.

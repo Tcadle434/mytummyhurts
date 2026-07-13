@@ -29,7 +29,7 @@ import {
   toRiskLevel,
 } from './internal';
 import { structuredAnalysisFromMenuItem } from './menu-rubric-engine';
-import { menuIngredientLabels } from './menu-traits';
+import { menuIngredientLabels } from './menu-ingredient-learning';
 import { computeScanResultFromStructured } from './scan-scoring';
 
 type MenuScoredItem = {

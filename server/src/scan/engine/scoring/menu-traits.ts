@@ -1,6 +1,5 @@
 import {
   ExtractedIngredient,
-  IngredientConfidence,
   IngredientInsight,
   MenuBaseFoodCategory,
   MenuItemAnalysis,
@@ -16,14 +15,7 @@ import {
   type MenuRubricEvidence,
   type MenuRubricRule,
 } from '../menuRubric';
-import {
-  EXTREME_STACK_SCORE_CAP,
-  clamp,
-  clampNumber,
-  frequencyRiskIndex,
-  normalizeKey,
-  severityRiskIndex,
-} from '@mth/shared-domain';
+import { clampNumber, normalizeKey } from '@mth/shared-domain';
 import {
   baseProfileRiskBonus,
   canonicalConditionKey,
@@ -33,14 +25,14 @@ import {
   getSensitivityProfile,
   ingredientMatchesSensitivityLabel,
   ingredientWeight,
-  insightConfidenceWeight,
-  insightRiskDelta,
-  isGeneralDiscomfortCondition,
   menuTextHasAny,
   normalizeMenuScoringText,
-  toRiskLevel,
 } from './internal';
+import { learnedMenuContributors } from './menu-ingredient-learning';
+import { calibrateMenuContributorForProfile, finalizeMenuRiskScore } from './menu-score-finalization';
 import { roleWeightForSignal } from './menu-role-weight';
+
+export { menuIngredientLabels } from './menu-ingredient-learning';
 
 export function menuScoringText(item: MenuItemAnalysis) {
   return normalizeMenuScoringText(
@@ -540,159 +532,9 @@ function modelRubricContributors(item: MenuItemAnalysis, profile: UserProfile | 
   return contributors;
 }
 
-function learnedMenuContributors(item: MenuItemAnalysis, profile: UserProfile | null, insights: IngredientInsight[]): ScoreContributor[] {
-  if (!insights.length) {
-    return [];
-  }
-
-  const learnedInsightWeight = insightConfidenceWeight(profile);
-  const insightMap = new Map(insights.map((insight) => [normalizeKey(insight.ingredientName), insight]));
-  const labels = menuIngredientLabels(item);
-  const contributors: ScoreContributor[] = [];
-  const seen = new Set<string>();
-
-  for (const label of labels) {
-    const key = normalizeKey(label);
-    const insight = insightMap.get(key);
-    if (!insight || seen.has(key) || insight.supportingEvidenceCount <= 0) {
-      continue;
-    }
-
-    const delta = Math.round(insightRiskDelta(insight, learnedInsightWeight) * 0.55);
-    if (Math.abs(delta) < 3) {
-      continue;
-    }
-
-    seen.add(key);
-    contributors.push({
-      key: `learned_${key}`,
-      label: delta > 0 ? `Your history: ${label}` : `Usually gentler: ${label}`,
-      points: clampNumber(delta, -10, 16),
-      evidence: 'learning',
-      source: label,
-      reason:
-        delta > 0
-          ? `${label} has appeared more often around reactive daily reports.`
-          : `${label} has appeared more often around calmer daily reports.`,
-    });
-  }
-
-  return contributors;
-}
-
 // Note: a "stacked triggers" bonus was removed by design (2026-06-11) — it double-counted
 // an already-additive score (the drivers themselves are the stacking). Filters referencing
 // 'stacked_load' remain so historical scan rows still render.
-
-function unknownMenuContributor(item: MenuItemAnalysis, contributors: ScoreContributor[]): ScoreContributor | null {
-  const hasFoodEvidence = item.extractedIngredients.length > 0 || item.inferredIngredients.length > 0 || contributors.length > 1;
-  if (hasFoodEvidence) {
-    return null;
-  }
-
-  return {
-    key: 'limited_menu_detail',
-    label: 'Limited detail',
-    points: 8,
-    evidence: 'uncertainty',
-    source: item.description || item.name,
-    reason: 'The menu item has limited ingredient detail, so the score keeps some uncertainty.',
-  };
-}
-
-function menuScoringConfidence(item: MenuItemAnalysis, contributors: ScoreContributor[]): IngredientConfidence {
-  const evidenceCount = contributors.filter(
-    (contributor) =>
-      contributor.key !== 'base_menu_risk' &&
-      contributor.evidence !== 'rubric' &&
-      contributor.evidence !== 'profile',
-  ).length;
-  const hasUncertainty = contributors.some((contributor) => contributor.evidence === 'uncertainty');
-
-  if (item.confidence === 'low' || (hasUncertainty && evidenceCount <= 1)) {
-    return 'low';
-  }
-
-  if (item.confidence === 'high' && evidenceCount >= 2 && !hasUncertainty) {
-    return 'high';
-  }
-
-  return 'medium';
-}
-
-function hasSpecificConditionOrSensitivity(profile: UserProfile | null) {
-  if (!profile) {
-    return false;
-  }
-
-  const hasSpecificCondition = profile.knownConditions.some((condition) => !isGeneralDiscomfortCondition(condition));
-  return hasSpecificCondition || profile.knownIngredientSensitivities.length > 0;
-}
-
-function genericBaselineMultiplier(profile: UserProfile | null) {
-  return hasSpecificConditionOrSensitivity(profile) ? 1 : 0.65;
-}
-
-function calibrateContributorForProfile(contributor: ScoreContributor, profile: UserProfile | null): ScoreContributor {
-  if (
-    contributor.points <= 0 ||
-    contributor.evidence === 'learning' ||
-    contributor.key === 'base_menu_risk' ||
-    contributor.key === 'profile_context'
-  ) {
-    return contributor;
-  }
-
-  const multiplier = genericBaselineMultiplier(profile);
-  if (multiplier === 1) {
-    return contributor;
-  }
-
-  return {
-    ...contributor,
-    points: Math.max(1, Math.round(contributor.points * multiplier)),
-  };
-}
-
-function hasExtremeRiskStack(_contributors: ScoreContributor[], profile: UserProfile | null) {
-  // Only a severe or dense-known-risk profile can push a meal past the shared
-  // EXTREME_STACK_SCORE_CAP toward a near-100 reading. Meal traits alone never
-  // unlock it — letting a single fried/spicy item unlock 100 was the original
-  // over-scoring bug.
-  const severeProfile =
-    severityRiskIndex(profile?.symptomSeverityBaseline) >= 4 &&
-    frequencyRiskIndex(profile?.symptomFrequency) >= 3;
-  const denseKnownRiskProfile =
-    (profile?.knownConditions.length ?? 0) >= 4 &&
-    (profile?.knownIngredientSensitivities.length ?? 0) >= 5;
-
-  return severeProfile || denseKnownRiskProfile;
-}
-
-// Saturating combine (soft knee): below the knee the contributor sum is linear
-// (preserving calibrated mid-range behavior); above it, extra load compresses
-// exponentially toward the ceiling so stacking many triggers asymptotes toward
-// 100 instead of additively blowing past it. Server-only (no client mirror).
-const SATURATION_KNEE = 58;
-const SATURATION_SCALE = 45;
-
-function combineSaturating(contributors: ScoreContributor[]) {
-  const CEIL = 100;
-  const additive = contributors.reduce((total, contributor) => total + contributor.points, 0);
-  if (additive <= SATURATION_KNEE) {
-    return additive;
-  }
-  return SATURATION_KNEE + (CEIL - SATURATION_KNEE) * (1 - Math.exp(-(additive - SATURATION_KNEE) / SATURATION_SCALE));
-}
-
-function finalizeFoodRiskScore(rawScore: number, contributors: ScoreContributor[], profile: UserProfile | null) {
-  const clamped = clamp(rawScore);
-  if (clamped <= EXTREME_STACK_SCORE_CAP || hasExtremeRiskStack(contributors, profile)) {
-    return clamped;
-  }
-
-  return EXTREME_STACK_SCORE_CAP;
-}
 
 export function scoreFoodRiskEntity(
   item: MenuItemAnalysis,
@@ -712,7 +554,7 @@ export function scoreFoodRiskEntity(
   ];
 
   const modelContributors = modelRubricContributors(item, profile).map((contributor) =>
-    calibrateContributorForProfile(contributor, profile),
+    calibrateMenuContributorForProfile(contributor, profile),
   );
   contributors.push(...modelContributors);
   const modelRubricKeys = new Set(modelContributors.map((contributor) => contributor.key));
@@ -724,7 +566,7 @@ export function scoreFoodRiskEntity(
 
     const contributor = menuRuleContributor(rule, item, profile);
     if (contributor) {
-      contributors.push(calibrateContributorForProfile(contributor, profile));
+      contributors.push(calibrateMenuContributorForProfile(contributor, profile));
       modelRubricKeys.add(contributor.key);
     }
   }
@@ -736,30 +578,12 @@ export function scoreFoodRiskEntity(
 
     const contributor = menuRuleContributor(rule, item, profile);
     if (contributor) {
-      contributors.push(calibrateContributorForProfile(contributor, profile));
+      contributors.push(calibrateMenuContributorForProfile(contributor, profile));
     }
   }
 
   contributors.push(...learnedMenuContributors(item, profile, insights));
-
-  const unknown = unknownMenuContributor(item, contributors);
-  if (unknown) {
-    contributors.push(calibrateContributorForProfile(unknown, profile));
-  }
-
-  const rawScore = combineSaturating(contributors);
-  const score = Math.max(5, finalizeFoodRiskScore(rawScore, contributors, profile));
-  const sortedContributors = contributors
-    .filter((contributor) => contributor.points !== 0)
-    .sort((left, right) => Math.abs(right.points) - Math.abs(left.points) || right.points - left.points)
-    .slice(0, 12);
-
-  return {
-    score,
-    level: toRiskLevel(score),
-    contributors: sortedContributors,
-    confidence: menuScoringConfidence(item, sortedContributors),
-  };
+  return finalizeMenuRiskScore(item, profile, contributors);
 }
 
 export function contributorMatchesIngredient(contributor: ScoreContributor, ingredientName: string) {
@@ -788,19 +612,4 @@ export function contributorMatchesIngredient(contributor: ScoreContributor, ingr
     const termTokens = normalizeMenuScoringText(term).split(' ').filter(Boolean).map(stem);
     return termTokens.length > 0 && termTokens.every((token) => ingredientTokens.has(token));
   });
-}
-
-export function menuIngredientLabels(item: MenuItemAnalysis) {
-  const labels: string[] = [];
-  const seen = new Set<string>();
-  for (const ingredient of [...item.extractedIngredients, ...item.inferredIngredients]) {
-    const label = (ingredient.rawName || ingredient.canonicalName).trim();
-    const key = normalizeKey(label);
-    if (!label || !key || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    labels.push(label);
-  }
-  return labels;
 }

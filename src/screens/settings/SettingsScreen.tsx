@@ -1,37 +1,18 @@
-import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import { ComponentProps, useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  LayoutChangeEvent,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   AppScreen,
   DetailScreenHeader,
   InfoPill,
   InputField,
-  OnboardingPickerOption,
   OptionChip,
   PrimaryButton,
   SecondaryButton,
 } from '../../components/common/UI';
 import { Pip } from '../../components/common/Pip';
-import { CustomEntryModal } from '../../components/modals/CustomEntryModal';
 import { env } from '../../config/env';
-import {
-  conditionOptions,
-  dietPreferenceLabelFromKey,
-  dietPreferenceOptions,
-  ingredientSensitivityOptions,
-  symptomOptions,
-} from '../../data/catalog';
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList, SettingsSection } from '../../navigation/types';
 import { apiClient } from '../../services/api/client';
@@ -46,64 +27,29 @@ import {
   getNotificationPermissionState,
 } from '../../services/notifications';
 import { useAppStore } from '../../store/useAppStore';
-import { palette, radii, spacing, tokens, type } from '../../theme';
+import { radii, spacing, tokens, type } from '../../theme';
 import { describeProfileForPip } from './profileSummary';
+import { openDeleteConfirmation, openIfPresent, openLegalSurface } from './settingsActions';
+import { accountMetaLine, prettyStatus } from './settingsFormatting';
+import { CHECKIN_TIME_PRESETS } from './settingsOptions';
+import { SettingsExpandedBlock } from './SettingsExpandedBlock';
+import { SettingsHealthProfileSection } from './SettingsHealthProfileSection';
+import { SettingsMetricRow } from './SettingsMetricRow';
+import { SettingsRow } from './SettingsRow';
+import { SettingsRowDivider } from './SettingsRowDivider';
+import { SettingsSectionGroup } from './SettingsSectionGroup';
+import type {
+  BusySettingsSection,
+  ExpandedSettingsSection,
+  SettingsStatusFeedback,
+} from './settingsTypes';
 
-type IoniconName = ComponentProps<typeof Ionicons>['name'];
-type ExpandedSection = SettingsSection | null;
 const HEALTH_PROFILE_SECTIONS: SettingsSection[] = [
   'conditions',
   'sensitivities',
   'symptoms',
   'diet',
 ];
-type BusySection =
-  | 'account'
-  | 'conditions'
-  | 'sensitivities'
-  | 'symptoms'
-  | 'diet'
-  | 'notifications'
-  | 'delete'
-  | null;
-type CustomCategory = 'conditions' | 'sensitivities' | 'symptoms';
-
-// Save confirmations render adjacent to the section they belong to — never
-// below the danger zone at the bottom of the screen.
-type StatusPlacement = 'account' | 'health' | 'general';
-type StatusFeedback = {
-  placement: StatusPlacement;
-  message: string;
-  tone: 'soft' | 'warm';
-};
-
-const CHECKIN_TIME_PRESETS: { label: string; hour: number }[] = [
-  { label: 'Morning · 9am', hour: 9 },
-  { label: 'Midday · 1pm', hour: 13 },
-  { label: 'Evening · 6pm', hour: 18 },
-  { label: 'Night · 9pm', hour: 21 },
-];
-
-const CUSTOM_CATEGORY_COPY: Record<
-  CustomCategory,
-  { title: string; subtitle: string; placeholder: string }
-> = {
-  conditions: {
-    title: 'Add a custom condition',
-    subtitle: 'Add anything we should consider when personalizing your scans.',
-    placeholder: "Example: SIBO, gastritis, Crohn's",
-  },
-  sensitivities: {
-    title: 'Add a custom sensitivity',
-    subtitle: 'Add any food or ingredient you think might bother you.',
-    placeholder: 'Example: eggs, soy, coffee',
-  },
-  symptoms: {
-    title: 'Add a custom symptom',
-    subtitle: 'Add any symptom you want your daily reports to track.',
-    placeholder: 'Example: cramping, burping, trapped gas',
-  },
-};
 
 export function SettingsScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -118,61 +64,17 @@ export function SettingsScreen() {
   const profile = insightsQuery.data?.profile ?? fallbackProfile;
   const billing = insightsQuery.data?.billing ?? fallbackBilling;
 
-  const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
+  const [expandedSection, setExpandedSection] = useState<ExpandedSettingsSection>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState(profile?.displayName ?? '');
-  const [selectedConditions, setSelectedConditions] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownConditions ?? [], conditionOptions).predefined,
-  );
-  const [customConditions, setCustomConditions] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownConditions ?? [], conditionOptions).custom,
-  );
-  const [selectedSensitivities, setSelectedSensitivities] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownIngredientSensitivities ?? [], ingredientSensitivityOptions)
-      .predefined,
-  );
-  const [customSensitivities, setCustomSensitivities] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownIngredientSensitivities ?? [], ingredientSensitivityOptions)
-      .custom,
-  );
-  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>(() =>
-    splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions).predefined,
-  );
-  const [customSymptoms, setCustomSymptoms] = useState<string[]>(() =>
-    splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions).custom,
-  );
-  const [selectedDietKeys, setSelectedDietKeys] = useState(() =>
-    (profile?.dietPreferences ?? []).map((preference) => preference.key),
-  );
-  const [busySection, setBusySection] = useState<BusySection>(null);
-  const [status, setStatus] = useState<StatusFeedback | null>(null);
+  const [busySection, setBusySection] = useState<BusySettingsSection>(null);
+  const [status, setStatus] = useState<SettingsStatusFeedback | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsBlocked, setNotificationsBlocked] = useState(false);
   const [checkinHour, setCheckinHour] = useState<number | null>(null);
-  const [customModalCategory, setCustomModalCategory] = useState<CustomCategory | null>(null);
-  const [customEntry, setCustomEntry] = useState('');
 
   useEffect(() => {
     setDisplayNameDraft(profile?.displayName ?? '');
-    const conditionsSplit = splitByCatalog(profile?.knownConditions ?? [], conditionOptions);
-    setSelectedConditions(conditionsSplit.predefined);
-    setCustomConditions(conditionsSplit.custom);
-    const sensitivitiesSplit = splitByCatalog(
-      profile?.knownIngredientSensitivities ?? [],
-      ingredientSensitivityOptions,
-    );
-    setSelectedSensitivities(sensitivitiesSplit.predefined);
-    setCustomSensitivities(sensitivitiesSplit.custom);
-    const symptomsSplit = splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions);
-    setSelectedSymptoms(symptomsSplit.predefined);
-    setCustomSymptoms(symptomsSplit.custom);
-    setSelectedDietKeys((profile?.dietPreferences ?? []).map((preference) => preference.key));
-  }, [
-    profile?.commonSymptoms,
-    profile?.dietPreferences,
-    profile?.displayName,
-    profile?.knownConditions,
-    profile?.knownIngredientSensitivities,
-  ]);
+  }, [profile?.displayName]);
 
   useEffect(() => {
     void getDailyReportNotificationStatus()
@@ -211,136 +113,8 @@ export function SettingsScreen() {
     return () => clearTimeout(timer);
   }, [route.params?.section]);
 
-  function toggleValue(
-    currentValues: string[],
-    setValues: (values: string[]) => void,
-    value: string,
-  ) {
-    setValues(
-      currentValues.includes(value)
-        ? currentValues.filter((entry) => entry !== value)
-        : [...currentValues, value],
-    );
-  }
-
-  function toggleSection(next: Exclude<ExpandedSection, null>) {
+  function toggleSection(next: Exclude<ExpandedSettingsSection, null>) {
     setExpandedSection((current) => (current === next ? null : next));
-  }
-
-  // Shared flow for the predefined+custom health-profile lists (conditions,
-  // sensitivities, symptoms). Each only differs by section key, profile field,
-  // merged values, analytics count key, and the noun used in status messages.
-  async function saveHealthProfileSection(
-    section: NonNullable<BusySection>,
-    noun: string,
-    update: Parameters<typeof updateProfileSettings>[0],
-    countKey: string,
-    count: number,
-  ) {
-    setBusySection(section);
-    setStatus(null);
-    try {
-      await updateProfileSettings(update);
-      trackEvent('profile_saved', { [countKey]: count });
-      setStatus({ placement: 'health', message: `${noun} saved.`, tone: 'soft' });
-      setExpandedSection(null);
-    } catch (error) {
-      setStatus({
-        placement: 'health',
-        message: error instanceof Error ? error.message : `${noun} could not be saved.`,
-        tone: 'warm',
-      });
-    } finally {
-      setBusySection(null);
-    }
-  }
-
-  function handleSaveConditions() {
-    const merged = [...selectedConditions, ...customConditions];
-    return saveHealthProfileSection('conditions', 'Conditions', { knownConditions: merged }, 'conditions_count', merged.length);
-  }
-
-  function handleSaveSensitivities() {
-    const merged = [...selectedSensitivities, ...customSensitivities];
-    return saveHealthProfileSection('sensitivities', 'Sensitivities', { knownIngredientSensitivities: merged }, 'sensitivities_count', merged.length);
-  }
-
-  function handleSaveSymptoms() {
-    const merged = [...selectedSymptoms, ...customSymptoms];
-    return saveHealthProfileSection('symptoms', 'Symptoms', { commonSymptoms: merged }, 'symptoms_count', merged.length);
-  }
-
-  async function handleSaveDiet() {
-    setBusySection('diet');
-    setStatus(null);
-    try {
-      await updateProfileSettings({
-        dietPreferences: selectedDietKeys.map((key) => ({
-          key,
-          label: dietPreferenceLabelFromKey(key),
-          strictness: 'standard',
-          source: 'settings',
-        })),
-      });
-      trackEvent('diet_preferences_saved', {
-        diet_count: selectedDietKeys.length,
-      });
-      setStatus({ placement: 'health', message: 'Diet goal saved.', tone: 'soft' });
-      setExpandedSection(null);
-    } catch (error) {
-      setStatus({
-        placement: 'health',
-        message: error instanceof Error ? error.message : 'Diet goal could not be saved.',
-        tone: 'warm',
-      });
-    } finally {
-      setBusySection(null);
-    }
-  }
-
-  function openCustomModal(category: CustomCategory) {
-    setCustomModalCategory(category);
-    setCustomEntry('');
-  }
-
-  function closeCustomModal() {
-    setCustomModalCategory(null);
-    setCustomEntry('');
-  }
-
-  function addCustomEntry() {
-    const trimmed = customEntry.trim();
-    if (!trimmed || !customModalCategory) return;
-    const normalized = trimmed.toLowerCase();
-
-    if (customModalCategory === 'conditions') {
-      const exists = customConditions.some((value) => value.toLowerCase() === normalized);
-      if (!exists) setCustomConditions((prev) => [...prev, trimmed]);
-    } else if (customModalCategory === 'sensitivities') {
-      const exists = customSensitivities.some((value) => value.toLowerCase() === normalized);
-      if (!exists) setCustomSensitivities((prev) => [...prev, trimmed]);
-    } else if (customModalCategory === 'symptoms') {
-      const exists = customSymptoms.some((value) => value.toLowerCase() === normalized);
-      if (!exists) setCustomSymptoms((prev) => [...prev, trimmed]);
-    }
-
-    setCustomEntry('');
-  }
-
-  function removeCustomEntry(category: CustomCategory, value: string) {
-    if (category === 'conditions') {
-      setCustomConditions((prev) => prev.filter((entry) => entry !== value));
-    } else if (category === 'sensitivities') {
-      setCustomSensitivities((prev) => prev.filter((entry) => entry !== value));
-    } else {
-      setCustomSymptoms((prev) => prev.filter((entry) => entry !== value));
-    }
-  }
-
-  function getCustomValuesForModal(category: CustomCategory) {
-    if (category === 'conditions') return customConditions;
-    if (category === 'sensitivities') return customSensitivities;
-    return customSymptoms;
   }
 
   async function handleSaveAccount() {
@@ -499,7 +273,7 @@ export function SettingsScreen() {
         <Text style={styles.profileSummary}>{profileSummary}</Text>
       </View>
 
-      <SectionGroup label="Account">
+      <SettingsSectionGroup label="Account">
         <SettingsRow
           icon="person-outline"
           label="Display name"
@@ -508,7 +282,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('account')}
         />
         {expandedSection === 'account' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <InputField
               value={displayNameDraft}
               placeholder="Enter a display name"
@@ -522,10 +296,10 @@ export function SettingsScreen() {
               onPress={() => void handleSaveAccount()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
 
-        <RowDivider />
+        <SettingsRowDivider />
 
         <SettingsRow
           icon="diamond-outline"
@@ -535,19 +309,19 @@ export function SettingsScreen() {
           onPress={() => toggleSection('subscription')}
         />
         {expandedSection === 'subscription' ? (
-          <ExpandedBlock>
-            <MetricRow label="Status" value={prettyStatus(billing.subscriptionStatus)} />
-            <MetricRow label="Plan" value={billing.selectedPlan} />
-            <MetricRow
+          <SettingsExpandedBlock>
+            <SettingsMetricRow label="Status" value={prettyStatus(billing.subscriptionStatus)} />
+            <SettingsMetricRow label="Plan" value={billing.selectedPlan} />
+            <SettingsMetricRow
               label="Trial ends"
               value={
                 billing.trialEndsAt ? new Date(billing.trialEndsAt).toLocaleDateString() : '—'
               }
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
 
-        <RowDivider />
+        <SettingsRowDivider />
 
         <SettingsRow
           icon="notifications-outline"
@@ -557,7 +331,7 @@ export function SettingsScreen() {
           onPress={() => toggleSection('notifications')}
         />
         {expandedSection === 'notifications' ? (
-          <ExpandedBlock>
+          <SettingsExpandedBlock>
             <Text style={styles.helperText}>
               One evening check-in reminder a day, plus a weekly gut report. Answer the reminder
               with a single tap.
@@ -585,190 +359,35 @@ export function SettingsScreen() {
               onPress={() => void handleEnableNotifications()}
               disabled={busySection !== null}
             />
-          </ExpandedBlock>
+          </SettingsExpandedBlock>
         ) : null}
-      </SectionGroup>
+      </SettingsSectionGroup>
 
       {status?.placement === 'account' ? (
         <InfoPill label={status.message} tone={status.tone} />
       ) : null}
 
-      <SectionGroup
-        label="Health profile"
+      <SettingsHealthProfileSection
+        profile={profile}
+        expandedSection={expandedSection}
+        busySection={busySection}
+        status={status}
+        updateProfileSettings={updateProfileSettings}
+        setExpandedSection={setExpandedSection}
+        setBusySection={setBusySection}
+        setStatus={setStatus}
         onLayout={(event) => {
           healthProfileOffset.current = event.nativeEvent.layout.y;
         }}
-      >
-        <SettingsRow
-          icon="medkit-outline"
-          label="Conditions"
-          value={summarizeHealthList(profile?.knownConditions)}
-          expanded={expandedSection === 'conditions'}
-          onPress={() => toggleSection('conditions')}
-        />
-        {expandedSection === 'conditions' ? (
-          <ExpandedBlock>
-            <View style={styles.pickerStack}>
-              {conditionOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option}
-                  label={option}
-                  variant="plain"
-                  selected={selectedConditions.includes(option)}
-                  onPress={() => toggleValue(selectedConditions, setSelectedConditions, option)}
-                />
-              ))}
-              <OnboardingPickerOption
-                label="Other"
-                variant="plain"
-                selected={false}
-                badgeText={customConditions.length > 0 ? `+${customConditions.length}` : undefined}
-                onPress={() => openCustomModal('conditions')}
-              />
-            </View>
-            <PrimaryButton
-              label={busySection === 'conditions' ? 'Saving…' : 'Save conditions'}
-              onPress={() => void handleSaveConditions()}
-              disabled={busySection !== null}
-            />
-          </ExpandedBlock>
-        ) : null}
+      />
 
-        <RowDivider />
-
-        <SettingsRow
-          icon="alert-circle-outline"
-          label="Sensitivities"
-          value={summarizeHealthList(profile?.knownIngredientSensitivities)}
-          expanded={expandedSection === 'sensitivities'}
-          onPress={() => toggleSection('sensitivities')}
-        />
-        {expandedSection === 'sensitivities' ? (
-          <ExpandedBlock>
-            <View style={styles.pickerStack}>
-              {ingredientSensitivityOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option}
-                  label={option}
-                  variant="plain"
-                  selected={selectedSensitivities.includes(option)}
-                  onPress={() =>
-                    toggleValue(selectedSensitivities, setSelectedSensitivities, option)
-                  }
-                />
-              ))}
-              <OnboardingPickerOption
-                label="Other"
-                variant="plain"
-                selected={false}
-                badgeText={
-                  customSensitivities.length > 0 ? `+${customSensitivities.length}` : undefined
-                }
-                onPress={() => openCustomModal('sensitivities')}
-              />
-            </View>
-            <PrimaryButton
-              label={busySection === 'sensitivities' ? 'Saving…' : 'Save sensitivities'}
-              onPress={() => void handleSaveSensitivities()}
-              disabled={busySection !== null}
-            />
-          </ExpandedBlock>
-        ) : null}
-
-        <RowDivider />
-
-        <SettingsRow
-          icon="pulse-outline"
-          label="Symptoms"
-          value={summarizeHealthList(profile?.commonSymptoms)}
-          expanded={expandedSection === 'symptoms'}
-          onPress={() => toggleSection('symptoms')}
-        />
-        {expandedSection === 'symptoms' ? (
-          <ExpandedBlock>
-            <View style={styles.pickerStack}>
-              {symptomOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option}
-                  label={option}
-                  variant="plain"
-                  selected={selectedSymptoms.includes(option)}
-                  onPress={() => toggleValue(selectedSymptoms, setSelectedSymptoms, option)}
-                />
-              ))}
-              <OnboardingPickerOption
-                label="Other"
-                variant="plain"
-                selected={false}
-                badgeText={customSymptoms.length > 0 ? `+${customSymptoms.length}` : undefined}
-                onPress={() => openCustomModal('symptoms')}
-              />
-            </View>
-            <PrimaryButton
-              label={busySection === 'symptoms' ? 'Saving…' : 'Save symptoms'}
-              onPress={() => void handleSaveSymptoms()}
-              disabled={busySection !== null}
-            />
-          </ExpandedBlock>
-        ) : null}
-
-        <RowDivider />
-
-        <SettingsRow
-          icon="nutrition-outline"
-          label="Diet goal"
-          value={summarizeDietPreferences(profile?.dietPreferences)}
-          expanded={expandedSection === 'diet'}
-          onPress={() => toggleSection('diet')}
-        />
-        {expandedSection === 'diet' ? (
-          <ExpandedBlock>
-            <Text style={styles.helperText}>
-              We keep your gut-risk score separate, then check scans against this diet goal.
-            </Text>
-            <View style={styles.pickerStack}>
-              <OnboardingPickerOption
-                label="No specific diet"
-                variant="plain"
-                selected={selectedDietKeys.length === 0}
-                onPress={() => setSelectedDietKeys([])}
-              />
-              {dietPreferenceOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option.key}
-                  label={option.label}
-                  variant="plain"
-                  selected={selectedDietKeys.includes(option.key)}
-                  onPress={() =>
-                    setSelectedDietKeys((current) =>
-                      current.includes(option.key)
-                        ? current.filter((entry) => entry !== option.key)
-                        : [...current, option.key],
-                    )
-                  }
-                />
-              ))}
-            </View>
-            <PrimaryButton
-              label={busySection === 'diet' ? 'Saving…' : 'Save diet goal'}
-              onPress={() => void handleSaveDiet()}
-              disabled={busySection !== null}
-            />
-          </ExpandedBlock>
-        ) : null}
-      </SectionGroup>
-
-      {status?.placement === 'health' ? (
-        <InfoPill label={status.message} tone={status.tone} />
-      ) : null}
-
-      <SectionGroup label="Support & legal">
+      <SettingsSectionGroup label="Support & legal">
         <SettingsRow
           icon="help-circle-outline"
           label="Help & support"
           onPress={() => void openIfPresent(`mailto:${env.supportEmail}`)}
         />
-        <RowDivider />
+        <SettingsRowDivider />
         <SettingsRow
           icon="shield-checkmark-outline"
           label="Privacy & security"
@@ -778,7 +397,7 @@ export function SettingsScreen() {
             )
           }
         />
-        <RowDivider />
+        <SettingsRowDivider />
         <SettingsRow
           icon="download-outline"
           label="Export my data"
@@ -788,16 +407,16 @@ export function SettingsScreen() {
             )
           }
         />
-      </SectionGroup>
+      </SettingsSectionGroup>
 
-      <SectionGroup label="Danger zone">
+      <SettingsSectionGroup label="Danger zone">
         <SettingsRow
           icon="trash-outline"
           label="Delete my data"
           danger
           onPress={() => openDeleteConfirmation(() => void handleDeleteAccount())}
         />
-      </SectionGroup>
+      </SettingsSectionGroup>
 
       {status?.placement === 'general' ? (
         <InfoPill label={status.message} tone={status.tone} />
@@ -807,186 +426,7 @@ export function SettingsScreen() {
 
       <Text style={styles.versionLabel}>App version 1.2.0</Text>
 
-      <CustomEntryModal
-        visible={customModalCategory !== null}
-        title={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].title : ''}
-        subtitle={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].subtitle : undefined}
-        placeholder={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].placeholder : ''}
-        value={customEntry}
-        onChangeText={setCustomEntry}
-        onSubmit={addCustomEntry}
-        onClose={closeCustomModal}
-        values={customModalCategory ? getCustomValuesForModal(customModalCategory) : []}
-        onRemove={(value) => {
-          if (customModalCategory) removeCustomEntry(customModalCategory, value);
-        }}
-      />
     </AppScreen>
-  );
-}
-
-function SectionGroup({
-  label,
-  children,
-  onLayout,
-}: {
-  label: string;
-  children: React.ReactNode;
-  onLayout?: (event: LayoutChangeEvent) => void;
-}) {
-  return (
-    <View style={styles.groupBlock} onLayout={onLayout}>
-      <Text style={styles.groupLabel}>{label.toUpperCase()}</Text>
-      <View style={styles.groupCard}>{children}</View>
-    </View>
-  );
-}
-
-function ExpandedBlock({ children }: { children: React.ReactNode }) {
-  return <View style={styles.expandedBlock}>{children}</View>;
-}
-
-function SettingsRow({
-  icon,
-  label,
-  value,
-  badge,
-  onPress,
-  expanded,
-  danger,
-}: {
-  icon: IoniconName;
-  label: string;
-  value?: string;
-  badge?: string;
-  onPress: () => void;
-  expanded?: boolean;
-  danger?: boolean;
-}) {
-  const accessibilityLabel = [label, value ?? badge].filter(Boolean).join(', ');
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => [styles.row, pressed && { opacity: 0.78 }]}
-    >
-      <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <Ionicons
-          name={icon}
-          size={18}
-          color={danger ? tokens.color.status.danger.foreground : palette.primary}
-        />
-      </View>
-      <View style={styles.rowCopy}>
-        <Text style={[styles.rowLabel, danger && { color: tokens.color.status.danger.foreground }]}>
-          {label}
-        </Text>
-        {value ? (
-          <Text style={styles.rowValue} numberOfLines={1}>
-            {value}
-          </Text>
-        ) : null}
-      </View>
-      {badge ? (
-        <View style={styles.rowBadge}>
-          <Text style={styles.rowBadgeLabel}>{badge}</Text>
-        </View>
-      ) : null}
-      <Ionicons
-        name={expanded ? 'chevron-up' : 'chevron-forward'}
-        size={18}
-        color={tokens.color.icon.muted}
-      />
-    </Pressable>
-  );
-}
-
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.metricRow}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-    </View>
-  );
-}
-
-function RowDivider() {
-  return <View style={styles.divider} />;
-}
-
-function splitByCatalog(values: string[], catalog: readonly string[]) {
-  const catalogLower = new Set(catalog.map((entry) => entry.toLowerCase()));
-  const predefined: string[] = [];
-  const custom: string[] = [];
-  for (const value of values) {
-    if (catalogLower.has(value.toLowerCase())) {
-      predefined.push(value);
-    } else {
-      custom.push(value);
-    }
-  }
-  return { predefined, custom };
-}
-
-// Never renders a blank line when the display name is unset — users who
-// skipped naming themselves just see their email.
-function accountMetaLine(displayName?: string | null, email?: string | null) {
-  const parts = [displayName?.trim(), email?.trim()].filter(Boolean);
-  if (parts.length === 0) {
-    return 'No active session';
-  }
-  return parts.join(' · ');
-}
-
-function prettyStatus(status: string) {
-  if (!status) return '—';
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function summarizeHealthList(values: string[] | null | undefined) {
-  if (!values?.length) return 'Tap to configure';
-  if (values.length === 1) return values[0] ?? 'Configured';
-  if (values.length === 2) return values.join(', ');
-  return `${values.slice(0, 2).join(', ')} +${values.length - 2}`;
-}
-
-function summarizeDietPreferences(profileDietPreferences: { label: string }[] | null | undefined) {
-  if (!profileDietPreferences?.length) {
-    return 'No specific diet';
-  }
-
-  if (profileDietPreferences.length === 1) {
-    return profileDietPreferences[0]?.label ?? 'Configured';
-  }
-
-  return `${profileDietPreferences.length} diet goals`;
-}
-
-async function openIfPresent(url: string) {
-  await Linking.openURL(url);
-}
-
-function openLegalSurface(url: string, fallback: () => void) {
-  if (!url || url.includes('example.com')) {
-    fallback();
-    return;
-  }
-
-  void openIfPresent(url).catch(() => {
-    fallback();
-  });
-}
-
-function openDeleteConfirmation(onConfirm: () => void) {
-  Alert.alert(
-    'Delete account?',
-    'This permanently removes your scans, history, insights, and saved profile data.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: onConfirm },
-    ],
   );
 }
 
@@ -1025,82 +465,6 @@ const styles = StyleSheet.create({
     ...tokens.type.display.accent,
     color: tokens.color.text.primary,
   },
-  groupBlock: {
-    gap: spacing.xs,
-  },
-  groupLabel: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.bold,
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 0.8,
-    paddingHorizontal: spacing.sm,
-  },
-  groupCard: {
-    borderRadius: radii.lg,
-    backgroundColor: tokens.color.surface.card.default,
-    ...tokens.shadow.card,
-  },
-  row: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: tokens.color.status.success.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowIconDanger: {
-    backgroundColor: tokens.color.status.danger.background,
-  },
-  rowCopy: {
-    flex: 1,
-    gap: 1,
-  },
-  rowLabel: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  rowValue: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.medium,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  rowBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radii.pill,
-    backgroundColor: tokens.color.status.success.background,
-  },
-  rowBadgeLabel: {
-    color: tokens.color.text.accent,
-    fontFamily: type.body.bold,
-    fontSize: 11,
-    lineHeight: 14,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: tokens.color.border.subtle,
-    marginLeft: spacing.md + 34 + spacing.sm,
-  },
-  expandedBlock: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    paddingTop: spacing.xs,
-    gap: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: tokens.color.border.subtle,
-  },
   helperText: {
     color: tokens.color.text.tertiary,
     fontFamily: type.body.medium,
@@ -1109,24 +473,6 @@ const styles = StyleSheet.create({
   },
   pickerStack: {
     gap: spacing.xs,
-  },
-  metricRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: 4,
-  },
-  metricLabel: {
-    color: tokens.color.text.tertiary,
-    fontFamily: type.body.medium,
-    fontSize: 13,
-  },
-  metricValue: {
-    color: tokens.color.text.primary,
-    fontFamily: type.body.semibold,
-    fontSize: 13,
-    textTransform: 'capitalize',
   },
   versionLabel: {
     alignSelf: 'center',

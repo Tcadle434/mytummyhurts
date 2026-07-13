@@ -10,15 +10,17 @@ import {
   localDateString,
   currentTimezone,
   scanCategoryForPayload,
-  removeScanFromHistoryCache,
   scanRequestId,
   apiErrorCode,
   learningResponseStatePatch,
   mergeById,
-  patchLearningResponseInQueryCaches,
   rebuildLocalLearningState,
   profileWithGutScoreFallback,
 } from '../helpers';
+import {
+  patchLearningResponseInQueryCaches,
+  removeScanFromHistoryCache,
+} from '../queryCacheHelpers';
 
 export function createScanActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,

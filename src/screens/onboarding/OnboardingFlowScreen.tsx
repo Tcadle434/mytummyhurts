@@ -33,7 +33,12 @@ import { type PhaseDiscoveryState } from "./components/PhaseDiscoveryGraphic";
 import { OnboardingCenterGraphic } from "./components/OnboardingCenterGraphic";
 import { OnboardingPipCompanion } from "./components/OnboardingPipCompanion";
 import { OnboardingProgressBar } from "./components/OnboardingProgressBar";
-import { type KnowBeforeEatStage } from "./components/KnowBeforeEatDemo";
+import {
+	knowBeforeEatCtaLabel,
+	nextKnowBeforeEatStageOnTap,
+	previousKnowBeforeEatStage,
+	type KnowBeforeEatStage,
+} from "./components/KnowBeforeEatFlow";
 import { StepTransition, StepTransitionDirection } from "./components/StepTransition";
 import { OnboardingSelectionControls } from "./OnboardingFlowParts";
 import {
@@ -42,6 +47,11 @@ import {
 	StaggerItem,
 } from "./OnboardingFlowScreen.helpers";
 import { styles } from "./OnboardingFlowScreen.styles";
+import {
+	customFieldForOnboardingStep,
+	customOptionCopyForOnboardingStep,
+	onboardingStepHasRequiredAnswer,
+} from "./OnboardingStepAnswers";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "OnboardingFlow">;
 
@@ -135,7 +145,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			knowBeforeEatStage === "barcode-loading");
 	const isCommitmentStep = step.previewVariant === "commitmentHold";
 	const isChoiceStep = step.type === "multi_select" || step.type === "single_select";
-	const hasRequiredAnswer = currentStepHasRequiredAnswer();
+	const hasRequiredAnswer = onboardingStepHasRequiredAnswer(step, answers);
 	const mascotState = getMascotStateForStep(step.id);
 	const headerTitle =
 		isStartingScoreStep && startingScoreState === "revealed"
@@ -355,73 +365,13 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		setStepIndex(stepIndex - 1);
 	}
 
-	function currentStepHasRequiredAnswer() {
-		if (step.type === "single_select" && step.field) {
-			const value = answers[step.field];
-			return Array.isArray(value) ? value.length > 0 : Boolean(value);
-		}
-
-		if (step.type === "multi_select" && step.field) {
-			if (step.field === "dietPreferenceKeys") {
-				return Boolean(answers.dietPreferenceNone) || (answers.dietPreferenceKeys ?? []).length > 0;
-			}
-
-			if (
-				step.field === "ingredientSensitivities" &&
-				answers.ingredientSensitivitiesUnknown
-			) {
-				return true;
-			}
-
-			const value = answers[step.field];
-			const customField = customFieldForCurrentStep();
-			const customValues = customField ? answers[customField] ?? [] : [];
-			return (Array.isArray(value) && value.length > 0) || customValues.length > 0;
-		}
-
-		return true;
-	}
-
-	function customFieldForCurrentStep() {
-		if (step.field === "conditions") return "customConditions" as const;
-		if (step.field === "ingredientSensitivities") {
-			return "customIngredientSensitivities" as const;
-		}
-		if (step.field === "symptoms") return "customSymptoms" as const;
-		return null;
-	}
-
-	function getCustomOptionCopy() {
-		if (step.field === "conditions") {
-			return {
-				title: "Add a custom condition",
-				subtitle: "Add anything we should consider when personalizing your scans.",
-				placeholder: "Example: SIBO, gastritis, Crohn's",
-			};
-		}
-
-		if (step.field === "symptoms") {
-			return {
-				title: "Add a custom symptom",
-				subtitle: "Add any symptom you want your daily reports to track.",
-				placeholder: "Example: cramping, burping, trapped gas",
-			};
-		}
-
-		return {
-			title: "Add a custom trigger",
-			subtitle: "Add any food or ingredient you already suspect.",
-			placeholder: "Example: eggs, soy, coffee",
-		};
-	}
-
 	function closeCustomOptionModal() {
 		setCustomOptionModalVisible(false);
 		setCustomEntry("");
 	}
 
 	function submitCustomOption() {
-		const field = customFieldForCurrentStep();
+		const field = customFieldForOnboardingStep(step);
 		if (!field || !customEntry.trim()) {
 			return;
 		}
@@ -435,7 +385,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	}
 
 	function removeCustomOption(value: string) {
-		const field = customFieldForCurrentStep();
+		const field = customFieldForOnboardingStep(step);
 		if (!field) {
 			return;
 		}
@@ -443,9 +393,9 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		removeCustomValue(field, value);
 	}
 
-	const customOptionField = customFieldForCurrentStep();
+	const customOptionField = customFieldForOnboardingStep(step);
 	const customOptionValues = customOptionField ? answers[customOptionField] ?? [] : [];
-	const customOptionCopy = getCustomOptionCopy();
+	const customOptionCopy = customOptionCopyForOnboardingStep(step);
 
 	return (
 		<AppScreen
@@ -512,7 +462,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 						step={step}
 						answers={answers}
 						hasImageBackground={hasImageBackground}
-						customField={customFieldForCurrentStep()}
+						customField={customFieldForOnboardingStep(step)}
 						currentEatingPatterns={currentEatingPatterns}
 						lifestyleFactors={lifestyleFactors}
 						favoriteFoodsToReintroduce={favoriteFoodsToReintroduce}
@@ -635,65 +585,4 @@ function getCenterImageSource(centerImage: string | undefined) {
 	}
 
 	return null;
-}
-
-function knowBeforeEatCtaLabel(stage: KnowBeforeEatStage) {
-	switch (stage) {
-		case "menu-scan":
-		case "food-scan":
-		case "barcode-scan":
-			return "Scan";
-		case "menu-loading":
-		case "food-loading":
-		case "barcode-loading":
-			return "Analyzing...";
-		case "menu-result":
-			return "Scan food";
-		case "food-result":
-			return "Scan grocery item";
-		case "barcode-result":
-			return "Show me my Gut Score";
-	}
-}
-
-function nextKnowBeforeEatStageOnTap(
-	stage: KnowBeforeEatStage
-): KnowBeforeEatStage | "advance" | null {
-	switch (stage) {
-		case "menu-scan":
-			return "menu-loading";
-		case "menu-result":
-			return "food-scan";
-		case "food-scan":
-			return "food-loading";
-		case "food-result":
-			return "barcode-scan";
-		case "barcode-scan":
-			return "barcode-loading";
-		case "barcode-result":
-			return "advance";
-		default:
-			return null;
-	}
-}
-
-function previousKnowBeforeEatStage(stage: KnowBeforeEatStage): KnowBeforeEatStage {
-	switch (stage) {
-		case "menu-loading":
-		case "menu-result":
-			return "menu-scan";
-		case "food-scan":
-			return "menu-result";
-		case "food-loading":
-		case "food-result":
-			return "food-scan";
-		case "barcode-scan":
-			return "food-result";
-		case "barcode-loading":
-		case "barcode-result":
-			return "barcode-scan";
-		case "menu-scan":
-		default:
-			return "menu-scan";
-	}
 }

@@ -11,29 +11,29 @@ import { RootStackParamList } from '../../navigation/types';
 import { trackEvent } from '../../services/analytics';
 import { useAppStore } from '../../store/useAppStore';
 import { components, radii, shadows, spacing, tokens, type } from '../../theme';
-import { DailyGutReport } from '../../types/domain';
+import type { DailyGutReport } from '../../types/domain';
 import { gutScoreTint } from '../../utils/risk';
 import {
-  DailyScoreBand,
   dailyScoreBand,
-  parseLocalDate,
-  toLocalDate,
+  dailyScoreValue,
+  type DailyScoreBand,
   yesterdayLocalDate,
 } from '../../utils/weeklyProgress';
-
-type MonthCursor = {
-  year: number;
-  month: number;
-};
-
-type CalendarCell = {
-  key: string;
-  localDate?: string;
-  day?: number;
-  isToday?: boolean;
-  isFuture?: boolean;
-};
-
+import {
+  addMonths,
+  buildCalendarCells,
+  buildMonthHeadline,
+  currentMonthCursor,
+  formatDayNumber,
+  formatMonthTitle,
+  formatReportDate,
+  formatShortMonth,
+  isReportInMonth,
+  mergeReports,
+  sameCursor,
+  type CalendarCell,
+  type MonthCursor,
+} from './symptomLogHelpers';
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -259,115 +259,6 @@ function LegendItem({ color, label }: { color: string; label: string }) {
       <Text style={styles.legendText}>{label}</Text>
     </View>
   );
-}
-
-function mergeReports(reports: DailyGutReport[]) {
-  const byDate = new Map<string, DailyGutReport>();
-
-  for (const report of reports) {
-    const existing = byDate.get(report.localDate);
-    if (!existing || new Date(report.updatedAt).getTime() >= new Date(existing.updatedAt).getTime()) {
-      byDate.set(report.localDate, report);
-    }
-  }
-
-  return Array.from(byDate.values()).sort((left, right) => right.localDate.localeCompare(left.localDate));
-}
-
-// "9 calm days this month" — the month as an emotional record, headlined by
-// its best true statistic (calm first, then mixed, then rough).
-function buildMonthHeadline(monthReports: DailyGutReport[], isCurrentMonth: boolean, cursor: MonthCursor) {
-  if (monthReports.length === 0) {
-    return null;
-  }
-
-  const counts: Record<DailyScoreBand, number> = { calm: 0, mixed: 0, rough: 0 };
-  for (const report of monthReports) {
-    counts[dailyScoreBand(dailyScoreValue(report))] += 1;
-  }
-
-  const leadingBand: DailyScoreBand = counts.calm > 0 ? 'calm' : counts.mixed > 0 ? 'mixed' : 'rough';
-  const count = counts[leadingBand];
-  const dayWord = count === 1 ? 'day' : 'days';
-  const period = isCurrentMonth ? 'this month' : `in ${formatMonthName(cursor)}`;
-  return `${count} ${leadingBand} ${dayWord} ${period}`;
-}
-
-function currentMonthCursor(): MonthCursor {
-  const today = new Date();
-  return { year: today.getFullYear(), month: today.getMonth() };
-}
-
-function addMonths(cursor: MonthCursor, delta: number): MonthCursor {
-  const date = new Date(cursor.year, cursor.month + delta, 1);
-  return { year: date.getFullYear(), month: date.getMonth() };
-}
-
-function sameCursor(a: MonthCursor, b: MonthCursor) {
-  return a.year === b.year && a.month === b.month;
-}
-
-function isReportInMonth(localDate: string, cursor: MonthCursor) {
-  const parsed = parseLocalDate(localDate);
-  return parsed.getFullYear() === cursor.year && parsed.getMonth() === cursor.month;
-}
-
-function buildCalendarCells(cursor: MonthCursor): CalendarCell[] {
-  const firstDay = new Date(cursor.year, cursor.month, 1);
-  const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate();
-  const leadingBlanks = firstDay.getDay();
-  const today = toLocalDate(new Date());
-  const cells: CalendarCell[] = [];
-
-  for (let index = 0; index < leadingBlanks; index += 1) {
-    cells.push({ key: `blank-start-${index}` });
-  }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    const localDate = toLocalDate(new Date(cursor.year, cursor.month, day));
-    cells.push({
-      key: localDate,
-      localDate,
-      day,
-      isToday: localDate === today,
-      isFuture: localDate > today,
-    });
-  }
-
-  while (cells.length % 7 !== 0) {
-    cells.push({ key: `blank-end-${cells.length}` });
-  }
-
-  return cells;
-}
-
-function formatMonthTitle(cursor: MonthCursor) {
-  return new Date(cursor.year, cursor.month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-}
-
-function formatMonthName(cursor: MonthCursor) {
-  return new Date(cursor.year, cursor.month, 1).toLocaleDateString(undefined, { month: 'long' });
-}
-
-function formatReportDate(localDate: string) {
-  return parseLocalDate(localDate).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-}
-
-function formatShortMonth(localDate: string) {
-  return parseLocalDate(localDate).toLocaleDateString(undefined, { month: 'short' });
-}
-
-function formatDayNumber(localDate: string) {
-  return String(parseLocalDate(localDate).getDate());
-}
-
-function dailyScoreValue(report: DailyGutReport) {
-  return report.dailyScore ?? dailyScoreFromSeverity(report.gutSeverity);
-}
-
-function dailyScoreFromSeverity(gutSeverity: number) {
-  const severity = Math.max(0, Math.min(10, Math.round(gutSeverity)));
-  return Math.max(0, Math.min(100, Math.round(90 - severity * 8)));
 }
 
 // Severity (0-10, higher = worse) banding matches the check-in slider: 0-3
