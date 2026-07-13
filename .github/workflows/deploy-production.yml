@@ -14,8 +14,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  freshness:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse to deploy a commit that is no longer the main head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_head=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+          if [ "$main_head" != "$GITHUB_SHA" ]; then
+            echo "This run targets $GITHUB_SHA but main is now at $main_head." >&2
+            echo "Refusing to deploy a stale commit. Dispatch a fresh deploy-production run to deploy the current main head." >&2
+            exit 1
+          fi
+
   release-evals:
     if: github.ref == 'refs/heads/main'
+    needs: freshness
     uses: ./.github/workflows/scan-evals.yml
     with:
       tier: release
