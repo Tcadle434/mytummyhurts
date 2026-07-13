@@ -47,6 +47,11 @@ import {
 	StaggerItem,
 } from "./OnboardingFlowScreen.helpers";
 import { styles } from "./OnboardingFlowScreen.styles";
+import {
+	customFieldForOnboardingStep,
+	customOptionCopyForOnboardingStep,
+	onboardingStepHasRequiredAnswer,
+} from "./OnboardingStepAnswers";
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, "OnboardingFlow">;
 
@@ -140,7 +145,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 			knowBeforeEatStage === "barcode-loading");
 	const isCommitmentStep = step.previewVariant === "commitmentHold";
 	const isChoiceStep = step.type === "multi_select" || step.type === "single_select";
-	const hasRequiredAnswer = currentStepHasRequiredAnswer();
+	const hasRequiredAnswer = onboardingStepHasRequiredAnswer(step, answers);
 	const mascotState = getMascotStateForStep(step.id);
 	const headerTitle =
 		isStartingScoreStep && startingScoreState === "revealed"
@@ -360,73 +365,13 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		setStepIndex(stepIndex - 1);
 	}
 
-	function currentStepHasRequiredAnswer() {
-		if (step.type === "single_select" && step.field) {
-			const value = answers[step.field];
-			return Array.isArray(value) ? value.length > 0 : Boolean(value);
-		}
-
-		if (step.type === "multi_select" && step.field) {
-			if (step.field === "dietPreferenceKeys") {
-				return Boolean(answers.dietPreferenceNone) || (answers.dietPreferenceKeys ?? []).length > 0;
-			}
-
-			if (
-				step.field === "ingredientSensitivities" &&
-				answers.ingredientSensitivitiesUnknown
-			) {
-				return true;
-			}
-
-			const value = answers[step.field];
-			const customField = customFieldForCurrentStep();
-			const customValues = customField ? answers[customField] ?? [] : [];
-			return (Array.isArray(value) && value.length > 0) || customValues.length > 0;
-		}
-
-		return true;
-	}
-
-	function customFieldForCurrentStep() {
-		if (step.field === "conditions") return "customConditions" as const;
-		if (step.field === "ingredientSensitivities") {
-			return "customIngredientSensitivities" as const;
-		}
-		if (step.field === "symptoms") return "customSymptoms" as const;
-		return null;
-	}
-
-	function getCustomOptionCopy() {
-		if (step.field === "conditions") {
-			return {
-				title: "Add a custom condition",
-				subtitle: "Add anything we should consider when personalizing your scans.",
-				placeholder: "Example: SIBO, gastritis, Crohn's",
-			};
-		}
-
-		if (step.field === "symptoms") {
-			return {
-				title: "Add a custom symptom",
-				subtitle: "Add any symptom you want your daily reports to track.",
-				placeholder: "Example: cramping, burping, trapped gas",
-			};
-		}
-
-		return {
-			title: "Add a custom trigger",
-			subtitle: "Add any food or ingredient you already suspect.",
-			placeholder: "Example: eggs, soy, coffee",
-		};
-	}
-
 	function closeCustomOptionModal() {
 		setCustomOptionModalVisible(false);
 		setCustomEntry("");
 	}
 
 	function submitCustomOption() {
-		const field = customFieldForCurrentStep();
+		const field = customFieldForOnboardingStep(step);
 		if (!field || !customEntry.trim()) {
 			return;
 		}
@@ -440,7 +385,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 	}
 
 	function removeCustomOption(value: string) {
-		const field = customFieldForCurrentStep();
+		const field = customFieldForOnboardingStep(step);
 		if (!field) {
 			return;
 		}
@@ -448,9 +393,9 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 		removeCustomValue(field, value);
 	}
 
-	const customOptionField = customFieldForCurrentStep();
+	const customOptionField = customFieldForOnboardingStep(step);
 	const customOptionValues = customOptionField ? answers[customOptionField] ?? [] : [];
-	const customOptionCopy = getCustomOptionCopy();
+	const customOptionCopy = customOptionCopyForOnboardingStep(step);
 
 	return (
 		<AppScreen
@@ -517,7 +462,7 @@ export function OnboardingFlowScreen({ navigation }: Props) {
 						step={step}
 						answers={answers}
 						hasImageBackground={hasImageBackground}
-						customField={customFieldForCurrentStep()}
+						customField={customFieldForOnboardingStep(step)}
 						currentEatingPatterns={currentEatingPatterns}
 						lifestyleFactors={lifestyleFactors}
 						favoriteFoodsToReintroduce={favoriteFoodsToReintroduce}
