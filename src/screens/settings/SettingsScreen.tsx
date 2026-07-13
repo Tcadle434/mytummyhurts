@@ -52,6 +52,7 @@ import {
   type CustomCategory,
 } from './settingsOptions';
 import { SettingsExpandedBlock } from './SettingsExpandedBlock';
+import { SettingsHealthListPicker } from './SettingsHealthListPicker';
 import { SettingsMetricRow } from './SettingsMetricRow';
 import { SettingsRow } from './SettingsRow';
 import { SettingsRowDivider } from './SettingsRowDivider';
@@ -187,18 +188,6 @@ export function SettingsScreen() {
     }, 400);
     return () => clearTimeout(timer);
   }, [route.params?.section]);
-
-  function toggleValue(
-    currentValues: string[],
-    setValues: (values: string[]) => void,
-    value: string,
-  ) {
-    setValues(
-      currentValues.includes(value)
-        ? currentValues.filter((entry) => entry !== value)
-        : [...currentValues, value],
-    );
-  }
 
   function toggleSection(next: Exclude<ExpandedSection, null>) {
     setExpandedSection((current) => (current === next ? null : next));
@@ -584,31 +573,17 @@ export function SettingsScreen() {
           onPress={() => toggleSection('conditions')}
         />
         {expandedSection === 'conditions' ? (
-          <SettingsExpandedBlock>
-            <View style={styles.pickerStack}>
-              {conditionOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option}
-                  label={option}
-                  variant="plain"
-                  selected={selectedConditions.includes(option)}
-                  onPress={() => toggleValue(selectedConditions, setSelectedConditions, option)}
-                />
-              ))}
-              <OnboardingPickerOption
-                label="Other"
-                variant="plain"
-                selected={false}
-                badgeText={customConditions.length > 0 ? `+${customConditions.length}` : undefined}
-                onPress={() => openCustomModal('conditions')}
-              />
-            </View>
-            <PrimaryButton
-              label={busySection === 'conditions' ? 'Saving…' : 'Save conditions'}
-              onPress={() => void handleSaveConditions()}
-              disabled={busySection !== null}
-            />
-          </SettingsExpandedBlock>
+          <SettingsHealthListPicker
+            options={conditionOptions}
+            selectedValues={selectedConditions}
+            customValueCount={customConditions.length}
+            saveLabel="Save conditions"
+            isSaving={busySection === 'conditions'}
+            disabled={busySection !== null}
+            onValuesChange={setSelectedConditions}
+            onOpenCustom={() => openCustomModal('conditions')}
+            onSave={handleSaveConditions}
+          />
         ) : null}
 
         <SettingsRowDivider />
@@ -621,35 +596,17 @@ export function SettingsScreen() {
           onPress={() => toggleSection('sensitivities')}
         />
         {expandedSection === 'sensitivities' ? (
-          <SettingsExpandedBlock>
-            <View style={styles.pickerStack}>
-              {ingredientSensitivityOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option}
-                  label={option}
-                  variant="plain"
-                  selected={selectedSensitivities.includes(option)}
-                  onPress={() =>
-                    toggleValue(selectedSensitivities, setSelectedSensitivities, option)
-                  }
-                />
-              ))}
-              <OnboardingPickerOption
-                label="Other"
-                variant="plain"
-                selected={false}
-                badgeText={
-                  customSensitivities.length > 0 ? `+${customSensitivities.length}` : undefined
-                }
-                onPress={() => openCustomModal('sensitivities')}
-              />
-            </View>
-            <PrimaryButton
-              label={busySection === 'sensitivities' ? 'Saving…' : 'Save sensitivities'}
-              onPress={() => void handleSaveSensitivities()}
-              disabled={busySection !== null}
-            />
-          </SettingsExpandedBlock>
+          <SettingsHealthListPicker
+            options={ingredientSensitivityOptions}
+            selectedValues={selectedSensitivities}
+            customValueCount={customSensitivities.length}
+            saveLabel="Save sensitivities"
+            isSaving={busySection === 'sensitivities'}
+            disabled={busySection !== null}
+            onValuesChange={setSelectedSensitivities}
+            onOpenCustom={() => openCustomModal('sensitivities')}
+            onSave={handleSaveSensitivities}
+          />
         ) : null}
 
         <SettingsRowDivider />
@@ -662,31 +619,17 @@ export function SettingsScreen() {
           onPress={() => toggleSection('symptoms')}
         />
         {expandedSection === 'symptoms' ? (
-          <SettingsExpandedBlock>
-            <View style={styles.pickerStack}>
-              {symptomOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option}
-                  label={option}
-                  variant="plain"
-                  selected={selectedSymptoms.includes(option)}
-                  onPress={() => toggleValue(selectedSymptoms, setSelectedSymptoms, option)}
-                />
-              ))}
-              <OnboardingPickerOption
-                label="Other"
-                variant="plain"
-                selected={false}
-                badgeText={customSymptoms.length > 0 ? `+${customSymptoms.length}` : undefined}
-                onPress={() => openCustomModal('symptoms')}
-              />
-            </View>
-            <PrimaryButton
-              label={busySection === 'symptoms' ? 'Saving…' : 'Save symptoms'}
-              onPress={() => void handleSaveSymptoms()}
-              disabled={busySection !== null}
-            />
-          </SettingsExpandedBlock>
+          <SettingsHealthListPicker
+            options={symptomOptions}
+            selectedValues={selectedSymptoms}
+            customValueCount={customSymptoms.length}
+            saveLabel="Save symptoms"
+            isSaving={busySection === 'symptoms'}
+            disabled={busySection !== null}
+            onValuesChange={setSelectedSymptoms}
+            onOpenCustom={() => openCustomModal('symptoms')}
+            onSave={handleSaveSymptoms}
+          />
         ) : null}
 
         <SettingsRowDivider />
