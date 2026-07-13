@@ -32,9 +32,13 @@ type Rule = {
   reason: string;
 };
 
-// Sequential LLM calls (15s timeout each) inside a synchronous recompute must
-// stay bounded; unclassified names beyond the cap wait for the next run.
-const MAX_CLASSIFICATIONS_PER_RUN = 25;
+const MAX_LLM_CLASSIFICATIONS_PER_PHASE = 25;
+const DEFAULT_CLASSIFICATION_PHASE_BUDGET_MS = 30_000;
+
+function positiveNumber(value: unknown, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
 
 const RULES: Rule[] = [
   { aliases: ['gochujang'], family: 'sauces_condiments', patterns: ['spicy_heat', 'fermented_aged_histamine'], confidence: 'high', reason: 'Gochujang is a spicy fermented chili condiment.' },
@@ -114,12 +118,16 @@ export class TaxonomyClassifierService {
     });
   }
 
-  async classifyIngredient(displayName: string, context?: string): Promise<IngredientTaxonomyClassification> {
+  async classifyIngredient(
+    displayName: string,
+    context?: string,
+    options: { deadlineAt?: number } = {},
+  ): Promise<IngredientTaxonomyClassification> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     if (!apiKey) return this.classifyDeterministically(displayName);
 
     try {
-      return await this.classifyWithOpenAi({ apiKey, displayName, context });
+      return await this.classifyWithOpenAi({ apiKey, displayName, context, deadlineAt: options.deadlineAt });
     } catch (error) {
       this.logger.warn({
         stage: 'ingredient_taxonomy_classification',
@@ -150,9 +158,11 @@ export class TaxonomyClassifierService {
     }
 
     const canUseLlm = Boolean(this.config.get<string>('OPENAI_API_KEY'));
-    // Cap classifications per run: calls are sequential (15s timeout each) and
-    // this runs inside the synchronous learning recompute. Remaining names are
-    // picked up by later recomputes.
+    const phaseBudgetMs = positiveNumber(
+      this.config.get<string>('OPENAI_TAXONOMY_PHASE_BUDGET_MS'),
+      DEFAULT_CLASSIFICATION_PHASE_BUDGET_MS,
+    );
+    const phaseDeadline = Date.now() + phaseBudgetMs;
     const namesToClassify = normalizedNames.filter((name) => {
       const existing = existingByName.get(name);
       if (!existing) return true;
@@ -162,15 +172,22 @@ export class TaxonomyClassifierService {
         return true;
       }
       return false;
-    }).slice(0, MAX_CLASSIFICATIONS_PER_RUN);
+    });
 
     // Classifications are per-ingredient external calls (LLM or deterministic);
     // gather them first, then persist in a single bulk upsert. namesToClassify is
     // derived from a Map keyset, so normalized names are unique — safe for ON CONFLICT.
     const classificationRows = [];
+    let llmClassificationCount = 0;
     for (const normalizedName of namesToClassify) {
       const displayName = displayNameByNormalized.get(normalizedName) ?? normalizedName;
-      const classification = await this.classifyIngredient(displayName);
+      const useLlm = canUseLlm &&
+        llmClassificationCount < MAX_LLM_CLASSIFICATIONS_PER_PHASE &&
+        Date.now() < phaseDeadline;
+      const classification = useLlm
+        ? await this.classifyIngredient(displayName, undefined, { deadlineAt: phaseDeadline })
+        : this.classifyDeterministically(displayName);
+      if (useLlm) llmClassificationCount += 1;
       classificationRows.push({
         normalized_ingredient_name: normalizedName,
         display_name: displayName,
@@ -242,6 +259,7 @@ export class TaxonomyClassifierService {
     apiKey: string;
     displayName: string;
     context?: string;
+    deadlineAt?: number;
   }): Promise<IngredientTaxonomyClassification> {
     const model = this.config.get<string>('OPENAI_TAXONOMY_MODEL') ?? this.config.get<string>('OPENAI_NORMALIZATION_MODEL') ?? 'gpt-4.1-mini';
     const timeoutMs = Number(this.config.get<string>('OPENAI_TAXONOMY_TIMEOUT_MS') ?? 15_000);
@@ -267,6 +285,7 @@ export class TaxonomyClassifierService {
       apiKey: input.apiKey,
       stage: 'ingredient_taxonomy_classification',
       timeoutMs,
+      deadlineAt: input.deadlineAt,
       definition: taxonomyStructuredOutput,
       request: {
         model,

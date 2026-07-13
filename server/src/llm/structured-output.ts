@@ -299,6 +299,7 @@ export async function requestStructuredOutput<TSchema extends z.ZodTypeAny>(inpu
   request: Record<string, unknown>;
   definition: StructuredOutputDefinition<TSchema>;
   timeoutMs: number;
+  deadlineAt?: number;
   attempts?: number;
   retryDelayMs?: number;
 }): Promise<StructuredOutputResult<z.infer<TSchema>>> {
@@ -318,10 +319,16 @@ export async function requestStructuredOutput<TSchema extends z.ZodTypeAny>(inpu
 
   try {
     const value = await withRetry(async () => {
+      const remainingMs = input.deadlineAt === undefined
+        ? input.timeoutMs
+        : Math.min(input.timeoutMs, input.deadlineAt - Date.now());
+      if (remainingMs <= 0) {
+        throw makeError({ code: 'openai_timeout', retryable: false });
+      }
       attemptNumber += 1;
       const attemptStartedAt = Date.now();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
+      const timeout = setTimeout(() => controller.abort(), remainingMs);
       let response: Response;
 
       try {
@@ -449,6 +456,7 @@ export async function requestStructuredOutput<TSchema extends z.ZodTypeAny>(inpu
     }, {
       attempts: input.attempts ?? DEFAULT_ATTEMPTS,
       delayMs: input.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS,
+      deadlineAt: input.deadlineAt,
       shouldRetry: retryableError,
       onRetry: (error, attempt) => {
         const structured = error as StructuredOutputError;
