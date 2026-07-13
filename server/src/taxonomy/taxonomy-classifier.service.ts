@@ -280,7 +280,22 @@ export class TaxonomyClassifierService {
         text: { format: taxonomyStructuredOutput.format },
       },
     });
-    return this.validateLlmClassification(result.value, model);
+    return this.buildLlmClassification(result.value, model);
+  }
+
+  private buildLlmClassification(
+    parsed: TaxonomyClassificationPayload,
+    model: string,
+  ): IngredientTaxonomyClassification {
+    return makeTaxonomyClassification({
+      primaryFoodFamilyKey: parsed.primaryFoodFamilyKey,
+      digestivePatternKeys: parsed.digestivePatternKeys,
+      confidence: parsed.confidence,
+      reason: parsed.reason.slice(0, 500) || 'LLM taxonomy classification.',
+      model,
+      promptVersion: TAXONOMY_PROMPT_VERSION,
+      source: 'llm',
+    });
   }
 
   private validateLlmClassification(
@@ -298,19 +313,6 @@ export class TaxonomyClassifierService {
       }
       throw result.error;
     }
-    const parsed: TaxonomyClassificationPayload = result.data;
-    if (!parsed.primaryFoodFamilyKey) {
-      throw new Error('taxonomy_invalid_primary_family');
-    }
-
-    return makeTaxonomyClassification({
-      primaryFoodFamilyKey: parsed.primaryFoodFamilyKey,
-      digestivePatternKeys: parsed.digestivePatternKeys,
-      confidence: parsed.confidence,
-      reason: parsed.reason.slice(0, 500) || 'LLM taxonomy classification.',
-      model,
-      promptVersion: TAXONOMY_PROMPT_VERSION,
-      source: 'llm',
-    });
+    return this.buildLlmClassification(result.data, model);
   }
 }

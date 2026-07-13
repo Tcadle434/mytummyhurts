@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TaxonomyClassifierService } from '../src/taxonomy/taxonomy-classifier.service';
+import { taxonomyClassificationSchema } from '../src/taxonomy/taxonomy-output.schema';
 
 function configService(values: Record<string, string>) {
   return {
@@ -130,6 +131,21 @@ describe('TaxonomyClassifierService', () => {
       model: 'gpt-test',
     });
     expect(String(fetchMock.mock.calls[1]?.[1]?.body)).toContain('$.primaryFoodFamilyKey');
+  });
+
+  it('parses a structured LLM classification exactly once', async () => {
+    const parse = vi.spyOn(taxonomyClassificationSchema, 'safeParse');
+    vi.stubGlobal('fetch', vi.fn(async () => responseWithOutput({
+      primaryFoodFamilyKey: 'other_fruits',
+      digestivePatternKeys: [],
+      confidence: 'high',
+      reason: 'Dragon fruit is fruit.',
+    })));
+
+    const result = await llmClassifier().classifyIngredient('dragon fruit');
+
+    expect(result).toMatchObject({ primaryFoodFamilyKey: 'other_fruits', source: 'llm' });
+    expect(parse).toHaveBeenCalledTimes(1);
   });
 
   it('falls back deterministically only after three invalid model responses', async () => {

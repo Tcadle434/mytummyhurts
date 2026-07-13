@@ -214,15 +214,31 @@ export function riskAdjudicationConditionKey(condition: string) {
   return key;
 }
 
-export function requestedRiskAdjudicationConditionKeys(conditions: string[]) {
-  const nonblankConditions = conditions.filter((condition) => condition.trim());
-  if (!nonblankConditions.length) return new Set(['general']);
-  return new Set(nonblankConditions.map(riskAdjudicationConditionKey));
+export function requestedRiskAdjudicationConditions(conditions: readonly string[]) {
+  const requested = new Map<string, string>();
+  for (const condition of conditions) {
+    const normalized = condition.trim().normalize('NFKC').replace(/\s+/gu, ' ');
+    if (!normalized) continue;
+    const key = riskAdjudicationConditionKey(normalized);
+    const label = key === 'gerd acid reflux'
+      ? 'GERD / Acid reflux'
+      : key === 'ibs'
+        ? 'IBS'
+        : key === 'general'
+          ? 'general'
+          : normalized;
+    if (!requested.has(key)) requested.set(key, label);
+  }
+  return requested.size ? [...requested.values()] : ['general'];
+}
+
+export function requestedRiskAdjudicationConditionKeys(conditions: readonly string[]) {
+  return new Set(requestedRiskAdjudicationConditions(conditions).map(riskAdjudicationConditionKey));
 }
 
 export function hasExactRiskAdjudicationConditions(
   rows: readonly unknown[],
-  conditions: string[],
+  conditions: readonly string[],
 ) {
   const expected = requestedRiskAdjudicationConditionKeys(conditions);
   const actual: string[] = [];
@@ -237,8 +253,9 @@ export function hasExactRiskAdjudicationConditions(
     && actual.every((condition) => expected.has(condition));
 }
 
-export function riskAdjudicationStructuredOutputForConditions(conditions: string[]) {
-  const allowedConditions = requestedRiskAdjudicationConditionKeys(conditions);
+export function riskAdjudicationStructuredOutputForConditions(conditions: readonly string[]) {
+  const requestedConditions = requestedRiskAdjudicationConditions(conditions);
+  const allowedConditions = requestedRiskAdjudicationConditionKeys(requestedConditions);
   const schema = riskAdjudicationPayloadSchema(allowedConditions.size).superRefine((payload, context) => {
     payload.conditionSeverities.forEach((severity, index) => {
       if (!allowedConditions.has(riskAdjudicationConditionKey(severity.condition))) {
@@ -249,7 +266,7 @@ export function riskAdjudicationStructuredOutputForConditions(conditions: string
         });
       }
     });
-    if (!hasExactRiskAdjudicationConditions(payload.conditionSeverities, conditions)) {
+    if (!hasExactRiskAdjudicationConditions(payload.conditionSeverities, requestedConditions)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['conditionSeverities'],

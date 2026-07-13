@@ -64,6 +64,7 @@ import {
   foodTextStructuredOutput,
   MENU_ITEM_LIMIT,
   menuStructuredOutput,
+  requestedRiskAdjudicationConditions,
   riskAdjudicationStructuredOutputForConditions,
   scanCategoryStructuredOutput,
   type DietFitHypothesisPayload as RawDietFitHypothesisPayload,
@@ -1218,13 +1219,15 @@ function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) {
 export async function adjudicateScanRiskWithAudit(
   input: RiskAdjudicationRequest,
 ): Promise<ExtractionWithAudit<RiskAdjudicationPayload>> {
+  const knownConditions = requestedRiskAdjudicationConditions(input.knownConditions);
+  const adjudicationInput = { ...input, knownConditions };
   if (!OPENAI_API_KEY) {
-    return { result: fallbackRiskAdjudicationPayload(input), audits: [] };
+    return { result: fallbackRiskAdjudicationPayload(adjudicationInput), audits: [] };
   }
 
   const systemPrompt = buildRiskAdjudicationSystemPrompt();
-  const userPrompt = buildRiskAdjudicationUserPrompt(input);
-  const structuredOutput = riskAdjudicationStructuredOutputForConditions(input.knownConditions);
+  const userPrompt = buildRiskAdjudicationUserPrompt(adjudicationInput);
+  const structuredOutput = riskAdjudicationStructuredOutputForConditions(knownConditions);
   const request = {
     model: RISK_ADJUDICATION_MODEL,
     max_output_tokens: OPENAI_RISK_ADJUDICATION_MAX_OUTPUT_TOKENS,
@@ -1257,7 +1260,7 @@ export async function adjudicateScanRiskWithAudit(
       jsonSchema: structuredOutput.jsonSchema,
       schemaVersion: 'risk_adjudication_v1',
       requestMetadata: {
-        conditionCount: input.knownConditions.length,
+        conditionCount: knownConditions.length,
         ragChunkCount: input.ragEvidence.length,
         personalEvidenceCount: input.personalEvidence.length,
       },

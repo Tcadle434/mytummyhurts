@@ -9,6 +9,7 @@ import {
   mealExtractionSchema,
   menuExtractionSchema,
   menuStructuredOutput,
+  requestedRiskAdjudicationConditions,
   riskAdjudicationSchema,
   riskAdjudicationStructuredOutput,
   riskAdjudicationStructuredOutputForConditions,
@@ -261,6 +262,18 @@ describe('menu extraction schema', () => {
 });
 
 describe('risk adjudication schema', () => {
+  it('canonicalizes aliases, whitespace, and blank-only requested conditions once', () => {
+    expect(requestedRiskAdjudicationConditions([
+      ' GERD ',
+      'acid reflux',
+      ' ibs ',
+      'Irritable bowel syndrome',
+      ' 胃食管反流 ',
+      '',
+    ])).toEqual(['GERD / Acid reflux', 'IBS', '胃食管反流']);
+    expect(requestedRiskAdjudicationConditions([' ', '\t'])).toEqual(['general']);
+  });
+
   it('accepts representative adjudication and rejects unsafe condition rows', () => {
     const valid = validRiskAdjudication();
     expect(riskAdjudicationSchema.parse(valid)).toEqual(valid);

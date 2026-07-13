@@ -11,6 +11,7 @@ import { CONDITION_BAND_ORDER } from '@mth/shared-domain';
 import { normalize } from './text-utils';
 import {
   hasExactRiskAdjudicationConditions,
+  requestedRiskAdjudicationConditions,
   requestedRiskAdjudicationConditionKeys,
   riskAdjudicationConditionKey,
   type RiskAdjudicationConditionPayload as RawRiskAdjudicationCondition,
@@ -150,7 +151,7 @@ export function buildRiskAdjudicationRequest(params: {
   insights: IngredientInsight[];
   ragEvidence: RiskAdjudicationEvidenceChunk[];
 }): RiskAdjudicationRequest {
-  const knownConditions = params.profile?.knownConditions.length ? params.profile.knownConditions : ['general'];
+  const knownConditions = requestedRiskAdjudicationConditions(params.profile?.knownConditions ?? []);
   return {
     structuredAnalysis: params.structuredAnalysis,
     knownConditions,
@@ -160,28 +161,28 @@ export function buildRiskAdjudicationRequest(params: {
 }
 
 export function fallbackRiskAdjudicationPayload(input: RiskAdjudicationRequest): RiskAdjudicationPayload {
-  const existing = input.structuredAnalysis.conditionSeverities?.length
-    ? input.structuredAnalysis.conditionSeverities
-    : input.knownConditions.map((condition) => ({
-        condition,
-        band: 'mild' as const,
-        drivers: [] as string[],
-        rationale: 'Fallback condition band.',
-      }));
+  const requestedConditions = requestedRiskAdjudicationConditions(input.knownConditions);
+  const existing = input.structuredAnalysis.conditionSeverities ?? [];
 
   return {
-    conditionSeverities: existing.map((entry) => ({
-      condition: entry.condition,
-      genericBand: entry.band,
-      personalizedBand: entry.band,
-      finalBand: entry.band,
-      drivers: entry.drivers ?? [],
-      protectiveEvidence: [],
-      citationChunkIds: [],
-      personalEvidenceUsed: [],
-      confidence: 'low',
-      rationale: entry.rationale ?? 'Fallback condition band.',
-    })),
+    conditionSeverities: requestedConditions.map((condition) => {
+      const prior = existing.find(
+        (entry) => riskAdjudicationConditionKey(entry.condition) === riskAdjudicationConditionKey(condition),
+      );
+      const band = prior?.band ?? 'mild';
+      return {
+        condition,
+        genericBand: band,
+        personalizedBand: band,
+        finalBand: band,
+        drivers: prior?.drivers ?? [],
+        protectiveEvidence: [],
+        citationChunkIds: [],
+        personalEvidenceUsed: [],
+        confidence: 'low',
+        rationale: prior?.rationale ?? 'Fallback condition band.',
+      };
+    }),
   };
 }
 
@@ -247,12 +248,16 @@ export function validateRiskAdjudication(
   input: RiskAdjudicationRequest,
   options: { source: 'llm' | 'fallback'; ragRetrievalRunId?: string | null } = { source: 'llm' },
 ): ValidatedRiskAdjudication | null {
+  const requestedConditions = requestedRiskAdjudicationConditions(input.knownConditions);
   if (
     !Array.isArray(payload.conditionSeverities)
-    || !hasExactRiskAdjudicationConditions(payload.conditionSeverities, input.knownConditions)
+    || !hasExactRiskAdjudicationConditions(payload.conditionSeverities, requestedConditions)
   ) return null;
 
-  const allowedConditions = requestedRiskAdjudicationConditionKeys(input.knownConditions);
+  const requestedConditionByKey = new Map(
+    requestedConditions.map((condition) => [riskAdjudicationConditionKey(condition), condition]),
+  );
+  const allowedConditions = requestedRiskAdjudicationConditionKeys(requestedConditions);
   const allowedCitationIds = citationIdMap(input.ragEvidence);
   const allowedIngredients = extractedIngredientNames(input.structuredAnalysis);
   const warnings = new Set<string>();
@@ -292,7 +297,7 @@ export function validateRiskAdjudication(
     );
 
     const row: RawRiskAdjudicationCondition = {
-      condition: raw.condition,
+      condition: requestedConditionByKey.get(riskAdjudicationConditionKey(raw.condition))!,
       genericBand: clampedGenericBand,
       personalizedBand: raw.personalizedBand,
       finalBand: clampedFinalBand,

@@ -302,6 +302,41 @@ describe('structured output retries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('uses canonical requested conditions in the adjudication prompt, schema, and audit', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    vi.resetModules();
+    const fetchMock = vi.fn(async () => responseWithOutput({
+      conditionSeverities: [riskAdjudicationCondition('GERD')],
+    }, 'resp-risk-canonical'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { adjudicateScanRiskWithAudit } = await import('../src/scan/engine/openai');
+
+    const result = await adjudicateScanRiskWithAudit({
+      structuredAnalysis: {
+        ...mealPayload(),
+        model: 'gpt-test',
+        promptVersion: 'test',
+        imageDetail: 'not_applicable',
+      },
+      knownConditions: [' GERD ', 'acid reflux', ' '],
+      personalEvidence: [],
+      ragEvidence: [],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const userPrompt = request.input[1].content[0].text;
+    expect(userPrompt).toContain('"knownConditions":["GERD / Acid reflux"]');
+    expect(request.text.format.schema.properties.conditionSeverities).toMatchObject({
+      minItems: 1,
+      maxItems: 1,
+    });
+    expect(result.audits[0]).toMatchObject({
+      userPrompt,
+      requestMetadata: { conditionCount: 1 },
+    });
+  });
+
   it('fails with ai_request_failed after three invalid outputs and exposes only a failed audit', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     vi.resetModules();
