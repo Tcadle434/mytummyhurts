@@ -1,5 +1,7 @@
 export const DAILY_CHECKIN_CATEGORY = 'daily_checkin';
 export const DAILY_CHECKIN_TYPE = 'daily_checkin';
+// Legacy: weekly report pushes were removed; the type only identifies
+// leftover scheduled notifications from older builds so they can be cancelled.
 export const WEEKLY_REPORT_TYPE = 'weekly_report';
 
 export const CHECKIN_ACTION_CALM = 'daily_checkin_calm';

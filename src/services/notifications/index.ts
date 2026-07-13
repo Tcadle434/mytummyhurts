@@ -208,18 +208,10 @@ export async function ensureDailyCheckinScheduled(params: {
   );
 }
 
-// Weekly report nudges: a one-shot "Week 1" summary on day 6 (inside the
-// trial window) and a recurring Sunday-evening report thereafter. Both
-// deep-link to the WeeklyProgress screen.
-export async function ensureWeeklyReportScheduled(params: { accountCreatedAt?: string | null }) {
+// Weekly report pushes were cut; builds that shipped them left scheduled
+// notifications behind on device, so cancel any that remain.
+export async function cancelWeeklyReportNotifications() {
   if (Platform.OS !== 'ios') {
-    return;
-  }
-
-  const permissions = await Notifications.getPermissionsAsync();
-  const allowed =
-    permissions.granted || permissions.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
-  if (!allowed) {
     return;
   }
 
@@ -229,46 +221,4 @@ export async function ensureWeeklyReportScheduled(params: { accountCreatedAt?: s
       .filter((entry) => entry.content.data?.type === WEEKLY_REPORT_TYPE)
       .map((entry) => Notifications.cancelScheduledNotificationAsync(entry.identifier)),
   );
-
-  const requests: Promise<string>[] = [];
-
-  const createdAt = params.accountCreatedAt ? new Date(params.accountCreatedAt) : null;
-  if (createdAt && !Number.isNaN(createdAt.getTime())) {
-    const weekOneAt = new Date(createdAt);
-    weekOneAt.setDate(weekOneAt.getDate() + 6);
-    weekOneAt.setHours(18, 0, 0, 0);
-    if (weekOneAt.getTime() > Date.now()) {
-      requests.push(
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'Your Week 1 gut report is ready',
-            body: 'See what your first week of scans and check-ins revealed.',
-            data: { type: WEEKLY_REPORT_TYPE, screen: 'WeeklyProgress' },
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: weekOneAt,
-          },
-        }),
-      );
-    }
-  }
-
-  requests.push(
-    Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Your week, decoded',
-        body: 'Gut Score movement, calm days, and trigger evidence from this week.',
-        data: { type: WEEKLY_REPORT_TYPE, screen: 'WeeklyProgress' },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-        weekday: 1,
-        hour: 18,
-        minute: 0,
-      },
-    }),
-  );
-
-  await Promise.all(requests);
 }

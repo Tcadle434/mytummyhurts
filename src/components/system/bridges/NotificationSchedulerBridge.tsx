@@ -5,9 +5,9 @@ import { AppState } from 'react-native';
 import { remoteConfig } from '../../../config/remoteConfig';
 import { trackEvent } from '../../../services/analytics';
 import {
+  cancelWeeklyReportNotifications,
   ensureDailyCheckinScheduled,
   ensureNotificationPermission,
-  ensureWeeklyReportScheduled,
   registerDailyReportNotifications,
 } from '../../../services/notifications';
 import { useAppStore } from '../../../store/useAppStore';
@@ -50,9 +50,7 @@ export function NotificationSchedulerBridge() {
           reports: dailyReports,
           scans,
         });
-        await ensureWeeklyReportScheduled({
-          accountCreatedAt: useAppStore.getState().authUser?.createdAt ?? null,
-        });
+        await cancelWeeklyReportNotifications();
 
         if (remoteConfig.featureFlags.livePush && !registeredPushRef.current) {
           registeredPushRef.current = true;

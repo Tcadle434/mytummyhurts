@@ -559,8 +559,7 @@ export function SettingsScreen() {
         {expandedSection === 'notifications' ? (
           <ExpandedBlock>
             <Text style={styles.helperText}>
-              One evening check-in reminder a day, plus a weekly gut report. Answer the reminder
-              with a single tap.
+              One evening check-in reminder a day. Answer it with a single tap.
             </Text>
             <View style={styles.pickerStack}>
               {CHECKIN_TIME_PRESETS.map((preset) => (

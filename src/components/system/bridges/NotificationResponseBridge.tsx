@@ -5,7 +5,6 @@ import { navigationRef } from '../../../navigation/navigationRef';
 import { trackEvent } from '../../../services/analytics';
 import {
   DAILY_CHECKIN_TYPE,
-  WEEKLY_REPORT_TYPE,
   severityForCheckinAction,
 } from '../../../services/notifications/dailyCheckin';
 import { useAppStore } from '../../../store/useAppStore';
@@ -58,14 +57,6 @@ export function NotificationResponseBridge() {
 
       if (data?.type === DAILY_CHECKIN_TYPE && localDate) {
         handleCheckinResponse(localDate, response.actionIdentifier);
-        return;
-      }
-
-      if (data?.type === WEEKLY_REPORT_TYPE) {
-        trackEvent('weekly_report_notification_opened');
-        if (navigationRef.isReady()) {
-          navigationRef.navigate('WeeklyProgress');
-        }
         return;
       }
 

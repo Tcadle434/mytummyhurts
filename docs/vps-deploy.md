@@ -66,3 +66,5 @@ Pre-prod, there are no installed clients to keep alive — rollback is simply re
 ## Landing page (mytummyhurts.app)
 
 The marketing site is **built** from [`web/landing/`](../web/landing/README.md) (Vite + React); `npm run build` there emits the static site into `server/landing/`, which stays committed. Caddy serves that directory unchanged (apex block + www redirect, `./landing` bind mount), so deploying a landing change is: build locally, commit `server/landing/**`, `git pull` on the VPS. `/privacy.html` and `/terms.html` must keep those exact URL shapes — App Store Connect references the privacy URL.
+
+After the pull, run `docker restart mth-prod-caddy-1`. A pull that rewrites `server/landing` can replace the directory inode, and the caddy container keeps the old (now empty) one bind-mounted: the site then 404s everywhere while TLS still works. The restart re-resolves the mount (this exact failure happened on 2026-07-06). Verify with `curl -s https://mytummyhurts.app/privacy.html -o /dev/null -w '%{http_code}'` expecting 200.
