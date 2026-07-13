@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, ImageSourcePropType, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
+import { Image, ImageSourcePropType, StyleSheet, Text, View } from "react-native";
 
 import { GutScoreInfoCards } from "../../../components/gut-score/GutScoreInfoCards";
 import { Pip } from "../../../components/common/Pip";
@@ -17,6 +17,7 @@ import {
 	FoodControlIntroGraphic,
 	FoodLeverComparisonGraphic,
 } from "./FoodControlGraphics";
+import { EmpathyProblemGraphic } from "./EmpathyProblemGraphic";
 import { HealingLoopDiagram } from "./HealingLoopDiagram";
 import {
 	PhaseLimitationGraphic,
@@ -24,12 +25,7 @@ import {
 } from "./PhasePlanGraphics";
 import { ScannerModesOverviewGraphic } from "./ScannerModesOverviewGraphic";
 
-const PIP_ANXIOUS = require("../../../../assets/pip/pip_anxious_transparent.png");
 const PIP_JOYOUS = require("../../../../assets/pip/pip_joyous_transparent.png");
-const EATING_OUT_ICON = require("../../../../assets/ui/eating_out_icon.png");
-const TRAVELLING_ICON = require("../../../../assets/ui/travelling_icon.png");
-const LEAVING_HOUSE_ICON = require("../../../../assets/ui/leaving_house_icon.png");
-const HEALTH_ANXIETY_ICON = require("../../../../assets/ui/health_anxiety_icon.png");
 const CONFIDENCE_BACK_ICON = require("../../../../assets/ui/confidence_back_icon.png");
 const HEALTH_BACK_ICON = require("../../../../assets/ui/health_back_icon.png");
 const LIFE_BACK_ICON = require("../../../../assets/ui/life_back_icon.png");
@@ -194,66 +190,6 @@ function GutScoreScaleGraphic() {
 	);
 }
 
-function EmpathyProblemGraphic() {
-	return (
-		<View style={styles.empathyGraphic}>
-			<View style={styles.empathySceneCard}>
-				<View style={styles.empathyPipHalo} />
-				<Image
-					source={PIP_ANXIOUS}
-					style={styles.empathyPip}
-					resizeMode="contain"
-					accessibilityLabel="Pip feeling anxious"
-				/>
-				<EmpathyConcernCard
-					imageSource={EATING_OUT_ICON}
-					label="Worried to eat out"
-					positionStyle={styles.empathyConcernTopLeft}
-				/>
-				<EmpathyConcernCard
-					imageSource={TRAVELLING_ICON}
-					label="Nervous to travel"
-					positionStyle={styles.empathyConcernTopRight}
-				/>
-				<EmpathyConcernCard
-					imageSource={LEAVING_HOUSE_ICON}
-					label="Scared to leave your house"
-					positionStyle={styles.empathyConcernBottomLeft}
-				/>
-				<EmpathyConcernCard
-					imageSource={HEALTH_ANXIETY_ICON}
-					label="Anxious about your health"
-					positionStyle={styles.empathyConcernBottomRight}
-				/>
-			</View>
-		</View>
-	);
-}
-
-function EmpathyConcernCard({
-	imageSource,
-	label,
-	positionStyle,
-}: {
-	imageSource: ImageSourcePropType;
-	label: string;
-	positionStyle: StyleProp<ViewStyle>;
-}) {
-	return (
-		<View style={[styles.empathyConcernCard, positionStyle]}>
-			<View style={styles.empathyConcernIconSlot}>
-				<Image
-					source={imageSource}
-					style={styles.empathyConcernIcon}
-					resizeMode="contain"
-					accessibilityIgnoresInvertColors
-				/>
-			</View>
-			<Text style={styles.empathyConcernText}>{label}</Text>
-		</View>
-	);
-}
-
 function HealingPromiseGraphic() {
 	return (
 		<View style={styles.promiseGraphic}>
@@ -407,93 +343,6 @@ const styles = StyleSheet.create({
 		fontFamily: type.body.semibold,
 		fontSize: 14,
 		lineHeight: 20,
-	},
-	empathyGraphic: {
-		width: "100%",
-		maxWidth: 360,
-		alignItems: "center",
-	},
-	empathySceneCard: {
-		width: "100%",
-		height: 354,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		borderRadius: 30,
-		backgroundColor: tokens.color.surface.card.default,
-		overflow: "hidden",
-		...tokens.shadow.card,
-	},
-	empathyPipHalo: {
-		position: "absolute",
-		left: 86,
-		top: 82,
-		width: 188,
-		height: 188,
-		borderRadius: 94,
-		backgroundColor: tokens.color.status.success.background,
-	},
-	empathyPip: {
-		position: "absolute",
-		left: 89,
-		top: 76,
-		width: 182,
-		height: 182,
-		zIndex: 2,
-	},
-	empathyConcernCard: {
-		position: "absolute",
-		width: 116,
-		minHeight: 124,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		borderRadius: 24,
-		backgroundColor: tokens.color.surface.frosted,
-		alignItems: "center",
-		justifyContent: "flex-start",
-		paddingHorizontal: 0,
-		paddingTop: 0,
-		paddingBottom: spacing.xs,
-		gap: 0,
-		...tokens.shadow.card,
-		zIndex: 3,
-	},
-	empathyConcernTopLeft: {
-		left: spacing.sm,
-		top: spacing.md,
-	},
-	empathyConcernTopRight: {
-		right: spacing.sm,
-		top: spacing.md,
-	},
-	empathyConcernBottomLeft: {
-		left: spacing.sm,
-		bottom: spacing.md,
-	},
-	empathyConcernBottomRight: {
-		right: spacing.sm,
-		bottom: spacing.md,
-	},
-	empathyConcernIconSlot: {
-		width: "100%",
-		height: 88,
-		alignItems: "center",
-		justifyContent: "center",
-		overflow: "hidden",
-		borderTopLeftRadius: 24,
-		borderTopRightRadius: 24,
-	},
-	empathyConcernIcon: {
-		width: 142,
-		height: 142,
-	},
-	empathyConcernText: {
-		color: tokens.color.text.accent,
-		fontFamily: type.body.bold,
-		fontSize: 11,
-		lineHeight: 14,
-		textAlign: "center",
-		paddingHorizontal: spacing.xs,
-		paddingTop: spacing.xs,
 	},
 	promiseGraphic: {
 		width: "100%",
