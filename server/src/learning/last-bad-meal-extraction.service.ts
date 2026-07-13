@@ -2,82 +2,47 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { DatabaseService } from '../database/database.service';
-import { estimateOpenAiCost, extractOpenAiUsage } from '../scan/engine/openaiPricing';
+import {
+  requestStructuredOutput,
+  StructuredOutputError,
+  type StructuredOutputAttempt,
+} from '../llm/structured-output';
+import {
+  aggregateOpenAiCostSnapshots,
+  estimateOpenAiCost,
+  extractOpenAiUsage,
+} from '../scan/engine/openaiPricing';
+import {
+  LAST_BAD_MEAL_MECHANISM_KEYS,
+  MAX_LAST_BAD_MEAL_SUSPECTS,
+  lastBadMealStructuredOutput,
+  type LastBadMealPayload,
+} from './last-bad-meal-output.schema';
 
 const PROMPT_VERSION = 'last_bad_meal_extract_v1';
-const SCHEMA_VERSION = 'last_bad_meal_extract_v1';
 const DEFAULT_MODEL = 'gpt-4.1-mini';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 900;
 const MAX_TEXT_LENGTH = 700;
-const MAX_SUSPECTS = 12;
-
-const MECHANISM_KEYS = [
-  'wheat_fructan_or_gluten',
-  'creamy_or_lactose',
-  'high_fat_or_rich',
-  'processed_meat',
-  'acidic_tomato_citrus_vinegar',
-  'allium_garlic_onion',
-  'legume_gos',
-  'high_fiber_or_gassy',
-  'spicy_heat',
-  'unknown_sauce_or_marinade',
-  'fried_or_crispy',
-  'high_fructose',
-  'sweet_polyol',
-  'caffeine',
-  'carbonation',
-  'alcohol',
-  'chocolate_or_mint',
-  'fermented_or_histamine',
-] as const;
-
-type ExtractedIngredient = {
-  canonicalName?: unknown;
-  confidence?: unknown;
-  source?: unknown;
-  mechanisms?: unknown;
-};
-
-type LastBadMealPayload = {
-  dishNames?: unknown;
-  suspectIngredients?: unknown;
-  notes?: unknown;
-};
-
 type ExtractionResult =
   | { status: 'skipped'; reason: string }
-  | { status: 'completed'; ingredients: string[]; model: string; rawResponseJson: unknown };
+  | {
+      status: 'completed';
+      ingredients: string[];
+      model: string;
+      rawResponseJson: unknown;
+      responseAttempts: StructuredOutputAttempt[];
+    };
 
 function positiveNumber(value: unknown, fallback: number) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
-function extractResponsesText(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== 'object') return undefined;
-  const record = payload as Record<string, unknown>;
-  if (typeof record.output_text === 'string' && record.output_text.trim()) return record.output_text;
-
-  const output = Array.isArray(record.output) ? record.output : [];
-  const chunks: string[] = [];
-  for (const item of output) {
-    if (!item || typeof item !== 'object') continue;
-    const content = Array.isArray((item as Record<string, unknown>).content)
-      ? (item as Record<string, unknown>).content as Array<Record<string, unknown>>
-      : [];
-    for (const chunk of content) {
-      if (typeof chunk.text === 'string' && chunk.text.trim()) chunks.push(chunk.text);
-    }
-  }
-  return chunks.join('\n').trim() || undefined;
-}
-
 function canonicalIngredientName(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const rawKey = value.trim().toLowerCase();
-  if (MECHANISM_KEYS.includes(rawKey as (typeof MECHANISM_KEYS)[number])) return null;
+  if (LAST_BAD_MEAL_MECHANISM_KEYS.includes(rawKey as (typeof LAST_BAD_MEAL_MECHANISM_KEYS)[number])) return null;
   const normalized = value
     .trim()
     .toLowerCase()
@@ -86,51 +51,9 @@ function canonicalIngredientName(value: unknown): string | null {
     .replace(/\s+/g, ' ')
     .trim();
   if (!normalized || normalized.length > 80) return null;
-  if (MECHANISM_KEYS.includes(normalized as (typeof MECHANISM_KEYS)[number])) return null;
+  if (LAST_BAD_MEAL_MECHANISM_KEYS.includes(normalized as (typeof LAST_BAD_MEAL_MECHANISM_KEYS)[number])) return null;
   if (['food', 'meal', 'dish', 'trigger', 'gut trigger', 'ibs', 'gerd', 'acid reflux'].includes(normalized)) return null;
   return normalized;
-}
-
-function schema() {
-  return {
-    type: 'object',
-    additionalProperties: false,
-    required: ['dishNames', 'suspectIngredients', 'notes'],
-    properties: {
-      dishNames: {
-        type: 'array',
-        items: { type: 'string' },
-        maxItems: 5,
-      },
-      suspectIngredients: {
-        type: 'array',
-        maxItems: MAX_SUSPECTS,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['canonicalName', 'confidence', 'source', 'mechanisms'],
-          properties: {
-            canonicalName: { type: 'string' },
-            confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-            source: {
-              type: 'string',
-              enum: ['explicit_text', 'dish_name', 'standard_component'],
-            },
-            mechanisms: {
-              type: 'array',
-              items: { type: 'string', enum: [...MECHANISM_KEYS] },
-              maxItems: 6,
-            },
-          },
-        },
-      },
-      notes: {
-        type: 'array',
-        items: { type: 'string' },
-        maxItems: 5,
-      },
-    },
-  };
 }
 
 function buildSystemPrompt() {
@@ -159,16 +82,12 @@ function buildUserPrompt(text: string) {
 }
 
 function validatePayload(payload: LastBadMealPayload): string[] {
-  const ingredients = Array.isArray(payload.suspectIngredients)
-    ? payload.suspectIngredients as ExtractedIngredient[]
-    : [];
   const deduped = new Set<string>();
-  for (const ingredient of ingredients) {
-    if (!ingredient || typeof ingredient !== 'object') continue;
+  for (const ingredient of payload.suspectIngredients) {
     if (ingredient.confidence !== 'high' && ingredient.confidence !== 'medium') continue;
     const name = canonicalIngredientName(ingredient.canonicalName);
     if (name) deduped.add(name);
-    if (deduped.size >= MAX_SUSPECTS) break;
+    if (deduped.size >= MAX_LAST_BAD_MEAL_SUSPECTS) break;
   }
   return [...deduped];
 }
@@ -191,7 +110,19 @@ export class LastBadMealExtractionService {
     if (!text) return { status: 'skipped', reason: 'empty_text' };
     if (row?.last_bad_meal_extracted_at) return { status: 'skipped', reason: 'already_extracted' };
 
-    const result = await this.extract(text);
+    let result: ExtractionResult;
+    try {
+      result = await this.extract(text);
+    } catch (error) {
+      if (error instanceof StructuredOutputError && error.attempts.length) {
+        const model =
+          this.config.get<string>('OPENAI_LAST_BAD_MEAL_EXTRACTION_MODEL') ??
+          this.config.get<string>('OPENAI_NORMALIZATION_MODEL') ??
+          DEFAULT_MODEL;
+        await this.recordCost(userId, model, error.attempts);
+      }
+      throw error;
+    }
     if (result.status !== 'completed') return result;
 
     await this.db.service((sql) => sql`
@@ -200,7 +131,7 @@ export class LastBadMealExtractionService {
           last_bad_meal_extracted_at = now(),
           updated_at = now()
       where user_id = ${userId}`);
-    await this.recordCost(userId, result.model, result.rawResponseJson);
+    await this.recordCost(userId, result.model, result.responseAttempts);
     return result;
   }
 
@@ -220,15 +151,13 @@ export class LastBadMealExtractionService {
       this.config.get<string>('OPENAI_LAST_BAD_MEAL_EXTRACTION_MAX_OUTPUT_TOKENS'),
       DEFAULT_MAX_OUTPUT_TOKENS,
     );
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
+      const response = await requestStructuredOutput({
+        apiKey,
+        stage: 'last_bad_meal_extraction',
+        timeoutMs,
+        definition: lastBadMealStructuredOutput,
+        request: {
           model,
           max_output_tokens: maxOutputTokens,
           input: [
@@ -241,40 +170,46 @@ export class LastBadMealExtractionService {
               content: [{ type: 'input_text', text: buildUserPrompt(text) }],
             },
           ],
-          text: {
-            format: {
-              type: 'json_schema',
-              name: 'last_bad_meal_extraction',
-              strict: true,
-              schema: schema(),
-            },
-          },
-        }),
+          text: { format: lastBadMealStructuredOutput.format },
+        },
       });
-      const rawText = await response.text();
-      const rawJson = rawText ? JSON.parse(rawText) : {};
-      if (!response.ok) throw new Error(`openai_http_${response.status}`);
-      const outputText = extractResponsesText(rawJson);
-      if (!outputText) throw new Error('openai_empty_response');
-      const parsed = JSON.parse(outputText) as LastBadMealPayload;
-      return { status: 'completed', ingredients: validatePayload(parsed), model, rawResponseJson: rawJson };
+      return {
+        status: 'completed',
+        ingredients: validatePayload(response.value),
+        model,
+        rawResponseJson: response.attempts.at(-1)?.rawResponseJson ?? null,
+        responseAttempts: response.attempts,
+      };
     } catch (error) {
-      const errorName =
-        error && typeof error === 'object' && 'name' in error
-          ? String((error as { name?: unknown }).name)
-          : '';
-      const message = errorName === 'AbortError' ? 'openai_timeout' : (error as Error).message;
-      this.logger.warn(`last bad meal extraction failed: ${message}`);
-      throw errorName === 'AbortError' ? new Error('openai_timeout') : error;
-    } finally {
-      clearTimeout(timeout);
+      this.logger.warn({
+        stage: 'last_bad_meal_extraction',
+        code: error instanceof StructuredOutputError ? error.code : 'last_bad_meal_extraction_failed',
+        attemptCount: error instanceof StructuredOutputError ? error.attempts.length : 1,
+        validationIssues: error instanceof StructuredOutputError ? error.validationIssues : [],
+      }, 'last bad meal extraction failed');
+      throw error;
     }
   }
 
-  private async recordCost(userId: string, model: string, rawResponseJson: unknown) {
+  private async recordCost(userId: string, model: string, attempts: StructuredOutputAttempt[]) {
     try {
-      const usage = extractOpenAiUsage(rawResponseJson);
-      const cost = estimateOpenAiCost(model, usage);
+      const snapshots = attempts
+        .filter((attempt) => attempt.rawResponseJson !== null)
+        .map((attempt) => estimateOpenAiCost(model, extractOpenAiUsage(attempt.rawResponseJson)));
+      const singleOrAggregate = snapshots.length > 1
+        ? aggregateOpenAiCostSnapshots(model, snapshots)
+        : snapshots[0] ?? estimateOpenAiCost(model, extractOpenAiUsage(null));
+      const cost = snapshots.length > 1
+        ? {
+            ...singleOrAggregate,
+            pricingSnapshot: {
+              ...singleOrAggregate.pricingSnapshot,
+              note: 'Synthetic aggregate of structured-output retry attempts.',
+            },
+            billable: snapshots.some((snapshot) => snapshot.billable),
+          }
+        : singleOrAggregate;
+      const usage = cost.usage;
       await this.db.service((sql) => sql`
         insert into public.ai_cost_events
           (user_id, operation, provider, model, input_tokens, cached_input_tokens,

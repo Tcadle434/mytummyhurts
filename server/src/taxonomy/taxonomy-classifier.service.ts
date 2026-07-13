@@ -9,16 +9,20 @@ import type {
   IngredientTaxonomyConfidence,
   TrackedFoodFamilyKey,
 } from '../scan/engine/domain';
+import { requestStructuredOutput, StructuredOutputError } from '../llm/structured-output';
 import {
   DIGESTIVE_PATTERNS,
   TAXONOMY_PROMPT_VERSION,
   TAXONOMY_VERSION,
   TRACKED_FOOD_FAMILIES,
-  isDigestivePatternKey,
-  isTrackedFoodFamilyKey,
   makeTaxonomyClassification,
   normalizeIngredientName,
 } from './taxonomy.constants';
+import {
+  taxonomyClassificationSchema,
+  taxonomyStructuredOutput,
+  type TaxonomyClassificationPayload,
+} from './taxonomy-output.schema';
 
 type Rule = {
   aliases: string[];
@@ -81,21 +85,6 @@ function containsAlias(normalizedName: string, alias: string) {
   return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(normalizedName);
 }
 
-function extractResponsesText(json: unknown): string | undefined {
-  const response = json as {
-    output_text?: string;
-    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
-  };
-  if (typeof response.output_text === 'string') return response.output_text;
-  for (const item of response.output ?? []) {
-    for (const content of item.content ?? []) {
-      if (content.type === 'output_text' && typeof content.text === 'string') return content.text;
-      if (typeof content.text === 'string') return content.text;
-    }
-  }
-  return undefined;
-}
-
 @Injectable()
 export class TaxonomyClassifierService {
   private readonly logger = new Logger('TaxonomyClassifier');
@@ -132,7 +121,12 @@ export class TaxonomyClassifierService {
     try {
       return await this.classifyWithOpenAi({ apiKey, displayName, context });
     } catch (error) {
-      this.logger.warn(`taxonomy LLM classification failed for "${displayName}": ${(error as Error).message}`);
+      this.logger.warn({
+        stage: 'ingredient_taxonomy_classification',
+        code: error instanceof StructuredOutputError ? error.code : 'taxonomy_classification_failed',
+        attemptCount: error instanceof StructuredOutputError ? error.attempts.length : 1,
+        validationIssues: error instanceof StructuredOutputError ? error.validationIssues : [],
+      }, 'taxonomy LLM classification failed; using deterministic fallback');
       return this.classifyDeterministically(displayName);
     }
   }
@@ -251,22 +245,6 @@ export class TaxonomyClassifierService {
   }): Promise<IngredientTaxonomyClassification> {
     const model = this.config.get<string>('OPENAI_TAXONOMY_MODEL') ?? this.config.get<string>('OPENAI_NORMALIZATION_MODEL') ?? 'gpt-4.1-mini';
     const timeoutMs = Number(this.config.get<string>('OPENAI_TAXONOMY_TIMEOUT_MS') ?? 15_000);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const schema = {
-      type: 'object',
-      additionalProperties: false,
-      required: ['primaryFoodFamilyKey', 'digestivePatternKeys', 'confidence', 'reason'],
-      properties: {
-        primaryFoodFamilyKey: { type: 'string', enum: TRACKED_FOOD_FAMILIES.map((entry) => entry.key) },
-        digestivePatternKeys: {
-          type: 'array',
-          items: { type: 'string', enum: DIGESTIVE_PATTERNS.map((entry) => entry.key) },
-        },
-        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-        reason: { type: 'string' },
-      },
-    };
 
     const prompt = [
       'Classify this ingredient for a gut-health Trigger Profile.',
@@ -285,75 +263,51 @@ export class TaxonomyClassifierService {
       JSON.stringify(TRACKED_FOOD_FAMILIES.map(({ key, label, examples }) => ({ key, label, examples }))),
     ].filter(Boolean).join('\n');
 
-    try {
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          input: [
-            {
-              role: 'system',
-              content: [{ type: 'input_text', text: 'You classify foods into a strict JSON taxonomy. Return only schema-valid JSON.' }],
-            },
-            { role: 'user', content: [{ type: 'input_text', text: prompt }] },
-          ],
-          text: {
-            format: {
-              type: 'json_schema',
-              name: 'ingredient_taxonomy_classification',
-              strict: true,
-              schema,
-            },
+    const result = await requestStructuredOutput({
+      apiKey: input.apiKey,
+      stage: 'ingredient_taxonomy_classification',
+      timeoutMs,
+      definition: taxonomyStructuredOutput,
+      request: {
+        model,
+        input: [
+          {
+            role: 'system',
+            content: [{ type: 'input_text', text: 'You classify foods into a strict JSON taxonomy. Return only schema-valid JSON.' }],
           },
-        }),
-      });
-      if (!response.ok) throw new Error(`openai_http_${response.status}`);
-      const json = await response.json();
-      const text = extractResponsesText(json);
-      if (!text) throw new Error('openai_empty_response');
-      const parsed = JSON.parse(text) as {
-        primaryFoodFamilyKey?: string;
-        digestivePatternKeys?: unknown;
-        confidence?: string;
-        reason?: string;
-      };
-      return this.validateLlmClassification(parsed, model);
-    } finally {
-      clearTimeout(timeout);
-    }
+          { role: 'user', content: [{ type: 'input_text', text: prompt }] },
+        ],
+        text: { format: taxonomyStructuredOutput.format },
+      },
+    });
+    return this.validateLlmClassification(result.value, model);
   }
 
   private validateLlmClassification(
-    parsed: {
-      primaryFoodFamilyKey?: string;
-      digestivePatternKeys?: unknown;
-      confidence?: string;
-      reason?: string;
-    },
+    payload: unknown,
     model: string,
   ): IngredientTaxonomyClassification {
-    if (!parsed.primaryFoodFamilyKey || !isTrackedFoodFamilyKey(parsed.primaryFoodFamilyKey)) {
+    const result = taxonomyClassificationSchema.safeParse(payload);
+    if (!result.success) {
+      const path = result.error.issues[0]?.path[0];
+      if (path === 'primaryFoodFamilyKey') {
+        throw new Error('taxonomy_invalid_primary_family');
+      }
+      if (path === 'digestivePatternKeys') {
+        throw new Error('taxonomy_invalid_digestive_pattern');
+      }
+      throw result.error;
+    }
+    const parsed: TaxonomyClassificationPayload = result.data;
+    if (!parsed.primaryFoodFamilyKey) {
       throw new Error('taxonomy_invalid_primary_family');
     }
-    if (!Array.isArray(parsed.digestivePatternKeys)) {
-      throw new Error('taxonomy_missing_digestive_patterns');
-    }
-    const patterns = parsed.digestivePatternKeys.map(String);
-    if (!patterns.every(isDigestivePatternKey)) {
-      throw new Error('taxonomy_invalid_digestive_pattern');
-    }
-    const confidence =
-      parsed.confidence === 'high' || parsed.confidence === 'medium' || parsed.confidence === 'low'
-        ? parsed.confidence
-        : 'low';
 
     return makeTaxonomyClassification({
       primaryFoodFamilyKey: parsed.primaryFoodFamilyKey,
-      digestivePatternKeys: patterns,
-      confidence,
-      reason: String(parsed.reason ?? '').slice(0, 500) || 'LLM taxonomy classification.',
+      digestivePatternKeys: parsed.digestivePatternKeys,
+      confidence: parsed.confidence,
+      reason: parsed.reason.slice(0, 500) || 'LLM taxonomy classification.',
       model,
       promptVersion: TAXONOMY_PROMPT_VERSION,
       source: 'llm',

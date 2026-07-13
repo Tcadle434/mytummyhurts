@@ -1,4 +1,4 @@
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,7 @@ import { InsightsModule } from '../src/insights/insights.module';
 import { InsightsService } from '../src/insights/insights.service';
 import { ProfileModule } from '../src/profile/profile.module';
 import { ProfileService } from '../src/profile/profile.service';
+import { TaxonomyClassifierService } from '../src/taxonomy/taxonomy-classifier.service';
 
 const admin = postgres(process.env.DATABASE_ADMIN_URL ?? 'postgres://mth:mth@localhost:5432/mth', {
   max: 2,
@@ -23,6 +24,7 @@ let insights: InsightsService;
 let billing: BillingService;
 
 beforeAll(async () => {
+  process.env.OPENAI_API_KEY = 'test-key';
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
     const body = typeof init?.body === 'string' ? init.body : '';
     const suspects = body.includes('spicy ramen')
@@ -56,7 +58,12 @@ beforeAll(async () => {
       InsightsModule,
       ProfileModule,
     ],
-  }).compile();
+  })
+    .overrideProvider(TaxonomyClassifierService)
+    .useValue(new TaxonomyClassifierService({
+      get: (key: string) => key === 'OPENAI_API_KEY' ? '' : undefined,
+    } as ConfigService))
+    .compile();
   profile = moduleRef.get(ProfileService);
   insights = moduleRef.get(InsightsService);
   billing = moduleRef.get(BillingService);
@@ -69,6 +76,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await admin`delete from public.users where id = ${U}`;
   vi.unstubAllGlobals();
+  process.env.OPENAI_API_KEY = '';
   await admin.end();
 });
 

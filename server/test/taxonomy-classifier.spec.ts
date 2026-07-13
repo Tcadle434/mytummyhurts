@@ -1,13 +1,40 @@
 import { ConfigService } from '@nestjs/config';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TaxonomyClassifierService } from '../src/taxonomy/taxonomy-classifier.service';
 
+function configService(values: Record<string, string>) {
+  return {
+    get: (key: string, fallback?: unknown) => values[key] ?? fallback,
+  } as ConfigService;
+}
+
 function classifier() {
-  return new TaxonomyClassifierService(new ConfigService({ OPENAI_API_KEY: '' }));
+  return new TaxonomyClassifierService(configService({ OPENAI_API_KEY: '' }));
+}
+
+function llmClassifier() {
+  return new TaxonomyClassifierService(configService({
+    OPENAI_API_KEY: 'test-key',
+    OPENAI_TAXONOMY_MODEL: 'gpt-test',
+    OPENAI_TAXONOMY_TIMEOUT_MS: '1000',
+  }));
+}
+
+function responseWithOutput(output: unknown) {
+  return new Response(JSON.stringify({
+    id: 'resp-taxonomy',
+    status: 'completed',
+    output_text: JSON.stringify(output),
+  }), { status: 200 });
 }
 
 describe('TaxonomyClassifierService', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it('classifies common taxonomy examples deterministically', () => {
     const service = classifier();
 
@@ -74,5 +101,53 @@ describe('TaxonomyClassifierService', () => {
         'test-model',
       ),
     ).toThrow('taxonomy_invalid_digestive_pattern');
+  });
+
+  it('retries invalid model output and returns a valid LLM classification', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(responseWithOutput({
+        primaryFoodFamilyKey: 'invented_family',
+        digestivePatternKeys: [],
+        confidence: 'high',
+        reason: 'invalid',
+      }))
+      .mockResolvedValueOnce(responseWithOutput({
+        primaryFoodFamilyKey: 'other_fruits',
+        digestivePatternKeys: [],
+        confidence: 'high',
+        reason: 'Dragon fruit is fruit.',
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await llmClassifier().classifyIngredient('dragon fruit');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      primaryFoodFamilyKey: 'other_fruits',
+      source: 'llm',
+      model: 'gpt-test',
+    });
+    expect(String(fetchMock.mock.calls[1]?.[1]?.body)).toContain('$.primaryFoodFamilyKey');
+  });
+
+  it('falls back deterministically only after three invalid model responses', async () => {
+    const fetchMock = vi.fn(async () => responseWithOutput({
+      primaryFoodFamilyKey: 'invented_family',
+      digestivePatternKeys: [],
+      confidence: 'high',
+      reason: 'invalid',
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await llmClassifier().classifyIngredient('dragon fruit');
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({
+      primaryFoodFamilyKey: 'unknown_unclassified',
+      source: 'deterministic',
+    });
   });
 });

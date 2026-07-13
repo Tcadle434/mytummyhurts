@@ -9,11 +9,16 @@ import type {
 } from './domain';
 import { CONDITION_BAND_ORDER } from '@mth/shared-domain';
 import { normalize } from './text-utils';
+import type {
+  RiskAdjudicationConditionPayload as RawRiskAdjudicationCondition,
+  RiskAdjudicationPayload,
+} from './openaiSchemas';
 
 // Canonical citation shape lives in the package; re-exported (via domain.ts)
 // so the existing `import { ... EvidenceCitation } from '.../riskAdjudication'`
 // call site (scan-workflow.service.ts) is unaffected.
 export type { EvidenceCitation } from './domain';
+export type { RiskAdjudicationPayload } from './openaiSchemas';
 
 export const RISK_ADJUDICATION_PROMPT_VERSION =
   process.env.OPENAI_RISK_ADJUDICATION_PROMPT_VERSION ?? 'mytummyhurts_risk_adjudication_v2';
@@ -42,23 +47,6 @@ export interface RiskAdjudicationEvidenceChunk {
   ingredientTags: string[];
   direction: 'raises' | 'lowers' | 'neutral' | null;
   relevanceScore: number;
-}
-
-export interface RawRiskAdjudicationCondition {
-  condition: string;
-  genericBand: ConditionSeverityBand;
-  personalizedBand: ConditionSeverityBand;
-  finalBand: ConditionSeverityBand;
-  drivers: string[];
-  protectiveEvidence: string[];
-  citationChunkIds: string[];
-  personalEvidenceUsed: string[];
-  confidence: RiskAdjudicationConfidence;
-  rationale: string;
-}
-
-export interface RiskAdjudicationPayload {
-  conditionSeverities: RawRiskAdjudicationCondition[];
 }
 
 export interface RiskAdjudicationRequest {
