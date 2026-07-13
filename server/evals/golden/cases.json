@@ -2366,7 +2366,7 @@
             "falseLowMinScore": 37,
             "minScoreSpread": 25
           },
-          "notes": "Independent repository fixture with deterministic menu safety assertions. Enable for release/nightly after its first reviewed calibration run."
+          "notes": "Independent repository fixture with deterministic menu safety assertions. Thresholds (minItems 12, falseLowMinScore 37, minScoreSpread 25) were set from the reviewed live end-to-end calibration run (2026-07) that also surfaced the auto-routed menu category persistence fix, so the case is enabled as a release anchor and for nightly rotation."
         }
       ]
     },
@@ -2401,7 +2401,7 @@
             "allium_garlic_onion",
             "legume_gos"
           ],
-          "notes": "Existing barcode expectation promoted into the live runner. Enable for release/nightly after confirming external product metadata stability."
+          "notes": "Existing barcode expectation promoted into the live runner. Nightly-eligible so rotation observes external Open Food Facts metadata stability; deliberately held out of the release gate (releaseEligible false) until that stability is confirmed, so a metadata change can never block a production deploy."
         }
       ]
     },

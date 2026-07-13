@@ -3,12 +3,14 @@
 #
 # Records the golden suite as a LangSmith experiment and fails LOUDLY (exit 1)
 # when the mean band drift vs the committed baseline exceeds one whole band
-# (see run-langsmith-evals.mjs). Intended for a VPS crontab entry, e.g.:
+# (see run-langsmith-evals.mjs).
 #
-#   15 9 * * * cd /root/app && \
-#     LANGSMITH_API_KEY=... SCAN_EVAL_EMAIL=codex-scan-stability@mytummyhurts.app \
-#     SCAN_EVAL_PASSWORD=... bash server/scripts/eval/nightly-langsmith.sh \
-#     >> /var/log/mth-nightly-evals.log 2>&1
+# Scheduled execution is owned by .github/workflows/scan-evals.yml - do NOT
+# install this in the VPS crontab (it runs the FULL tier and would double
+# token spend alongside the GitHub schedule). Keep it for manual triage only:
+#
+#   LANGSMITH_API_KEY=... SCAN_EVAL_EMAIL=... SCAN_EVAL_PASSWORD=... \
+#     bash server/scripts/eval/nightly-langsmith.sh
 #
 # Env:
 #   LANGSMITH_API_KEY   required — a silent no-op nightly is worse than a failure.

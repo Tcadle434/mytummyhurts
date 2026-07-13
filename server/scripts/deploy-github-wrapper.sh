@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+set -f
 set -- ${SSH_ORIGINAL_COMMAND:-}
 if [ "$#" -ne 2 ] || [ "$1" != "deploy" ]; then
   echo "deploy: only the deploy command is allowed" >&2
@@ -29,4 +30,9 @@ cd /root/mytummyhurts
 git fetch --quiet origin main
 git cat-file -e "$sha^{commit}"
 git merge-base --is-ancestor "$sha" origin/main
-git show "$sha:server/scripts/deploy-production.sh" | /bin/bash -s -- "$sha"
+git cat-file -e "$sha:server/scripts/deploy-production.sh"
+
+deploy_script=$(mktemp)
+trap 'rm -f "$deploy_script"' EXIT
+git show "$sha:server/scripts/deploy-production.sh" >"$deploy_script"
+/bin/bash "$deploy_script" "$sha"

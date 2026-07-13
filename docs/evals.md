@@ -15,7 +15,7 @@ Paid live-model checks are intentionally tiered. The full dataset is not run on 
 | Tier | Trigger | Current size | Purpose |
 |---|---|---:|---|
 | Deterministic | Every pull request | 0 live scans | Code, schema, scoring, persistence, and dataset integrity |
-| Smoke | AI-sensitive PR when marked ready, or label `run-ai-evals` | 8 cases / 13 expectations | Small live-model canary |
+| Smoke | AI-sensitive PR opened non-draft or marked ready; label `run-ai-evals` to run now and on later pushes | 8 cases / 13 expectations | Small live-model canary |
 | Release | Manual production deployment | 27 cases / about 35 expectations | Blocking fixed anchors plus deterministic rotation |
 | Nightly | Monday through Saturday | One of five balanced shards | Full rotating coverage over five nights |
 | Full | Sunday or manual major-model check | 56 cases / 71 expectations | Every food, menu, barcode, and unclear-input case |
@@ -133,7 +133,7 @@ key the runner prints a one-line notice and runs local-only.
 
 `.github/workflows/server-ci.yml` is the zero-token pull-request gate. It runs the full server test/build pipeline, the offline scoring goldens, and dry plans for every live tier and nightly shard.
 
-`.github/workflows/ai-eval-smoke.yml` runs the small paid smoke tier only when an AI-sensitive pull request becomes ready for review or receives the `run-ai-evals` label. It does not run on every pushed commit.
+`.github/workflows/ai-eval-smoke.yml` runs the small paid smoke tier when an AI-sensitive pull request is opened non-draft, becomes ready for review, or receives the `run-ai-evals` label. It does not re-run on pushed commits by default, so a green smoke result can be stale relative to later pushes; keep the `run-ai-evals` label applied to re-run smoke on every push (in-progress runs are cancelled when new commits arrive). The release gate always re-evaluates before deployment either way.
 
 `.github/workflows/deploy-production.yml` is the only automated production deployment path. It first calls `.github/workflows/scan-evals.yml` with the release tier. Deployment cannot start unless retrieval and scan evaluations are green. The workflow then deploys the exact evaluated commit using a restricted SSH credential and verifies `/healthz` and `/readyz`.
 
@@ -248,7 +248,7 @@ confused with a red `triage` experiment (routine local poking):
 |------------|-----------------------------------------------------|----------------|
 | `triage`   | default for local/manual runs                       | none |
 | `ci-gate`  | `.github/workflows/scan-evals.yml`                  | none (exit 1 already blocks the deploy) |
-| `nightly`  | `eval:langsmith` alias / `nightly-langsmith.sh` cron | arms the >1-band drift alarm |
+| `nightly`  | `.github/workflows/scan-evals.yml` schedule / `eval:langsmith` alias | arms the >1-band drift alarm |
 | `baseline` | manual, when intentionally recalibrating            | pair with `--update-drift-baseline` |
 
 Experiments are named `mth-golden-<extraction model>-<context>-<run id>`
@@ -284,6 +284,8 @@ keeps the old contract that a missing `LANGSMITH_API_KEY` is a free no-op
 still work.
 
 Nightly and weekly execution is owned by `.github/workflows/scan-evals.yml`, not a VPS cron. GitHub provides failure visibility, artifacts, commit identity, and encrypted secrets in one place. The older VPS wrapper remains available for local triage, but it is not the production scheduler.
+
+**Migration:** remove the old `nightly-langsmith.sh` line from the VPS crontab (`crontab -e` on the VPS) when rolling this out. If it stays installed, the unified runner it now delegates to defaults to the **full** tier, so the stale cron would run the entire paid suite against production every night in parallel with the GitHub shards, silently doubling token spend.
 
 ## Mining Production Cases
 

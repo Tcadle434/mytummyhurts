@@ -2,7 +2,7 @@ name: ai-eval-smoke
 
 on:
   pull_request:
-    types: [ready_for_review, labeled]
+    types: [opened, ready_for_review, labeled, synchronize]
     paths:
       - '.github/workflows/ai-eval-smoke.yml'
       - '.github/workflows/scan-evals.yml'
@@ -25,7 +25,9 @@ jobs:
   smoke:
     if: >-
       github.event.action == 'ready_for_review' ||
-      (github.event.action == 'labeled' && github.event.label.name == 'run-ai-evals')
+      (github.event.action == 'opened' && !github.event.pull_request.draft) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'run-ai-evals') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'run-ai-evals'))
     uses: ./.github/workflows/scan-evals.yml
     with:
       tier: smoke
