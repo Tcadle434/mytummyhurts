@@ -1,12 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ReactNode } from "react";
 import { Image, ImageSourcePropType, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
-import Svg, { Circle, Path } from "react-native-svg";
 
 import { GutScoreInfoCards } from "../../../components/gut-score/GutScoreInfoCards";
 import { Pip } from "../../../components/common/Pip";
 import { WeeklyProgressCard } from "../../../components/progress/WeeklyProgressCard";
-import { palette, spacing, tokens, type } from "../../../theme";
+import { spacing, tokens, type } from "../../../theme";
 import {
 	createMockFeaturedDailyScoreDay,
 	createMockWeeklyProgressDays,
@@ -19,6 +17,7 @@ import {
 	FoodControlIntroGraphic,
 	FoodLeverComparisonGraphic,
 } from "./FoodControlGraphics";
+import { HealingLoopDiagram } from "./HealingLoopDiagram";
 import {
 	PhaseLimitationGraphic,
 	PhaseReintroductionGraphic,
@@ -27,9 +26,6 @@ import { ScannerModesOverviewGraphic } from "./ScannerModesOverviewGraphic";
 
 const PIP_ANXIOUS = require("../../../../assets/pip/pip_anxious_transparent.png");
 const PIP_JOYOUS = require("../../../../assets/pip/pip_joyous_transparent.png");
-const SCAN_FOOD_ILLUSTRATION = require("../../../../assets/ui/scan_food_illustration.png");
-const RISK_SCORE_ILLUSTRATION = require("../../../../assets/ui/risk_score_illustration.png");
-const LOG_SYMPTOMS_ILLUSTRATION = require("../../../../assets/ui/log_symptoms_illustration.png");
 const EATING_OUT_ICON = require("../../../../assets/ui/eating_out_icon.png");
 const TRAVELLING_ICON = require("../../../../assets/ui/travelling_icon.png");
 const LEAVING_HOUSE_ICON = require("../../../../assets/ui/leaving_house_icon.png");
@@ -320,142 +316,6 @@ function PromiseOutcomeCard({
 	);
 }
 
-function HealingLoopDiagram() {
-	const steps = [
-		{
-			step: "1",
-			title: "Scan food",
-			body: "Take a picture. AI deciphers ingredients",
-			imageSource: SCAN_FOOD_ILLUSTRATION,
-		},
-		{
-			step: "2",
-			title: "Log how you felt",
-			body: "Report symptoms once a day.",
-			imageSource: LOG_SYMPTOMS_ILLUSTRATION,
-		},
-		{
-			step: "3",
-			title: "Learn personalized risk",
-			body: "AI learns sensitivity patterns over time and teaches you food risks.",
-			imageSource: RISK_SCORE_ILLUSTRATION,
-		},
-		{
-			step: "4",
-			title: "Scores improve",
-			body: "Gut Score improves as you adapt to findings.",
-			renderVisual: () => <HealingScoreMiniChart />,
-		},
-	];
-
-	return (
-		<View style={styles.healingLoopWrap}>
-			<Svg
-				width={54}
-				height={344}
-				viewBox="0 0 54 344"
-				style={styles.healingLoopConnector}
-				pointerEvents="none"
-			>
-				<Path
-					d="M27 35 C4 74 5 102 27 132 C49 163 49 192 27 223 C5 253 5 284 27 316"
-					stroke={tokens.color.border.strong}
-					strokeWidth={1.25}
-					strokeLinecap="round"
-					strokeDasharray="4 7"
-					fill="none"
-					opacity={0.45}
-				/>
-			</Svg>
-			{steps.map((step) => (
-				<HealingLoopStepCard
-					key={step.step}
-					step={step.step}
-					title={step.title}
-					body={step.body}
-					imageSource={step.imageSource}
-					renderVisual={step.renderVisual}
-				/>
-			))}
-		</View>
-	);
-}
-
-function HealingLoopStepCard({
-	step,
-	title,
-	body,
-	imageSource,
-	renderVisual,
-}: {
-	step: string;
-	title: string;
-	body: string;
-	imageSource?: ImageSourcePropType;
-	renderVisual?: () => ReactNode;
-}) {
-	return (
-		<View style={styles.healingLoopRow}>
-			<View style={styles.healingLoopBadge}>
-				<Text style={styles.healingLoopBadgeText}>{step}</Text>
-			</View>
-			<View style={styles.healingLoopCard}>
-				<View style={styles.healingLoopVisualSlot}>
-					{imageSource ? (
-						<Image
-							source={imageSource}
-							style={styles.healingLoopImage}
-							resizeMode="contain"
-							accessibilityIgnoresInvertColors
-						/>
-					) : (
-						renderVisual?.()
-					)}
-				</View>
-				<View style={styles.healingLoopCopy}>
-					<Text style={styles.healingLoopTitle}>{title}</Text>
-					<Text style={styles.healingLoopBody}>{body}</Text>
-				</View>
-			</View>
-		</View>
-	);
-}
-
-function HealingScoreMiniChart() {
-	return (
-		<View style={styles.healingScoreVisual}>
-			<View style={styles.healingScoreRing}>
-				<Svg width={56} height={56} viewBox="0 0 56 56">
-					<Circle
-						cx={28}
-						cy={28}
-						r={22}
-						stroke={tokens.color.chart.track}
-						strokeWidth={6}
-						fill="none"
-					/>
-					<Circle
-						cx={28}
-						cy={28}
-						r={22}
-						stroke={tokens.color.status.risk.low.tint}
-						strokeWidth={6}
-						fill="none"
-						strokeLinecap="round"
-						strokeDasharray={`${2 * Math.PI * 22} ${2 * Math.PI * 22}`}
-						strokeDashoffset={2 * Math.PI * 22 * 0.18}
-						rotation="-90"
-						origin="28, 28"
-					/>
-				</Svg>
-				<View style={styles.healingScoreRingCenter}>
-					<Text style={styles.healingScoreValue}>82</Text>
-				</View>
-			</View>
-		</View>
-	);
-}
-
 const styles = StyleSheet.create({
 	educationCard: {
 		width: "100%",
@@ -725,107 +585,5 @@ const styles = StyleSheet.create({
 		fontSize: 10,
 		lineHeight: 13,
 		textAlign: "center",
-	},
-	healingLoopWrap: {
-		width: "100%",
-		maxWidth: 360,
-		gap: spacing.sm,
-		position: "relative",
-	},
-	healingLoopConnector: {
-		position: "absolute",
-		left: 1,
-		top: 20,
-		zIndex: 0,
-	},
-	healingLoopRow: {
-		minHeight: 78,
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.sm,
-		zIndex: 1,
-	},
-	healingLoopBadge: {
-		width: 30,
-		height: 30,
-		borderRadius: 15,
-		alignItems: "center",
-		justifyContent: "center",
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		backgroundColor: palette.primary,
-	},
-	healingLoopBadgeText: {
-		color: tokens.color.text.inverse,
-		fontFamily: type.body.bold,
-		fontSize: 14,
-		lineHeight: 18,
-	},
-	healingLoopCard: {
-		flex: 1,
-		minHeight: 78,
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.sm,
-		borderWidth: 1,
-		borderColor: tokens.color.border.subtle,
-		borderRadius: 22,
-		backgroundColor: tokens.color.surface.card.default,
-		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.sm,
-		...tokens.shadow.card,
-	},
-	healingLoopVisualSlot: {
-		width: 64,
-		height: 64,
-		borderRadius: 18,
-		backgroundColor: tokens.color.surface.card.warm,
-		alignItems: "center",
-		justifyContent: "center",
-		overflow: "hidden",
-	},
-	healingLoopImage: {
-		width: 82,
-		height: 82,
-	},
-	healingLoopCopy: {
-		flex: 1,
-		gap: 3,
-	},
-	healingLoopTitle: {
-		color: tokens.color.text.accent,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 20,
-	},
-	healingLoopBody: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.medium,
-		fontSize: 12,
-		lineHeight: 16,
-	},
-	healingScoreVisual: {
-		width: 66,
-		height: 66,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	healingScoreRing: {
-		width: 56,
-		height: 56,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	healingScoreRingCenter: {
-		position: "absolute",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	healingScoreValue: {
-		color: tokens.color.status.risk.low.foreground,
-		fontFamily: type.body.bold,
-		fontSize: 15,
-		lineHeight: 18,
-		fontVariant: ["tabular-nums"],
 	},
 });
