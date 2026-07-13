@@ -9,7 +9,7 @@
 // Pure functions; the caller supplies the current scan's ingredients and the
 // day's prior consumed meals.
 import type { IngredientAmountEstimate, ScanDayLoad } from './domain';
-import { mechanismLabelForKey, riskMechanismKeysForIngredientNames } from './mechanismScoring';
+import { mechanismLabelForKey, riskMechanismKeysForIngredientNames } from './mechanismCatalog';
 
 export interface DayLoadIngredient {
   name: string;
