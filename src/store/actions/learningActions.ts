@@ -8,9 +8,9 @@ import { AppStoreState, AppStoreSet, AppStoreGet } from '../types';
 import {
   apiErrorCode,
   learningResponseStatePatch,
-  patchLearningResponseInQueryCaches,
   sleep,
 } from '../helpers';
+import { patchLearningResponseInQueryCaches } from '../queryCacheHelpers';
 
 export function createLearningActions(set: AppStoreSet, get: AppStoreGet): Pick<
   AppStoreState,
