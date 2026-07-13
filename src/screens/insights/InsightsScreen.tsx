@@ -39,6 +39,7 @@ import { ClearedCelebrationModal } from "./ClearedCelebrationModal";
 import { ConditionsChipRow } from "./ConditionsChipRow";
 import { LearningStageCue, LearningStageInfoModal } from "./LearningStage";
 import { ClearedBand, SafeChipGarden } from "./SafetyTrack";
+import { TrackedFamilies } from "./TrackedFamilies";
 import { TriggerProfileRow } from "./TriggerProfileRow";
 
 const ROW_STAGGER_MS = 45;
@@ -314,62 +315,12 @@ export function InsightsScreen() {
 							);
 						})}
 
-						{viewState.trackedFamilies.length > 0 ? (
-							<View style={styles.familyBlock}>
-								<Pressable
-									accessibilityRole="button"
-									accessibilityState={{ expanded: familiesExpanded }}
-									onPress={() => setFamiliesExpanded((current) => !current)}
-									style={({ pressed }) => [
-										styles.familyToggle,
-										pressed && { opacity: 0.85 },
-									]}
-								>
-									<Ionicons
-										name={familiesExpanded ? "chevron-down" : "chevron-forward"}
-										size={15}
-										color={tokens.color.text.secondary}
-									/>
-									<Text style={styles.familyToggleText}>
-										Still watching
-									</Text>
-									<Text style={styles.familyToggleCount}>{viewState.trackedFamilies.length}</Text>
-								</Pressable>
-								<Text style={styles.familyIntro}>
-									Foods from your scans that need paired check-ins before a verdict.
-								</Text>
-								{familiesExpanded ? (
-									<View style={styles.familyList}>
-										{viewState.trackedFamilies.map((entry) => (
-											<Pressable
-												key={entry.family.key}
-												accessibilityRole="button"
-												accessibilityLabel={`${entry.family.label}, ${familyMeta(entry.members.length, entry.evidenceCount)}`}
-												onPress={() => openFamily(entry.family.key, entry.family.label)}
-												style={({ pressed }) => [
-													styles.familyRow,
-													pressed && { opacity: 0.88 },
-												]}
-											>
-												<View style={styles.familyGlyph}>
-													<Text style={styles.familyGlyphEmoji}>{entry.family.emoji}</Text>
-												</View>
-												<View style={styles.familyCopy}>
-													<Text style={styles.familyRowName} numberOfLines={1}>
-														{entry.family.label}
-													</Text>
-													<Text style={styles.familyRowMeta} numberOfLines={2}>
-														{familyMeta(entry.members.length, entry.evidenceCount)}
-														{entry.memberSummary ? ` · ${entry.memberSummary}` : ""}
-													</Text>
-												</View>
-												<Ionicons name="chevron-forward" size={18} color={tokens.color.icon.muted} />
-											</Pressable>
-										))}
-									</View>
-								) : null}
-							</View>
-						) : null}
+						<TrackedFamilies
+							entries={viewState.trackedFamilies}
+							expanded={familiesExpanded}
+							onToggle={() => setFamiliesExpanded((current) => !current)}
+							onOpen={openFamily}
+						/>
 
 						<ConditionsChipRow
 							conditions={conditions}
@@ -392,12 +343,6 @@ export function InsightsScreen() {
 			/>
 		</>
 	);
-}
-
-function familyMeta(foodCount: number, evidenceCount: number) {
-	const foods = `${foodCount} food${foodCount === 1 ? "" : "s"}`;
-	if (evidenceCount <= 0) return foods;
-	return `${foods} tracked across ${evidenceCount} paired day${evidenceCount === 1 ? "" : "s"}`;
 }
 
 function ListSkeleton({ rows }: { rows: number }) {
@@ -505,39 +450,6 @@ const styles = StyleSheet.create({
 		flex: 1,
 		gap: 4,
 	},
-	familyBlock: {
-		gap: spacing.xs,
-	},
-	familyToggle: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.xs,
-		paddingVertical: spacing.xs,
-		paddingHorizontal: spacing.sm,
-	},
-	familyToggleText: {
-		flex: 1,
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 18,
-		textTransform: "uppercase",
-		letterSpacing: 0.6,
-	},
-	familyToggleCount: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.bold,
-		fontSize: 13,
-		lineHeight: 18,
-	},
-	familyIntro: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.regular,
-		fontSize: 12,
-		lineHeight: 16,
-		paddingHorizontal: spacing.sm,
-		marginTop: -spacing.xs,
-	},
 	lensRow: {
 		flexDirection: "row",
 		alignItems: "center",
@@ -549,46 +461,5 @@ const styles = StyleSheet.create({
 		...tokens.type.body.small,
 		flex: 1,
 		color: tokens.color.text.tertiary,
-	},
-	familyList: {
-		gap: spacing.xs,
-	},
-	familyRow: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: spacing.sm,
-		borderRadius: radii.lg,
-		backgroundColor: tokens.color.surface.card.default,
-		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm,
-		...tokens.shadow.card,
-	},
-	familyGlyph: {
-		width: 38,
-		height: 38,
-		borderRadius: 19,
-		alignItems: "center",
-		justifyContent: "center",
-		backgroundColor: tokens.color.status.verdict.watching.background,
-	},
-	familyGlyphEmoji: {
-		fontSize: 18,
-	},
-	familyCopy: {
-		flex: 1,
-		gap: 3,
-	},
-	familyRowName: {
-		flexShrink: 1,
-		color: tokens.color.text.primary,
-		fontFamily: type.body.semibold,
-		fontSize: 13,
-		lineHeight: 18,
-	},
-	familyRowMeta: {
-		color: tokens.color.text.secondary,
-		fontFamily: type.body.regular,
-		fontSize: 11,
-		lineHeight: 15,
 	},
 });
