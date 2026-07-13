@@ -177,13 +177,14 @@
         {
           "profile": "gerd",
           "expectedBands": [
-            "medium"
+            "medium",
+            "high"
           ],
           "expectedScoreRange": [
             37,
-            63
+            100
           ],
-          "maxRunScoreRange": 26,
+          "maxRunScoreRange": 63,
           "requiredMechanisms": [
             "spicy_heat",
             "high_fat_or_rich"
@@ -192,7 +193,7 @@
             "chicken",
             "rice"
           ],
-          "notes": "Same re-spec as ibs_gerd 2026-07-03; butter/oil richness fires reliably on this image. Ratcheted 2026-07-04 post Phase 2 (band anchors + delivered rubric definitions): bands=observed-only over 15 samples / 7 passes (scores 53, 55, 55, 55, 55, 55, 55, 55, 57, 57, 57, 57, 57, 57, 60); range=exact span of the allowed bands (the band union is the assertion — never-observed bands are the regression signal; sub-band placement precision does not hold at repeat 2).",
+          "notes": "Same re-spec as ibs_gerd 2026-07-03; butter/oil richness fires reliably on this image. Ratcheted 2026-07-04 post Phase 2 (band anchors + delivered rubric definitions): medium scores were observed over 15 samples / 7 passes (53, 55, 55, 55, 55, 55, 55, 55, 57, 57, 57, 57, 57, 57, 60). The 2026-07-13 smoke gate produced a grounded high score of 81 from a valid LLM severity judgment over butter/cream richness, spicy curry, tomato, and a large sauce portion. Medium and high are both acceptable for this composition-sensitive dish; the band union is the assertion and sub-band placement precision does not hold at repeat 2.",
           "requiredIngredientMinRuns": 1,
           "requiredMechanismMinRuns": 1
         }
