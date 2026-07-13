@@ -7,21 +7,12 @@ import {
   DetailScreenHeader,
   InfoPill,
   InputField,
-  OnboardingPickerOption,
   OptionChip,
   PrimaryButton,
   SecondaryButton,
 } from '../../components/common/UI';
 import { Pip } from '../../components/common/Pip';
-import { CustomEntryModal } from '../../components/modals/CustomEntryModal';
 import { env } from '../../config/env';
-import {
-  conditionOptions,
-  dietPreferenceLabelFromKey,
-  dietPreferenceOptions,
-  ingredientSensitivityOptions,
-  symptomOptions,
-} from '../../data/catalog';
 import { useInsightsData } from '../../features/insights/hooks';
 import { RootStackParamList, SettingsSection } from '../../navigation/types';
 import { apiClient } from '../../services/api/client';
@@ -39,49 +30,26 @@ import { useAppStore } from '../../store/useAppStore';
 import { radii, spacing, tokens, type } from '../../theme';
 import { describeProfileForPip } from './profileSummary';
 import { openDeleteConfirmation, openIfPresent, openLegalSurface } from './settingsActions';
-import {
-  accountMetaLine,
-  prettyStatus,
-  splitByCatalog,
-  summarizeDietPreferences,
-  summarizeHealthList,
-} from './settingsFormatting';
-import {
-  CHECKIN_TIME_PRESETS,
-  CUSTOM_CATEGORY_COPY,
-  type CustomCategory,
-} from './settingsOptions';
+import { accountMetaLine, prettyStatus } from './settingsFormatting';
+import { CHECKIN_TIME_PRESETS } from './settingsOptions';
 import { SettingsExpandedBlock } from './SettingsExpandedBlock';
-import { SettingsHealthListPicker } from './SettingsHealthListPicker';
+import { SettingsHealthProfileSection } from './SettingsHealthProfileSection';
 import { SettingsMetricRow } from './SettingsMetricRow';
 import { SettingsRow } from './SettingsRow';
 import { SettingsRowDivider } from './SettingsRowDivider';
 import { SettingsSectionGroup } from './SettingsSectionGroup';
+import type {
+  BusySettingsSection,
+  ExpandedSettingsSection,
+  SettingsStatusFeedback,
+} from './settingsTypes';
 
-type ExpandedSection = SettingsSection | null;
 const HEALTH_PROFILE_SECTIONS: SettingsSection[] = [
   'conditions',
   'sensitivities',
   'symptoms',
   'diet',
 ];
-type BusySection =
-  | 'account'
-  | 'conditions'
-  | 'sensitivities'
-  | 'symptoms'
-  | 'diet'
-  | 'notifications'
-  | 'delete'
-  | null;
-// Save confirmations render adjacent to the section they belong to — never
-// below the danger zone at the bottom of the screen.
-type StatusPlacement = 'account' | 'health' | 'general';
-type StatusFeedback = {
-  placement: StatusPlacement;
-  message: string;
-  tone: 'soft' | 'warm';
-};
 
 export function SettingsScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -96,61 +64,17 @@ export function SettingsScreen() {
   const profile = insightsQuery.data?.profile ?? fallbackProfile;
   const billing = insightsQuery.data?.billing ?? fallbackBilling;
 
-  const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
+  const [expandedSection, setExpandedSection] = useState<ExpandedSettingsSection>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState(profile?.displayName ?? '');
-  const [selectedConditions, setSelectedConditions] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownConditions ?? [], conditionOptions).predefined,
-  );
-  const [customConditions, setCustomConditions] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownConditions ?? [], conditionOptions).custom,
-  );
-  const [selectedSensitivities, setSelectedSensitivities] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownIngredientSensitivities ?? [], ingredientSensitivityOptions)
-      .predefined,
-  );
-  const [customSensitivities, setCustomSensitivities] = useState<string[]>(() =>
-    splitByCatalog(profile?.knownIngredientSensitivities ?? [], ingredientSensitivityOptions)
-      .custom,
-  );
-  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>(() =>
-    splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions).predefined,
-  );
-  const [customSymptoms, setCustomSymptoms] = useState<string[]>(() =>
-    splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions).custom,
-  );
-  const [selectedDietKeys, setSelectedDietKeys] = useState(() =>
-    (profile?.dietPreferences ?? []).map((preference) => preference.key),
-  );
-  const [busySection, setBusySection] = useState<BusySection>(null);
-  const [status, setStatus] = useState<StatusFeedback | null>(null);
+  const [busySection, setBusySection] = useState<BusySettingsSection>(null);
+  const [status, setStatus] = useState<SettingsStatusFeedback | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsBlocked, setNotificationsBlocked] = useState(false);
   const [checkinHour, setCheckinHour] = useState<number | null>(null);
-  const [customModalCategory, setCustomModalCategory] = useState<CustomCategory | null>(null);
-  const [customEntry, setCustomEntry] = useState('');
 
   useEffect(() => {
     setDisplayNameDraft(profile?.displayName ?? '');
-    const conditionsSplit = splitByCatalog(profile?.knownConditions ?? [], conditionOptions);
-    setSelectedConditions(conditionsSplit.predefined);
-    setCustomConditions(conditionsSplit.custom);
-    const sensitivitiesSplit = splitByCatalog(
-      profile?.knownIngredientSensitivities ?? [],
-      ingredientSensitivityOptions,
-    );
-    setSelectedSensitivities(sensitivitiesSplit.predefined);
-    setCustomSensitivities(sensitivitiesSplit.custom);
-    const symptomsSplit = splitByCatalog(profile?.commonSymptoms ?? [], symptomOptions);
-    setSelectedSymptoms(symptomsSplit.predefined);
-    setCustomSymptoms(symptomsSplit.custom);
-    setSelectedDietKeys((profile?.dietPreferences ?? []).map((preference) => preference.key));
-  }, [
-    profile?.commonSymptoms,
-    profile?.dietPreferences,
-    profile?.displayName,
-    profile?.knownConditions,
-    profile?.knownIngredientSensitivities,
-  ]);
+  }, [profile?.displayName]);
 
   useEffect(() => {
     void getDailyReportNotificationStatus()
@@ -189,124 +113,8 @@ export function SettingsScreen() {
     return () => clearTimeout(timer);
   }, [route.params?.section]);
 
-  function toggleSection(next: Exclude<ExpandedSection, null>) {
+  function toggleSection(next: Exclude<ExpandedSettingsSection, null>) {
     setExpandedSection((current) => (current === next ? null : next));
-  }
-
-  // Shared flow for the predefined+custom health-profile lists (conditions,
-  // sensitivities, symptoms). Each only differs by section key, profile field,
-  // merged values, analytics count key, and the noun used in status messages.
-  async function saveHealthProfileSection(
-    section: NonNullable<BusySection>,
-    noun: string,
-    update: Parameters<typeof updateProfileSettings>[0],
-    countKey: string,
-    count: number,
-  ) {
-    setBusySection(section);
-    setStatus(null);
-    try {
-      await updateProfileSettings(update);
-      trackEvent('profile_saved', { [countKey]: count });
-      setStatus({ placement: 'health', message: `${noun} saved.`, tone: 'soft' });
-      setExpandedSection(null);
-    } catch (error) {
-      setStatus({
-        placement: 'health',
-        message: error instanceof Error ? error.message : `${noun} could not be saved.`,
-        tone: 'warm',
-      });
-    } finally {
-      setBusySection(null);
-    }
-  }
-
-  function handleSaveConditions() {
-    const merged = [...selectedConditions, ...customConditions];
-    return saveHealthProfileSection('conditions', 'Conditions', { knownConditions: merged }, 'conditions_count', merged.length);
-  }
-
-  function handleSaveSensitivities() {
-    const merged = [...selectedSensitivities, ...customSensitivities];
-    return saveHealthProfileSection('sensitivities', 'Sensitivities', { knownIngredientSensitivities: merged }, 'sensitivities_count', merged.length);
-  }
-
-  function handleSaveSymptoms() {
-    const merged = [...selectedSymptoms, ...customSymptoms];
-    return saveHealthProfileSection('symptoms', 'Symptoms', { commonSymptoms: merged }, 'symptoms_count', merged.length);
-  }
-
-  async function handleSaveDiet() {
-    setBusySection('diet');
-    setStatus(null);
-    try {
-      await updateProfileSettings({
-        dietPreferences: selectedDietKeys.map((key) => ({
-          key,
-          label: dietPreferenceLabelFromKey(key),
-          strictness: 'standard',
-          source: 'settings',
-        })),
-      });
-      trackEvent('diet_preferences_saved', {
-        diet_count: selectedDietKeys.length,
-      });
-      setStatus({ placement: 'health', message: 'Diet goal saved.', tone: 'soft' });
-      setExpandedSection(null);
-    } catch (error) {
-      setStatus({
-        placement: 'health',
-        message: error instanceof Error ? error.message : 'Diet goal could not be saved.',
-        tone: 'warm',
-      });
-    } finally {
-      setBusySection(null);
-    }
-  }
-
-  function openCustomModal(category: CustomCategory) {
-    setCustomModalCategory(category);
-    setCustomEntry('');
-  }
-
-  function closeCustomModal() {
-    setCustomModalCategory(null);
-    setCustomEntry('');
-  }
-
-  function addCustomEntry() {
-    const trimmed = customEntry.trim();
-    if (!trimmed || !customModalCategory) return;
-    const normalized = trimmed.toLowerCase();
-
-    if (customModalCategory === 'conditions') {
-      const exists = customConditions.some((value) => value.toLowerCase() === normalized);
-      if (!exists) setCustomConditions((prev) => [...prev, trimmed]);
-    } else if (customModalCategory === 'sensitivities') {
-      const exists = customSensitivities.some((value) => value.toLowerCase() === normalized);
-      if (!exists) setCustomSensitivities((prev) => [...prev, trimmed]);
-    } else if (customModalCategory === 'symptoms') {
-      const exists = customSymptoms.some((value) => value.toLowerCase() === normalized);
-      if (!exists) setCustomSymptoms((prev) => [...prev, trimmed]);
-    }
-
-    setCustomEntry('');
-  }
-
-  function removeCustomEntry(category: CustomCategory, value: string) {
-    if (category === 'conditions') {
-      setCustomConditions((prev) => prev.filter((entry) => entry !== value));
-    } else if (category === 'sensitivities') {
-      setCustomSensitivities((prev) => prev.filter((entry) => entry !== value));
-    } else {
-      setCustomSymptoms((prev) => prev.filter((entry) => entry !== value));
-    }
-  }
-
-  function getCustomValuesForModal(category: CustomCategory) {
-    if (category === 'conditions') return customConditions;
-    if (category === 'sensitivities') return customSensitivities;
-    return customSymptoms;
   }
 
   async function handleSaveAccount() {
@@ -559,128 +367,19 @@ export function SettingsScreen() {
         <InfoPill label={status.message} tone={status.tone} />
       ) : null}
 
-      <SettingsSectionGroup
-        label="Health profile"
+      <SettingsHealthProfileSection
+        profile={profile}
+        expandedSection={expandedSection}
+        busySection={busySection}
+        status={status}
+        updateProfileSettings={updateProfileSettings}
+        setExpandedSection={setExpandedSection}
+        setBusySection={setBusySection}
+        setStatus={setStatus}
         onLayout={(event) => {
           healthProfileOffset.current = event.nativeEvent.layout.y;
         }}
-      >
-        <SettingsRow
-          icon="medkit-outline"
-          label="Conditions"
-          value={summarizeHealthList(profile?.knownConditions)}
-          expanded={expandedSection === 'conditions'}
-          onPress={() => toggleSection('conditions')}
-        />
-        {expandedSection === 'conditions' ? (
-          <SettingsHealthListPicker
-            options={conditionOptions}
-            selectedValues={selectedConditions}
-            customValueCount={customConditions.length}
-            saveLabel="Save conditions"
-            isSaving={busySection === 'conditions'}
-            disabled={busySection !== null}
-            onValuesChange={setSelectedConditions}
-            onOpenCustom={() => openCustomModal('conditions')}
-            onSave={handleSaveConditions}
-          />
-        ) : null}
-
-        <SettingsRowDivider />
-
-        <SettingsRow
-          icon="alert-circle-outline"
-          label="Sensitivities"
-          value={summarizeHealthList(profile?.knownIngredientSensitivities)}
-          expanded={expandedSection === 'sensitivities'}
-          onPress={() => toggleSection('sensitivities')}
-        />
-        {expandedSection === 'sensitivities' ? (
-          <SettingsHealthListPicker
-            options={ingredientSensitivityOptions}
-            selectedValues={selectedSensitivities}
-            customValueCount={customSensitivities.length}
-            saveLabel="Save sensitivities"
-            isSaving={busySection === 'sensitivities'}
-            disabled={busySection !== null}
-            onValuesChange={setSelectedSensitivities}
-            onOpenCustom={() => openCustomModal('sensitivities')}
-            onSave={handleSaveSensitivities}
-          />
-        ) : null}
-
-        <SettingsRowDivider />
-
-        <SettingsRow
-          icon="pulse-outline"
-          label="Symptoms"
-          value={summarizeHealthList(profile?.commonSymptoms)}
-          expanded={expandedSection === 'symptoms'}
-          onPress={() => toggleSection('symptoms')}
-        />
-        {expandedSection === 'symptoms' ? (
-          <SettingsHealthListPicker
-            options={symptomOptions}
-            selectedValues={selectedSymptoms}
-            customValueCount={customSymptoms.length}
-            saveLabel="Save symptoms"
-            isSaving={busySection === 'symptoms'}
-            disabled={busySection !== null}
-            onValuesChange={setSelectedSymptoms}
-            onOpenCustom={() => openCustomModal('symptoms')}
-            onSave={handleSaveSymptoms}
-          />
-        ) : null}
-
-        <SettingsRowDivider />
-
-        <SettingsRow
-          icon="nutrition-outline"
-          label="Diet goal"
-          value={summarizeDietPreferences(profile?.dietPreferences)}
-          expanded={expandedSection === 'diet'}
-          onPress={() => toggleSection('diet')}
-        />
-        {expandedSection === 'diet' ? (
-          <SettingsExpandedBlock>
-            <Text style={styles.helperText}>
-              We keep your gut-risk score separate, then check scans against this diet goal.
-            </Text>
-            <View style={styles.pickerStack}>
-              <OnboardingPickerOption
-                label="No specific diet"
-                variant="plain"
-                selected={selectedDietKeys.length === 0}
-                onPress={() => setSelectedDietKeys([])}
-              />
-              {dietPreferenceOptions.map((option) => (
-                <OnboardingPickerOption
-                  key={option.key}
-                  label={option.label}
-                  variant="plain"
-                  selected={selectedDietKeys.includes(option.key)}
-                  onPress={() =>
-                    setSelectedDietKeys((current) =>
-                      current.includes(option.key)
-                        ? current.filter((entry) => entry !== option.key)
-                        : [...current, option.key],
-                    )
-                  }
-                />
-              ))}
-            </View>
-            <PrimaryButton
-              label={busySection === 'diet' ? 'Saving…' : 'Save diet goal'}
-              onPress={() => void handleSaveDiet()}
-              disabled={busySection !== null}
-            />
-          </SettingsExpandedBlock>
-        ) : null}
-      </SettingsSectionGroup>
-
-      {status?.placement === 'health' ? (
-        <InfoPill label={status.message} tone={status.tone} />
-      ) : null}
+      />
 
       <SettingsSectionGroup label="Support & legal">
         <SettingsRow
@@ -727,20 +426,6 @@ export function SettingsScreen() {
 
       <Text style={styles.versionLabel}>App version 1.2.0</Text>
 
-      <CustomEntryModal
-        visible={customModalCategory !== null}
-        title={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].title : ''}
-        subtitle={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].subtitle : undefined}
-        placeholder={customModalCategory ? CUSTOM_CATEGORY_COPY[customModalCategory].placeholder : ''}
-        value={customEntry}
-        onChangeText={setCustomEntry}
-        onSubmit={addCustomEntry}
-        onClose={closeCustomModal}
-        values={customModalCategory ? getCustomValuesForModal(customModalCategory) : []}
-        onRemove={(value) => {
-          if (customModalCategory) removeCustomEntry(customModalCategory, value);
-        }}
-      />
     </AppScreen>
   );
 }
