@@ -25,13 +25,14 @@ import {
   getSensitivityProfile,
   ingredientMatchesSensitivityLabel,
   ingredientWeight,
-  insightConfidenceWeight,
-  insightRiskDelta,
   menuTextHasAny,
   normalizeMenuScoringText,
 } from './internal';
+import { learnedMenuContributors } from './menu-ingredient-learning';
 import { calibrateMenuContributorForProfile, finalizeMenuRiskScore } from './menu-score-finalization';
 import { roleWeightForSignal } from './menu-role-weight';
+
+export { menuIngredientLabels } from './menu-ingredient-learning';
 
 export function menuScoringText(item: MenuItemAnalysis) {
   return normalizeMenuScoringText(
@@ -531,46 +532,6 @@ function modelRubricContributors(item: MenuItemAnalysis, profile: UserProfile | 
   return contributors;
 }
 
-function learnedMenuContributors(item: MenuItemAnalysis, profile: UserProfile | null, insights: IngredientInsight[]): ScoreContributor[] {
-  if (!insights.length) {
-    return [];
-  }
-
-  const learnedInsightWeight = insightConfidenceWeight(profile);
-  const insightMap = new Map(insights.map((insight) => [normalizeKey(insight.ingredientName), insight]));
-  const labels = menuIngredientLabels(item);
-  const contributors: ScoreContributor[] = [];
-  const seen = new Set<string>();
-
-  for (const label of labels) {
-    const key = normalizeKey(label);
-    const insight = insightMap.get(key);
-    if (!insight || seen.has(key) || insight.supportingEvidenceCount <= 0) {
-      continue;
-    }
-
-    const delta = Math.round(insightRiskDelta(insight, learnedInsightWeight) * 0.55);
-    if (Math.abs(delta) < 3) {
-      continue;
-    }
-
-    seen.add(key);
-    contributors.push({
-      key: `learned_${key}`,
-      label: delta > 0 ? `Your history: ${label}` : `Usually gentler: ${label}`,
-      points: clampNumber(delta, -10, 16),
-      evidence: 'learning',
-      source: label,
-      reason:
-        delta > 0
-          ? `${label} has appeared more often around reactive daily reports.`
-          : `${label} has appeared more often around calmer daily reports.`,
-    });
-  }
-
-  return contributors;
-}
-
 // Note: a "stacked triggers" bonus was removed by design (2026-06-11) — it double-counted
 // an already-additive score (the drivers themselves are the stacking). Filters referencing
 // 'stacked_load' remain so historical scan rows still render.
@@ -651,19 +612,4 @@ export function contributorMatchesIngredient(contributor: ScoreContributor, ingr
     const termTokens = normalizeMenuScoringText(term).split(' ').filter(Boolean).map(stem);
     return termTokens.length > 0 && termTokens.every((token) => ingredientTokens.has(token));
   });
-}
-
-export function menuIngredientLabels(item: MenuItemAnalysis) {
-  const labels: string[] = [];
-  const seen = new Set<string>();
-  for (const ingredient of [...item.extractedIngredients, ...item.inferredIngredients]) {
-    const label = (ingredient.rawName || ingredient.canonicalName).trim();
-    const key = normalizeKey(label);
-    if (!label || !key || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    labels.push(label);
-  }
-  return labels;
 }
