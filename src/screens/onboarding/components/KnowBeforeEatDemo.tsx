@@ -1,16 +1,8 @@
 import { KnowBeforeEatResultView } from "./KnowBeforeEatResultViews";
 import { AnalyzingView, ScannerImageView } from "./KnowBeforeEatScanningViews";
+import { type KnowBeforeEatStage } from "./KnowBeforeEatFlow";
 
-export type KnowBeforeEatStage =
-	| "menu-scan"
-	| "menu-loading"
-	| "menu-result"
-	| "food-scan"
-	| "food-loading"
-	| "food-result"
-	| "barcode-scan"
-	| "barcode-loading"
-	| "barcode-result";
+export type { KnowBeforeEatStage } from "./KnowBeforeEatFlow";
 
 const MENU_IMAGE = require("../../../../assets/ui/menu_scanning_onboarding.png");
 const MEAL_IMAGE = require("../../../../assets/ui/meal_scanning_onboarding.png");
