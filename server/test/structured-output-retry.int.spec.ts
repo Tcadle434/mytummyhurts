@@ -469,6 +469,7 @@ describe('structured output retries', () => {
       message: 'openai_request_failed',
       audit: {
         errorCode: 'openai_incomplete_output',
+        openaiResponseId: 'resp-content-filter',
         requestMetadata: { attemptCount: 1 },
       },
     });
@@ -485,10 +486,48 @@ describe('structured output retries', () => {
       message: 'openai_request_failed',
       audit: {
         errorCode: 'openai_missing_output',
+        openaiResponseId: 'resp-invalid-prompt',
         requestMetadata: { attemptCount: 1 },
       },
     });
     expect(invalidPromptFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the final response ID when only an earlier retry has usage', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    vi.resetModules();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { classifyScanImagesWithAudit } = await import('../src/scan/engine/openai');
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'resp-token-limit',
+        status: 'incomplete',
+        incomplete_details: { reason: 'max_output_tokens' },
+        output: [],
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'resp-invalid-prompt-final',
+        status: 'failed',
+        error: { code: 'invalid_prompt', message: 'Invalid prompt.' },
+        output: [],
+      }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(classifyScanImagesWithAudit(['data:image/png;base64,abc'])).rejects.toMatchObject({
+      message: 'openai_request_failed',
+      audit: {
+        errorCode: 'openai_missing_output',
+        openaiResponseId: 'resp-invalid-prompt-final',
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+        requestMetadata: { attemptCount: 2 },
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('retries token-limit and transient response failure envelopes', async () => {

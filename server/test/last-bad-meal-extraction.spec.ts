@@ -212,6 +212,26 @@ describe('LastBadMealExtractionService', () => {
     expect(db.updatedIngredients).toBeNull();
   });
 
+  it('does not record a zero-usage cost event for a refusal with a response ID', async () => {
+    const { db, extractor } = service();
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: 'resp-refusal-no-usage',
+      status: 'completed',
+      output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'cannot comply' }] }],
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      extractor.extractAndPersistIfNeeded('11111111-1111-1111-1111-111111111111'),
+    ).rejects.toThrow('openai_request_failed');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(db.costEventCount).toBe(0);
+    expect(db.costTotalTokens).toBeNull();
+    expect(db.updatedIngredients).toBeNull();
+  });
+
   it('does not persist or mark extraction complete after three invalid responses', async () => {
     const { db, extractor } = service();
     const fetchMock = vi.fn(async () => responseWithOutput({

@@ -174,26 +174,53 @@ export function aggregateOpenAiCostSnapshots(model: string, snapshots: OpenAiCos
   };
 }
 
+export function hasOpenAiTokenUsage(usage: OpenAiUsageSnapshot): boolean {
+  return [
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.totalTokens,
+  ].some((value) => typeof value === 'number' && value > 0);
+}
+
 export function estimateOpenAiRetryCost(
   model: string,
   rawResponses: unknown[],
 ): OpenAiCostSnapshot | null {
-  const snapshots = rawResponses
-    .map((rawResponse) => estimateOpenAiCost(model, extractOpenAiUsage(rawResponse)))
-    .filter((snapshot) => [
-      snapshot.usage.inputTokens,
-      snapshot.usage.outputTokens,
-      snapshot.usage.totalTokens,
-    ].some((value) => typeof value === 'number' && value > 0));
-  if (!snapshots.length) return null;
-  if (snapshots.length === 1) return snapshots[0];
+  const usageSnapshots = rawResponses.map(extractOpenAiUsage);
+  const responseId = usageSnapshots.reduce<string | null>(
+    (latest, usage) => usage.responseId ?? latest,
+    null,
+  );
+  const snapshots = usageSnapshots
+    .filter(hasOpenAiTokenUsage)
+    .map((usage) => estimateOpenAiCost(model, usage));
+  if (!snapshots.length) {
+    if (!responseId) return null;
+    return estimateOpenAiCost(model, {
+      responseId,
+      inputTokens: null,
+      cachedInputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+    });
+  }
+  if (snapshots.length === 1) {
+    return {
+      ...snapshots[0],
+      usage: {
+        ...snapshots[0].usage,
+        responseId,
+      },
+    };
+  }
 
   const aggregate = aggregateOpenAiCostSnapshots(model, snapshots);
   return {
     ...aggregate,
     usage: {
       ...aggregate.usage,
-      responseId: snapshots.at(-1)?.usage.responseId ?? null,
+      responseId,
     },
     pricingSnapshot: {
       ...aggregate.pricingSnapshot,

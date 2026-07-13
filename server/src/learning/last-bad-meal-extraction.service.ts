@@ -9,6 +9,7 @@ import {
 } from '../llm/structured-output';
 import {
   estimateOpenAiRetryCost,
+  hasOpenAiTokenUsage,
 } from '../scan/engine/openaiPricing';
 import {
   LAST_BAD_MEAL_MECHANISM_KEYS,
@@ -194,7 +195,7 @@ export class LastBadMealExtractionService {
         model,
         attempts.map((attempt) => attempt.rawResponseJson),
       );
-      if (!cost) return;
+      if (!cost || !hasOpenAiTokenUsage(cost.usage)) return;
       const usage = cost.usage;
       await this.db.service((sql) => sql`
         insert into public.ai_cost_events
