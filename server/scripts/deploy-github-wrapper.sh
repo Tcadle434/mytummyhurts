@@ -29,7 +29,10 @@ fi
 cd /root/mytummyhurts
 git fetch --quiet origin main
 git cat-file -e "$sha^{commit}"
-git merge-base --is-ancestor "$sha" origin/main
+if [ "$(git rev-parse origin/main)" != "$sha" ]; then
+  echo "deploy: requested commit is not the current origin/main head" >&2
+  exit 1
+fi
 git cat-file -e "$sha:server/scripts/deploy-production.sh"
 
 deploy_script=$(mktemp)

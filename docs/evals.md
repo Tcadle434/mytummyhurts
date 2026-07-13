@@ -16,7 +16,7 @@ Paid live-model checks are intentionally tiered. The full dataset is not run on 
 |---|---|---:|---|
 | Deterministic | Every pull request | 0 live scans | Code, schema, scoring, persistence, and dataset integrity |
 | Smoke | AI-sensitive PR opened non-draft or marked ready; label `run-ai-evals` to run now and on later pushes | 8 cases / 13 expectations | Small live-model canary |
-| Release | Manual production deployment | 27 cases / about 35 expectations | Blocking fixed anchors plus deterministic rotation |
+| Release | Every merge to `main`, or manual production deployment | 27 cases / about 35 expectations | Blocking fixed anchors plus deterministic rotation |
 | Nightly | Monday through Saturday | One of five balanced shards | Full rotating coverage over five nights |
 | Full | Sunday or manual major-model check | 56 cases / 71 expectations | Every food, menu, barcode, and unclear-input case |
 
@@ -135,7 +135,7 @@ key the runner prints a one-line notice and runs local-only.
 
 `.github/workflows/ai-eval-smoke.yml` runs the small paid smoke tier when an AI-sensitive pull request is opened non-draft, becomes ready for review, or receives the `run-ai-evals` label. It does not re-run on pushed commits by default, so a green smoke result can be stale relative to later pushes; keep the `run-ai-evals` label applied to re-run smoke on every push (in-progress runs are cancelled when new commits arrive). The release gate always re-evaluates before deployment either way.
 
-`.github/workflows/deploy-production.yml` is the only automated production deployment path. It first calls `.github/workflows/scan-evals.yml` with the release tier. Deployment cannot start unless retrieval and scan evaluations are green. The workflow then deploys the exact evaluated commit using a restricted SSH credential and verifies `/healthz` and `/readyz`.
+`.github/workflows/deploy-production.yml` is the only automated production deployment path. Every push to protected `main` triggers it automatically, and `workflow_dispatch` remains available for an intentional redeploy. Freshness guards run before the paid release evaluation and again immediately before deployment, so a run stops if its commit is no longer the head of `main`. The restricted VPS command independently enforces the same equality. Re-running a stale run therefore cannot roll production back; dispatch a fresh run to redeploy the current head. The workflow calls `.github/workflows/scan-evals.yml` with the release tier, and deployment cannot start unless retrieval and scan evaluations are green. It then deploys the exact evaluated commit and verifies `/healthz` and `/readyz`.
 
 - Manual: Actions -> scan-evals -> Run workflow and choose a tier.
 - Pre-deploy: the production workflow always calls the release tier.

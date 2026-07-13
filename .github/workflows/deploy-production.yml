@@ -1,6 +1,9 @@
 name: deploy-production
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -11,17 +14,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse to deploy a commit that is no longer the main head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_head=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+          if [ "$main_head" != "$GITHUB_SHA" ]; then
+            echo "This run targets $GITHUB_SHA but main is now at $main_head." >&2
+            echo "Refusing to deploy a stale commit. Dispatch a fresh deploy-production run to deploy the current main head." >&2
+            exit 1
+          fi
+
   release-evals:
     if: github.ref == 'refs/heads/main'
+    needs: preflight
     uses: ./.github/workflows/scan-evals.yml
     with:
       tier: release
       repeat: '1'
     secrets: inherit
 
-  deploy:
+  freshness:
     if: github.ref == 'refs/heads/main'
     needs: release-evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify the evaluated commit is still the main head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_head=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+          if [ "$main_head" != "$GITHUB_SHA" ]; then
+            echo "This run evaluated $GITHUB_SHA but main is now at $main_head." >&2
+            echo "Refusing to deploy a stale commit. The newer main workflow will evaluate and deploy the current head." >&2
+            exit 1
+          fi
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: freshness
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
