@@ -8,6 +8,7 @@
 // local-only pass. `--context nightly` (the crontab path, via
 // run-langsmith-evals.mjs) also arms the >1-band mean-drift alarm.
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path, { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -26,12 +27,15 @@ import {
   writeDriftBaseline,
 } from './langsmith-lib.mjs';
 import { setEvalInsights } from './seed-insights.mjs';
+import { EVAL_TIERS, selectEvalCases } from './eval-selection.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverRoot = join(here, '..', '..');
+const repoRoot = join(serverRoot, '..');
 const datasetRoot = join(serverRoot, 'evals', 'golden');
 const defaultCasesPath = join(datasetRoot, 'cases.json');
 const defaultProfilesPath = join(datasetRoot, 'profiles.json');
+const defaultSuitesPath = join(datasetRoot, 'suites.json');
 const defaultReportsDir = join(serverRoot, 'evals', 'reports');
 const defaultApi = process.env.API_URL || process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -52,6 +56,9 @@ Options:
   --api <url>                 API base URL. Default: API_URL, EXPO_PUBLIC_API_URL, or http://localhost:3000
   --case <id[,id]>            Run only selected case IDs
   --profile <key[,key]>       Run only selected profile keys
+  --tier <name>               Select smoke | release | nightly | full. Default: full
+  --shard-index <n>           Zero-based nightly shard index. Default: 0
+  --seed <value>              Stable release rotation seed. Default: GITHUB_SHA or local
   --repeat <n>                Override repeat count for every expectation
   --output-dir <path>         Report directory. Default: server/evals/reports
   --email <email>             Reuse an eval user. Default: unique throwaway user
@@ -70,6 +77,7 @@ Options:
                               \`seedInsights\` array (personal-evidence cases): their
                               insights are seeded before the scan and cleared after.
                               Default: DATABASE_ADMIN_URL or postgres://mth:mth@localhost:5432/mth
+  --plan                      Print the selected cases without making API calls
   --list                      List available cases and profiles, then exit
   --help                      Show this help
 
@@ -80,7 +88,7 @@ Env:
 Examples:
   npm --prefix server run eval:scans -- --api https://api.mytummyhurts.app --case chicken_curry_001 --repeat 5
   npm --prefix server run eval:scans -- --profile ibs_gerd --repeat 1
-  npm --prefix server run eval:scans -- --api http://localhost:3000 --context ci-gate --repeat 2
+  npm --prefix server run eval:scans -- --api http://localhost:3000 --tier release --context ci-gate --repeat 1
 `);
 }
 
@@ -96,6 +104,7 @@ function parseArgs(argv) {
     api: defaultApi,
     casesPath: defaultCasesPath,
     profilesPath: defaultProfilesPath,
+    suitesPath: defaultSuitesPath,
     outputDir: defaultReportsDir,
     email: process.env.SCAN_EVAL_EMAIL,
     password: process.env.SCAN_EVAL_PASSWORD,
@@ -105,6 +114,8 @@ function parseArgs(argv) {
     dataset: DEFAULT_DATASET,
     driftBaselinePath: defaultDriftBaselinePath,
     updateDriftBaseline: false,
+    tier: 'full',
+    seed: process.env.GITHUB_SHA || process.env.EVAL_ROTATION_SEED || 'local',
     // Only used by cases that carry `seedInsights` (personal-evidence cases);
     // the default suite never touches the database.
     adminUrl: process.env.DATABASE_ADMIN_URL || 'postgres://mth:mth@localhost:5432/mth',
@@ -119,6 +130,10 @@ function parseArgs(argv) {
     }
     if (token === '--list') {
       args.list = true;
+      continue;
+    }
+    if (token === '--plan') {
+      args.plan = true;
       continue;
     }
     if (token === '--judge') {
@@ -142,6 +157,21 @@ function parseArgs(argv) {
     }
     if (token === '--profile') {
       args.profileKeys = parseCsv(next);
+      index += 1;
+      continue;
+    }
+    if (token === '--tier') {
+      args.tier = next;
+      index += 1;
+      continue;
+    }
+    if (token === '--shard-index') {
+      args.shardIndex = Number(next);
+      index += 1;
+      continue;
+    }
+    if (token === '--seed') {
+      args.seed = next;
       index += 1;
       continue;
     }
@@ -199,6 +229,12 @@ function parseArgs(argv) {
 
   if (args.repeat !== undefined && (!Number.isInteger(args.repeat) || args.repeat < 1)) {
     throw new Error('--repeat must be a positive integer');
+  }
+  if (!EVAL_TIERS.includes(args.tier)) {
+    throw new Error(`--tier must be one of: ${EVAL_TIERS.join(', ')}`);
+  }
+  if (args.shardIndex !== undefined && (!Number.isInteger(args.shardIndex) || args.shardIndex < 0)) {
+    throw new Error('--shard-index must be a non-negative integer');
   }
   args.context = normalizeContext(args.context);
   return args;
@@ -316,6 +352,12 @@ export async function imageDataUrl(filePath) {
   return `data:${mimeFromPath(filePath)};base64,${bytes.toString('base64')}`;
 }
 
+function imagePathsForCase(scanCase) {
+  const images = scanCase.images ?? (scanCase.image ? [scanCase.image] : []);
+  const base = scanCase.assetRoot === 'repo' ? repoRoot : datasetRoot;
+  return images.map((entry) => path.resolve(base, entry));
+}
+
 export function summarizeScan(response) {
   const scan = response.scan ?? {};
   const structured = scan.structuredAnalysis ?? {};
@@ -367,6 +409,22 @@ export function summarizeScan(response) {
     ragRetrievalRunId: structured.ragRetrievalRunId ?? null,
     tokensRemaining: response.tokensRemaining,
     learningSyncStatus: response.learningSyncStatus,
+    scanCategory: scan.scanCategory,
+    clarity: structured.clarity ?? null,
+    menu: scan.menuResult
+      ? {
+          title: scan.menuResult.menuTitle,
+          inputPageCount: scan.menuResult.inputPageCount,
+          items: (scan.menuResult.items ?? []).map((item) => ({
+            name: item.name,
+            section: item.section,
+            riskScore: item.riskScore,
+            riskLevel: item.riskLevel,
+            tier: item.tier,
+          })),
+        }
+      : null,
+    groceryProduct: scan.groceryProduct ?? null,
   };
 }
 
@@ -431,16 +489,25 @@ async function judgeScan(run, expectation) {
   };
 }
 
-async function runSingleScan(session, imageUrl, caseId, expectation, runIndex, runId, attempt) {
+async function runSingleScan(session, scanCase, imageUrls, expectation, runIndex, runId, attempt) {
   // Attempt is part of the requestId: failed scans DEDUPE by requestId
   // (begin_scan_analysis returns failed_existing), so a retry must be a
   // genuinely new request or it just replays the original failure.
-  const requestId = `eval-${runId}-${caseId}-${expectation.profile}-${runIndex + 1}-a${attempt}`;
+  const requestId = `eval-${runId}-${scanCase.id}-${expectation.profile}-${runIndex + 1}-a${attempt}`;
+  if (scanCase.barcode) {
+    return session.post('scan-analyze-barcode', {
+      requestId,
+      barcode: scanCase.barcode,
+      sourceType: 'barcode',
+      localDate: new Date().toISOString().slice(0, 10),
+      timezone: 'America/Denver',
+    });
+  }
   return session.post('scan-analyze-image', {
     requestId,
-    imageDataUrls: [imageUrl],
+    imageDataUrls: imageUrls,
     sourceType: 'upload',
-    scanCategory: 'food',
+    ...(scanCase.autoClassify ? {} : { scanCategory: scanCase.scanCategory ?? 'food' }),
     localDate: new Date().toISOString().slice(0, 10),
     timezone: 'America/Denver',
   });
@@ -460,8 +527,7 @@ async function runExpectation(args, session, profile, scanCase, expectation, run
     await setEvalInsights(args.adminUrl, userId, expectation.seedInsights);
   }
 
-  const imagePath = path.resolve(datasetRoot, scanCase.image);
-  const imageUrl = await imageDataUrl(imagePath);
+  const imageUrls = await Promise.all(imagePathsForCase(scanCase).map(imageDataUrl));
   const repeat = args.repeat ?? expectation.repeat ?? scanCase.repeat ?? args.defaultRepeat;
   const exampleKey = `${scanCase.id}::${expectation.profile}`;
   const runs = [];
@@ -474,7 +540,7 @@ async function runExpectation(args, session, profile, scanCase, expectation, run
     for (;;) {
       const startTime = Date.now();
       try {
-        const response = await runSingleScan(session, imageUrl, scanCase.id, expectation, index, runId, attempt);
+        const response = await runSingleScan(session, scanCase, imageUrls, expectation, index, runId, attempt);
         const summary = summarizeScan(response);
         runs.push(summary);
         console.log(`${scanCase.id} [${expectation.profile}] ${index + 1}/${repeat}: ${summary.score} ${summary.level} "${summary.dishName}"`);
@@ -541,7 +607,9 @@ async function runExpectation(args, session, profile, scanCase, expectation, run
     caseId: scanCase.id,
     profile: expectation.profile,
     description: scanCase.description,
-    image: scanCase.image,
+    image: scanCase.image ?? null,
+    images: scanCase.images ?? null,
+    inputKind: scanCase.barcode ? 'barcode' : scanCase.images?.length > 1 ? 'multi-image' : 'image',
     expectation,
     validation,
     judges,
@@ -556,6 +624,8 @@ function markdownReport(output) {
     `API: \`${output.api}\``,
     `User: \`${output.user.email}\``,
     `Context: \`${output.context}\`${output.langsmithExperiment ? ` — LangSmith experiment \`${output.langsmithExperiment}\`` : ''}`,
+    `Tier: \`${output.selection.tier}\` (${output.selection.caseCount} case(s))`,
+    `Commit: \`${output.metadata.commitSha}\``,
     `Passed: **${output.summary.passed}/${output.summary.total}**`,
     '',
     '| Case | Profile | Result | Scores | Bands | Notes |',
@@ -592,7 +662,8 @@ async function connectLangsmith(args, examples, runId) {
     }
     console.log(
       `langsmith: recording experiment "${reporter.experimentName}" [context=${args.context}] ` +
-        `(dataset "${args.dataset}": ${reporter.sync.added} new example(s), ${reporter.sync.total} total)`,
+        `(dataset "${args.dataset}": ${reporter.sync.added} new, ${reporter.sync.updated} updated, ` +
+        `${reporter.sync.total} total example(s))`,
     );
     return reporter;
   } catch (err) {
@@ -609,9 +680,9 @@ async function connectLangsmith(args, examples, runId) {
 const DRIFT_WORST_MOVERS_SHOWN = 10;
 
 async function runDriftCheck(args, results, experimentName) {
-  if (args.caseIds?.length || args.profileKeys?.length) {
-    console.warn('drift: skipped — a filtered run (--case/--profile) must not seed, update, or judge the full-suite baseline.');
-    return 0;
+  const partial = !args.selection.isFull || args.profileKeys?.length;
+  if (partial && args.updateDriftBaseline) {
+    throw new Error('a filtered or tiered run cannot update the full-suite drift baseline');
   }
   const outcomes = results.flatMap((result) =>
     result.runs
@@ -621,6 +692,10 @@ async function runDriftCheck(args, results, experimentName) {
   const current = { experiment: experimentName, ...bandMeansFromOutcomes(outcomes) };
   const baseline = await readDriftBaseline(args.driftBaselinePath);
   if (!baseline) {
+    if (partial) {
+      console.warn('drift: no baseline exists; a partial nightly shard cannot seed one, so drift comparison was skipped.');
+      return 0;
+    }
     await writeDriftBaseline(args.driftBaselinePath, current);
     console.log(`Drift baseline seeded at ${args.driftBaselinePath} (${Object.keys(current.perKey).length} example keys).`);
     return 0;
@@ -659,6 +734,7 @@ export async function runScanEvals(argv = process.argv) {
 
   const casesDoc = await readJson(args.casesPath);
   const profilesDoc = await readJson(args.profilesPath);
+  const suitesDoc = await readJson(args.suitesPath);
   args.defaultRepeat = Number(casesDoc.defaultRepeat ?? 3);
 
   if (args.list) {
@@ -666,19 +742,34 @@ export async function runScanEvals(argv = process.argv) {
     return;
   }
 
-  let cases = (casesDoc.cases ?? []).filter((entry) => entry.enabled !== false);
-  if (args.caseIds?.length) {
-    const wanted = new Set(args.caseIds);
-    cases = cases.filter((entry) => wanted.has(entry.id));
-  }
+  const selected = selectEvalCases(casesDoc.cases ?? [], suitesDoc, {
+    tier: args.tier,
+    shardIndex: args.shardIndex,
+    seed: args.seed,
+    caseIds: args.caseIds,
+  });
+  const cases = selected.cases;
+  args.selection = selected.metadata;
   if (!cases.length) throw new Error('No scan eval cases selected');
+
+  if (args.plan) {
+    const expectationCount = cases.reduce(
+      (total, scanCase) => total + (scanCase.expectations ?? []).filter(
+        (entry) => !args.profileKeys?.length || args.profileKeys.includes(entry.profile),
+      ).length,
+      0,
+    );
+    console.log(JSON.stringify({ selection: args.selection, expectationCount }, null, 2));
+    return;
+  }
 
   const runId = `scan-eval-${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)}-${randomUUID().slice(0, 8)}`;
   if (args.api.includes('api.mytummyhurts.app') && (!args.email || !args.password)) {
     throw new Error('Production scan evals require SCAN_EVAL_EMAIL/SCAN_EVAL_PASSWORD or --email/--password for an active eval account.');
   }
 
-  const examples = buildExamples(casesDoc, profilesDoc, args.caseIds?.length ? new Set(args.caseIds) : undefined);
+  const selectedIds = new Set(cases.map((entry) => entry.id));
+  const examples = buildExamples(casesDoc, profilesDoc, selectedIds);
   const reporter = await connectLangsmith(args, examples, runId);
 
   const email = args.email || `codex-scan-eval+${runId}@mytummyhurts.app`;
@@ -710,11 +801,17 @@ export async function runScanEvals(argv = process.argv) {
     runId,
     api: args.api,
     context: args.context,
+    selection: args.selection,
     langsmithExperiment: reporter?.experimentName ?? null,
     dataset: {
       casesPath: path.relative(serverRoot, args.casesPath),
       profilesPath: path.relative(serverRoot, args.profilesPath),
+      suitesPath: path.relative(serverRoot, args.suitesPath),
+      casesVersion: casesDoc.version ?? null,
+      suitesVersion: suitesDoc.version ?? null,
+      labelPolicy: suitesDoc.labelPolicy ?? null,
     },
+    metadata: buildRunMetadata(args),
     user: {
       id: session.user?.id,
       email,
@@ -739,6 +836,36 @@ export async function runScanEvals(argv = process.argv) {
       : 0;
 
   process.exitCode = summary.failed > 0 || driftExitCode !== 0 ? 1 : 0;
+}
+
+function gitRevision(spec) {
+  try {
+    return execFileSync('git', ['rev-parse', spec], { cwd: repoRoot, encoding: 'utf8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function buildRunMetadata(args) {
+  return {
+    generatedAt: new Date().toISOString(),
+    commitSha: process.env.GITHUB_SHA || gitRevision('HEAD'),
+    corpusTreeSha: gitRevision('HEAD:server/data/corpus'),
+    githubRunId: process.env.GITHUB_RUN_ID ?? null,
+    models: {
+      extraction: process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini',
+      menu: process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini',
+      adjudication: process.env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-5-mini',
+      embedding: process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
+    },
+    promptVersion: process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'n/a',
+    featureFlags: {
+      ragRetrieval: process.env.RAG_RETRIEVAL_ENABLED ?? 'false',
+      ragInfluence: process.env.RAG_INFLUENCE_ENABLED ?? 'false',
+      riskAdjudication: process.env.SCAN_RISK_ADJUDICATION_ENABLED ?? 'false',
+    },
+    repeatOverride: args.repeat ?? null,
+  };
 }
 
 // Only auto-run when invoked directly (`node run-scan-evals.mjs`); stay a pure

@@ -128,4 +128,19 @@ describe('scan-analyze-image (end-to-end orchestration)', () => {
       where scan_id = ${out.scanId} and input_kind = 'image' and storage_path is not null`;
     expect(inputs[0].c).toBeGreaterThan(0);
   });
+
+  it('persists the category selected by automatic food versus menu routing', async () => {
+    const out = await analysis.analyzeImage({
+      userId: U,
+      requestId: 'auto-menu-e2e-1',
+      imageDataUrls: [PNG, PNG],
+      sourceType: 'camera',
+    });
+
+    expect(out.scan.scanCategory).toBe('menu');
+    expect(out.scan.menuResult).toBeDefined();
+    const [scan] = await admin`
+      select scan_category from public.scans where id = ${out.scanId}`;
+    expect(scan.scan_category).toBe('menu');
+  });
 });

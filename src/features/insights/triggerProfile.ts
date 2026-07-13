@@ -258,7 +258,7 @@ export function buildTriggerProfileViewState(
       l.insight.combinedRiskScore - r.insight.combinedRiskScore,
   );
 
-  const order: Array<Exclude<TriggerStatus, 'watching'>> = ['confirmed', 'suspect', 'cleared', 'safe'];
+  const order: Exclude<TriggerStatus, 'watching'>[] = ['confirmed', 'suspect', 'cleared', 'safe'];
   const sections = order
     .filter((status) => sectionsByStatus[status].length > 0)
     .map((status) => ({ status, ...SECTION_META[status], entries: sectionsByStatus[status] }));

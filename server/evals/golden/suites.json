@@ -1,0 +1,67 @@
+{
+  "version": "golden_suites_v1",
+  "labelPolicy": {
+    "current": "model_ratcheted_regression",
+    "meaning": "Current image expectations detect behavioral regressions. They are not an independently reviewed accuracy holdout.",
+    "productionImagesAllowed": false
+  },
+  "tiers": {
+    "smoke": {
+      "description": "Small live-model canary for AI-sensitive pull requests.",
+      "maxCases": 8,
+      "caseIds": [
+        "pepperoni_pizza_001",
+        "chicken_curry_001",
+        "plain_white_rice_commons_001",
+        "onion_rings_commons_001",
+        "ice_cream_sundae_commons_001",
+        "sashimi_commons_001",
+        "kimchi_plate_commons_001",
+        "synthetic_reactive_evidence_001"
+      ]
+    },
+    "release": {
+      "description": "Blocking production gate: fixed critical anchors plus a deterministic rotating sample.",
+      "maxCases": 27,
+      "rotatingCount": 5,
+      "caseIds": [
+        "pepperoni_pizza_001",
+        "chicken_curry_001",
+        "plain_white_rice_commons_001",
+        "onion_rings_commons_001",
+        "ice_cream_sundae_commons_001",
+        "sashimi_commons_001",
+        "kimchi_plate_commons_001",
+        "synthetic_reactive_evidence_001",
+        "coffee_mugs_commons_001",
+        "white_bean_burritos_commons_001",
+        "rice_beans_commons_001",
+        "watermelon_commons_001",
+        "spaghetti_tomato_commons_001",
+        "caesar_salad_commons_001",
+        "orange_juice_commons_001",
+        "cola_soda_commons_001",
+        "brownie_commons_001",
+        "mac_cheese_commons_001",
+        "synthetic_calm_evidence_001",
+        "synthetic_coldstart_001",
+        "sushi_den_menu_001",
+        "non_food_onboarding_screen_001"
+      ]
+    },
+    "nightly": {
+      "description": "Daily rotating shard. Every non-anchor case runs once per five-night cycle.",
+      "maxCases": 18,
+      "shardCount": 5,
+      "anchorCaseIds": [
+        "pepperoni_pizza_001",
+        "plain_white_rice_commons_001",
+        "kimchi_plate_commons_001",
+        "synthetic_reactive_evidence_001"
+      ]
+    },
+    "full": {
+      "description": "Every enabled case. Reserved for weekly and major AI-system changes."
+    }
+  }
+}

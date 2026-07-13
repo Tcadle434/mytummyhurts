@@ -23,14 +23,12 @@ import {
   GUT_SCORE_ALGORITHM_VERSION,
   PROFILE_LEARNING_STAGE_THRESHOLDS,
   RISK_LEVEL_HIGH_MIN,
-  RISK_LEVEL_MEDIUM_MIN,
   RISK_LEVEL_MILD_MAX,
   baselineFrequencyPenalty,
   baselineSeverityPenalty,
   clamp,
   clampNumber,
   combinedRiskScore,
-  confidenceRank,
   declaredSensitivityProfiles,
   frequencyRiskIndex,
   ingredientConditionImpacts,
@@ -884,17 +882,17 @@ function localDateMinusDays(value: string, days: number) {
 }
 
 export function computeProfileLearningProgress(
-  scans: Array<{
+  scans: {
     id?: string;
     localDate?: string;
     createdAt?: string;
     completedAt?: string;
     scanCategory?: string;
     consumptionStatus?: string;
-  }>,
-  dailyReports: Array<{ localDate: string }>,
+  }[],
+  dailyReports: { localDate: string }[],
 ): ProfileLearningProgress {
-  const scansByDate = new Map<string, Array<{ id: string }>>();
+  const scansByDate = new Map<string, { id: string }[]>();
 
   scans.forEach((scan, index) => {
     if ((scan.scanCategory ?? 'food') !== 'food' || scan.consumptionStatus === 'skipped') {

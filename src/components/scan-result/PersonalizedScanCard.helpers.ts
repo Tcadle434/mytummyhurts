@@ -72,7 +72,7 @@ export function buildIngredientHistoryModel(
 	limit = 4,
 ): IngredientHistoryModel {
 	const seen = new Set<string>();
-	const evidenced: Array<IngredientHistoryDisplayRow & { outcomes: number }> = [];
+	const evidenced: (IngredientHistoryDisplayRow & { outcomes: number })[] = [];
 	let newCount = 0;
 
 	for (const ingredient of ingredients ?? []) {

@@ -2,9 +2,9 @@ name: server-ci
 
 on:
   push:
-    paths: ['server/**']
+    branches: [main]
+    paths: ['server/**', 'packages/shared-domain/**', '.github/workflows/server-ci.yml']
   pull_request:
-    paths: ['server/**']
 
 jobs:
   test:
@@ -55,3 +55,11 @@ jobs:
       - run: npm run build
       # Deterministic scoring goldens must stay green (no false positives).
       - run: node scripts/eval/run.mjs --offline
+      # Tier selection and dataset integrity are zero-token checks.
+      - run: node scripts/eval/run-scan-evals.mjs --tier smoke --plan
+      - run: node scripts/eval/run-scan-evals.mjs --tier release --seed "$GITHUB_SHA" --plan
+      - run: node scripts/eval/run-scan-evals.mjs --tier full --plan
+      - run: |
+          for shard in 0 1 2 3 4; do
+            node scripts/eval/run-scan-evals.mjs --tier nightly --shard-index "$shard" --plan
+          done

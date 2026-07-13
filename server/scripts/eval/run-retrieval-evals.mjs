@@ -4,6 +4,8 @@ import path, { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 
+import { evaluateRetrievalCase, summarizeRetrievalResults } from './retrieval-eval-lib.mjs';
+
 config();
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -64,46 +66,6 @@ async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'));
 }
 
-function contentForChunk(chunk) {
-  return [
-    chunk.title,
-    chunk.sourceName,
-    chunk.sourceUrl,
-    chunk.content,
-    ...(chunk.tags ?? []),
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
-function evaluateCase(testCase, chunks) {
-  const chunkTexts = chunks.map(contentForChunk);
-  const relevantChunks = chunks.filter((chunk) => {
-    const text = contentForChunk(chunk);
-    const requiredOk = (testCase.requiredConcepts ?? []).every((concept) => text.includes(String(concept).toLowerCase()));
-    const anyOk = !(testCase.anyConcepts ?? []).length || (testCase.anyConcepts ?? []).some((concept) => text.includes(String(concept).toLowerCase()));
-    return requiredOk && anyOk;
-  });
-  const missingRequired = (testCase.requiredConcepts ?? []).filter((concept) => !chunkTexts.some((text) => text.includes(String(concept).toLowerCase())));
-  const anyHits = (testCase.anyConcepts ?? []).filter((concept) => chunkTexts.some((text) => text.includes(String(concept).toLowerCase())));
-  const minRelevant = Number(testCase.minRelevantChunks ?? 1);
-  const errors = [];
-  if (missingRequired.length) errors.push(`missing required concept(s): ${missingRequired.join(', ')}`);
-  if ((testCase.anyConcepts ?? []).length && anyHits.length === 0) errors.push(`none of anyConcepts appeared: ${testCase.anyConcepts.join(', ')}`);
-  if (relevantChunks.length < minRelevant) errors.push(`only ${relevantChunks.length}/${minRelevant} relevant chunk(s)`);
-  return {
-    passed: errors.length === 0,
-    errors,
-    relevantChunkCount: relevantChunks.length,
-    topChunks: chunks.map((chunk, index) => ({
-      rank: index + 1,
-      id: chunk.id,
-      title: chunk.title,
-      sourceName: chunk.sourceName,
-      sourceUrl: chunk.sourceUrl,
-      preview: String(chunk.content ?? '').slice(0, 240),
-    })),
-  };
-}
-
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -132,21 +94,29 @@ async function main() {
       const { chunks } = await retrieval.retrieve({
         ingredients: testCase.ingredients ?? [],
         conditions: testCase.conditions ?? [],
-        riskModifiers: testCase.riskModifiers ?? [],
+        concepts: testCase.concepts ?? [],
       }, topK);
-      const validation = evaluateCase(testCase, chunks);
+      const validation = evaluateRetrievalCase(testCase, chunks, topK, casesDoc.thresholds);
       results.push({ id: testCase.id, query: testCase, validation });
-      console.log(`${validation.passed ? 'PASS' : 'FAIL'} ${testCase.id}: ${validation.relevantChunkCount}/${topK} relevant`);
+      console.log(
+        `${validation.passed ? 'PASS' : 'FAIL'} ${testCase.id}: ` +
+          `P@${topK}=${validation.metrics.precisionAtK} R@${topK}=${validation.metrics.recallAtK} ` +
+          `MRR=${validation.metrics.reciprocalRank} nDCG=${validation.metrics.ndcgAtK}`,
+      );
       for (const error of validation.errors) console.log(`  - ${error}`);
     }
 
     const runId = `retrieval-eval-${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)}`;
-    const summary = {
-      total: results.length,
-      passed: results.filter((result) => result.validation.passed).length,
-      failed: results.filter((result) => !result.validation.passed).length,
+    const summary = summarizeRetrievalResults(results);
+    const output = {
+      runId,
+      datasetVersion: casesDoc.version,
+      embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
+      commitSha: process.env.GITHUB_SHA ?? process.env.EVAL_COMMIT_SHA ?? 'unknown',
+      corpusTreeSha: process.env.EVAL_CORPUS_VERSION ?? 'unknown',
+      summary,
+      results,
     };
-    const output = { runId, summary, results };
     await mkdir(args.outputDir, { recursive: true });
     const outputPath = join(args.outputDir, `${runId}.json`);
     await writeFile(outputPath, JSON.stringify(output, null, 2));

@@ -1,11 +1,28 @@
 # Evals
 
-MyTummyHurts uses these eval layers:
+MyTummyHurts uses these evaluation layers:
 
 1. **Golden scan image evals**: blocking score/mechanism checks for real food images.
 2. **Retrieval evals**: checks whether RAG retrieves the right nutrition concepts.
 3. **Generation judge evals**: optional LLM-as-judge checks for grounded, non-invented explanations, using the [openevals](https://github.com/langchain-ai/openevals) package (see below).
-4. **Unified LangSmith telemetry**: every golden-scan pass records itself as a LangSmith experiment when `LANGSMITH_API_KEY` is set, tagged with **why it ran** (`--context`), so score/band/mechanism trends across model and prompt bumps are never opt-in.
+4. **Replay and integration tests**: zero-token coverage for schemas, retries, normalization, scoring, persistence, and rendering contracts.
+5. **Unified LangSmith telemetry**: live golden-scan passes are recorded as LangSmith experiments when `LANGSMITH_API_KEY` is set.
+
+## Evaluation cadence
+
+Paid live-model checks are intentionally tiered. The full dataset is not run on every pull request.
+
+| Tier | Trigger | Current size | Purpose |
+|---|---|---:|---|
+| Deterministic | Every pull request | 0 live scans | Code, schema, scoring, persistence, and dataset integrity |
+| Smoke | AI-sensitive PR when marked ready, or label `run-ai-evals` | 8 cases / 13 expectations | Small live-model canary |
+| Release | Manual production deployment | 27 cases / about 35 expectations | Blocking fixed anchors plus deterministic rotation |
+| Nightly | Monday through Saturday | One of five balanced shards | Full rotating coverage over five nights |
+| Full | Sunday or manual major-model check | 56 cases / 71 expectations | Every food, menu, barcode, and unclear-input case |
+
+`server/evals/golden/suites.json` is the source of truth for budgets, fixed anchors, release rotation, and nightly shards. Release rotation is seeded by the evaluated commit SHA, so reruns of the same commit select the same cases.
+
+Current food-image expectations are explicitly classified as `model_ratcheted_regression`. They are useful drift and regression labels, but they are not represented as an independently reviewed medical-accuracy holdout. Independently reviewed labels should be added as a separate frozen holdout rather than silently replacing historical expectations.
 
 ## Golden Scan Images
 
@@ -16,6 +33,7 @@ server/evals/golden/
   images/
   cases.json
   profiles.json
+  suites.json
 ```
 
 Run all golden scan evals against a **local** server (preferred — tests the
@@ -58,6 +76,14 @@ Run one case:
 npm --prefix server run eval:scans -- --api https://api.mytummyhurts.app --case chicken_curry_001 --repeat 5
 ```
 
+Preview a tier without starting the API or spending tokens:
+
+```bash
+npm --prefix server run eval:scans -- --tier smoke --plan
+npm --prefix server run eval:scans -- --tier release --seed <commit-sha> --plan
+npm --prefix server run eval:scans -- --tier nightly --shard-index 0 --plan
+```
+
 List cases and reusable profiles:
 
 ```bash
@@ -73,6 +99,8 @@ Each case should define:
 - forbidden mechanisms
 - required ingredients (substring needles over extracted rawName/canonicalName)
 - forbidden ingredients (classic-hallucination guards, e.g. no `garlic` on plain rice)
+- expected persisted scan category and clarity
+- menu page count, item coverage, score spread, and false-low item guards
 
 Use ranges, not exact scores. A real scan can vary because image extraction can
 vary — but an expectation that spans every band asserts nothing. Keep score
@@ -101,22 +129,22 @@ recorded as a LangSmith experiment tagged with `--context` (default `triage`) �
 see [Unified LangSmith telemetry](#unified-langsmith-telemetry). Without the
 key the runner prints a one-line notice and runs local-only.
 
-### Deploy gate (CI)
+### CI and deploy gates
 
-`.github/workflows/scan-evals.yml` is the blocking gate: it boots the server
-from the checkout (pgvector + MinIO services, `OPENAI_API_KEY` from repo
-secrets, `DEMO_MODE` deliberately unset) and runs the full golden suite against
-`http://localhost:3000` with `--context ci-gate --repeat 2`. A red suite exits
-1 and fails the job.
+`.github/workflows/server-ci.yml` is the zero-token pull-request gate. It runs the full server test/build pipeline, the offline scoring goldens, and dry plans for every live tier and nightly shard.
 
-- Manual: Actions -> scan-evals -> Run workflow (optional `repeat` / `cases` inputs).
-- Pre-deploy: call it from a deploy workflow via `workflow_call` (pass the
-  `OPENAI_API_KEY` secret). Deploys must not proceed on a red suite.
+`.github/workflows/ai-eval-smoke.yml` runs the small paid smoke tier only when an AI-sensitive pull request becomes ready for review or receives the `run-ai-evals` label. It does not run on every pushed commit.
+
+`.github/workflows/deploy-production.yml` is the only automated production deployment path. It first calls `.github/workflows/scan-evals.yml` with the release tier. Deployment cannot start unless retrieval and scan evaluations are green. The workflow then deploys the exact evaluated commit using a restricted SSH credential and verifies `/healthz` and `/readyz`.
+
+- Manual: Actions -> scan-evals -> Run workflow and choose a tier.
+- Pre-deploy: the production workflow always calls the release tier.
+- Scheduled: one nightly shard Monday through Saturday; the complete suite on Sunday.
 - Telemetry: configure the optional `LANGSMITH_API_KEY` secret and each gate
   run shows up in LangSmith tagged `context=ci-gate`; with the secret absent
   the runner prints a skip notice and the gate is unaffected.
-- Cost: ~130 real extractions per run (~$0.50-$1.50), so it is dispatch/call
-  only — never on every push. Reports upload as the `scan-eval-reports` artifact.
+- Production parity: the workflow ingests the versioned curated corpus and enables retrieval, bounded RAG influence, and risk adjudication before scanning.
+- Reports: JSON and Markdown artifacts include commit SHA, corpus tree SHA, model identities, prompt version, feature flags, tier, shard, and repeat count.
 
 ## Adding A New Image
 
@@ -143,7 +171,16 @@ npm --prefix server run build
 npm --prefix server run eval:retrieval
 ```
 
-These tests check that RAG returns chunks containing expected concepts, such as `FODMAP`, `fructan`, `reflux`, or `lactose`.
+The retrieval dataset contains labeled positive and wrong-condition document expectations across IBS, GERD, lactose intolerance, celiac disease, histamine sensitivity, and cross-condition mechanisms. The runner reports and gates on:
+
+- precision at K
+- recall at K
+- reciprocal rank
+- nDCG at K
+- forbidden-document hits
+- required evidence direction when applicable
+
+The live workflow runs retrieval against a freshly ingested copy of the exact curated corpus from the evaluated commit. Fake-embedder integration tests remain useful for wiring, but they are not treated as retrieval-quality evidence.
 
 ## Optional LLM Judge
 
@@ -246,12 +283,7 @@ keeps the old contract that a missing `LANGSMITH_API_KEY` is a free no-op
 (notice + exit 0) rather than a paid local-only pass. All of its old flags
 still work.
 
-`server/scripts/eval/nightly-langsmith.sh` wraps the run for cron (it refuses
-to no-op when `LANGSMITH_API_KEY` is missing). VPS crontab entry (unchanged):
-
-```cron
-15 9 * * * cd /root/app && LANGSMITH_API_KEY=... SCAN_EVAL_EMAIL=codex-scan-stability@mytummyhurts.app SCAN_EVAL_PASSWORD=... bash server/scripts/eval/nightly-langsmith.sh >> /var/log/mth-nightly-evals.log 2>&1
-```
+Nightly and weekly execution is owned by `.github/workflows/scan-evals.yml`, not a VPS cron. GitHub provides failure visibility, artifacts, commit identity, and encrypted secrets in one place. The older VPS wrapper remains available for local triage, but it is not the production scheduler.
 
 ## Mining Production Cases
 

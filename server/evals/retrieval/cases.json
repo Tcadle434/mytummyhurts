@@ -1,30 +1,195 @@
 {
-  "version": "retrieval_v1",
+  "version": "retrieval_v2",
+  "labelPolicy": "Queries are mapped to independently authored curated corpus documents by subject and condition. Document-title relevance labels are deterministic and reviewable.",
   "defaultTopK": 8,
+  "thresholds": {
+    "minPrecisionAtK": 0.125,
+    "minRecallAtK": 0.5,
+    "minReciprocalRank": 0.2,
+    "minNdcgAtK": 0.3
+  },
   "cases": [
     {
-      "id": "ibs_wheat_allium",
-      "ingredients": ["wheat bread", "onion", "garlic"],
+      "id": "ibs_garlic_onion",
+      "ingredients": ["garlic", "onion"],
       "conditions": ["IBS"],
-      "requiredConcepts": ["fodmap", "fructan"],
-      "anyConcepts": ["wheat", "garlic", "onion", "allium"],
-      "minRelevantChunks": 2
+      "concepts": ["fructan", "FODMAP"],
+      "expectedDocuments": ["Garlic, Onion, and the Allium Family", "IBS and High-FODMAP Trigger Foods"],
+      "forbiddenDocuments": ["GERD and Acid Reflux Dietary Triggers"],
+      "requiredDirections": ["raises"]
     },
     {
-      "id": "gerd_fat_tomato",
-      "ingredients": ["tomato sauce", "cheese", "pepperoni"],
-      "conditions": ["GERD / Acid reflux"],
-      "requiredConcepts": ["reflux"],
-      "anyConcepts": ["tomato", "fat", "fried", "pepperoni", "trigger"],
-      "minRelevantChunks": 2
+      "id": "ibs_wheat_fructan",
+      "ingredients": ["wheat bread", "rye pasta"],
+      "conditions": ["IBS"],
+      "concepts": ["fructan"],
+      "expectedDocuments": ["Fructans in Wheat and Rye", "Gluten vs. Fructan"],
+      "forbiddenDocuments": ["Celiac Disease"]
+    },
+    {
+      "id": "celiac_trace_gluten",
+      "ingredients": ["wheat", "barley malt", "soy sauce"],
+      "conditions": ["Celiac disease"],
+      "concepts": ["cross-contamination", "trace gluten"],
+      "expectedDocuments": ["Celiac Disease"],
+      "forbiddenDocuments": ["IBS and High-FODMAP Trigger Foods"]
     },
     {
       "id": "lactose_milk_ice_cream",
       "ingredients": ["milk", "ice cream", "cream"],
       "conditions": ["Lactose intolerance"],
-      "requiredConcepts": ["lactose"],
-      "anyConcepts": ["milk", "dairy", "ice cream"],
-      "minRelevantChunks": 2
+      "concepts": ["lactose"],
+      "expectedDocuments": ["Lactose Intolerance and Dairy", "Lactose Content Varies", "Full-Fat Dairy, Reflux"]
+    },
+    {
+      "id": "lactose_aged_cheese",
+      "ingredients": ["aged cheddar", "parmesan", "lactose-free milk"],
+      "conditions": ["Lactose intolerance"],
+      "concepts": ["low lactose"],
+      "expectedDocuments": ["Lactose Content Varies", "Lactose-Free Milk, Cultured Dairy"],
+      "forbiddenDocuments": ["GERD and Acid Reflux Dietary Triggers"],
+      "requiredDirections": ["lowers"]
+    },
+    {
+      "id": "gerd_tomato_citrus",
+      "ingredients": ["tomato sauce", "orange juice", "lemon"],
+      "conditions": ["GERD"],
+      "concepts": ["acidic"],
+      "expectedDocuments": ["Acidic Foods", "GERD and Acid Reflux Dietary Triggers"],
+      "forbiddenDocuments": ["Wine, Vinegar, Tomato, and Freshness"]
+    },
+    {
+      "id": "gerd_fried_fat",
+      "ingredients": ["french fries", "fried chicken", "rich cream sauce"],
+      "conditions": ["GERD"],
+      "concepts": ["fat", "fried"],
+      "expectedDocuments": ["Fat and Fried Foods", "GERD and Acid Reflux Dietary Triggers"],
+      "forbiddenDocuments": ["Beans, Lentils, Chickpeas, and Soy"]
+    },
+    {
+      "id": "gerd_coffee",
+      "ingredients": ["coffee", "espresso"],
+      "conditions": ["GERD"],
+      "concepts": ["caffeine", "reflux"],
+      "expectedDocuments": ["Caffeine and Coffee", "Caffeine Across Conditions"]
+    },
+    {
+      "id": "ibs_gerd_caffeine",
+      "ingredients": ["coffee", "energy drink"],
+      "conditions": ["IBS", "GERD"],
+      "concepts": ["caffeine", "motility", "LES"],
+      "expectedDocuments": ["Caffeine Across Conditions"]
+    },
+    {
+      "id": "gerd_beer_alcohol",
+      "ingredients": ["beer", "wine"],
+      "conditions": ["GERD"],
+      "concepts": ["alcohol", "carbonation"],
+      "expectedDocuments": ["Carbonation and Alcohol", "Alcohol and the Gut"]
+    },
+    {
+      "id": "gerd_chocolate_mint",
+      "ingredients": ["chocolate", "peppermint"],
+      "conditions": ["GERD"],
+      "concepts": ["LES relaxation"],
+      "expectedDocuments": ["Chocolate and Mint"]
+    },
+    {
+      "id": "gerd_spicy",
+      "ingredients": ["chili pepper", "hot sauce", "curry"],
+      "conditions": ["GERD"],
+      "concepts": ["capsaicin"],
+      "expectedDocuments": ["Spicy Foods and Capsaicin"]
+    },
+    {
+      "id": "gerd_late_large_meal",
+      "ingredients": ["large late dinner"],
+      "conditions": ["GERD"],
+      "concepts": ["meal size", "lying down"],
+      "expectedDocuments": ["Meal Size and Timing"]
+    },
+    {
+      "id": "ibs_legumes_gos",
+      "ingredients": ["beans", "lentils", "chickpeas"],
+      "conditions": ["IBS"],
+      "concepts": ["GOS"],
+      "expectedDocuments": ["Beans, Lentils, Chickpeas, and Soy"]
+    },
+    {
+      "id": "ibs_excess_fructose",
+      "ingredients": ["apple", "pear", "honey"],
+      "conditions": ["IBS"],
+      "concepts": ["excess fructose"],
+      "expectedDocuments": ["Excess Fructose"]
+    },
+    {
+      "id": "ibs_polyols",
+      "ingredients": ["mushrooms", "cauliflower", "sugar-free gum"],
+      "conditions": ["IBS"],
+      "concepts": ["sorbitol", "mannitol"],
+      "expectedDocuments": ["Sorbitol, Mannitol, and Sugar-Free Sweeteners"]
+    },
+    {
+      "id": "ibs_gentle_foods",
+      "ingredients": ["rice", "banana", "oats"],
+      "conditions": ["IBS"],
+      "concepts": ["gentle", "low-FODMAP"],
+      "expectedDocuments": ["Gentle Low-FODMAP Foods"],
+      "requiredDirections": ["lowers"]
+    },
+    {
+      "id": "gerd_gentle_foods",
+      "ingredients": ["lean chicken", "oatmeal", "banana", "melon"],
+      "conditions": ["GERD"],
+      "concepts": ["gentle"],
+      "expectedDocuments": ["Gentler Choices for Reflux"],
+      "requiredDirections": ["lowers"]
+    },
+    {
+      "id": "histamine_aged_fermented",
+      "ingredients": ["kimchi", "aged cheese", "salami"],
+      "conditions": ["Histamine intolerance"],
+      "concepts": ["fermented", "aged"],
+      "expectedDocuments": ["Histamine, Aged and Fermented Foods"]
+    },
+    {
+      "id": "histamine_wine_vinegar_tomato",
+      "ingredients": ["red wine", "vinegar", "tomato"],
+      "conditions": ["Histamine intolerance"],
+      "concepts": ["histamine"],
+      "expectedDocuments": ["Wine, Vinegar, Tomato, and Freshness"]
+    },
+    {
+      "id": "ibs_fodmap_preparation",
+      "ingredients": ["garlic-infused oil", "canned rinsed chickpeas"],
+      "conditions": ["IBS"],
+      "concepts": ["preparation", "FODMAP"],
+      "expectedDocuments": [
+        "Preparation and FODMAPs",
+        "Beans, Lentils, Chickpeas, and Soy",
+        "Garlic, Onion, and the Allium Family"
+      ]
+    },
+    {
+      "id": "ibs_fodmap_stacking",
+      "ingredients": ["wheat", "onion", "apple"],
+      "conditions": ["IBS"],
+      "concepts": ["stacking", "portion size"],
+      "expectedDocuments": ["FODMAP Stacking and Portion Size"]
+    },
+    {
+      "id": "gerd_full_fat_dairy",
+      "ingredients": ["whole milk", "cream", "ice cream"],
+      "conditions": ["GERD"],
+      "concepts": ["full-fat dairy", "reflux"],
+      "expectedDocuments": ["Full-Fat Dairy, Reflux"]
+    },
+    {
+      "id": "ibs_emulsifier_uncertainty",
+      "ingredients": ["carboxymethylcellulose", "polysorbate-80"],
+      "conditions": ["IBS"],
+      "concepts": ["emulsifier", "uncertain evidence"],
+      "expectedDocuments": ["Dietary Emulsifiers"]
     }
   ]
 }
