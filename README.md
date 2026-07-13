@@ -25,7 +25,8 @@ If you want local StoreKit purchase testing in Xcode, attach [MyTummyHurts.store
 
 - Full product shell implemented in React Native with Expo prebuild architecture
 - Long onboarding flow, paywall orchestration, auth shell, scan flow, results, history, follow-up, insights, and settings
-- Self-hosted NestJS + Postgres/pgvector backend under `server/` (auth, scans, RAG, learning, observability, scheduled-maintenance worker); 39-migration schema history under `server/db/migrations/`
+- Self-hosted NestJS + Postgres/pgvector backend under `server/` (auth, durable asynchronous scans, RAG, learning, observability, and background workers); numbered schema history under `server/db/migrations/`
+- Scan capture resizes oversized camera and library images to a 2400 px maximum long edge before upload, while durable result polling survives navigation, disconnects, and app restarts
 - Real Apple, Google, and email auth wiring
 - RevenueCat subscription integration, billing sync, restore handling, and StoreKit local config
 - Patch-package guards for Expo SDK pods that require newer Xcode SDKs than the local Xcode 16.2 toolchain

@@ -15,7 +15,7 @@ This matrix is the implementation checklist that keeps the app aligned to the PR
 | First scan landing | Implemented | `src/screens/onboarding/FirstScanLandingScreen.tsx` | CTA routes directly into capture flow |
 | Home screen and pending follow-up banner | Implemented | `src/screens/home/HomeScreen.tsx` | Banner appears only for due follow-ups |
 | Camera capture, upload, and barcode entry points | Implemented | `src/screens/scan/ScanCaptureScreen.tsx` | Supports food photos, menu photos, uploads, and grocery barcode scans |
-| Smooth analyze transition | Implemented | `src/screens/scan/ScanAnalyzingScreen.tsx` | Timed loading state cycles PRD copy |
+| Smooth analyze transition | Implemented | `src/screens/scan/ScanAnalyzingScreen.tsx`, `src/store/actions/scanActions.ts` | Live stage copy overlays a durable result poll; long jobs continue in the background and resume after restart |
 | Result screen with gauge, interpretation, bars, triggers | Implemented | `src/screens/scan/ScanResultScreen.tsx`, `src/components/charts/Gauge.tsx`, `src/components/charts/RiskBar.tsx` | Core magic moment exists and compiles |
 | History timeline with pending cards | Implemented | `src/screens/history/HistoryScreen.tsx`, `src/components/cards/HistoryCard.tsx` | Pending and recent sections split |
 | Delayed did-you-eat follow-up loop | Implemented | `src/store/useAppStore.ts`, `src/screens/scan/FollowUpScreen.tsx` | Follow-up due time is set to scan time + 2 hours |
@@ -25,7 +25,7 @@ This matrix is the implementation checklist that keeps the app aligned to the PR
 | Tokenized billing model | Implemented | `src/store/useAppStore.ts`, `src/services/billing/plans.ts`, `server/src/billing/*`, `server/src/tokens/*` | Live billing sync, allowance resets, token deductions, and top-up hardening are wired |
 | Analytics requirements | Implemented | `src/services/analytics/index.ts`, `src/components/system/RuntimeServices.tsx` | Screen, paywall, follow-up, and notification-open events flow into PostHog when configured |
 | Backend contracts and service boundaries | Implemented | `src/services/api/contracts.ts`, `src/services/api/liveClient.ts`, `src/features/*/hooks.ts`, `server/src/*` | App uses the self-hosted NestJS API through typed contracts and query hooks |
-| Data schema and server logic | Implemented | `server/db/migrations/*.sql` (39-migration schema history), `server/src/*` (NestJS modules) | Schema, AI analysis, billing, history, insights, deletion, and scheduled maintenance are implemented on the self-hosted backend |
+| Data schema and server logic | Implemented | `server/db/migrations/*.sql` (numbered schema history), `server/src/*` (NestJS modules) | Schema, durable AI analysis jobs, billing, history, insights, deletion, and scheduled maintenance are implemented on the self-hosted backend |
 | Error states and edge cases | Implemented | `src/screens/scan/ScanAnalyzingScreen.tsx`, `src/store/useAppStore.ts`, `server/src/scan/*` | Retry, token exhaustion, offline, and server-side scan validation paths are wired; live AI ambiguity returns user-safe fallback copy |
 | Legal/trust posture | Implemented in app | `src/screens/onboarding/OnboardingFlowScreen.tsx`, `src/screens/settings/SettingsScreen.tsx`, `src/screens/settings/LegalDocumentScreen.tsx` | In-app legal surfaces exist; hosted URLs can replace the draft copies later |
 

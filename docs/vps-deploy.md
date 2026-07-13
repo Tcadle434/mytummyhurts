@@ -23,7 +23,7 @@ npm run build && npm run eval -- --offline   # deterministic scoring goldens (0 
 ## Database migration model
 
 `scripts/migrate.mjs` is the destructive local/CI reset tool. It rebuilds an empty database in this order:
-1. `db/00_selfhost_shim.sql` — compatibility shim. Redefines `auth.uid()` to read the `app.current_user_id` GUC, stubs `auth`/`storage` schemas + Supabase roles, enables `pgvector`. This is why the 39 existing Supabase migrations replay unchanged.
+1. `db/00_selfhost_shim.sql` - compatibility shim. Redefines `auth.uid()` to read the `app.current_user_id` GUC, stubs `auth`/`storage` schemas + Supabase roles, enables `pgvector`. This is why the Supabase-origin migrations replay unchanged.
 2. `server/db/migrations/*.sql` - the numbered schema history.
 3. `db/10_selfhost_auth.sql`, `db/20_ai_rag_eval.sql` — new tables.
 4. `db/90_selfhost_overrides.sql` — app roles (`mth_app` under RLS, `mth_service` BYPASSRLS) + grants + `FORCE ROW LEVEL SECURITY`.
@@ -51,10 +51,10 @@ cp .env.example .env          # production secrets; set POSTGRES_PASSWORD, S3_*,
 # Edit Caddyfile -> your real API domain.
 docker compose -f docker-compose.prod.yml up -d --build
 # Apply only pending production migrations without deleting data:
-DATABASE_ADMIN_URL=postgres://mth:...@<vps-db>:5432/mth node server/scripts/migrate-production.mjs
+DATABASE_ADMIN_URL=postgres://mth:...@<vps-db>:5432/mth node scripts/migrate-production.mjs
 ```
 
-Stack: Caddy (TLS) → `api` (NestJS, worker in-process) → `postgres` (pgvector) + `minio`. Redis/BullMQ is the documented scale-up path for multi-instance.
+Stack: Caddy (TLS) → `api` (NestJS plus the in-process scan worker) → `postgres` (pgvector and the durable scan queue) + `minio`. Postgres row locking safely coordinates scan workers across API instances. `SCAN_ANALYSIS_WORKER_ENABLED` disables claiming, and `SCAN_ANALYSIS_WORKER_CONCURRENCY` controls per-process concurrency up to 10.
 
 ## Optional: import existing data
 

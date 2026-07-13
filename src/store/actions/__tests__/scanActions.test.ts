@@ -28,6 +28,17 @@ function resumableState() {
       tokensRemaining: 4,
     },
     scanAnalysisInFlight: false,
+    scans: [],
+    billing: {
+      selectedPlan: 'annual',
+      subscriptionStatus: 'active',
+      tokensRemaining: 4,
+      monthlyAllowance: 1000,
+      topUpOptions: [],
+    },
+    profile: null,
+    insights: [],
+    conditionInsights: [],
   } as unknown as AppStoreState;
 }
 
@@ -46,6 +57,37 @@ describe('scan analysis polling', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('hydrates a completed result when persisted analysis resumes', async () => {
+    const state = resumableState();
+    apiClientMock.getScanAnalysisResult.mockResolvedValue({
+      ok: true,
+      scanId: 'scan-1',
+      requestId: 'request-1',
+      status: 'completed',
+      stage: 'personalizing',
+      ingredientsPreview: [],
+      error: null,
+      result: {
+        scanId: 'scan-1',
+        deduped: false,
+        learningSyncStatus: 'updated',
+        tokensRemaining: 3,
+        scan: { id: 'scan-1' },
+        billing: { ...state.billing, tokensRemaining: 3 },
+        profile: null,
+        insights: [],
+        conditionInsights: [],
+      },
+    });
+
+    await actionsFor(state).resumeActiveScanAnalysis();
+
+    expect(state.activeScanAnalysis).toBeNull();
+    expect(state.scanAnalysisInFlight).toBe(false);
+    expect(state.scans).toEqual([{ id: 'scan-1' }]);
+    expect(state.billing.tokensRemaining).toBe(3);
   });
 
   it('discards persisted analysis when the result no longer exists', async () => {

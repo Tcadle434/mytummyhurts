@@ -1,7 +1,7 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import postgres from 'postgres';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { CommonModule } from '../src/common/common.module';
 import { DatabaseModule } from '../src/database/database.module';
@@ -11,6 +11,7 @@ import { ScanAnalysisService } from '../src/scan/scan-analysis.service';
 import { ScanAnalysisExecutorService } from '../src/scan/scan-analysis-executor.service';
 import { ScanAnalysisJobService } from '../src/scan/scan-analysis-job.service';
 import { ScanModule } from '../src/scan/scan.module';
+import { ScanWorkflowService } from '../src/scan/workflow/scan-workflow.service';
 
 const adminUrl = process.env.DATABASE_ADMIN_URL ?? 'postgres://mth:mth@localhost:5432/mth';
 const admin = postgres(adminUrl, { max: 2, onnotice: () => {} });
@@ -19,6 +20,7 @@ const U = '55555555-5555-5555-5555-555555555555';
 let analysis: ScanAnalysisService;
 let executor: ScanAnalysisExecutorService;
 let jobs: ScanAnalysisJobService;
+let workflow: ScanWorkflowService;
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
 
@@ -38,6 +40,7 @@ beforeAll(async () => {
   analysis = moduleRef.get(ScanAnalysisService);
   executor = moduleRef.get(ScanAnalysisExecutorService);
   jobs = moduleRef.get(ScanAnalysisJobService);
+  workflow = moduleRef.get(ScanWorkflowService);
 
   await admin`delete from public.users where id = ${U}`;
   await admin`insert into public.users (id, email, subscription_status, current_token_balance)
@@ -211,6 +214,52 @@ describe('scan-analyze-image (end-to-end orchestration)', () => {
     expect(recovered[0]).toMatchObject({ scan_id: start.scanId, status: 'running' });
     await executor.execute(recovered[0]);
     expect((await analysis.getResult(U, start.scanId)).status).toBe('completed');
+  });
+
+  it('refunds the token and persists no partial result when required analysis fails', async () => {
+    const [{ current_token_balance: balanceBefore }] = await admin`
+      select current_token_balance from public.users where id = ${U}`;
+    const start = await analysis.startImage({
+      userId: U,
+      requestId: 'scan-async-required-analysis-failure-1',
+      imageDataUrls: [PNG],
+      scanCategory: 'menu',
+      sourceType: 'camera',
+    });
+    const [claimed] = await jobs.claimScan(start.scanId, 'required-analysis-failure-test');
+    const run = vi.spyOn(workflow, 'run').mockRejectedValueOnce(new Error('openai_request_failed'));
+
+    try {
+      await executor.execute(claimed);
+    } finally {
+      run.mockRestore();
+    }
+
+    expect(await analysis.getResult(U, start.scanId)).toMatchObject({
+      status: 'failed',
+      result: null,
+      error: { code: 'ai_request_failed', retryable: true },
+    });
+    const [persisted] = await admin`
+      select
+        s.analysis_status,
+        s.overall_risk_score,
+        j.status as job_status,
+        (select count(*)::int from public.menu_items where scan_id = s.id) as menu_item_count,
+        (select count(*)::int from public.scan_ingredient_risks where scan_id = s.id) as ingredient_risk_count
+      from public.scans s
+      join public.scan_analysis_jobs j on j.scan_id = s.id
+      where s.id = ${start.scanId}`;
+    expect(persisted).toMatchObject({
+      analysis_status: 'failed',
+      overall_risk_score: null,
+      job_status: 'failed',
+      menu_item_count: 0,
+      ingredient_risk_count: 0,
+    });
+    const [{ current_token_balance: balanceAfter }] = await admin`
+      select current_token_balance from public.users where id = ${U}`;
+    expect(balanceAfter).toBe(balanceBefore);
   });
 
   it('prevents an expired worker lease from completing reclaimed work', async () => {

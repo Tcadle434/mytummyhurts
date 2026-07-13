@@ -135,6 +135,7 @@ degrades live `calibration_score` is a regression.
 
 - **Migration**: `server/db/migrations/20260703150000_scan_validity_stats.sql`
   (new table + read-own RLS + a partial index on consumed completed scans).
-  Applied by the standard `scripts/migrate.mjs` replay.
+  Applied by `scripts/migrate.mjs` during a local/CI rebuild or by the
+  incremental `scripts/migrate-production.mjs` runner in production.
 - **Crontab**: add the nightly sweep line above on the VPS. No new env vars;
   the endpoint reuses `ADMIN_API_SECRET`.

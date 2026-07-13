@@ -17,12 +17,35 @@ Health checks:
 - `GET /healthz` — liveness
 - `GET /readyz` — readiness (Postgres/Redis/MinIO indicators added in later phases)
 
+## Durable scan analysis
+
+Image and barcode scans use a start-and-poll API:
+
+- `POST /v1/scan-analysis-start` accepts one to eight inline images or stored image paths.
+- `POST /v1/scan-barcode-analysis-start` accepts a barcode.
+- `POST /v1/scan-analysis-result` accepts `{ "scanId": "..." }` and returns `queued`, `processing`, `completed`, or `failed`. `result` is populated only when completed, and `error` only when failed.
+- `POST /v1/scan-progress` remains a display-only source for stage copy. The result endpoint is the completion source of truth.
+
+The start endpoints reserve tokens and atomically create a Postgres-backed
+`scan_analysis_jobs` row before returning. Inline images are stored first, and
+only stable object keys enter the job payload. The in-process worker claims due
+jobs with `SKIP LOCKED`, heartbeats its lease, and reclaims work left running
+for more than 15 minutes. Scan persistence and job completion share a
+transaction, so a stale worker cannot overwrite a reclaimed job. Failed
+required LLM analysis records its audits, refunds the reservation, and never
+persists a partial analysis result.
+
+The existing `scan-analyze-image` and `scan-analyze-barcode` endpoints remain
+blocking compatibility wrappers for released clients. They enqueue the same
+durable jobs and wait up to seven minutes for completion.
+
 ## OpenAI structured outputs
 
-Eight OpenAI Responses API stages share `src/llm/structured-output.ts`: text,
+OpenAI Responses API stages share `src/llm/structured-output.ts`: text,
 single-image, and multi-image meal extraction; scan category classification;
-menu extraction; risk adjudication; ingredient taxonomy classification; and
-last-bad-meal extraction. Each stage defines a strict Zod schema that
+menu vision transcription; bounded menu text analysis; risk adjudication;
+ingredient taxonomy classification; and last-bad-meal extraction. Each stage
+defines a strict Zod schema that
 `zodTextFormat` also turns into the JSON Schema sent to OpenAI. Only output
 parsed by that same Zod schema reaches domain normalization or persistence.
 
@@ -40,7 +63,17 @@ attempt. Ingredient taxonomy work additionally observes the phase-wide
 `OPENAI_TAXONOMY_PHASE_BUDGET_MS` deadline and uses deterministic
 classification for work that cannot complete within it.
 
+Menu scans transcribe each page independently, merge the transcriptions, and
+analyze items in text-only batches. The default batch size is 12 and stage
+concurrency is 2. Every batch must return exactly the requested item,
+condition, and diet identifiers. A required batch that remains invalid after
+the shared three-attempt policy fails the scan instead of producing fallback
+scores. The LLM owns food interpretation and severity or diet judgments; the
+deterministic scorer maps validated judgments into numeric scores.
+
 ## Scripts
+- `npm run db:migrate` - destructively rebuild a local or CI database from the full migration history
+- `npm run db:migrate:production` - incrementally apply pending production migrations with checksums
 - `npm run build` — compile to `dist/`
 - `npm run start:prod` — run compiled server
 - `npm run typecheck` — `tsc --noEmit`
