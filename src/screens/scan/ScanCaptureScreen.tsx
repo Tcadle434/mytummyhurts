@@ -130,6 +130,8 @@ export function ScanCaptureScreen({ navigation, route }: Props) {
       const image = await prepareCameraScanImage({
         uri: picture.uri,
         quality: SCAN_IMAGE_QUALITY,
+        width: picture.width,
+        height: picture.height,
       });
       trackEvent('scan_capture_completed', { source_type: 'camera', scan_category: mode });
       navigation.replace('ScanAnalyzing', {

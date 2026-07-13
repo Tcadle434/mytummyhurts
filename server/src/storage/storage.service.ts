@@ -86,6 +86,30 @@ export class StorageService implements OnModuleInit {
     });
   }
 
+  assertUserOwnsKey(userId: string, key: string): void {
+    const normalized = key.trim();
+    if (!normalized.startsWith(`${userId}/`) || normalized.includes('..')) {
+      throw new Error('invalid_image_path');
+    }
+  }
+
+  /**
+   * Read a stored image back as a data URL for a durable analysis job.
+   * This works with private production S3 and local MinIO, and avoids relying
+   * on OpenAI being able to reach a deployment-specific signed URL.
+   */
+  async readImageDataUrl(userId: string, key: string): Promise<string> {
+    this.assertUserOwnsKey(userId, key);
+    const object = await this.s3.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    if (!object.Body) throw new Error('scan_image_not_found');
+    const contentType = object.ContentType?.toLowerCase() ?? '';
+    if (!contentType.startsWith('image/')) throw new Error('invalid_scan_image_type');
+    const bytes = await object.Body.transformToByteArray();
+    return `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`;
+  }
+
   async removeKeys(keys: string[]): Promise<void> {
     if (keys.length === 0) return;
     await this.s3.send(

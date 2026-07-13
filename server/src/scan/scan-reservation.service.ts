@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Sql } from 'postgres';
 
 import { DatabaseService } from '../database/database.service';
 
@@ -58,8 +59,13 @@ export class ScanReservationService {
     });
   }
 
-  setCategory(userId: string, scanId: string, scanCategory: 'food' | 'menu' | 'grocery') {
-    return this.db.service(async (sql) => {
+  setCategory(
+    userId: string,
+    scanId: string,
+    scanCategory: 'food' | 'menu' | 'grocery',
+    client?: Sql,
+  ) {
+    const update = async (sql: Sql) => {
       const rows = await sql`
         update public.scans
         set scan_category = ${scanCategory}
@@ -68,11 +74,12 @@ export class ScanReservationService {
           and analysis_status = 'processing'
         returning id`;
       if (!rows.length) throw new Error('scan_category_update_failed');
-    });
+    };
+    return client ? update(client) : this.db.service(update);
   }
 
-  complete(input: ScanCompletionInput) {
-    return this.db.service(async (sql) => {
+  complete(input: ScanCompletionInput, client?: Sql) {
+    const complete = async (sql: Sql) => {
       const j = (v: unknown) => (v === undefined || v === null ? null : sql.json(v as never));
       const [row] = await sql`
         select * from complete_reserved_scan_analysis(
@@ -87,14 +94,23 @@ export class ScanReservationService {
           ${j(input.groceryProduct)}, ${j(input.inputRefs ?? [])},
           ${j(input.analysisMetadata)}, ${j(input.gutScoreImpact)})`;
       return row;
-    });
+    };
+    return client ? complete(client) : this.db.service(complete);
   }
 
-  fail(userId: string, scanId: string, errorCode: string, errorMessage: string, refund = true) {
-    return this.db.service(async (sql) => {
+  fail(
+    userId: string,
+    scanId: string,
+    errorCode: string,
+    errorMessage: string,
+    refund = true,
+    client?: Sql,
+  ) {
+    const fail = async (sql: Sql) => {
       const [row] = await sql`
         select * from fail_reserved_scan_analysis(${userId}, ${scanId}, ${errorCode}, ${errorMessage}, ${refund})`;
       return row;
-    });
+    };
+    return client ? fail(client) : this.db.service(fail);
   }
 }

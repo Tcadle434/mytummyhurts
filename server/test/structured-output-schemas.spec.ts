@@ -7,8 +7,10 @@ import {
   foodMultiImageStructuredOutput,
   foodTextStructuredOutput,
   mealExtractionSchema,
+  menuAnalysisBatchStructuredOutput,
   menuExtractionSchema,
-  menuStructuredOutput,
+  menuTranscriptionSchema,
+  menuTranscriptionStructuredOutput,
   requestedRiskAdjudicationConditions,
   riskAdjudicationSchema,
   riskAdjudicationStructuredOutput,
@@ -146,19 +148,20 @@ function expectInvalid(schema: z.ZodTypeAny, values: unknown[]) {
 }
 
 describe('OpenAI structured output definitions', () => {
-  it('generates strict JSON Schema formats for all eight model stages', () => {
+  it('generates strict JSON Schema formats for every model stage', () => {
     const definitions = [
       foodTextStructuredOutput,
       foodImageStructuredOutput,
       foodMultiImageStructuredOutput,
-      menuStructuredOutput,
+      menuTranscriptionStructuredOutput,
+      menuAnalysisBatchStructuredOutput(['item-1'], ['general'], []),
       scanCategoryStructuredOutput,
       riskAdjudicationStructuredOutput,
       taxonomyStructuredOutput,
       lastBadMealStructuredOutput,
     ];
 
-    expect(definitions).toHaveLength(8);
+    expect(definitions).toHaveLength(9);
     for (const definition of definitions) {
       expect(definition.format).toMatchObject({
         type: 'json_schema',
@@ -255,6 +258,90 @@ describe('menu extraction schema', () => {
         items: [{
           ...validMenuItem(),
           conditionSeverities: [{ condition: 'IBS', band: 'severe', drivers: [] }],
+        }],
+      },
+    ]);
+  });
+
+  it('validates the compact transcription before any item is analyzed', () => {
+    const valid = {
+      isMenu: true,
+      notMenuReason: null,
+      menuTitle: 'Dinner',
+      menuConfidence: 'high',
+      items: [{
+        id: 'item-1',
+        name: 'Rice bowl',
+        description: 'Rice and chicken',
+        section: 'Mains',
+        price: '$12',
+      }],
+    };
+    expect(menuTranscriptionSchema.parse(valid)).toEqual(valid);
+    expectInvalid(menuTranscriptionSchema, [
+      { ...valid, items: [{ ...valid.items[0], id: '' }] },
+      { ...valid, items: [{ ...valid.items[0], name: '   ' }] },
+      { ...valid, items: [{ ...valid.items[0], extra: true }] },
+      { ...valid, items: Array.from({ length: 101 }, () => valid.items[0]) },
+    ]);
+  });
+
+  it('assigns stable unique identifiers before analyzing transcribed items', async () => {
+    const { combineMenuTranscriptionPages } = await import('../src/scan/engine/openaiMenuMerge');
+    const first = {
+      id: 'duplicate',
+      name: 'Rice bowl',
+      description: 'Rice and chicken',
+      section: 'Mains',
+      price: '$12',
+    };
+    const combined = combineMenuTranscriptionPages([{
+      isMenu: true,
+      notMenuReason: null,
+      menuTitle: 'Dinner',
+      menuConfidence: 'high',
+      items: [first, { ...first, name: 'Soup', price: '$8' }],
+    }]);
+
+    expect(combined.items.map((item) => item.id)).toEqual(['item-1', 'item-2']);
+  });
+
+  it('requires one LLM judgment per item, condition, and selected diet', () => {
+    const definition = menuAnalysisBatchStructuredOutput(
+      ['item-1'],
+      ['GERD'],
+      ['low_fodmap'],
+    );
+    const valid = {
+      items: [{
+        id: 'item-1',
+        baseFoodCategory: validMenuItem().baseFoodCategory,
+        riskModifiers: [],
+        conditionSeverities: [{ condition: 'GERD', band: 'mild', drivers: [] }],
+        dietFitHypotheses: [{
+          dietKey: 'low_fodmap',
+          status: 'unknown',
+          confidence: 'medium',
+          evidence: [],
+          conflicts: [],
+          missingInfo: ['portion size'],
+          reason: 'Portion size is not listed.',
+        }],
+        ingredientCallouts: ['rice', 'chicken'],
+        prepStyle: ['grilled'],
+        confidence: 'high',
+      }],
+    };
+    expect(definition.schema.parse(valid)).toEqual(valid);
+    expectInvalid(definition.schema, [
+      { items: [] },
+      { items: [{ ...valid.items[0], id: 'other-item' }] },
+      { items: [{ ...valid.items[0], conditionSeverities: [] }] },
+      { items: [{ ...valid.items[0], dietFitHypotheses: [] }] },
+      {
+        items: [{
+          ...valid.items[0],
+          conditionSeverities: [{ condition: 'GERD', band: 'high', drivers: [] }],
         }],
       },
     ]);

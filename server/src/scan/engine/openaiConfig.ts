@@ -15,7 +15,10 @@ export const DEMO_MODE = process.env.DEMO_MODE === 'true';
 // metadata and version bookkeeping (trace.service ensureVersions).
 export const EXTRACTION_MODEL = process.env.OPENAI_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
 export const IMAGE_EXTRACTION_MODEL = process.env.OPENAI_IMAGE_EXTRACTION_MODEL ?? 'gpt-5.4-mini';
-export const MENU_EXTRACTION_MODEL = process.env.OPENAI_MENU_EXTRACTION_MODEL ?? 'gpt-5-mini';
+export const MENU_TRANSCRIPTION_MODEL =
+  process.env.OPENAI_MENU_TRANSCRIPTION_MODEL ?? 'gpt-5.4-mini';
+export const MENU_ANALYSIS_MODEL =
+  process.env.OPENAI_MENU_ANALYSIS_MODEL ?? 'gpt-5.4-mini';
 // Cheap dedicated router for the food-vs-menu decision; low detail + a small
 // output cap keep it a fraction of an extraction call.
 export const CLASSIFICATION_MODEL = process.env.OPENAI_CLASSIFICATION_MODEL ?? 'gpt-5-nano';
@@ -23,10 +26,11 @@ export const CLASSIFICATION_MODEL = process.env.OPENAI_CLASSIFICATION_MODEL ?? '
 // gpt-5-mini at low effort replaces gpt-4.1-mini (Phase 2 item 4).
 export const RISK_ADJUDICATION_MODEL = process.env.OPENAI_RISK_ADJUDICATION_MODEL ?? 'gpt-5-mini';
 export const PROMPT_VERSION = process.env.OPENAI_EXTRACTION_PROMPT_VERSION ?? 'mytummyhurts_extract_v4';
+export const MENU_PROMPT_VERSION = process.env.OPENAI_MENU_PROMPT_VERSION ?? 'mytummyhurts_menu_v5';
 // Audit schema versions: v3 food / v4 menu mark the Phase 2 schema changes
 // (field-anchor descriptions, dietFit maxItems 10, menu bands without rationale).
 export const EXTRACTION_SCHEMA_VERSION = 'meal_extraction_v3';
-export const MENU_EXTRACTION_SCHEMA_VERSION = 'menu_extraction_v4';
+export const MENU_EXTRACTION_SCHEMA_VERSION = 'menu_extraction_v5';
 // Determinism lever. GPT-5-family models often reject a non-default temperature,
 // so this is OPT-IN: only sent when OPENAI_EXTRACTION_TEMPERATURE is set to a
 // number. Note there is NO extraction cache: repeat submissions are deduped by
@@ -57,7 +61,7 @@ function supportsReasoningParams(model: string): boolean {
   return model.startsWith('gpt-5');
 }
 
-export function reasoningFields(model: string, effort: 'minimal' | 'low' | 'medium'): Record<string, unknown> {
+export function reasoningFields(model: string, effort: 'low' | 'medium'): Record<string, unknown> {
   return supportsReasoningParams(model) ? { reasoning: { effort } } : {};
 }
 
@@ -67,8 +71,30 @@ export function verbosityField(model: string): Record<string, string> {
 export const IMAGE_DETAIL = (process.env.OPENAI_IMAGE_DETAIL ?? 'high') === 'low' ? 'low' : 'high';
 export const MENU_IMAGE_DETAIL = (process.env.OPENAI_MENU_IMAGE_DETAIL ?? 'high') === 'low' ? 'low' : 'high';
 export const OPENAI_TIMEOUT_MS = positiveNumberEnv('OPENAI_TIMEOUT_MS', 30_000);
-export const OPENAI_MENU_TIMEOUT_MS = positiveNumberEnv('OPENAI_MENU_TIMEOUT_MS', 115_000);
-export const OPENAI_MENU_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_MENU_MAX_OUTPUT_TOKENS', 12_000);
+export const OPENAI_MENU_TRANSCRIPTION_TIMEOUT_MS = positiveNumberEnv(
+  'OPENAI_MENU_TRANSCRIPTION_TIMEOUT_MS',
+  60_000,
+);
+export const OPENAI_MENU_ANALYSIS_TIMEOUT_MS = positiveNumberEnv(
+  'OPENAI_MENU_ANALYSIS_TIMEOUT_MS',
+  60_000,
+);
+export const OPENAI_MENU_TRANSCRIPTION_MAX_OUTPUT_TOKENS = positiveNumberEnv(
+  'OPENAI_MENU_TRANSCRIPTION_MAX_OUTPUT_TOKENS',
+  6_000,
+);
+export const OPENAI_MENU_ANALYSIS_MAX_OUTPUT_TOKENS = positiveNumberEnv(
+  'OPENAI_MENU_ANALYSIS_MAX_OUTPUT_TOKENS',
+  6_000,
+);
+export const OPENAI_MENU_ANALYSIS_BATCH_SIZE = Math.min(
+  Math.floor(positiveNumberEnv('OPENAI_MENU_ANALYSIS_BATCH_SIZE', 12)),
+  20,
+);
+export const OPENAI_MENU_STAGE_CONCURRENCY = Math.min(
+  Math.floor(positiveNumberEnv('OPENAI_MENU_STAGE_CONCURRENCY', 2)),
+  4,
+);
 export const OPENAI_TEXT_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_TEXT_MAX_OUTPUT_TOKENS', 6_000);
 export const OPENAI_IMAGE_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_IMAGE_MAX_OUTPUT_TOKENS', 6_000);
 export const OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS = positiveNumberEnv('OPENAI_CLASSIFICATION_MAX_OUTPUT_TOKENS', 300);

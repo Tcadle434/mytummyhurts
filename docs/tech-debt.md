@@ -4,7 +4,7 @@ Things intentionally left for incremental follow-up (with rationale), so they re
 
 ## Resolved in the clean-slate cutover
 - **Supabase fully removed from the app.** `@supabase/supabase-js` dropped; `src/services/supabase/` deleted; transport + auth now talk only to the NestJS API. No dual-path fallback (pre-prod = clean swap, not a dual-run rollout).
-- **`supabase/` directory deleted.** The dead Deno edge functions are gone; the 39-migration schema history moved to `server/db/migrations/` (the replay source for `migrate.mjs`).
+- **`supabase/` directory deleted.** The dead Deno edge functions are gone; the numbered schema history moved to `server/db/migrations/` (the replay source for `migrate.mjs`).
 - **Client image upload removed.** The backend persists inline images to object storage itself (`StorageService.putInlineImage`), so the app no longer uploads separately.
 
 ## Type / code convergence (still open)
@@ -13,7 +13,7 @@ Things intentionally left for incremental follow-up (with rationale), so they re
 
 ## Runtime / build
 - **Node 22**: the server Dockerfile and CI pin Node 22 (AWS SDK v3 wants ≥22). Local dev on Node 20 works with a deprecation warning. `.nvmrc` (20) governs the Expo app and is unchanged.
-- **Migrations**: `scripts/migrate.mjs` replays the shim → `server/db/migrations/*.sql` → self-host SQL from scratch (ideal for cutover and CI). For ongoing forward migrations, add numbered files under `server/db/`. A migrations-applied tracking table can be added when the schema stabilizes.
+- **Migrations**: `scripts/migrate.mjs` remains the from-scratch local/CI reset. Production uses `scripts/migrate-production.mjs`, which applies numbered migrations incrementally with an advisory lock, transactions, and immutable SHA-256 checksums in `public.schema_migrations`.
 
 ## Observability
 - **LangSmith**: flag-gated (`LANGSMITH_TRACING`); the own-DB traces (`ai_traces`/`ai_node_traces`/`ai_cost_events`) are the source of truth and are wired. Full LangSmith span export is a small add when desired.

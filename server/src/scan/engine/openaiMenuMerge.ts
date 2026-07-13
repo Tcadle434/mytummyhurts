@@ -1,33 +1,10 @@
-// Combines per-page menu extraction results (multi-page menus are extracted
-// one page per request) into a single MenuScanAnalysis plus one aggregate
-// audit row alongside the per-page audits.
-
-import { IngredientConfidence, MenuScanAnalysis } from './domain';
-import {
-  MENU_EXTRACTION_MODEL,
-  MENU_EXTRACTION_SCHEMA_VERSION,
-  MENU_IMAGE_DETAIL,
-  PROMPT_VERSION,
-} from './openaiConfig';
-import type { ExtractionContext, OpenAiAuditLog } from './openaiTypes';
-import {
-  MENU_ITEM_LIMIT,
-  menuStructuredOutput,
-  type MenuExtractionPayload as RawMenuPayload,
+import type {
+  MenuAnalysisBatchPayload,
+  MenuExtractionPayload,
+  MenuTranscriptionPayload,
 } from './openaiSchemas';
-import { aggregateAuditCostSnapshot, imageRefKind, openAiCostFieldsFromSnapshot } from './openaiClient';
+import { MENU_ITEM_LIMIT } from './openaiSchemas';
 import { normalizeMenuText } from './openaiMenuFallbacks';
-import { buildMenuSystemPrompt, buildMenuUserPrompt } from './openaiPrompts';
-
-function menuConfidenceFromPages(pages: MenuScanAnalysis[]): IngredientConfidence {
-  if (pages.some((page) => page.menuConfidence === 'high')) {
-    return 'high';
-  }
-  if (pages.some((page) => page.menuConfidence === 'medium')) {
-    return 'medium';
-  }
-  return 'low';
-}
 
 function menuDedupeNameKey(name: string) {
   return normalizeMenuText(name)
@@ -39,118 +16,74 @@ function menuDedupeNameKey(name: string) {
 }
 
 function menuDedupePriceKey(value: unknown) {
-  return String(value ?? '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
+  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-function dedupeMenuItemsByNameAndPrice<T extends { name?: unknown; price?: unknown }>(items: T[]) {
+function dedupeMenuItemsByNameAndPrice<T extends { name: string; price: string | null }>(items: T[]) {
   const seen = new Set<string>();
   const deduped: T[] = [];
-
   for (const item of items) {
-    const nameKey = menuDedupeNameKey(String(item.name ?? ''));
-    if (!nameKey) {
-      deduped.push(item);
-      continue;
-    }
-
+    const nameKey = menuDedupeNameKey(item.name);
     const priceKey = menuDedupePriceKey(item.price);
     const key = priceKey ? `${nameKey}|${priceKey}` : nameKey;
-    if (seen.has(key) || (!priceKey && [...seen].some((seenKey) => seenKey.startsWith(`${nameKey}|`)))) {
-      continue;
-    }
-
+    if (!nameKey || seen.has(key)) continue;
+    if (!priceKey && [...seen].some((seenKey) => seenKey.startsWith(`${nameKey}|`))) continue;
     seen.add(key);
     deduped.push(item);
   }
-
   return deduped;
 }
 
-export function combineMenuPageExtractions(pageResults: { result: MenuScanAnalysis }[], inputPageCount: number): MenuScanAnalysis {
-  const pages = pageResults.map((entry) => entry.result);
-  const rawItems = pages.flatMap((page, pageIndex) =>
+function menuConfidenceFromPages(pages: MenuTranscriptionPayload[]) {
+  if (pages.some((page) => page.menuConfidence === 'high')) return 'high' as const;
+  if (pages.some((page) => page.menuConfidence === 'medium')) return 'medium' as const;
+  return 'low' as const;
+}
+
+export function combineMenuTranscriptionPages(
+  pages: MenuTranscriptionPayload[],
+): MenuTranscriptionPayload {
+  const items = dedupeMenuItemsByNameAndPrice(
+    pages.flatMap((page, pageIndex) =>
       page.items.map((item, itemIndex) => ({
         ...item,
-        id: `page-${pageIndex + 1}-${item.id || `item-${itemIndex + 1}`}`,
+        id: pages.length === 1
+          ? `item-${itemIndex + 1}`
+          : `page-${pageIndex + 1}-item-${itemIndex + 1}`,
       })),
-  );
-  const items = dedupeMenuItemsByNameAndPrice(rawItems).slice(0, MENU_ITEM_LIMIT);
-
+    ),
+  ).slice(0, MENU_ITEM_LIMIT);
+  const isMenu = pages.some((page) => page.isMenu) && items.length > 0;
   return {
-    kind: 'menu',
-    menuTitle: pages.find((page) => page.menuTitle && page.menuTitle !== 'Menu scan')?.menuTitle ?? 'Menu scan',
+    isMenu,
+    notMenuReason: isMenu
+      ? null
+      : pages.find((page) => page.notMenuReason)?.notMenuReason ?? 'No menu items were found.',
+    menuTitle:
+      pages.find((page) => page.menuTitle.trim() && page.menuTitle !== 'Menu scan')?.menuTitle
+      ?? 'Menu scan',
     menuConfidence: menuConfidenceFromPages(pages),
-    inputPageCount,
     items,
-    bestOptions: [],
-    eatWithCautionOptions: [],
-    worstOptions: [],
-    summary: '',
   };
 }
 
-export function combinedMenuAudit(
-  pageResults: { parsed: RawMenuPayload; audit: OpenAiAuditLog }[],
-  result: MenuScanAnalysis,
-  context: ExtractionContext,
-  imageUrls: string[],
-): OpenAiAuditLog {
-  const systemPrompt = buildMenuSystemPrompt();
-  const userPrompt = buildMenuUserPrompt({ ...context, pageCount: imageUrls.length });
-  const inputRefs = imageUrls.map((imageUrl, index) => ({
-    inputKind: 'image',
-    imageRole: 'menu_page',
-    pageIndex: index,
-    imageRef: imageRefKind(imageUrl),
-  }));
-  const parsedItems = dedupeMenuItemsByNameAndPrice(pageResults.flatMap((entry, pageIndex) =>
-    (Array.isArray(entry.parsed.items) ? entry.parsed.items : []).map((item, itemIndex) => {
-      const record = item as Record<string, unknown>;
-      return {
-        ...record,
-        id: `page-${pageIndex + 1}-${String(record.id ?? `item-${itemIndex + 1}`)}`,
-      } as Record<string, unknown>;
-    }),
-  ));
-  const parsedResponseJson = {
-    isMenu: result.items.length > 0,
-    notMenuReason: result.items.length > 0 ? null : 'No menu items were extracted.',
-    menuTitle: result.menuTitle,
-    menuConfidence: result.menuConfidence,
-    items: parsedItems.slice(0, MENU_ITEM_LIMIT),
-  };
-  const aggregateCostSnapshot = aggregateAuditCostSnapshot(
-    MENU_EXTRACTION_MODEL,
-    pageResults.map((entry) => entry.audit),
+export function mergeMenuAnalysisBatches(
+  transcription: MenuTranscriptionPayload,
+  batches: MenuAnalysisBatchPayload[],
+): MenuExtractionPayload {
+  const analyses = new Map(
+    batches.flatMap((batch) => batch.items).map((analysis) => [analysis.id, analysis]),
   );
-
+  const items = transcription.items.map((item) => {
+    const analysis = analyses.get(item.id);
+    if (!analysis) throw new Error('menu_item_analysis_incomplete');
+    return { ...item, ...analysis, id: item.id };
+  });
   return {
-    stage: 'menu_image_extraction',
-    provider: 'openai',
-    model: MENU_EXTRACTION_MODEL,
-    promptVersion: PROMPT_VERSION,
-    schemaVersion: MENU_EXTRACTION_SCHEMA_VERSION,
-    systemPrompt,
-    userPrompt,
-    jsonSchema: menuStructuredOutput.jsonSchema,
-    requestMetadata: {
-      imageDetail: MENU_IMAGE_DETAIL,
-      pageCount: imageUrls.length,
-      itemLimit: MENU_ITEM_LIMIT,
-      splitByPage: true,
-    },
-    inputRefs,
-    rawResponseText: JSON.stringify({ pages: pageResults.map((entry) => entry.audit.rawResponseText) }),
-    rawResponseJson: { pages: pageResults.map((entry) => entry.audit.rawResponseJson) },
-    parsedResponseJson,
-    normalizedResponseJson: result,
-    status: pageResults.every((entry) => entry.audit.status === 'completed') ? 'completed' : 'failed',
-    errorCode: null,
-    errorMessage: null,
-    latencyMs: pageResults.reduce((total, entry) => total + entry.audit.latencyMs, 0),
-    ...openAiCostFieldsFromSnapshot(aggregateCostSnapshot),
+    isMenu: transcription.isMenu,
+    notMenuReason: transcription.notMenuReason,
+    menuTitle: transcription.menuTitle,
+    menuConfidence: transcription.menuConfidence,
+    items,
   };
 }

@@ -181,6 +181,37 @@ export const menuExtractionSchema = z.object({
   items: z.array(menuItemPayloadSchema).max(MENU_ITEM_LIMIT),
 }).strict();
 
+export const menuTranscriptionItemSchema = z.object({
+  id: nonblankString,
+  name: nonblankString,
+  description: z.string().nullable(),
+  section: z.string().nullable(),
+  price: z.string().nullable(),
+}).strict();
+
+export const menuTranscriptionSchema = z.object({
+  isMenu: z.boolean(),
+  notMenuReason: z.string().nullable(),
+  menuTitle: z.string(),
+  menuConfidence: confidenceSchema,
+  items: z.array(menuTranscriptionItemSchema).max(MENU_ITEM_LIMIT),
+}).strict();
+
+export const menuItemAnalysisSchema = z.object({
+  id: nonblankString,
+  baseFoodCategory: menuBaseFoodCategorySchema,
+  riskModifiers: z.array(menuRiskModifierSchema).max(5),
+  conditionSeverities: z.array(menuConditionSeveritySchema).max(8),
+  dietFitHypotheses: z.array(dietFitHypothesisSchema).max(10),
+  ingredientCallouts: z.array(z.string()).max(3),
+  prepStyle: z.array(z.string()).max(4),
+  confidence: confidenceSchema,
+}).strict();
+
+export const menuAnalysisBatchSchema = z.object({
+  items: z.array(menuItemAnalysisSchema),
+}).strict();
+
 export type IngredientPayload = z.infer<typeof ingredientPayloadSchema>;
 export type MealComponentPayload = z.infer<typeof mealExtractionSchema>['components'][number];
 export type MealExtractionPayload = z.infer<typeof mealExtractionSchema>;
@@ -190,6 +221,10 @@ export type MenuBaseFoodCategoryPayload = z.infer<typeof menuBaseFoodCategorySch
 export type MenuRiskModifierPayload = z.infer<typeof menuRiskModifierSchema>;
 export type DietFitHypothesisPayload = z.infer<typeof dietFitHypothesisSchema>;
 export type MenuExtractionPayload = z.infer<typeof menuExtractionSchema>;
+export type MenuTranscriptionItemPayload = z.infer<typeof menuTranscriptionItemSchema>;
+export type MenuTranscriptionPayload = z.infer<typeof menuTranscriptionSchema>;
+export type MenuItemAnalysisPayload = z.infer<typeof menuItemAnalysisSchema>;
+export type MenuAnalysisBatchPayload = z.infer<typeof menuAnalysisBatchSchema>;
 export type RiskAdjudicationConditionPayload = z.infer<typeof riskAdjudicationConditionSchema>;
 export type RiskAdjudicationPayload = z.infer<typeof riskAdjudicationSchema>;
 
@@ -201,6 +236,64 @@ export const scanCategoryStructuredOutput = defineStructuredOutput(
   scanCategoryClassificationSchema,
 );
 export const menuStructuredOutput = defineStructuredOutput('menu_extraction_image', menuExtractionSchema);
+export const menuTranscriptionStructuredOutput = defineStructuredOutput(
+  'menu_transcription_image',
+  menuTranscriptionSchema,
+);
+
+function normalizedSet(values: readonly string[]) {
+  return new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean));
+}
+
+function hasExactValues(actual: readonly string[], expected: ReadonlySet<string>) {
+  const normalized = actual.map((value) => value.trim().toLowerCase()).filter(Boolean);
+  return normalized.length === expected.size
+    && new Set(normalized).size === normalized.length
+    && normalized.every((value) => expected.has(value));
+}
+
+export function menuAnalysisBatchStructuredOutput(
+  requestedItemIds: readonly string[],
+  requestedConditions: readonly string[],
+  requestedDietKeys: readonly string[],
+) {
+  const requested = new Set(requestedItemIds);
+  const conditions = normalizedSet(requestedConditions);
+  const diets = normalizedSet(requestedDietKeys);
+  const schema = z.object({
+    items: z.array(menuItemAnalysisSchema).length(requestedItemIds.length),
+  }).strict().superRefine((payload, context) => {
+    const returned = payload.items.map((item) => item.id);
+    if (
+      returned.length !== requestedItemIds.length
+      || new Set(returned).size !== returned.length
+      || returned.some((id) => !requested.has(id))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items'],
+        message: 'Must return exactly one analysis for every requested item identifier.',
+      });
+    }
+    payload.items.forEach((item, index) => {
+      if (!hasExactValues(item.conditionSeverities.map((entry) => entry.condition), conditions)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['items', index, 'conditionSeverities'],
+          message: 'Must return exactly one severity for every requested condition.',
+        });
+      }
+      if (!hasExactValues(item.dietFitHypotheses.map((entry) => entry.dietKey), diets)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['items', index, 'dietFitHypotheses'],
+          message: 'Must return exactly one hypothesis for every selected diet.',
+        });
+      }
+    });
+  });
+  return defineStructuredOutput('menu_item_analysis_batch', schema);
+}
 export const riskAdjudicationStructuredOutput = defineStructuredOutput('risk_adjudication', riskAdjudicationSchema);
 
 export function riskAdjudicationConditionKey(condition: string) {

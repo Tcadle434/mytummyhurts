@@ -9,6 +9,9 @@ export function RemoteBootstrapBridge() {
   const remoteDataLoaded = useAppStore((state) => state.remoteDataLoaded);
   const syncInitialAccountState = useAppStore((state) => state.syncInitialAccountState);
   const refreshRemoteState = useAppStore((state) => state.refreshRemoteState);
+  const activeScanAnalysis = useAppStore((state) => state.activeScanAnalysis);
+  const scanAnalysisInFlight = useAppStore((state) => state.scanAnalysisInFlight);
+  const resumeActiveScanAnalysis = useAppStore((state) => state.resumeActiveScanAnalysis);
 
   useEffect(() => {
     if (!authUser || serverSyncInFlight) {
@@ -26,8 +29,23 @@ export function RemoteBootstrapBridge() {
       void refreshRemoteState().catch((error) => {
         console.warn('[bootstrap] failed to hydrate remote state', error);
       });
+      return;
     }
-  }, [authUser, initialServerSyncNeeded, refreshRemoteState, remoteDataLoaded, serverSyncInFlight, syncInitialAccountState]);
+
+    if (activeScanAnalysis && !scanAnalysisInFlight) {
+      void resumeActiveScanAnalysis();
+    }
+  }, [
+    activeScanAnalysis,
+    authUser,
+    initialServerSyncNeeded,
+    refreshRemoteState,
+    remoteDataLoaded,
+    resumeActiveScanAnalysis,
+    scanAnalysisInFlight,
+    serverSyncInFlight,
+    syncInitialAccountState,
+  ]);
 
   return null;
 }

@@ -28,7 +28,8 @@ fi
 
 cd server
 docker compose -f "$compose_file" build api
-docker compose -f "$compose_file" run --rm --no-deps api node scripts/migrate.mjs
+docker compose -f "$compose_file" stop -t 480 api
+docker compose -f "$compose_file" run --rm --no-deps api node scripts/migrate-production.mjs
 docker compose -f "$compose_file" up -d --no-deps --force-recreate api
 docker compose -f "$compose_file" ps api
 

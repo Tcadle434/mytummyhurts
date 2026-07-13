@@ -39,9 +39,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ScanAnalyzing'>;
 // This timed track is the fallback whenever real progress is unavailable.
 const STAGE_STEP_SECONDS = 7;
 
-// Real progress: poll the server's stage stamps while the blocking analyze
-// request is in flight. Polling is display-only — it never completes or fails
-// the scan itself.
+// Real progress: poll the server's stage stamps while the durable job runs.
+// Polling is display-only and never completes or fails the scan itself.
 const PROGRESS_POLL_INTERVAL_MS = 2500;
 const MAX_CONSECUTIVE_POLL_FAILURES = 2;
 
@@ -65,6 +64,7 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
   const analyzeScanInput = useAppStore((state) => state.analyzeScanInput);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [continuesInBackground, setContinuesInBackground] = useState(false);
   const [progress, setProgress] = useState<AnalyzingProgressState>(INITIAL_ANALYZING_PROGRESS);
   const isMenuScan = route.params.payload.scanCategory === 'menu';
   const isGroceryScan = route.params.payload.scanCategory === 'grocery';
@@ -115,8 +115,8 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
             return;
           }
           if (snapshot.status === 'completed' || snapshot.status === 'failed') {
-            // The blocking analyze request is the source of truth for
-            // completion — just stop asking.
+            // The result poll is the source of truth for completion, so this
+            // display-only poll can stop asking.
             pollingStopped = true;
           }
           setProgress((current) => applyProgressSnapshot(current, snapshot));
@@ -152,6 +152,10 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
         if (!active) {
           return;
         }
+        const keepsRunning = caughtError instanceof ApiError
+          && caughtError.code === 'request_timeout'
+          && caughtError.details?.terminalScanFailure !== true;
+        setContinuesInBackground(keepsRunning);
         setError(caughtError instanceof Error ? caughtError.message : 'The scan could not be completed.');
       });
 
@@ -167,7 +171,13 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
       <AppScreen>
         <ScreenHeader
           eyebrow="Scan hiccup"
-          title={isMenuScan ? "We couldn't read that menu." : isGroceryScan ? "We couldn't read that product." : "We couldn't read that meal."}
+          title={continuesInBackground
+            ? 'Your scan is still working.'
+            : isMenuScan
+              ? "We couldn't read that menu."
+              : isGroceryScan
+                ? "We couldn't read that product."
+                : "We couldn't read that meal."}
           subtitle={error}
         />
         <SectionCard>
@@ -175,18 +185,24 @@ export function ScanAnalyzingScreen({ navigation, route }: Props) {
             <Pip state="anxious" size={96} />
           </View>
           <Text style={styles.errorBody}>
-            {"Nothing was saved — try again whenever you're ready."}
+            {continuesInBackground
+              ? 'You can leave this screen. We will add the result to your recent scans when it is ready.'
+              : "Nothing was saved. Try again whenever you're ready."}
           </Text>
-          <PrimaryButton
-            label="Try again"
-            onPress={() => navigation.replace('ScanCapture', {
-              sourceType: route.params.payload.sourceType,
-              manualMode: route.params.manualMode,
-              scanCategory: route.params.payload.scanCategory,
-              initialMode: retryInitialMode,
-            })}
-          />
-          {isGroceryScan ? (
+          {continuesInBackground ? (
+            <PrimaryButton label="Go to home" onPress={() => navigation.popToTop()} />
+          ) : (
+            <PrimaryButton
+              label="Try again"
+              onPress={() => navigation.replace('ScanCapture', {
+                sourceType: route.params.payload.sourceType,
+                manualMode: route.params.manualMode,
+                scanCategory: route.params.payload.scanCategory,
+                initialMode: retryInitialMode,
+              })}
+            />
+          )}
+          {!continuesInBackground && isGroceryScan ? (
             <SecondaryButton
               label="Snap the ingredient label instead"
               onPress={() => navigation.replace('ScanCapture', {

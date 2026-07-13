@@ -2,6 +2,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { ImagePickerAsset } from 'expo-image-picker';
 
 import { imageDataUrlFromBase64, normalizeImageDataUrl } from './imageData';
+import { scanImageResizeActions } from './scanImageResize';
 
 export type PreparedScanImage = {
   uri: string;
@@ -17,13 +18,17 @@ export function scanImageDataUrl(base64: string | null | undefined, mimeType?: s
 export async function prepareCameraScanImage({
   uri,
   quality,
+  width,
+  height,
 }: {
   uri: string;
   quality: number;
+  width?: number;
+  height?: number;
 }): Promise<PreparedScanImage> {
   const converted = await manipulateAsync(
     uri,
-    [],
+    scanImageResizeActions(width, height),
     {
       compress: quality,
       format: SaveFormat.JPEG,
@@ -46,19 +51,9 @@ export async function prepareCameraScanImage({
 }
 
 export async function prepareScanImageAsset(asset: ImagePickerAsset, quality: number): Promise<PreparedScanImage> {
-  const normalizedPickerData = imageDataUrlFromBase64(asset.base64, asset.mimeType);
-  if (normalizedPickerData) {
-    return {
-      uri: asset.uri,
-      dataUrl: normalizedPickerData.dataUrl,
-      width: asset.width,
-      height: asset.height,
-    };
-  }
-
   const converted = await manipulateAsync(
     asset.uri,
-    [],
+    scanImageResizeActions(asset.width, asset.height),
     {
       compress: quality,
       format: SaveFormat.JPEG,

@@ -7,6 +7,9 @@ import { RagModule } from '../rag/rag.module';
 import { StorageModule } from '../storage/storage.module';
 import { TraceModule } from '../trace/trace.module';
 import { ScanAnalysisService } from './scan-analysis.service';
+import { ScanAnalysisExecutorService } from './scan-analysis-executor.service';
+import { ScanAnalysisJobService } from './scan-analysis-job.service';
+import { ScanAnalysisWorker } from './scan-analysis.worker';
 import { ScanController } from './scan.controller';
 import { ScanCrudService } from './scan-crud.service';
 import { ScanProgressService } from './scan-progress.service';
@@ -19,6 +22,9 @@ import { ScanWorkflowService } from './workflow/scan-workflow.service';
   providers: [
     ScanReservationService,
     ScanWorkflowService,
+    ScanAnalysisJobService,
+    ScanAnalysisExecutorService,
+    ScanAnalysisWorker,
     ScanAnalysisService,
     ScanCrudService,
     ScanProgressService,
@@ -26,6 +32,7 @@ import { ScanWorkflowService } from './workflow/scan-workflow.service';
   exports: [
     ScanReservationService,
     ScanWorkflowService,
+    ScanAnalysisJobService,
     ScanAnalysisService,
     ScanCrudService,
     ScanProgressService,

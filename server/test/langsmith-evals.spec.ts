@@ -154,8 +154,10 @@ describe('experiment metadata', () => {
     // Arrange
     const env = {
       OPENAI_EXTRACTION_MODEL: 'gpt-x',
-      OPENAI_MENU_EXTRACTION_MODEL: 'gpt-menu',
+      OPENAI_MENU_TRANSCRIPTION_MODEL: 'gpt-menu-vision',
+      OPENAI_MENU_ANALYSIS_MODEL: 'gpt-menu-text',
       OPENAI_EXTRACTION_PROMPT_VERSION: 'v9',
+      OPENAI_MENU_PROMPT_VERSION: 'menu-v5',
     };
 
     // Act
@@ -166,8 +168,11 @@ describe('experiment metadata', () => {
       api: 'http://localhost:3000',
       context: 'nightly',
       extractionModel: 'gpt-x',
-      menuModel: 'gpt-menu',
+      menuModel: 'gpt-menu-text',
+      menuTranscriptionModel: 'gpt-menu-vision',
+      menuAnalysisModel: 'gpt-menu-text',
       extractionPromptVersion: 'v9',
+      menuPromptVersion: 'menu-v5',
       commitSha: 'unknown',
       ragRetrievalEnabled: 'false',
     });
@@ -176,7 +181,9 @@ describe('experiment metadata', () => {
   it('falls back to the current defaults with an empty env', () => {
     const metadata = buildExperimentMetadata({ api: 'x', context: 'triage', env: {} });
     expect(metadata.extractionModel).toBe('gpt-5.4-mini');
-    expect(metadata.menuModel).toBe('gpt-5-mini');
+    expect(metadata.menuModel).toBe('gpt-5.4-mini');
+    expect(metadata.menuTranscriptionModel).toBe('gpt-5.4-mini');
+    expect(metadata.menuAnalysisModel).toBe('gpt-5.4-mini');
     expect(metadata.extractionPromptVersion).toBe('n/a');
   });
 });

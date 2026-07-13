@@ -1,5 +1,10 @@
 import { topUpOptions } from '../data/catalog';
-import { HomeResponse, LearningRecomputeRequest, ProfileUpdateRequest } from '../services/api/contracts';
+import {
+  HomeResponse,
+  LearningRecomputeRequest,
+  ProfileUpdateRequest,
+  ScanAnalysisStartResponse,
+} from '../services/api/contracts';
 import { type ReportPayoffBaseline } from '../features/home/reportPayoff';
 import { AppUser, BillingState, ConditionIngredientInsight, ConsumptionPortion, DailyGutReport, IngredientInsight, OnboardingAnswers, OnboardingStage, ScanInputPayload, ScanRecord, SubscriptionPlan, UserProfile } from '../types/domain';
 
@@ -27,6 +32,8 @@ export type AppStoreState = {
   learningSyncSource: 'daily_report' | 'recompute' | null;
   remoteDataLoaded: boolean;
   reportPayoffBaseline: ReportPayoffBaseline | null;
+  activeScanAnalysis: ScanAnalysisStartResponse | null;
+  scanAnalysisInFlight: boolean;
   clearReportPayoffBaseline: () => void;
   cacheScanRecord: (scan: ScanRecord) => void;
   updateOnboardingField: <K extends keyof OnboardingAnswers>(field: K, value: OnboardingAnswers[K]) => void;
@@ -57,6 +64,7 @@ export type AppStoreState = {
   applyBillingState: (billing: BillingState) => void;
   applyHomeResponse: (response: HomeResponse) => void;
   analyzeScanInput: (payload: ScanInputPayload) => Promise<{ scanId: string }>;
+  resumeActiveScanAnalysis: () => Promise<void>;
   deleteScanRecord: (scanId: string) => Promise<void>;
   upsertDailyReport: (params: {
     localDate: string;

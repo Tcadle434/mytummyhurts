@@ -25,7 +25,7 @@ Realistic net removable after de-dup: **~2,000–2,800 lines**, plus ~1,500 reor
 | B3 | `dietStatusLabel` omits the `caution` case | `PersonalizedScanCard.helpers.ts` vs `scan-result/common.ts` |
 | B4 | Identical-branch ternary `'logged' : 'logged'` | `DailyScoreDayScreen.tsx:89` |
 | B5 | Diverging sort keys in `mostRecentDailyReport` FE vs BE | `store/helpers.ts:452` vs `learning-recompute.service.ts:50` |
-| B6 | Empty catch swallows barcode errors | `scan-analysis.service.ts:237` |
+| B6 | Empty catch swallows barcode errors | `scan-analysis-executor.service.ts` |
 | B7 | Uncleared `setTimeout` for push-token registration | `NotificationSchedulerBridge.tsx:60` |
 
 ---

@@ -57,8 +57,13 @@ npm --prefix server run eval:scans -- --api http://localhost:3000 \
   --email scan-evals@local.test --password 'Eval-local-pass-1!' --repeat 2
 ```
 
-Inline `imageDataUrls` are passed straight through to the LLM (the server does
-not depend on OpenAI fetching signed storage URLs), so local MinIO works.
+Inline `imageDataUrls` are first persisted to object storage. The durable worker
+reads those objects back as data URLs for the LLM, so local MinIO works without
+requiring OpenAI to fetch a localhost signed URL.
+
+The runner uses the asynchronous start/result endpoints and polls every two
+seconds for up to 15 minutes. This exercises the same durable job path as the
+current app rather than the blocking compatibility endpoints.
 
 Or against production/VPS with an active eval account:
 
@@ -144,7 +149,7 @@ key the runner prints a one-line notice and runs local-only.
   run shows up in LangSmith tagged `context=ci-gate`; with the secret absent
   the runner prints a skip notice and the gate is unaffected.
 - Production parity: the workflow ingests the versioned curated corpus and enables retrieval, bounded RAG influence, and risk adjudication before scanning.
-- Reports: JSON and Markdown artifacts include commit SHA, corpus tree SHA, model identities, prompt version, feature flags, tier, shard, and repeat count.
+- Reports: JSON and Markdown artifacts include commit SHA, corpus tree SHA, extraction and menu-stage model identities, extraction and menu prompt versions, feature flags, tier, shard, and repeat count.
 
 ## Adding A New Image
 
@@ -230,8 +235,9 @@ labels.
 
 ## Unified LangSmith telemetry
 
-Point-in-time reports can't show whether calibration drifts when you bump a model
-(`gpt-5.4-mini` / `gpt-5-mini`) or a prompt version. Since Phase 3b there is
+Point-in-time reports can't show whether calibration drifts when you bump the
+extraction, menu transcription, or menu analysis model, or either prompt
+version. Since Phase 3b there is
 exactly **one** runner (`run-scan-evals.mjs`, npm `eval:scans`): when
 `LANGSMITH_API_KEY` is present in the environment, **every pass** streams itself
 to LangSmith as an experiment on the shared `mth-golden-scans` dataset — each
@@ -260,9 +266,10 @@ confused with a red `triage` experiment (routine local poking):
 
 Experiments are named `mth-golden-<extraction model>-<context>-<run id>`
 (override the head with `--experiment <prefix>`; pick another dataset with
-`--dataset <name>`), and metadata carries the model identities, prompt version,
-commit SHA, corpus tree SHA, and RAG/adjudication feature flags from env so
-runs stay groupable across bumps.
+`--dataset <name>`), and metadata carries the extraction, menu transcription,
+menu analysis, and adjudication model identities; extraction and menu prompt
+versions; commit SHA; corpus tree SHA; and RAG/adjudication feature flags from
+env so runs stay groupable across bumps.
 
 - Uses **only** the curated goldens in `evals/golden/` (no real user PII), so
   shipping inputs to LangSmith is safe.

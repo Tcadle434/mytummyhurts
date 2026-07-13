@@ -6,7 +6,9 @@ import {
   CLASSIFICATION_MODEL,
   EXTRACTION_MODEL,
   EXTRACTION_SCHEMA_VERSION,
-  MENU_EXTRACTION_MODEL,
+  MENU_ANALYSIS_MODEL,
+  MENU_PROMPT_VERSION,
+  MENU_TRANSCRIPTION_MODEL,
   PROMPT_VERSION,
   RISK_ADJUDICATION_MODEL,
   type OpenAiAuditLog,
@@ -185,11 +187,16 @@ export class TraceService {
           on conflict (prompt_key, version) do nothing`;
         await sql`
           insert into public.ai_prompt_versions (prompt_key, version, schema_version)
+          values ('mytummyhurts_menu', ${MENU_PROMPT_VERSION}, 'menu_extraction_v5')
+          on conflict (prompt_key, version) do nothing`;
+        await sql`
+          insert into public.ai_prompt_versions (prompt_key, version, schema_version)
           values ('mytummyhurts_risk_adjudication', ${RISK_ADJUDICATION_PROMPT_VERSION}, 'risk_adjudication_v1')
           on conflict (prompt_key, version) do nothing`;
         for (const [role, model] of [
           ['extraction', EXTRACTION_MODEL],
-          ['menu', MENU_EXTRACTION_MODEL],
+          ['menu_transcription', MENU_TRANSCRIPTION_MODEL],
+          ['menu_analysis', MENU_ANALYSIS_MODEL],
           ['classification', CLASSIFICATION_MODEL],
           ['risk_adjudication', RISK_ADJUDICATION_MODEL],
           ['embedding', process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small'],
