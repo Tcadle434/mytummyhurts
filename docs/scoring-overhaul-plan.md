@@ -46,8 +46,11 @@ engine/retry.ts, scoring/menu-scoring.ts (fallbacks), trace/cost services.
    `DEMO_MODE=true`.
 3. Persist audits on failure: catch blocks record `err.audit` via
    `trace.recordScanTrace(status:'failed')` before rethrow.
-4. Retry tuning: extraction timeout 30s (65s → 30s), retry set gains
-   `openai_timeout`, `openai_invalid_json`, `openai_incomplete_output` (capped).
+4. Extraction timeout is 30s (down from 65s). Structured-output retries make at
+   most three total attempts for timeouts, transient transport/API failures,
+   completed responses with missing output, output-token-limit truncation,
+   invalid JSON, or Zod validation failures. Refusals and terminal client errors
+   do not retry.
 5. `reasoning: { effort: 'low' }` + `verbosity: 'low'` on gpt-5.4-mini
    extraction calls (mirrors menu stage); raise image/text output caps to 6000.
 6. Stop requesting condition bands when the active engine discards them —
