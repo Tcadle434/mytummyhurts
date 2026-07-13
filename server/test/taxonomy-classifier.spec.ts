@@ -30,13 +30,13 @@ function insight(ingredientName: string) {
 }
 
 function sqlHarness() {
-  const upsertedRows: Array<Record<string, unknown>> = [];
+  const upsertedRows: Record<string, unknown>[] = [];
   const sql = Object.assign(vi.fn((first: unknown, ...values: unknown[]) => {
     if (Array.isArray(first) && Object.hasOwn(first, 'raw')) {
       const statement = first.join(' ');
       if (statement.includes('select normalized_ingredient_name')) return Promise.resolve([]);
       if (statement.includes('insert into public.ingredient_taxonomy_classifications')) {
-        const bulkInsert = values[0] as { rows: Array<Record<string, unknown>> };
+        const bulkInsert = values[0] as { rows: Record<string, unknown>[] };
         upsertedRows.push(...bulkInsert.rows);
       }
       return Promise.resolve([]);

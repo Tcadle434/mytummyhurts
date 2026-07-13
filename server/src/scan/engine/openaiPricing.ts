@@ -230,7 +230,7 @@ export function estimateOpenAiRetryCost(
   };
 }
 
-function sumNullable(values: Array<number | null>): number | null {
+function sumNullable(values: (number | null)[]): number | null {
   const numericValues = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   return numericValues.length ? numericValues.reduce((total, value) => total + value, 0) : null;
 }

@@ -8,7 +8,6 @@ import {
   IngredientConfidence,
   IngredientProminence,
   IngredientRole,
-  IngredientEvidence,
   MenuItemAnalysis,
   MenuScanAnalysis,
   MealComponent,
@@ -32,7 +31,6 @@ import {
 } from './menuRubric';
 import {
   dietFitStatusValues,
-  dietPreferenceKeys,
   dietPromptText,
   normalizeDietPreferenceKey,
 } from './dietRubric';
@@ -44,7 +42,6 @@ import {
   type OpenAiCostSnapshot,
 } from './openaiPricing';
 import {
-  CONDITION_SEVERITY_BANDS,
   fallbackRiskAdjudicationPayload,
   RISK_ADJUDICATION_PROMPT_VERSION,
   type RiskAdjudicationPayload,
@@ -446,7 +443,7 @@ function buildMenuTextIngredients(
 function inferMenuPrepStyle(text: string) {
   const prepStyle: string[] = [];
   const normalized = normalizeMenuText(text);
-  const checks: Array<[string, string[]]> = [
+  const checks: [string, string[]][] = [
     ['fried', ['fried', 'tempura', 'crispy']],
     ['spicy', ['spicy', 'firecracker', 'jalapeno', 'chili', 'sriracha']],
     ['creamy', ['cream', 'creamy', 'mayo', 'aioli']],
@@ -869,7 +866,7 @@ function openAiCostSnapshotFromAttempts(model: string, attempts: StructuredOutpu
 function structuredOutputRequestMetadata(
   metadata: Record<string, unknown>,
   attemptCount: number,
-  validationIssues: Array<{ path: string; message: string }>,
+  validationIssues: { path: string; message: string }[],
 ) {
   return {
     ...metadata,
@@ -1674,7 +1671,7 @@ function dedupeMenuItemsByNameAndPrice<T extends { name?: unknown; price?: unkno
   return deduped;
 }
 
-function combineMenuPageExtractions(pageResults: Array<{ result: MenuScanAnalysis }>, inputPageCount: number): MenuScanAnalysis {
+function combineMenuPageExtractions(pageResults: { result: MenuScanAnalysis }[], inputPageCount: number): MenuScanAnalysis {
   const pages = pageResults.map((entry) => entry.result);
   const rawItems = pages.flatMap((page, pageIndex) =>
       page.items.map((item, itemIndex) => ({
@@ -1698,7 +1695,7 @@ function combineMenuPageExtractions(pageResults: Array<{ result: MenuScanAnalysi
 }
 
 function combinedMenuAudit(
-  pageResults: Array<{ parsed: RawMenuPayload; audit: OpenAiAuditLog }>,
+  pageResults: { parsed: RawMenuPayload; audit: OpenAiAuditLog }[],
   result: MenuScanAnalysis,
   context: ExtractionContext,
   imageUrls: string[],

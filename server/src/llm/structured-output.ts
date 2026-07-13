@@ -152,7 +152,7 @@ function hasRefusal(payload: unknown): boolean {
   );
 }
 
-function issuePath(path: Array<string | number>): string {
+function issuePath(path: (string | number)[]): string {
   if (!path.length) return '$';
   return path.reduce<string>((result, part) =>
     typeof part === 'number' ? `${result}[${part}]` : `${result}.${part}`,
