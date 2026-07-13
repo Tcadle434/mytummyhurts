@@ -148,11 +148,18 @@ key the runner prints a one-line notice and runs local-only.
 
 ## Adding A New Image
 
-1. Put the image in `server/evals/golden/images/`.
+1. Put the image in `server/evals/golden/images/`. Cases may also reference
+   repository fixtures (`assetRoot: "repo"`), use a multi-page `images` array
+   or a `barcode`, and set `autoClassify: true` to exercise the automatic
+   food/menu router.
 2. Add an entry to `server/evals/golden/cases.json`.
 3. Use a profile from `server/evals/golden/profiles.json`.
-4. Run the single case with `--repeat 3` or `--repeat 5`.
-5. If it fails, fix the general extraction/scoring behavior and keep the case.
+4. Pick tier membership: new cases join the full tier and nightly rotation
+   automatically; `releaseEligible: false` / `nightlyEligible: false` opt out
+   of rotation, and the smoke/release anchor lists live in
+   `server/evals/golden/suites.json`.
+5. Run the single case with `--repeat 3` or `--repeat 5`.
+6. If it fails, fix the general extraction/scoring behavior and keep the case.
 
 Do not add dish-specific scoring hacks. A failed image should become a general rule or a better eval expectation.
 
@@ -253,13 +260,15 @@ confused with a red `triage` experiment (routine local poking):
 
 Experiments are named `mth-golden-<extraction model>-<context>-<run id>`
 (override the head with `--experiment <prefix>`; pick another dataset with
-`--dataset <name>`), and metadata carries the extraction/menu model + prompt
-version from env so runs stay groupable across bumps.
+`--dataset <name>`), and metadata carries the model identities, prompt version,
+commit SHA, corpus tree SHA, and RAG/adjudication feature flags from env so
+runs stay groupable across bumps.
 
 - Uses **only** the curated goldens in `evals/golden/` (no real user PII), so
   shipping inputs to LangSmith is safe.
-- Syncs the LangSmith dataset from `evals/golden/cases.json` — additive, so new
-  golden cases show up automatically.
+- Syncs the LangSmith dataset from `evals/golden/cases.json`: new golden cases
+  are added automatically, and edited cases update their existing examples in
+  place.
 - Deterministic evaluators only: `expectation_pass` (mirrors the canonical
   `validateExpectation` gate), `band_match`, `score_in_range`, and the raw
   `overall_risk_score` (tracked per case for drift). Numeric gates stay the
@@ -271,11 +280,15 @@ version from env so runs stay groupable across bumps.
 
 A `--context nightly` pass also compares the run's per-example **mean band**
 against a stored baseline (`server/evals/reports/langsmith-drift-baseline.json`,
-auto-seeded on the first nightly run) and exits 1 loudly when the mean drift
-exceeds **one whole band** — a suite that silently moved from low to medium is
-product-breaking. Flags: `--drift-baseline <path>`, `--update-drift-baseline`
-(refresh after an intentional calibration change; also works outside nightly).
-Filtered runs (`--case`/`--profile`) never seed, update, or judge the baseline.
+auto-seeded on the first full-suite nightly pass) and exits 1 loudly when the
+mean drift exceeds **one whole band** — a suite that silently moved from low to
+medium is product-breaking. Flags: `--drift-baseline <path>`,
+`--update-drift-baseline` (refresh after an intentional calibration change;
+also works outside nightly). Drift is compared over the example keys shared
+with the baseline, so partial nightly shards are still judged. Only a
+full-suite run can seed or update the baseline: filtered (`--case`/`--profile`)
+or tiered runs refuse `--update-drift-baseline` and skip seeding when no
+baseline exists yet.
 
 `npm --prefix server run eval:langsmith` is now a thin alias over the unified
 runner: it defaults `--context nightly` and the historical `--repeat 1`, and

@@ -5,8 +5,8 @@
 // LANGSMITH_API_KEY is set — streams the pass to LangSmith as an experiment on
 // the shared dataset, tagged with a --context (triage | ci-gate | nightly |
 // baseline) plus model/prompt-version metadata. No key -> one-line notice,
-// local-only pass. `--context nightly` (the crontab path, via
-// run-langsmith-evals.mjs) also arms the >1-band mean-drift alarm.
+// local-only pass. `--context nightly` (the scan-evals.yml schedule path, or
+// the run-langsmith-evals.mjs alias) also arms the >1-band mean-drift alarm.
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';

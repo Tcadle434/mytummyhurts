@@ -264,8 +264,9 @@ function canonicalJson(value) {
 }
 
 /**
- * Create the dataset if missing, additively upload any examples not yet
- * present, and map example key -> LangSmith example id (runs reference it).
+ * Create the dataset if missing, upload any examples not yet present, update
+ * examples whose inputs/outputs changed, and map example key -> LangSmith
+ * example id (runs reference it).
  */
 export async function syncDataset(client, datasetName, examples) {
   const exists = await client.hasDataset({ datasetName });
