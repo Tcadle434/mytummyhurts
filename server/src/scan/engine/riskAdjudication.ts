@@ -9,9 +9,12 @@ import type {
 } from './domain';
 import { CONDITION_BAND_ORDER } from '@mth/shared-domain';
 import { normalize } from './text-utils';
-import type {
-  RiskAdjudicationConditionPayload as RawRiskAdjudicationCondition,
-  RiskAdjudicationPayload,
+import {
+  hasExactRiskAdjudicationConditions,
+  requestedRiskAdjudicationConditionKeys,
+  riskAdjudicationConditionKey,
+  type RiskAdjudicationConditionPayload as RawRiskAdjudicationCondition,
+  type RiskAdjudicationPayload,
 } from './openaiSchemas';
 
 // Canonical citation shape lives in the package; re-exported (via domain.ts)
@@ -90,13 +93,6 @@ function bandAt(index: number): ConditionSeverityBand {
 
 function isBand(value: unknown): value is ConditionSeverityBand {
   return CONDITION_SEVERITY_BANDS.includes(value as ConditionSeverityBand);
-}
-
-function conditionKey(value: string) {
-  const key = normalize(value);
-  if (key === 'gerd' || key.includes('acid reflux') || key.includes('reflux')) return 'gerd acid reflux';
-  if (key === 'ibs' || key.includes('irritable bowel')) return 'ibs';
-  return key;
 }
 
 function namesMatch(left: string, right: string) {
@@ -227,12 +223,12 @@ function clampGenericBand(
   warnings: Set<string>,
 ): ConditionSeverityBand {
   const prior = structured.conditionSeverities?.find(
-    (entry) => conditionKey(entry.condition) === conditionKey(raw.condition),
+    (entry) => riskAdjudicationConditionKey(entry.condition) === riskAdjudicationConditionKey(raw.condition),
   );
   if (!prior || !isBand(prior.band)) return raw.genericBand;
 
   if (raw.genericBand !== prior.band) {
-    warnings.add(`genericBandClamped:${conditionKey(raw.condition)}:${raw.genericBand}->${prior.band}`);
+    warnings.add(`genericBandClamped:${riskAdjudicationConditionKey(raw.condition)}:${raw.genericBand}->${prior.band}`);
   }
   return prior.band;
 }
@@ -251,9 +247,12 @@ export function validateRiskAdjudication(
   input: RiskAdjudicationRequest,
   options: { source: 'llm' | 'fallback'; ragRetrievalRunId?: string | null } = { source: 'llm' },
 ): ValidatedRiskAdjudication | null {
-  if (!Array.isArray(payload.conditionSeverities)) return null;
+  if (
+    !Array.isArray(payload.conditionSeverities)
+    || !hasExactRiskAdjudicationConditions(payload.conditionSeverities, input.knownConditions)
+  ) return null;
 
-  const allowedConditions = new Set(input.knownConditions.map(conditionKey));
+  const allowedConditions = requestedRiskAdjudicationConditionKeys(input.knownConditions);
   const allowedCitationIds = citationIdMap(input.ragEvidence);
   const allowedIngredients = extractedIngredientNames(input.structuredAnalysis);
   const warnings = new Set<string>();
@@ -264,7 +263,7 @@ export function validateRiskAdjudication(
     if (
       !raw ||
       typeof raw.condition !== 'string' ||
-      !allowedConditions.has(conditionKey(raw.condition)) ||
+      !allowedConditions.has(riskAdjudicationConditionKey(raw.condition)) ||
       !isBand(raw.genericBand) ||
       !isBand(raw.personalizedBand) ||
       !isBand(raw.finalBand)

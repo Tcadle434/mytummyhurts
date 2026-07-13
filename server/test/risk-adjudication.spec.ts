@@ -142,6 +142,26 @@ describe('risk adjudication validation', () => {
     expect(out?.evidenceCitations[0].chunkId).toBe('chunk-1');
   });
 
+  it('rejects omitted and duplicate canonical condition rows', () => {
+    const input = {
+      ...buildRiskAdjudicationRequest({
+        structuredAnalysis: structured(),
+        profile: ibsProfile(),
+        insights: [insight()],
+        ragEvidence: [],
+      }),
+      knownConditions: ['IBS', 'GERD'],
+    };
+    const ibs = payload('mild', []).conditionSeverities[0];
+    const gerd = { ...ibs, condition: 'GERD' };
+
+    expect(validateRiskAdjudication({ conditionSeverities: [ibs, gerd] }, input)).not.toBeNull();
+    expect(validateRiskAdjudication({ conditionSeverities: [ibs] }, input)).toBeNull();
+    expect(validateRiskAdjudication({
+      conditionSeverities: [ibs, { ...ibs, condition: ' ibs ' }, gerd],
+    }, input)).toBeNull();
+  });
+
   it('drops invented citation ids without rejecting otherwise valid adjudication', () => {
     const input = buildRiskAdjudicationRequest({
       structuredAnalysis: structured(),

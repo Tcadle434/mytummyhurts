@@ -15,6 +15,11 @@ const RETRYABLE_OUTPUT_CODES = new Set([
   'openai_invalid_json',
   'openai_validation_failed',
 ]);
+const RETRYABLE_RESPONSE_ERROR_CODES = new Set([
+  'server_error',
+  'rate_limit_exceeded',
+  'vector_store_timeout',
+]);
 
 type RuntimeTextFormat = {
   type: 'json_schema';
@@ -73,11 +78,14 @@ type StructuredOutputErrorOptions = {
   code: string;
   message?: string;
   status?: number;
+  retryable?: boolean;
   attempts: StructuredOutputAttempt[];
   validationIssues: SanitizedValidationIssue[];
   latencyMs: number;
   cause?: unknown;
 };
+
+const RETRYABILITY_OVERRIDES = new WeakMap<object, boolean>();
 
 export class StructuredOutputError extends Error {
   readonly code: string;
@@ -91,6 +99,7 @@ export class StructuredOutputError extends Error {
     this.name = 'StructuredOutputError';
     this.code = options.code;
     this.status = options.status;
+    if (options.retryable !== undefined) RETRYABILITY_OVERRIDES.set(this, options.retryable);
     this.attempts = options.attempts;
     this.validationIssues = options.validationIssues;
     this.latencyMs = options.latencyMs;
@@ -107,7 +116,7 @@ export function defineStructuredOutput<TSchema extends z.ZodTypeAny>(
     schema,
     format: format as StructuredOutputDefinition<TSchema>['format'],
     jsonSchema: format.schema,
-    parse: (content) => schema.parse(format.$parseRaw(content)),
+    parse: (content) => format.$parseRaw(content) as z.infer<TSchema>,
   };
 }
 
@@ -237,6 +246,8 @@ function requestWithFeedback(request: Record<string, unknown>, feedback: string 
 
 function retryableError(error: unknown) {
   if (!(error instanceof StructuredOutputError)) return false;
+  const override = RETRYABILITY_OVERRIDES.get(error);
+  if (override !== undefined) return override;
   if (error.code === 'openai_timeout' || error.code === 'openai_request_failed') return true;
   if (RETRYABLE_OUTPUT_CODES.has(error.code)) return true;
   return error.status === 408 || error.status === 409 || error.status === 429 || (error.status ?? 0) >= 500;
@@ -264,11 +275,22 @@ function publicFailure(error: StructuredOutputError): StructuredOutputError {
     code: error.code,
     message: 'openai_request_failed',
     status: error.status,
+    retryable: RETRYABILITY_OVERRIDES.get(error),
     attempts: error.attempts,
     validationIssues: error.validationIssues,
     latencyMs: error.latencyMs,
     cause: error,
   });
+}
+
+function retryableResponseFailure(payload: Record<string, unknown>) {
+  const incompleteDetails = isRecord(payload.incomplete_details) ? payload.incomplete_details : null;
+  if (incompleteDetails) {
+    return incompleteDetails.reason === 'max_output_tokens';
+  }
+
+  const responseError = isRecord(payload.error) ? payload.error : null;
+  return typeof responseError?.code === 'string' && RETRYABLE_RESPONSE_ERROR_CODES.has(responseError.code);
 }
 
 export async function requestStructuredOutput<TSchema extends z.ZodTypeAny>(input: {
@@ -381,7 +403,21 @@ export async function requestStructuredOutput<TSchema extends z.ZodTypeAny>(inpu
         validationIssues = addIssues(validationIssues, issues);
         feedback = correctiveFeedback(issues);
         attempt.errorCode = 'openai_incomplete_output';
-        throw makeError({ code: 'openai_incomplete_output' });
+        throw makeError({
+          code: 'openai_incomplete_output',
+          retryable: retryableResponseFailure(payload),
+        });
+      }
+
+      if (payload.status === 'failed') {
+        const issues = [{ path: '$', message: 'Response must include the complete JSON object.' }];
+        validationIssues = addIssues(validationIssues, issues);
+        feedback = correctiveFeedback(issues);
+        attempt.errorCode = 'openai_missing_output';
+        throw makeError({
+          code: 'openai_missing_output',
+          retryable: retryableResponseFailure(payload),
+        });
       }
 
       const outputText = extractOutputText(rawResponseJson);

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { defineStructuredOutput, requestStructuredOutput } from '../src/llm/structured-output';
+import { riskAdjudicationStructuredOutputForConditions } from '../src/scan/engine/openaiSchemas';
 
 function responseWithOutput(output: unknown, id: string) {
   return new Response(JSON.stringify({
@@ -78,6 +79,21 @@ function menuPayload(overrides: Record<string, unknown> = {}) {
       },
     ],
     ...overrides,
+  };
+}
+
+function riskAdjudicationCondition(condition: string) {
+  return {
+    condition,
+    genericBand: 'mild',
+    personalizedBand: 'mild',
+    finalBand: 'mild',
+    drivers: [],
+    protectiveEvidence: [],
+    citationChunkIds: [],
+    personalEvidenceUsed: [],
+    confidence: 'medium',
+    rationale: 'Representative condition row.',
   };
 }
 
@@ -246,6 +262,46 @@ describe('structured output retries', () => {
     });
   });
 
+  it('regenerates omitted and duplicate canonical risk adjudication conditions', async () => {
+    const definition = riskAdjudicationStructuredOutputForConditions(['GERD', 'IBS']);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(responseWithOutput({
+        conditionSeverities: [riskAdjudicationCondition('GERD')],
+      }, 'resp-risk-omitted'))
+      .mockResolvedValueOnce(responseWithOutput({
+        conditionSeverities: [
+          riskAdjudicationCondition('GERD'),
+          riskAdjudicationCondition(' gerd '),
+          riskAdjudicationCondition('IBS'),
+        ],
+      }, 'resp-risk-duplicate'))
+      .mockResolvedValueOnce(responseWithOutput({
+        conditionSeverities: [
+          riskAdjudicationCondition('GERD'),
+          riskAdjudicationCondition('IBS'),
+        ],
+      }, 'resp-risk-valid'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await requestStructuredOutput({
+      apiKey: 'test-key',
+      stage: 'risk_adjudication',
+      timeoutMs: 1_000,
+      retryDelayMs: 0,
+      definition,
+      request: {
+        model: 'gpt-test',
+        input: 'ORIGINAL_RISK_INPUT',
+        text: { format: definition.format },
+      },
+    });
+
+    expect(result.value.conditionSeverities.map((row) => row.condition)).toEqual(['GERD', 'IBS']);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('fails with ai_request_failed after three invalid outputs and exposes only a failed audit', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     vi.resetModules();
@@ -318,5 +374,90 @@ describe('structured output retries', () => {
     vi.stubGlobal('fetch', refusalFetch);
     await expect(classifyScanImagesWithAudit(['data:image/png;base64,abc'])).rejects.toThrow('openai_request_failed');
     expect(refusalFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry content-filtered or invalid-request response envelopes', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    vi.resetModules();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { classifyScanImagesWithAudit } = await import('../src/scan/engine/openai');
+
+    const contentFilterFetch = vi.fn(async () => new Response(JSON.stringify({
+      id: 'resp-content-filter',
+      status: 'incomplete',
+      incomplete_details: { reason: 'content_filter' },
+      output: [],
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', contentFilterFetch);
+    await expect(classifyScanImagesWithAudit(['data:image/png;base64,abc'])).rejects.toMatchObject({
+      message: 'openai_request_failed',
+      audit: {
+        errorCode: 'openai_incomplete_output',
+        requestMetadata: { attemptCount: 1 },
+      },
+    });
+    expect(contentFilterFetch).toHaveBeenCalledTimes(1);
+
+    const invalidPromptFetch = vi.fn(async () => new Response(JSON.stringify({
+      id: 'resp-invalid-prompt',
+      status: 'failed',
+      error: { code: 'invalid_prompt', message: 'Invalid prompt.' },
+      output: [],
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', invalidPromptFetch);
+    await expect(classifyScanImagesWithAudit(['data:image/png;base64,abc'])).rejects.toMatchObject({
+      message: 'openai_request_failed',
+      audit: {
+        errorCode: 'openai_missing_output',
+        requestMetadata: { attemptCount: 1 },
+      },
+    });
+    expect(invalidPromptFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries token-limit and transient response failure envelopes', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    vi.resetModules();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { classifyScanImagesWithAudit } = await import('../src/scan/engine/openai');
+
+    const tokenLimitFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'resp-token-limit',
+        status: 'incomplete',
+        incomplete_details: { reason: 'max_output_tokens' },
+        output: [],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(responseWithOutput({
+        category: 'food',
+        confidence: 'high',
+        reason: 'plate',
+      }, 'resp-token-limit-ok'));
+    vi.stubGlobal('fetch', tokenLimitFetch);
+    await expect(classifyScanImagesWithAudit(['data:image/png;base64,abc'])).resolves.toMatchObject({
+      result: { category: 'food' },
+    });
+    expect(tokenLimitFetch).toHaveBeenCalledTimes(2);
+
+    const transientFailureFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'resp-server-error',
+        status: 'incomplete',
+        incomplete_details: null,
+        error: { code: 'server_error', message: 'Temporary server error.' },
+        output: [],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(responseWithOutput({
+        category: 'food',
+        confidence: 'high',
+        reason: 'plate',
+      }, 'resp-server-error-ok'));
+    vi.stubGlobal('fetch', transientFailureFetch);
+    await expect(classifyScanImagesWithAudit(['data:image/png;base64,abc'])).resolves.toMatchObject({
+      result: { category: 'food' },
+    });
+    expect(transientFailureFetch).toHaveBeenCalledTimes(2);
   });
 });

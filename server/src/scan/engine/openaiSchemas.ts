@@ -5,6 +5,7 @@ import { defineStructuredOutput } from '../../llm/structured-output';
 import {
   CONDITION_DRIVERS_REQUIRED_MESSAGE,
   REQUESTED_CONDITION_REQUIRED_MESSAGE,
+  REQUESTED_CONDITION_SET_REQUIRED_MESSAGE,
 } from '../../llm/structured-output-messages';
 import { dietFitStatusValues, dietPreferenceKeys } from './dietRubric';
 import {
@@ -13,6 +14,7 @@ import {
   menuRubricEvidenceValues,
 } from './menuRubric';
 import type { ConditionSeverityBand } from './domain';
+import { normalize } from './text-utils';
 
 export const MENU_ITEM_LIMIT = 100;
 
@@ -195,12 +197,40 @@ export const scanCategoryStructuredOutput = defineStructuredOutput(
 export const menuStructuredOutput = defineStructuredOutput('menu_extraction_image', menuExtractionSchema);
 export const riskAdjudicationStructuredOutput = defineStructuredOutput('risk_adjudication', riskAdjudicationSchema);
 
+export function riskAdjudicationConditionKey(condition: string) {
+  const key = normalize(condition);
+  if (key === 'gerd' || key.includes('acid reflux') || key.includes('reflux')) return 'gerd acid reflux';
+  if (key === 'ibs' || key.includes('irritable bowel')) return 'ibs';
+  return key;
+}
+
+export function requestedRiskAdjudicationConditionKeys(conditions: string[]) {
+  const keys = conditions.map(riskAdjudicationConditionKey).filter(Boolean);
+  return new Set(keys.length ? keys : ['general']);
+}
+
+export function hasExactRiskAdjudicationConditions(
+  rows: readonly unknown[],
+  conditions: string[],
+) {
+  const expected = requestedRiskAdjudicationConditionKeys(conditions);
+  const actual: string[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || !('condition' in row) || typeof row.condition !== 'string') {
+      return false;
+    }
+    actual.push(riskAdjudicationConditionKey(row.condition));
+  }
+  return actual.length === expected.size
+    && new Set(actual).size === actual.length
+    && actual.every((condition) => expected.has(condition));
+}
+
 export function riskAdjudicationStructuredOutputForConditions(conditions: string[]) {
-  const requestedConditions = conditions.map((condition) => condition.trim().toLowerCase()).filter(Boolean);
-  const allowedConditions = new Set(requestedConditions.length ? requestedConditions : ['general']);
+  const allowedConditions = requestedRiskAdjudicationConditionKeys(conditions);
   const schema = riskAdjudicationSchema.superRefine((payload, context) => {
     payload.conditionSeverities.forEach((severity, index) => {
-      if (!allowedConditions.has(severity.condition.trim().toLowerCase())) {
+      if (!allowedConditions.has(riskAdjudicationConditionKey(severity.condition))) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['conditionSeverities', index, 'condition'],
@@ -208,6 +238,13 @@ export function riskAdjudicationStructuredOutputForConditions(conditions: string
         });
       }
     });
+    if (!hasExactRiskAdjudicationConditions(payload.conditionSeverities, conditions)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['conditionSeverities'],
+        message: REQUESTED_CONDITION_SET_REQUIRED_MESSAGE,
+      });
+    }
   });
   return defineStructuredOutput('risk_adjudication', schema);
 }

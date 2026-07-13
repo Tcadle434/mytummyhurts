@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { z } from 'zod';
+import { z } from 'zod';
 
-import { sanitizeZodIssues } from '../src/llm/structured-output';
+import { defineStructuredOutput, sanitizeZodIssues } from '../src/llm/structured-output';
 import {
   foodImageStructuredOutput,
   foodMultiImageStructuredOutput,
@@ -186,6 +186,15 @@ describe('OpenAI structured output definitions', () => {
     expect(JSON.stringify(issues)).not.toContain('SECRET_MEAL_CONTENT');
     expect(JSON.stringify(issues)).not.toContain('SECRET_EXTRA_FIELD');
   });
+
+  it('applies schema parsing and transforms exactly once', () => {
+    const definition = defineStructuredOutput(
+      'single_parse',
+      z.object({ value: z.string().transform((value) => `${value}!`) }).strict(),
+    );
+
+    expect(definition.parse('{"value":"parsed"}')).toEqual({ value: 'parsed!' });
+  });
 });
 
 describe('meal extraction schema', () => {
@@ -287,6 +296,19 @@ describe('risk adjudication schema', () => {
       path: '$.conditionSeverities[0].condition',
       message: 'Condition must match one of the conditions requested for adjudication.',
     });
+  });
+
+  it('requires exactly one canonical row for every requested condition', () => {
+    const definition = riskAdjudicationStructuredOutputForConditions(['GERD', 'IBS']);
+    const gerd = validRiskAdjudication().conditionSeverities[0];
+    const ibs = { ...gerd, condition: 'IBS' };
+
+    expect(definition.schema.safeParse({ conditionSeverities: [gerd, ibs] }).success).toBe(true);
+    expectInvalid(definition.schema, [
+      { conditionSeverities: [] },
+      { conditionSeverities: [gerd] },
+      { conditionSeverities: [gerd, { ...gerd, condition: ' gerd ' }, ibs] },
+    ]);
   });
 });
 
