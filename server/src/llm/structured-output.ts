@@ -2,6 +2,7 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
 import { withRetry } from '../scan/engine/retry';
+import { SAFE_STRUCTURED_OUTPUT_MESSAGES } from './structured-output-messages';
 
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY_MS = 350;
@@ -13,11 +14,6 @@ const RETRYABLE_OUTPUT_CODES = new Set([
   'openai_incomplete_output',
   'openai_invalid_json',
   'openai_validation_failed',
-]);
-
-const SAFE_CUSTOM_MESSAGES = new Set([
-  'Moderate, high, and severe condition bands require at least one supporting driver.',
-  'Condition must match one of the conditions requested for adjudication.',
 ]);
 
 type RuntimeTextFormat = {
@@ -184,7 +180,7 @@ function issueMessage(issue: z.ZodIssue): string {
     case z.ZodIssueCode.not_finite:
       return 'Expected a finite number.';
     case z.ZodIssueCode.custom:
-      return SAFE_CUSTOM_MESSAGES.has(issue.message) ? issue.message : 'Failed semantic validation.';
+      return SAFE_STRUCTURED_OUTPUT_MESSAGES.has(issue.message) ? issue.message : 'Failed semantic validation.';
     default:
       return 'Failed schema validation.';
   }
@@ -224,11 +220,13 @@ function correctiveFeedback(issues: SanitizedValidationIssue[]): string {
 
 function requestWithFeedback(request: Record<string, unknown>, feedback: string | null) {
   if (!feedback) return request;
-  const input = Array.isArray(request.input) ? request.input : [];
+  const originalInput = typeof request.input === 'string'
+    ? [{ role: 'user', content: [{ type: 'input_text', text: request.input }] }]
+    : Array.isArray(request.input) ? request.input : [];
   return {
     ...request,
     input: [
-      ...input,
+      ...originalInput,
       {
         role: 'user',
         content: [{ type: 'input_text', text: feedback }],

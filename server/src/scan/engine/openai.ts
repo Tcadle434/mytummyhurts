@@ -39,6 +39,7 @@ import {
 import {
   aggregateOpenAiCostSnapshots,
   estimateOpenAiCost,
+  estimateOpenAiRetryCost,
   extractOpenAiUsage,
   type OpenAiCostSnapshot,
 } from './openaiPricing';
@@ -215,10 +216,6 @@ type ResponseAuditDescriptor = {
   requestMetadata?: Record<string, unknown>;
   inputRefs?: unknown[];
 };
-
-function openAiCostSnapshotFromResponse(model: string, rawResponseJson: unknown): OpenAiCostSnapshot {
-  return estimateOpenAiCost(model, extractOpenAiUsage(rawResponseJson));
-}
 
 function openAiCostFieldsFromSnapshot(snapshot: OpenAiCostSnapshot) {
   return {
@@ -862,26 +859,10 @@ function rawResponseTextFromAttempts(attempts: StructuredOutputAttempt[]) {
 }
 
 function openAiCostSnapshotFromAttempts(model: string, attempts: StructuredOutputAttempt[]): OpenAiCostSnapshot {
-  const snapshots = attempts
-    .filter((attempt) => attempt.rawResponseJson !== null)
-    .map((attempt) => openAiCostSnapshotFromResponse(model, attempt.rawResponseJson));
-  if (snapshots.length <= 1) {
-    return snapshots[0] ?? openAiCostSnapshotFromResponse(model, null);
-  }
-
-  const aggregate = aggregateOpenAiCostSnapshots(model, snapshots);
-  return {
-    ...aggregate,
-    usage: {
-      ...aggregate.usage,
-      responseId: snapshots.at(-1)?.usage.responseId ?? null,
-    },
-    pricingSnapshot: {
-      ...aggregate.pricingSnapshot,
-      note: 'Synthetic aggregate of structured-output retry attempts.',
-    },
-    billable: snapshots.some((snapshot) => snapshot.billable),
-  };
+  return estimateOpenAiRetryCost(
+    model,
+    attempts.map((attempt) => attempt.rawResponseJson),
+  ) ?? estimateOpenAiCost(model, extractOpenAiUsage(null));
 }
 
 function structuredOutputRequestMetadata(

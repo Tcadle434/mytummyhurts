@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+
+import { defineStructuredOutput, requestStructuredOutput } from '../src/llm/structured-output';
 
 function responseWithOutput(output: unknown, id: string) {
   return new Response(JSON.stringify({
@@ -84,6 +87,41 @@ describe('structured output retries', () => {
     vi.unstubAllGlobals();
     process.env.OPENAI_API_KEY = '';
     vi.resetModules();
+  });
+
+  it('preserves a string input when appending corrective feedback', async () => {
+    const definition = defineStructuredOutput(
+      'string_input_retry',
+      z.object({ category: z.enum(['food', 'menu']) }).strict(),
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(responseWithOutput({ category: 'RAW_OUTPUT_MUST_NOT_BE_RESENT' }, 'resp-invalid'))
+      .mockResolvedValueOnce(responseWithOutput({ category: 'food' }, 'resp-valid'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await requestStructuredOutput({
+      apiKey: 'test-key',
+      stage: 'string_input_retry',
+      timeoutMs: 1_000,
+      retryDelayMs: 0,
+      definition,
+      request: {
+        model: 'gpt-test',
+        input: 'ORIGINAL_STRING_INPUT',
+        text: { format: definition.format },
+      },
+    });
+
+    expect(result.value).toEqual({ category: 'food' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryRequest = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(retryRequest.input[0]).toEqual({
+      role: 'user',
+      content: [{ type: 'input_text', text: 'ORIGINAL_STRING_INPUT' }],
+    });
+    expect(JSON.stringify(retryRequest)).not.toContain('RAW_OUTPUT_MUST_NOT_BE_RESENT');
   });
 
   it('regenerates an invalid scan classification instead of coercing it into a food result', async () => {

@@ -194,6 +194,24 @@ describe('LastBadMealExtractionService', () => {
     expect(db.costTotalTokens).toBe(280);
   });
 
+  it('does not record a zero-usage cost event after network retry exhaustion', async () => {
+    const { db, extractor } = service();
+    const fetchMock = vi.fn(async () => {
+      throw new Error('socket unavailable');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      extractor.extractAndPersistIfNeeded('11111111-1111-1111-1111-111111111111'),
+    ).rejects.toThrow('openai_request_failed');
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(db.costEventCount).toBe(0);
+    expect(db.costTotalTokens).toBeNull();
+    expect(db.updatedIngredients).toBeNull();
+  });
+
   it('does not persist or mark extraction complete after three invalid responses', async () => {
     const { db, extractor } = service();
     const fetchMock = vi.fn(async () => responseWithOutput({

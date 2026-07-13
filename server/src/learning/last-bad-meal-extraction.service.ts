@@ -8,9 +8,7 @@ import {
   type StructuredOutputAttempt,
 } from '../llm/structured-output';
 import {
-  aggregateOpenAiCostSnapshots,
-  estimateOpenAiCost,
-  extractOpenAiUsage,
+  estimateOpenAiRetryCost,
 } from '../scan/engine/openaiPricing';
 import {
   LAST_BAD_MEAL_MECHANISM_KEYS,
@@ -115,11 +113,7 @@ export class LastBadMealExtractionService {
       result = await this.extract(text);
     } catch (error) {
       if (error instanceof StructuredOutputError && error.attempts.length) {
-        const model =
-          this.config.get<string>('OPENAI_LAST_BAD_MEAL_EXTRACTION_MODEL') ??
-          this.config.get<string>('OPENAI_NORMALIZATION_MODEL') ??
-          DEFAULT_MODEL;
-        await this.recordCost(userId, model, error.attempts);
+        await this.recordCost(userId, this.resolveModel(), error.attempts);
       }
       throw error;
     }
@@ -139,10 +133,7 @@ export class LastBadMealExtractionService {
     const apiKey = this.config.get<string>('OPENAI_API_KEY') ?? process.env.OPENAI_API_KEY;
     if (!apiKey) return { status: 'skipped', reason: 'missing_openai_api_key' };
 
-    const model =
-      this.config.get<string>('OPENAI_LAST_BAD_MEAL_EXTRACTION_MODEL') ??
-      this.config.get<string>('OPENAI_NORMALIZATION_MODEL') ??
-      DEFAULT_MODEL;
+    const model = this.resolveModel();
     const timeoutMs = positiveNumber(
       this.config.get<string>('OPENAI_LAST_BAD_MEAL_EXTRACTION_TIMEOUT_MS'),
       DEFAULT_TIMEOUT_MS,
@@ -191,24 +182,19 @@ export class LastBadMealExtractionService {
     }
   }
 
+  private resolveModel() {
+    return this.config.get<string>('OPENAI_LAST_BAD_MEAL_EXTRACTION_MODEL') ??
+      this.config.get<string>('OPENAI_NORMALIZATION_MODEL') ??
+      DEFAULT_MODEL;
+  }
+
   private async recordCost(userId: string, model: string, attempts: StructuredOutputAttempt[]) {
     try {
-      const snapshots = attempts
-        .filter((attempt) => attempt.rawResponseJson !== null)
-        .map((attempt) => estimateOpenAiCost(model, extractOpenAiUsage(attempt.rawResponseJson)));
-      const singleOrAggregate = snapshots.length > 1
-        ? aggregateOpenAiCostSnapshots(model, snapshots)
-        : snapshots[0] ?? estimateOpenAiCost(model, extractOpenAiUsage(null));
-      const cost = snapshots.length > 1
-        ? {
-            ...singleOrAggregate,
-            pricingSnapshot: {
-              ...singleOrAggregate.pricingSnapshot,
-              note: 'Synthetic aggregate of structured-output retry attempts.',
-            },
-            billable: snapshots.some((snapshot) => snapshot.billable),
-          }
-        : singleOrAggregate;
+      const cost = estimateOpenAiRetryCost(
+        model,
+        attempts.map((attempt) => attempt.rawResponseJson),
+      );
+      if (!cost) return;
       const usage = cost.usage;
       await this.db.service((sql) => sql`
         insert into public.ai_cost_events

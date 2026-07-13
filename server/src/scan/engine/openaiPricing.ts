@@ -174,6 +174,35 @@ export function aggregateOpenAiCostSnapshots(model: string, snapshots: OpenAiCos
   };
 }
 
+export function estimateOpenAiRetryCost(
+  model: string,
+  rawResponses: unknown[],
+): OpenAiCostSnapshot | null {
+  const snapshots = rawResponses
+    .map((rawResponse) => estimateOpenAiCost(model, extractOpenAiUsage(rawResponse)))
+    .filter((snapshot) => [
+      snapshot.usage.inputTokens,
+      snapshot.usage.outputTokens,
+      snapshot.usage.totalTokens,
+    ].some((value) => typeof value === 'number' && value > 0));
+  if (!snapshots.length) return null;
+  if (snapshots.length === 1) return snapshots[0];
+
+  const aggregate = aggregateOpenAiCostSnapshots(model, snapshots);
+  return {
+    ...aggregate,
+    usage: {
+      ...aggregate.usage,
+      responseId: snapshots.at(-1)?.usage.responseId ?? null,
+    },
+    pricingSnapshot: {
+      ...aggregate.pricingSnapshot,
+      note: 'Synthetic aggregate of structured-output retry attempts.',
+    },
+    billable: snapshots.some((snapshot) => snapshot.billable),
+  };
+}
+
 function sumNullable(values: Array<number | null>): number | null {
   const numericValues = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   return numericValues.length ? numericValues.reduce((total, value) => total + value, 0) : null;

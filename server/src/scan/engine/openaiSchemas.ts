@@ -2,6 +2,10 @@ import { CONDITION_BAND_ORDER } from '@mth/shared-domain';
 import { z } from 'zod';
 
 import { defineStructuredOutput } from '../../llm/structured-output';
+import {
+  CONDITION_DRIVERS_REQUIRED_MESSAGE,
+  REQUESTED_CONDITION_REQUIRED_MESSAGE,
+} from '../../llm/structured-output-messages';
 import { dietFitStatusValues, dietPreferenceKeys } from './dietRubric';
 import {
   menuBaseFoodCategoryKeys,
@@ -30,9 +34,6 @@ const AMOUNT_BASIS_FIELD_DESCRIPTION =
   'Short phrase citing the evidence for amountEstimate, such as "thin drizzle across the bowl" or "covers most of the plate".';
 const CANONICAL_NAME_FIELD_DESCRIPTION =
   'Canonical food name, singular lowercase. Must be an actual food or ingredient name, never a rubric category key such as spicy_heat or dairy_based.';
-const DRIVER_VALIDATION_MESSAGE =
-  'Moderate, high, and severe condition bands require at least one supporting driver.';
-
 const menuBaseFoodCategorySchema = z.object({
   key: z.enum(menuBaseFoodCategoryKeys),
   confidence: confidenceSchema,
@@ -87,7 +88,7 @@ function conditionSeveritySchema(includeRationale: boolean) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['drivers'],
-        message: DRIVER_VALIDATION_MESSAGE,
+        message: CONDITION_DRIVERS_REQUIRED_MESSAGE,
       });
     }
   });
@@ -140,7 +141,7 @@ export const riskAdjudicationConditionSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['drivers'],
-      message: DRIVER_VALIDATION_MESSAGE,
+      message: CONDITION_DRIVERS_REQUIRED_MESSAGE,
     });
   }
 });
@@ -203,7 +204,7 @@ export function riskAdjudicationStructuredOutputForConditions(conditions: string
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['conditionSeverities', index, 'condition'],
-          message: 'Condition must match one of the conditions requested for adjudication.',
+          message: REQUESTED_CONDITION_REQUIRED_MESSAGE,
         });
       }
     });
