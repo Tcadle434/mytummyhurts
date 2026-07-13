@@ -16,7 +16,7 @@ import {
   type MenuExtractionPayload as RawMenuPayload,
 } from './openaiSchemas';
 import { aggregateAuditCostSnapshot, imageRefKind, openAiCostFieldsFromSnapshot } from './openaiClient';
-import { normalizeMenuText } from './openaiCoercion';
+import { normalizeMenuText } from './openaiMenuFallbacks';
 import { buildMenuSystemPrompt, buildMenuUserPrompt } from './openaiPrompts';
 
 function menuConfidenceFromPages(pages: MenuScanAnalysis[]): IngredientConfidence {
