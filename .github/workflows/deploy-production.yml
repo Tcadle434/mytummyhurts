@@ -37,6 +37,7 @@ jobs:
     with:
       tier: release
       repeat: '1'
+      min_pass_ratio: '32/36'
     secrets: inherit
 
   freshness:

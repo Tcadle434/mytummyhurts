@@ -23,6 +23,11 @@ on:
         required: false
         default: ''
         type: string
+      min_pass_ratio:
+        description: 'Minimum expectation pass ratio; request failures always block'
+        required: false
+        default: '1/1'
+        type: string
   workflow_call:
     inputs:
       tier:
@@ -39,6 +44,11 @@ on:
         description: 'Optional comma-separated case ids'
         required: false
         default: ''
+        type: string
+      min_pass_ratio:
+        description: 'Minimum expectation pass ratio; request failures always block'
+        required: false
+        default: '1/1'
         type: string
     secrets:
       OPENAI_API_KEY:
@@ -115,11 +125,13 @@ jobs:
           INPUT_TIER: ${{ inputs.tier }}
           INPUT_REPEAT: ${{ inputs.repeat }}
           INPUT_CASES: ${{ inputs.cases }}
+          INPUT_MIN_PASS_RATIO: ${{ inputs.min_pass_ratio }}
           SCHEDULE: ${{ github.event.schedule }}
         run: |
           tier="${INPUT_TIER:-nightly}"
           context="ci-gate"
           repeat="${INPUT_REPEAT}"
+          min_pass_ratio="${INPUT_MIN_PASS_RATIO:-1/1}"
           shard=""
           if [ "$SCHEDULE" = "15 9 * * 0" ]; then
             tier="full"
@@ -139,6 +151,7 @@ jobs:
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "context=$context" >> "$GITHUB_OUTPUT"
           echo "repeat=$repeat" >> "$GITHUB_OUTPUT"
+          echo "min_pass_ratio=$min_pass_ratio" >> "$GITHUB_OUTPUT"
           echo "shard=$shard" >> "$GITHUB_OUTPUT"
           echo "cases=$INPUT_CASES" >> "$GITHUB_OUTPUT"
           echo "corpus_tree_sha=$corpus_tree_sha" >> "$GITHUB_OUTPUT"
@@ -177,6 +190,7 @@ jobs:
           TIER: ${{ steps.plan.outputs.tier }}
           CONTEXT: ${{ steps.plan.outputs.context }}
           REPEAT: ${{ steps.plan.outputs.repeat }}
+          MIN_PASS_RATIO: ${{ steps.plan.outputs.min_pass_ratio }}
           SHARD: ${{ steps.plan.outputs.shard }}
           CASES: ${{ steps.plan.outputs.cases }}
           EVAL_CORPUS_VERSION: ${{ steps.plan.outputs.corpus_tree_sha }}
@@ -187,6 +201,7 @@ jobs:
             --tier "$TIER"
             --seed "$GITHUB_SHA"
             --repeat "$REPEAT"
+            --min-pass-ratio "$MIN_PASS_RATIO"
             --email scan-evals@ci.local
             --password 'Eval-ci-pass-1!'
           )
