@@ -2407,13 +2407,13 @@
       ]
     },
     {
-      "id": "non_food_onboarding_screen_001",
+      "id": "non_food_life_illustration_001",
       "images": [
-        "assets/ui/barcode_scanning_onboarding.png"
+        "assets/ui/life_back_icon.png"
       ],
       "assetRoot": "repo",
       "autoClassify": true,
-      "description": "Non-food onboarding artwork exercising the router and unclear-input fallback without production user data.",
+      "description": "Non-food lifestyle artwork exercising the router and unclear-input fallback without production user data.",
       "source": {
         "type": "repository_asset"
       },
@@ -2425,7 +2425,7 @@
           "profile": "unknown_discomfort",
           "expectedScanCategory": "food",
           "expectedClarity": "unclear",
-          "notes": "The current router is binary food/menu. This verifies that a non-menu UI image takes the safe unclear-food path."
+          "notes": "The current router is binary food/menu. This verifies that clearly non-food lifestyle artwork takes the safe unclear-food path."
         }
       ]
     }
