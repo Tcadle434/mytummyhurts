@@ -51,8 +51,8 @@ export function resolveConcernConditions(profile: UserProfile | null): ConcernCo
   const selected = named.length
     ? named
     : byKey.has('general_discomfort')
-      ? ([['general_discomfort', byKey.get('general_discomfort')!]] as Array<[SupportedConditionKey, string]>)
-      : ([['general_discomfort', 'General discomfort']] as Array<[SupportedConditionKey, string]>);
+      ? ([['general_discomfort', byKey.get('general_discomfort')!]] as [SupportedConditionKey, string][])
+      : ([['general_discomfort', 'General discomfort']] as [SupportedConditionKey, string][]);
 
   return selected.map(([key, profileValue]) => ({
     key,
