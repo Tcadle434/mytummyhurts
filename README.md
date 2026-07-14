@@ -27,6 +27,7 @@ If you want local StoreKit purchase testing in Xcode, attach [MyTummyHurts.store
 - Long onboarding flow, paywall orchestration, auth shell, scan flow, results, history, follow-up, insights, and settings
 - Self-hosted NestJS + Postgres/pgvector backend under `server/` (auth, durable asynchronous scans, RAG, learning, observability, and background workers); numbered schema history under `server/db/migrations/`
 - Scan capture resizes oversized camera and library images to a 2400 px maximum long edge before upload, while durable result polling survives navigation, disconnects, and app restarts
+- Parallel [concern v1](docs/concern-v1.md) shadow scoring for evidence-grounded 0-100 caution decisions; served API and mobile results remain on the current engine
 - Real Apple, Google, and email auth wiring
 - RevenueCat subscription integration, billing sync, restore handling, and StoreKit local config
 - Patch-package guards for Expo SDK pods that require newer Xcode SDKs than the local Xcode 16.2 toolchain
@@ -37,15 +38,22 @@ If you want local StoreKit purchase testing in Xcode, attach [MyTummyHurts.store
 
 ## Scan regression + evals
 
-The deterministic scoring engine is owned by the backend and guarded by a 48-case regression suite plus golden risk-band evals. Run them whenever the scan/scoring paths change:
+The served scoring engine is owned by the backend and guarded by a 48-case
+regression suite plus golden risk-band evals. Concern v1 is evaluated separately
+with structured and fixed-image transformation pairs, without treating the
+served engine's labels as ground truth. Run the relevant gates whenever the
+scan or scoring paths change:
 
 ```bash
 cd server
 npm test                              # unit/integration suite (incl. the 48 scoring goldens)
 node scripts/eval/run.mjs --offline   # golden risk-band evals; fails on any false-low / false-positive
+npm run eval:concern:plan -- --tier smoke
+npm run eval:concern:images:plan -- --tier smoke
 ```
 
-Live-model evals are tiered (smoke/release/nightly/full) and gate the production deploy; see [docs/evals.md](docs/evals.md).
+Live-model evals are tiered (smoke/release/nightly/full) and gate the production
+deploy; see [docs/evals.md](docs/evals.md).
 
 ## Still requires credentials for production wiring
 

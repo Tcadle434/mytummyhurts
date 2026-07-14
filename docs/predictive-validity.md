@@ -9,6 +9,12 @@ own data.
 
 Nothing here changes any score. It measures.
 
+This loop measures only the currently served `overall_risk_score` persisted on
+the scan. Concern v1 runs in shadow mode, stores its separate caution score in
+observability traces, and is excluded from these probability and calibration
+metrics. A concern score answers how cautious to be; it is not a symptom
+probability.
+
 - Computation: `server/src/learning/validity.ts` (pure) +
   `server/src/learning/validity-recompute.service.ts` (load/persist)
 - Storage: `public.scan_validity_stats`

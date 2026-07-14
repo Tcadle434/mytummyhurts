@@ -1,0 +1,193 @@
+{
+  "version": "concern_v1_transformations_v1",
+  "cases": [
+    {
+      "id": "remove_tomato_gerd",
+      "description": "Removing a dominant tomato sauce from the same pasta cannot increase GERD concern.",
+      "hard": true,
+      "profile": { "conditions": ["GERD / Acid reflux", "Lactose intolerance"], "symptoms": ["Heartburn"] },
+      "base": {
+        "name": "Pasta with tomato sauce",
+        "facts": [{ "name": "tomato sauce", "amount": "dominant", "role": "condiment" }, { "name": "plain pasta", "amount": "standard", "role": "base" }],
+        "prepStyle": ["boiled"]
+      },
+      "variant": {
+        "name": "Plain pasta",
+        "facts": [{ "name": "plain pasta", "amount": "standard", "role": "base" }],
+        "prepStyle": ["boiled"]
+      },
+      "expect": { "condition": "gerd", "direction": "down", "minDelta": 1, "unaffected": [{ "condition": "lactose_intolerance", "maxAbsDelta": 12 }], "removedMechanisms": ["acidic_food"] }
+    },
+    {
+      "id": "milk_to_aged_cheddar_lactose",
+      "description": "Replacing milk with aged hard cheddar lowers lactose concern.",
+      "hard": true,
+      "profile": { "conditions": ["Lactose intolerance"], "symptoms": ["Bloating"] },
+      "base": { "name": "Glass of milk", "facts": [{ "name": "whole milk", "amount": "dominant", "role": "main" }], "prepStyle": [] },
+      "variant": { "name": "Small aged cheddar serving", "facts": [{ "name": "aged hard cheddar cheese", "amount": "small", "role": "main" }], "prepStyle": ["aged"] },
+      "expect": { "condition": "lactose_intolerance", "direction": "down", "minDelta": 1, "preservedMechanisms": ["lactose"] }
+    },
+    {
+      "id": "dominant_to_trace_garlic_ibs",
+      "description": "Changing garlic from dominant to trace lowers IBS concern.",
+      "hard": true,
+      "profile": { "conditions": ["IBS"], "symptoms": ["Bloating", "Gas"] },
+      "base": { "name": "Garlic noodles", "facts": [{ "name": "garlic", "amount": "dominant", "role": "main" }, { "name": "rice noodles", "amount": "standard", "role": "base" }], "prepStyle": [] },
+      "variant": { "name": "Rice noodles with a trace of garlic", "facts": [{ "name": "garlic", "amount": "trace", "role": "garnish" }, { "name": "rice noodles", "amount": "standard", "role": "base" }], "prepStyle": [] },
+      "expect": { "condition": "ibs", "direction": "down", "minDelta": 1, "preservedMechanisms": ["fructan_allium"] }
+    },
+    {
+      "id": "baking_soda_is_not_carbonation",
+      "description": "Baking soda in a cracker is not a carbonated drink exposure.",
+      "hard": true,
+      "profile": { "conditions": ["GERD / Acid reflux"], "symptoms": ["Heartburn"] },
+      "base": { "name": "Plain crackers", "facts": [{ "name": "baking soda", "amount": "trace", "role": "main" }, { "name": "rice flour", "amount": "dominant", "role": "base" }], "prepStyle": ["baked"] },
+      "variant": { "name": "Cola soda", "facts": [{ "name": "carbonated cola soda", "amount": "dominant", "role": "main" }], "prepStyle": ["carbonated"] },
+      "expect": { "condition": "gerd", "direction": "up", "minDelta": 1, "baseForbiddenMechanisms": ["carbonation"], "variantRequiredMechanisms": ["carbonation"] }
+    },
+    {
+      "id": "fried_to_grilled_gerd",
+      "description": "Changing fried chicken to grilled chicken lowers GERD concern with the side held constant.",
+      "hard": false,
+      "profile": { "conditions": ["GERD / Acid reflux", "IBS"], "symptoms": ["Heartburn"] },
+      "base": { "name": "Fried chicken and rice", "facts": [{ "name": "chicken", "amount": "standard", "role": "main" }, { "name": "white rice", "amount": "standard", "role": "base" }], "prepStyle": ["deep fried", "breaded"] },
+      "variant": { "name": "Grilled chicken and rice", "facts": [{ "name": "chicken", "amount": "standard", "role": "main" }, { "name": "white rice", "amount": "standard", "role": "base" }], "prepStyle": ["grilled"] },
+      "expect": { "condition": "gerd", "direction": "down", "minDelta": 1, "removedMechanisms": ["fried_preparation"] }
+    },
+    {
+      "id": "large_to_small_meal_gerd",
+      "description": "Reducing the same rich meal from large to small cannot increase GERD concern.",
+      "hard": false,
+      "profile": { "conditions": ["GERD / Acid reflux"], "symptoms": ["Fullness", "Heartburn"] },
+      "base": { "name": "Large creamy pasta", "facts": [{ "name": "cream sauce", "amount": "dominant", "role": "condiment" }, { "name": "pasta", "amount": "large", "role": "base" }], "prepStyle": [], "portion": "large" },
+      "variant": { "name": "Small creamy pasta", "facts": [{ "name": "cream sauce", "amount": "small", "role": "condiment" }, { "name": "pasta", "amount": "small", "role": "base" }], "prepStyle": [], "portion": "small" },
+      "expect": { "condition": "gerd", "direction": "down", "minDelta": 1 }
+    },
+    {
+      "id": "remove_hot_sauce_gerd",
+      "description": "Removing visible hot sauce cannot increase GERD concern.",
+      "hard": false,
+      "profile": { "conditions": ["GERD / Acid reflux"], "symptoms": ["Heartburn"] },
+      "base": { "name": "Rice bowl with hot sauce", "facts": [{ "name": "hot chili sauce", "amount": "standard", "role": "condiment" }, { "name": "rice", "amount": "dominant", "role": "base" }], "prepStyle": ["spicy"] },
+      "variant": { "name": "Plain rice bowl", "facts": [{ "name": "rice", "amount": "dominant", "role": "base" }], "prepStyle": [] },
+      "expect": { "condition": "gerd", "direction": "down", "minDelta": 1, "removedMechanisms": ["spicy_food"] }
+    },
+    {
+      "id": "remove_cream_sauce_lactose",
+      "description": "Removing a cream sauce lowers lactose concern.",
+      "hard": false,
+      "profile": { "conditions": ["Lactose intolerance", "GERD / Acid reflux"], "symptoms": ["Bloating"] },
+      "base": { "name": "Chicken with cream sauce", "facts": [{ "name": "cream sauce", "amount": "large", "role": "condiment" }, { "name": "chicken", "amount": "standard", "role": "main" }], "prepStyle": [] },
+      "variant": { "name": "Plain grilled chicken", "facts": [{ "name": "chicken", "amount": "standard", "role": "main" }], "prepStyle": ["grilled"] },
+      "expect": { "condition": "lactose_intolerance", "direction": "down", "minDelta": 1, "removedMechanisms": ["lactose"] }
+    },
+    {
+      "id": "soda_to_water_gerd",
+      "description": "Replacing soda with still water lowers GERD concern.",
+      "hard": true,
+      "profile": { "conditions": ["GERD / Acid reflux"], "symptoms": ["Heartburn"] },
+      "base": { "name": "Carbonated cola", "facts": [{ "name": "carbonated cola soda", "amount": "dominant", "role": "main" }], "prepStyle": ["carbonated"] },
+      "variant": { "name": "Still water", "facts": [{ "name": "still water", "amount": "dominant", "role": "main" }], "prepStyle": [] },
+      "expect": { "condition": "gerd", "direction": "down", "minDelta": 1, "removedMechanisms": ["carbonation"] }
+    },
+    {
+      "id": "wheat_to_rice_gluten",
+      "description": "Replacing wheat noodles with rice noodles lowers gluten-sensitivity concern.",
+      "hard": true,
+      "profile": { "conditions": ["Gluten sensitivity"], "symptoms": ["Abdominal pain"] },
+      "base": { "name": "Wheat noodles", "facts": [{ "name": "wheat noodles", "amount": "dominant", "role": "base" }], "prepStyle": ["boiled"] },
+      "variant": { "name": "Rice noodles", "facts": [{ "name": "rice noodles", "amount": "dominant", "role": "base" }], "prepStyle": ["boiled"] },
+      "expect": { "condition": "gluten_sensitivity", "direction": "down", "minDelta": 1, "removedMechanisms": ["gluten_exposure"] }
+    },
+    {
+      "id": "regular_to_lactose_free_milk",
+      "description": "An explicit lactose-free milk label lowers lactose concern relative to regular milk.",
+      "hard": true,
+      "profile": { "conditions": ["Lactose intolerance"], "symptoms": ["Gas"] },
+      "base": { "name": "Regular milk", "facts": [{ "name": "regular cow milk", "amount": "dominant", "role": "main" }], "prepStyle": [] },
+      "variant": { "name": "Lactose-free milk", "facts": [{ "name": "lactose-free cow milk", "amount": "dominant", "role": "main" }], "prepStyle": [] },
+      "expect": { "condition": "lactose_intolerance", "direction": "down", "minDelta": 1 }
+    },
+    {
+      "id": "dominant_to_trace_onion_ibs",
+      "description": "Reducing onion from dominant to trace lowers IBS concern.",
+      "hard": false,
+      "profile": { "conditions": ["IBS"], "symptoms": ["Bloating"] },
+      "base": { "name": "Onion soup", "facts": [{ "name": "onion", "amount": "dominant", "role": "main" }], "prepStyle": ["simmered"] },
+      "variant": { "name": "Rice with onion garnish", "facts": [{ "name": "onion", "amount": "trace", "role": "garnish" }, { "name": "rice", "amount": "dominant", "role": "base" }], "prepStyle": [] },
+      "expect": { "condition": "ibs", "direction": "down", "minDelta": 1, "preservedMechanisms": ["fructan_allium"] }
+    },
+    {
+      "id": "polyol_to_sugar_ibs",
+      "description": "Replacing a sorbitol-sweetened candy with ordinary sugar removes the polyol mechanism.",
+      "hard": false,
+      "profile": { "conditions": ["IBS"], "symptoms": ["Gas"] },
+      "base": { "name": "Sugar-free candy", "facts": [{ "name": "sorbitol", "amount": "standard", "role": "main" }], "prepStyle": [] },
+      "variant": { "name": "Sugar candy", "facts": [{ "name": "sucrose", "amount": "standard", "role": "main" }], "prepStyle": [] },
+      "expect": { "condition": "ibs", "direction": "down", "minDelta": 1, "removedMechanisms": ["polyol"] }
+    },
+    {
+      "id": "beer_to_water_gerd",
+      "description": "Replacing beer with still water removes alcohol and carbonation mechanisms.",
+      "hard": false,
+      "profile": { "conditions": ["GERD / Acid reflux"], "symptoms": ["Heartburn"] },
+      "base": { "name": "Beer", "facts": [{ "name": "carbonated alcoholic beer", "amount": "dominant", "role": "main" }], "prepStyle": ["carbonated", "alcoholic"] },
+      "variant": { "name": "Still water", "facts": [{ "name": "still water", "amount": "dominant", "role": "main" }], "prepStyle": [] },
+      "expect": { "condition": "gerd", "direction": "down", "minDelta": 1, "removedMechanisms": ["alcohol", "carbonation"] }
+    },
+    {
+      "id": "chocolate_to_banana_gerd",
+      "description": "Replacing a chocolate dessert with a plain banana removes the chocolate mechanism.",
+      "hard": false,
+      "profile": { "conditions": ["GERD / Acid reflux"], "symptoms": ["Heartburn"] },
+      "base": { "name": "Chocolate dessert", "facts": [{ "name": "dark chocolate", "amount": "large", "role": "main" }], "prepStyle": [] },
+      "variant": { "name": "Plain banana", "facts": [{ "name": "banana", "amount": "dominant", "role": "main" }], "prepStyle": [] },
+      "expect": { "condition": "gerd", "direction": "down", "minDelta": 1, "removedMechanisms": ["chocolate_or_mint"] }
+    },
+    {
+      "id": "lettuce_does_not_cancel_lactose",
+      "description": "Adding lettuce does not cancel a direct milk exposure.",
+      "hard": true,
+      "profile": { "conditions": ["Lactose intolerance"], "symptoms": ["Bloating"] },
+      "base": { "name": "Milk", "facts": [{ "name": "whole milk", "amount": "dominant", "role": "main" }], "prepStyle": [] },
+      "variant": { "name": "Milk with lettuce side", "facts": [{ "name": "whole milk", "amount": "dominant", "role": "main" }, { "name": "lettuce", "amount": "standard", "role": "side" }], "prepStyle": [] },
+      "expect": { "condition": "lactose_intolerance", "direction": "same", "maxAbsDelta": 12, "preservedMechanisms": ["lactose"] }
+    },
+    {
+      "id": "rice_does_not_cancel_lactose",
+      "description": "Adding plain rice does not cancel a direct cream exposure.",
+      "hard": true,
+      "profile": { "conditions": ["Lactose intolerance"], "symptoms": ["Bloating"] },
+      "base": { "name": "Cream sauce", "facts": [{ "name": "cream sauce", "amount": "large", "role": "main" }], "prepStyle": [] },
+      "variant": { "name": "Cream sauce with rice", "facts": [{ "name": "cream sauce", "amount": "large", "role": "main" }, { "name": "white rice", "amount": "dominant", "role": "base" }], "prepStyle": [] },
+      "expect": { "condition": "lactose_intolerance", "direction": "same", "maxAbsDelta": 12, "preservedMechanisms": ["lactose"] }
+    },
+    {
+      "id": "unknown_sauce_does_not_escalate_ibs",
+      "description": "Replacing explicit garlic sauce with an unknown sauce lowers confidence and cannot increase IBS concern.",
+      "hard": true,
+      "profile": { "conditions": ["IBS"], "symptoms": ["Bloating"] },
+      "base": { "name": "Rice with garlic sauce", "facts": [{ "name": "garlic sauce", "amount": "standard", "role": "condiment" }, { "name": "rice", "amount": "dominant", "role": "base" }], "prepStyle": [] },
+      "variant": { "name": "Rice with unknown sauce", "facts": [{ "name": "unknown sauce", "amount": "standard", "role": "condiment", "confidence": "low", "evidence": "inferred" }, { "name": "rice", "amount": "dominant", "role": "base" }], "prepStyle": [], "clarity": "unclear" },
+      "expect": { "condition": "ibs", "direction": "down_or_same", "maxReverseDelta": 0, "variantMaxConfidence": "low", "baseRequiredMechanisms": ["fructan_allium"], "variantForbiddenMechanisms": ["fructan_allium"] }
+    },
+    {
+      "id": "paraphrase_stability_tomato_pasta",
+      "description": "Paraphrases with identical food facts remain stable.",
+      "hard": false,
+      "profile": { "conditions": ["GERD / Acid reflux"], "symptoms": ["Heartburn"] },
+      "base": { "name": "Spaghetti with tomato sauce", "facts": [{ "name": "tomato sauce", "amount": "standard", "role": "condiment" }, { "name": "wheat pasta", "amount": "dominant", "role": "base" }], "prepStyle": ["boiled"] },
+      "variant": { "name": "Pasta coated in marinara", "facts": [{ "name": "marinara tomato sauce", "amount": "standard", "role": "condiment" }, { "name": "wheat pasta", "amount": "dominant", "role": "base" }], "prepStyle": ["boiled"] },
+      "expect": { "condition": "gerd", "direction": "same", "maxAbsDelta": 13, "preservedMechanisms": ["acidic_food"] }
+    },
+    {
+      "id": "novel_name_stability",
+      "description": "An unfamiliar dish name does not change a fixed ingredient-level judgment.",
+      "hard": false,
+      "profile": { "conditions": ["IBS"], "symptoms": ["Bloating"] },
+      "base": { "name": "Garlic onion rice bowl", "facts": [{ "name": "garlic", "amount": "standard", "role": "condiment" }, { "name": "onion", "amount": "standard", "role": "main" }, { "name": "rice", "amount": "dominant", "role": "base" }], "prepStyle": [] },
+      "variant": { "name": "Zaluma bowl", "description": "A fictional name with the same declared ingredients", "facts": [{ "name": "garlic", "amount": "standard", "role": "condiment" }, { "name": "onion", "amount": "standard", "role": "main" }, { "name": "rice", "amount": "dominant", "role": "base" }], "prepStyle": [] },
+      "expect": { "condition": "ibs", "direction": "same", "maxAbsDelta": 13, "preservedMechanisms": ["fructan_allium"] }
+    }
+  ]
+}

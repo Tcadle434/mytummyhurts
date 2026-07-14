@@ -1,0 +1,63 @@
+{
+  "version": "concern_v1_suites_v1",
+  "tiers": {
+    "smoke": {
+      "caseIds": [
+        "remove_tomato_gerd",
+        "milk_to_aged_cheddar_lactose",
+        "dominant_to_trace_garlic_ibs",
+        "baking_soda_is_not_carbonation"
+      ],
+      "minimumSoftPassRatio": 0.75
+    },
+    "release": {
+      "caseIds": [
+        "remove_tomato_gerd",
+        "milk_to_aged_cheddar_lactose",
+        "dominant_to_trace_garlic_ibs",
+        "baking_soda_is_not_carbonation",
+        "fried_to_grilled_gerd",
+        "soda_to_water_gerd",
+        "wheat_to_rice_gluten",
+        "unknown_sauce_does_not_escalate_ibs"
+      ],
+      "minimumSoftPassRatio": 0.875
+    },
+    "nightly": {
+      "anchorCaseIds": [
+        "remove_tomato_gerd",
+        "baking_soda_is_not_carbonation"
+      ],
+      "shardCount": 4,
+      "minimumSoftPassRatio": 0.85
+    },
+    "full": {
+      "minimumSoftPassRatio": 0.85
+    }
+  },
+  "imageTiers": {
+    "smoke": {
+      "pairIds": [
+        "image_remove_tomato_gerd"
+      ],
+      "minimumSoftPassRatio": 1
+    },
+    "release": {
+      "pairIds": [
+        "image_remove_tomato_gerd",
+        "image_fried_to_grilled_gerd"
+      ],
+      "minimumSoftPassRatio": 1
+    },
+    "nightly": {
+      "anchorPairIds": [
+        "image_remove_tomato_gerd"
+      ],
+      "shardCount": 2,
+      "minimumSoftPassRatio": 0.8
+    },
+    "full": {
+      "minimumSoftPassRatio": 0.8
+    }
+  }
+}

@@ -105,6 +105,9 @@ jobs:
       RAG_RETRIEVAL_ENABLED: 'true'
       RAG_INFLUENCE_ENABLED: 'true'
       SCAN_RISK_ADJUDICATION_ENABLED: 'true'
+      # The legacy API eval and the direct concern eval run separately. Avoid
+      # paying for an unobserved shadow call during every legacy scan.
+      CONCERN_V1_SHADOW_ENABLED: 'off'
       LEARNING_WORKER_ENABLED: 'false'
       MAINTENANCE_ENABLED: 'false'
       PORT: '3000'
@@ -133,6 +136,8 @@ jobs:
           repeat="${INPUT_REPEAT}"
           min_pass_ratio="${INPUT_MIN_PASS_RATIO:-1/1}"
           shard=""
+          concern_shard=""
+          concern_image_shard=""
           if [ "$SCHEDULE" = "15 9 * * 0" ]; then
             tier="full"
             context="nightly"
@@ -146,6 +151,8 @@ jobs:
           if [ "$tier" = "nightly" ]; then
             day_of_year=$(date -u +%j)
             shard=$((10#$day_of_year % 5))
+            concern_shard=$((10#$day_of_year % 4))
+            concern_image_shard=$((10#$day_of_year % 2))
           fi
           corpus_tree_sha=$(git rev-parse HEAD:server/data/corpus)
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
@@ -153,6 +160,8 @@ jobs:
           echo "repeat=$repeat" >> "$GITHUB_OUTPUT"
           echo "min_pass_ratio=$min_pass_ratio" >> "$GITHUB_OUTPUT"
           echo "shard=$shard" >> "$GITHUB_OUTPUT"
+          echo "concern_shard=$concern_shard" >> "$GITHUB_OUTPUT"
+          echo "concern_image_shard=$concern_image_shard" >> "$GITHUB_OUTPUT"
           echo "cases=$INPUT_CASES" >> "$GITHUB_OUTPUT"
           echo "corpus_tree_sha=$corpus_tree_sha" >> "$GITHUB_OUTPUT"
       - name: Print selected evaluation plan
@@ -165,6 +174,18 @@ jobs:
           if [ -n "$SHARD" ]; then args+=(--shard-index "$SHARD"); fi
           if [ -n "$CASES" ]; then args+=(--case "$CASES"); fi
           node scripts/eval/run-scan-evals.mjs "${args[@]}"
+      - name: Print selected concern evaluation plans
+        env:
+          TIER: ${{ steps.plan.outputs.tier }}
+          CONCERN_SHARD: ${{ steps.plan.outputs.concern_shard }}
+          CONCERN_IMAGE_SHARD: ${{ steps.plan.outputs.concern_image_shard }}
+        run: |
+          structured_args=(--tier "$TIER" --plan)
+          image_args=(--tier "$TIER" --plan)
+          if [ -n "$CONCERN_SHARD" ]; then structured_args+=(--shard-index "$CONCERN_SHARD"); fi
+          if [ -n "$CONCERN_IMAGE_SHARD" ]; then image_args+=(--shard-index "$CONCERN_IMAGE_SHARD"); fi
+          node scripts/eval/run-concern-v1-evals.mjs "${structured_args[@]}"
+          node scripts/eval/run-concern-v1-image-evals.mjs "${image_args[@]}"
       - name: Ingest the versioned retrieval corpus
         run: node scripts/rag/ingest-curated.mjs
       - name: Evaluate retrieval quality
@@ -208,6 +229,22 @@ jobs:
           if [ -n "$SHARD" ]; then args+=(--shard-index "$SHARD"); fi
           if [ -n "$CASES" ]; then args+=(--case "$CASES"); fi
           node scripts/eval/run-scan-evals.mjs "${args[@]}"
+      - name: Run concern transformation evaluations
+        env:
+          TIER: ${{ steps.plan.outputs.tier }}
+          CONCERN_SHARD: ${{ steps.plan.outputs.concern_shard }}
+        run: |
+          args=(--tier "$TIER")
+          if [ -n "$CONCERN_SHARD" ]; then args+=(--shard-index "$CONCERN_SHARD"); fi
+          node scripts/eval/run-concern-v1-evals.mjs "${args[@]}"
+      - name: Run concern image transformation evaluations
+        env:
+          TIER: ${{ steps.plan.outputs.tier }}
+          CONCERN_IMAGE_SHARD: ${{ steps.plan.outputs.concern_image_shard }}
+        run: |
+          args=(--tier "$TIER")
+          if [ -n "$CONCERN_IMAGE_SHARD" ]; then args+=(--shard-index "$CONCERN_IMAGE_SHARD"); fi
+          node scripts/eval/run-concern-v1-image-evals.mjs "${args[@]}"
       - name: Server log tail
         if: failure()
         run: tail -200 api.log || true

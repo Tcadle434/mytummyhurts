@@ -2,14 +2,25 @@
 //   node scripts/eval/run.mjs            # all goldens (high_trigger need OPENAI_API_KEY)
 //   node scripts/eval/run.mjs --offline  # deterministic scoring goldens only
 // Exits non-zero on any HARD failure (false positive / false negative).
-import { config } from 'dotenv';
-config();
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../../dist/app.module.js';
-import { EvalRunnerService } from '../../dist/eval/eval-runner.service.js';
-import { GOLDEN_CASES } from '../../dist/eval/golden-dataset.js';
+import 'dotenv/config';
 
 const offline = process.argv.includes('--offline');
+if (offline) {
+  process.env.CONCERN_V1_SHADOW_ENABLED = 'off';
+  if (!process.env.OPENAI_API_KEY) process.env.DEMO_MODE = 'true';
+}
+
+const [
+  { NestFactory },
+  { AppModule },
+  { EvalRunnerService },
+  { GOLDEN_CASES },
+] = await Promise.all([
+  import('@nestjs/core'),
+  import('../../dist/app.module.js'),
+  import('../../dist/eval/eval-runner.service.js'),
+  import('../../dist/eval/golden-dataset.js'),
+]);
 const cases = offline ? GOLDEN_CASES.filter((c) => !c.needsLlm) : GOLDEN_CASES;
 
 const app = await NestFactory.createApplicationContext(AppModule, { logger: false });

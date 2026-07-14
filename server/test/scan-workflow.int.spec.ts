@@ -1,5 +1,4 @@
-import { ConfigModule } from '@nestjs/config';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { describe, expect, it } from 'vitest';
 
@@ -9,9 +8,11 @@ import { LlmModule } from '../src/llm/llm.module';
 import type { RankedCandidate } from '../src/rag/reranker';
 import type { RagRetrievalService } from '../src/rag/retrieval.service';
 import type { IngredientInsight, MenuScanAnalysis, StructuredAnalysisV2 } from '../src/scan/engine/domain';
-import { buildUserProfileFromSeed } from '../src/scan/engine/scoring';
-import { fallbackExtractionFromText } from '../src/scan/engine/scoring';
-import { computeScanResultFromStructured } from '../src/scan/engine/scoring';
+import {
+  buildUserProfileFromSeed,
+  fallbackExtractionFromText,
+  computeScanResultFromStructured,
+} from '../src/scan/engine/scoring';
 import { normalizeStructuredFoodFacts } from '../src/scan/engine/foodFactNormalization';
 import { ScanModule } from '../src/scan/scan.module';
 import { ScanWorkflowService } from '../src/scan/workflow/scan-workflow.service';
@@ -55,6 +56,7 @@ describe('scan workflow (deterministic graph)', () => {
     // RAG influence is off -> final === base, byte-identical to the engine.
     expect(result.finalResult.overallRiskScore).toBe(result.baseResult.overallRiskScore);
     expect(result.scanCategory).toBe('food');
+    expect(result).not.toHaveProperty('concernV1Shadow');
   });
 
   it('retrieves RAG evidence and uses adjudicated bands before scoring when enabled', async () => {

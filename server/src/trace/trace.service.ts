@@ -14,9 +14,19 @@ import {
   type OpenAiAuditLog,
 } from '../scan/engine/openai';
 import { RISK_ADJUDICATION_PROMPT_VERSION } from '../scan/engine/riskAdjudication';
+import {
+  CONCERN_ADJUDICATION_MODEL,
+  CONCERN_MECHANISM_MODEL,
+  CONCERN_VERIFICATION_MODEL,
+} from '../scan/concern-v1/config';
+import {
+  CONCERN_ADJUDICATION_PROMPT_VERSION,
+  CONCERN_MECHANISM_PROMPT_VERSION,
+  CONCERN_VERIFICATION_PROMPT_VERSION,
+} from '../scan/concern-v1/prompts';
 import { LangsmithScanForwarder } from './langsmith-forwarder';
 
-export const WORKFLOW_VERSION = 'scan_workflow_v1';
+export const WORKFLOW_VERSION = 'scan_workflow_v2';
 const GRAPH_NODES = [
   'loadUserContext',
   'generate',
@@ -25,6 +35,7 @@ const GRAPH_NODES = [
   'adjudicateRisk',
   'score',
   'finalize',
+  'concernV1Shadow',
 ];
 
 export interface ScanTraceInput {
@@ -35,7 +46,7 @@ export interface ScanTraceInput {
   promptVersion: string;
   scanCategory: string;
   baseScore: number;
-  finalScore: number;
+  finalScore: number | null;
   ragSummary?: unknown;
   audits: OpenAiAuditLog[];
   status?: 'completed' | 'failed';
@@ -193,6 +204,16 @@ export class TraceService {
           insert into public.ai_prompt_versions (prompt_key, version, schema_version)
           values ('mytummyhurts_risk_adjudication', ${RISK_ADJUDICATION_PROMPT_VERSION}, 'risk_adjudication_v1')
           on conflict (prompt_key, version) do nothing`;
+        for (const [promptKey, version, schemaVersion] of [
+          ['concern_v1_mechanism_mapping', CONCERN_MECHANISM_PROMPT_VERSION, 'concern_v1_mechanism_mapping_v1'],
+          ['concern_v1_adjudication', CONCERN_ADJUDICATION_PROMPT_VERSION, 'concern_v1_adjudication_v1'],
+          ['concern_v1_verification', CONCERN_VERIFICATION_PROMPT_VERSION, 'concern_v1_verification_v1'],
+        ] as const) {
+          await sql`
+            insert into public.ai_prompt_versions (prompt_key, version, schema_version)
+            values (${promptKey}, ${version}, ${schemaVersion})
+            on conflict (prompt_key, version) do nothing`;
+        }
         for (const [role, model] of [
           ['extraction', EXTRACTION_MODEL],
           ['menu_transcription', MENU_TRANSCRIPTION_MODEL],
@@ -200,6 +221,9 @@ export class TraceService {
           ['classification', CLASSIFICATION_MODEL],
           ['risk_adjudication', RISK_ADJUDICATION_MODEL],
           ['embedding', process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small'],
+          ['concern_mechanism_mapping', CONCERN_MECHANISM_MODEL],
+          ['concern_adjudication', CONCERN_ADJUDICATION_MODEL],
+          ['concern_verification', CONCERN_VERIFICATION_MODEL],
         ] as const) {
           const kind = role === 'embedding' ? 'embedding' : 'llm';
           await sql`

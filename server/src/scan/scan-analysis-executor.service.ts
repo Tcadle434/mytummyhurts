@@ -4,8 +4,19 @@ import { LearningJobService } from '../learning/learning-job.service';
 import { StorageService } from '../storage/storage.service';
 import { TraceService } from '../trace/trace.service';
 import { InsightsService } from '../insights/insights.service';
+import { concernShadowEnabled } from './concern-v1/config';
+import type { ConcernV1ShadowRun } from './concern-v1/domain';
+import { runConcernV1Shadow } from './concern-v1/openai';
+import { CONCERN_ADJUDICATION_PROMPT_VERSION } from './concern-v1/prompts';
 import { buildDayLoadContext } from './engine/day-load';
-import type { IngredientInsight, ScanDayLoad, ScanResult, UserProfile } from './engine/domain';
+import type {
+  IngredientInsight,
+  MenuScanAnalysis,
+  ScanDayLoad,
+  ScanResult,
+  StructuredAnalysisV2,
+  UserProfile,
+} from './engine/domain';
 import { PROMPT_VERSION as EXTRACTION_PROMPT_VERSION, type OpenAiAuditLog } from './engine/openai';
 import { buildFoodCompletionInput, buildMenuCompletionInput } from './scan-payload';
 import { ScanAnalysisJobService } from './scan-analysis-job.service';
@@ -66,6 +77,45 @@ export class ScanAnalysisExecutorService {
         `scan trace could not be recorded for ${input.scanId}: ${(error as Error).message}`,
       );
     }
+  }
+
+  private async recordCompletedScanTraces(
+    input: Parameters<TraceService['recordScanTrace']>[0],
+    concernV1Shadow?: Promise<ConcernV1ShadowRun>,
+  ) {
+    await this.recordScanTraceSafely(input);
+    if (!concernV1Shadow) return;
+    void concernV1Shadow
+      .then(async (run) => {
+        const concernScore = run.result.status === 'completed'
+          ? Math.max(0, ...run.result.subjects.map((subject) => subject.score))
+          : null;
+        await this.recordScanTraceSafely({
+          ...input,
+          operation: 'scan_concern_shadow',
+          promptVersion: CONCERN_ADJUDICATION_PROMPT_VERSION,
+          finalScore: concernScore,
+          ragSummary: { concernV1: run.result },
+          audits: run.audits,
+          status: run.result.status === 'completed' ? 'completed' : 'failed',
+        });
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `concern shadow trace failed for scan ${input.scanId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+  }
+
+  private startConcernV1Shadow(
+    extraction: StructuredAnalysisV2 | MenuScanAnalysis,
+    profile: UserProfile | null,
+    insights: IngredientInsight[],
+  ): Promise<ConcernV1ShadowRun> | undefined {
+    if (!concernShadowEnabled()) return undefined;
+    return runConcernV1Shadow({ extraction, profile, insights });
   }
 
   private async recordFailedScanTrace(
@@ -210,8 +260,13 @@ export class ScanAnalysisExecutorService {
       await this.reservation.complete(completion, sql);
     });
     if (!completed) return workflowResult.scanCategory;
+    const concernV1Shadow = this.startConcernV1Shadow(
+      workflowResult.extraction,
+      profile,
+      insights,
+    );
     await this.enqueueLearning(job.user_id, job.scan_id);
-    await this.recordScanTraceSafely({
+    await this.recordCompletedScanTraces({
       userId: job.user_id,
       scanId: job.scan_id,
       requestId: job.request_id,
@@ -221,7 +276,7 @@ export class ScanAnalysisExecutorService {
       baseScore: workflowResult.baseResult.overallRiskScore,
       finalScore: workflowResult.finalResult.overallRiskScore,
       audits: workflowResult.audits,
-    });
+    }, concernV1Shadow);
     return workflowResult.scanCategory;
   }
 
@@ -249,8 +304,13 @@ export class ScanAnalysisExecutorService {
       await this.reservation.complete(completion, sql);
     });
     if (!completed) return 'grocery';
+    const concernV1Shadow = this.startConcernV1Shadow(
+      workflowResult.extraction,
+      profile,
+      insights,
+    );
     await this.enqueueLearning(job.user_id, job.scan_id);
-    await this.recordScanTraceSafely({
+    await this.recordCompletedScanTraces({
       userId: job.user_id,
       scanId: job.scan_id,
       requestId: job.request_id,
@@ -260,7 +320,7 @@ export class ScanAnalysisExecutorService {
       baseScore: workflowResult.baseResult.overallRiskScore,
       finalScore: workflowResult.finalResult.overallRiskScore,
       audits: workflowResult.audits,
-    });
+    }, concernV1Shadow);
     return 'grocery';
   }
 

@@ -1,0 +1,134 @@
+{
+  "version": "concern_v1_image_pairs_v1",
+  "generatedAt": "2026-07-13T22:16:00-06:00",
+  "generation": {
+    "provider": "OpenAI",
+    "model": "gpt-image-2",
+    "size": "1536x1024",
+    "quality": "medium",
+    "format": "jpeg",
+    "compression": 82,
+    "policy": "Fixed committed fixtures. Never regenerate during evaluation or CI."
+  },
+  "pairs": [
+    {
+      "id": "image_remove_tomato_gerd",
+      "caseId": "remove_tomato_gerd",
+      "hard": true,
+      "base": {
+        "path": "evals/concern-v1/images/tomato-pasta-base.jpg",
+        "sha256": "09019fd615257a4e3c2c55d9e168948bbebde6eea289da6f7ca23b4c2de4f4d0",
+        "mustContain": [["pasta", "spaghetti"], "tomato"]
+      },
+      "variant": {
+        "path": "evals/concern-v1/images/tomato-pasta-without-sauce.jpg",
+        "sha256": "488f5528b9e422d3136948d4a88b934cb41f8b6f0d2223c26e27e1f06072ab65",
+        "mustContain": [["pasta", "spaghetti"]],
+        "mustNotContain": ["tomato"]
+      },
+      "visualInvariant": "Same spaghetti meal, bowl, place setting, crop, and lighting. Only the tomato sauce is removed.",
+      "basePrompt": "Overhead smartphone photo of plain spaghetti generously coated in visible red tomato marinara sauce, with no other ingredients.",
+      "editPrompt": "Remove all tomato sauce while preserving the same spaghetti, bowl, place setting, crop, and lighting.",
+      "visualReview": { "status": "passed", "method": "manual_visual_inspection", "reviewedAt": "2026-07-13", "notes": "Tomato removal is clear and no replacement ingredient was introduced." }
+    },
+    {
+      "id": "image_fried_to_grilled_gerd",
+      "caseId": "fried_to_grilled_gerd",
+      "hard": true,
+      "base": {
+        "path": "evals/concern-v1/images/fried-chicken-base.jpg",
+        "sha256": "4f8c9a2704aa46f6a465cbcddb73a1c632a50704647f43c93552cab38eac0ee4",
+        "mustContain": ["chicken", "fried", "rice"]
+      },
+      "variant": {
+        "path": "evals/concern-v1/images/grilled-chicken-variant.jpg",
+        "sha256": "cca430dd31b778f55bb1a286ee78ea16c6358875af650d133d38f9708a89a296",
+        "mustContain": ["chicken", "grill", "rice"],
+        "mustNotContain": ["fried"]
+      },
+      "visualInvariant": "Same plate, rice, place setting, crop, and lighting. Only chicken preparation changes from breaded fried to plain grilled.",
+      "basePrompt": "Overhead smartphone photo of three visibly breaded deep-fried chicken pieces with plain white rice.",
+      "editPrompt": "Replace only the fried chicken with three plain grilled chicken pieces while preserving the rice and scene.",
+      "visualReview": { "status": "passed", "method": "manual_visual_inspection", "reviewedAt": "2026-07-13", "notes": "Preparation change is unambiguous and the rice and scene remain stable." }
+    },
+    {
+      "id": "image_large_to_small_meal_gerd",
+      "caseId": "large_to_small_meal_gerd",
+      "hard": false,
+      "base": {
+        "path": "evals/concern-v1/images/large-creamy-pasta-base.jpg",
+        "sha256": "64d9333a0af42cf74ed9f5d4254550c265b97b6500f8cc1ae9ee8971bb15d33c",
+        "mustContain": [["pasta", "fettuccine", "noodle"], "cream"]
+      },
+      "variant": {
+        "path": "evals/concern-v1/images/small-creamy-pasta-variant.jpg",
+        "sha256": "b8a2d82a3ed9d31a9cfb5b01fafe6f929c1d46851351fe71aac15fdd40d63f38",
+        "mustContain": [["pasta", "fettuccine", "noodle"], "cream"]
+      },
+      "visualInvariant": "Same creamy pasta and scene. Only the visible serving size changes from oversized to about one third as much.",
+      "basePrompt": "Overhead smartphone photo of an oversized bowl-filling portion of creamy fettuccine.",
+      "editPrompt": "Reduce only the creamy pasta portion to about one third while preserving the bowl and scene.",
+      "visualReview": { "status": "passed", "method": "manual_visual_inspection", "reviewedAt": "2026-07-13", "notes": "The smaller portion remains the same food and the serving-size difference is obvious." }
+    },
+    {
+      "id": "image_remove_hot_sauce_gerd",
+      "caseId": "remove_hot_sauce_gerd",
+      "hard": false,
+      "base": {
+        "path": "evals/concern-v1/images/hot-sauce-rice-base.jpg",
+        "sha256": "e37877b886ac5d3416a67d2ae90027feb84c8f0cc170fea56f76804d6895551b",
+        "mustContain": ["rice", "sauce"]
+      },
+      "variant": {
+        "path": "evals/concern-v1/images/plain-rice-variant.jpg",
+        "sha256": "a92aa21c3475e40c373f9ed75400d47684b8d77fe38e844fd37d83530da4f836",
+        "mustContain": ["rice"],
+        "mustNotContain": ["sauce", "spicy", "chili", "hot"]
+      },
+      "visualInvariant": "Same rice bowl, amount, place setting, crop, and lighting. Only the red hot sauce is removed.",
+      "basePrompt": "Overhead smartphone photo of plain white rice with a generous visible zigzag of bright red hot chili sauce.",
+      "editPrompt": "Remove every trace of the hot sauce while preserving the same rice and scene.",
+      "visualReview": { "status": "passed", "method": "manual_visual_inspection", "reviewedAt": "2026-07-13", "notes": "Sauce removal is complete and no other food changed." }
+    },
+    {
+      "id": "image_remove_cream_sauce_lactose",
+      "caseId": "remove_cream_sauce_lactose",
+      "hard": true,
+      "base": {
+        "path": "evals/concern-v1/images/cream-chicken-base.jpg",
+        "sha256": "236ebf566ffcc4a48793fb410beaf654b1a66444c7a6b124e17caa2e4c5c60c8",
+        "mustContain": ["chicken", "cream", "rice"]
+      },
+      "variant": {
+        "path": "evals/concern-v1/images/plain-chicken-variant.jpg",
+        "sha256": "7207f4d6175c7ede629aa03aa79efd89080c590bf67ccd1d8280a0cad3f29933",
+        "mustContain": ["chicken", "rice"],
+        "mustNotContain": ["cream", "sauce"]
+      },
+      "visualInvariant": "Same grilled chicken, rice, plate, place setting, crop, and lighting. Only the cream sauce is removed.",
+      "basePrompt": "Overhead smartphone photo of grilled chicken covered by thick pale cream sauce with plain white rice.",
+      "editPrompt": "Remove only the cream sauce while preserving the same grilled chicken, rice, and scene.",
+      "visualReview": { "status": "passed", "method": "manual_visual_inspection", "reviewedAt": "2026-07-13", "notes": "Cream sauce removal is clear and the chicken and rice remain unchanged." }
+    },
+    {
+      "id": "image_soda_to_water_gerd",
+      "caseId": "soda_to_water_gerd",
+      "hard": true,
+      "base": {
+        "path": "evals/concern-v1/images/cola-base.jpg",
+        "sha256": "d0f930055d61039c1fcdc4618927b3375490f0166c18cf594e5f2fe37a889c32",
+        "mustContain": ["cola", "carbonat"]
+      },
+      "variant": {
+        "path": "evals/concern-v1/images/still-water-variant.jpg",
+        "sha256": "61e4be4e0ed1f38170cc5f7d34a6d27621d56319d99548e3369f5ae445aae667",
+        "mustContain": ["water"],
+        "mustNotContain": ["cola", "soda", "carbonat"]
+      },
+      "visualInvariant": "Same glass, ice, liquid level, table, plate, napkin, crop, and lighting. Only cola becomes still water.",
+      "basePrompt": "Eye-level smartphone photo of an unbranded glass of dark cola with abundant visible carbonation bubbles.",
+      "editPrompt": "Replace only the cola with clear still water and remove carbonation while preserving the scene.",
+      "visualReview": { "status": "passed", "method": "manual_visual_inspection", "reviewedAt": "2026-07-13", "notes": "The beverage replacement is unambiguous and the glass and background remain stable." }
+    }
+  ]
+}
