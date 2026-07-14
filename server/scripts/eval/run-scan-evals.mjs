@@ -26,6 +26,7 @@ import {
   validateExpectation,
   writeDriftBaseline,
 } from './langsmith-lib.mjs';
+import { evaluateEvalGate, parsePassRatio } from './eval-gate.mjs';
 import { setEvalInsights } from './seed-insights.mjs';
 import { EVAL_TIERS, selectEvalCases } from './eval-selection.mjs';
 
@@ -60,6 +61,7 @@ Options:
   --shard-index <n>           Zero-based nightly shard index. Default: 0
   --seed <value>              Stable release rotation seed. Default: GITHUB_SHA or local
   --repeat <n>                Override repeat count for every expectation
+  --min-pass-ratio <n/n>      Minimum expectation pass ratio. Request failures still block. Default: 1/1
   --output-dir <path>         Report directory. Default: server/evals/reports
   --email <email>             Reuse an eval user. Default: unique throwaway user
   --password <password>       Password for reused eval user
@@ -110,6 +112,7 @@ function parseArgs(argv) {
     password: process.env.SCAN_EVAL_PASSWORD,
     judge: false,
     judgeBlocking: false,
+    minimumPassRatio: '1/1',
     context: 'triage',
     dataset: DEFAULT_DATASET,
     driftBaselinePath: defaultDriftBaselinePath,
@@ -180,6 +183,11 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (token === '--min-pass-ratio') {
+      args.minimumPassRatio = next;
+      index += 1;
+      continue;
+    }
     if (token === '--output-dir') {
       args.outputDir = path.resolve(next);
       index += 1;
@@ -230,6 +238,7 @@ function parseArgs(argv) {
   if (args.repeat !== undefined && (!Number.isInteger(args.repeat) || args.repeat < 1)) {
     throw new Error('--repeat must be a positive integer');
   }
+  args.minimumPassRatio = parsePassRatio(args.minimumPassRatio).value;
   if (!EVAL_TIERS.includes(args.tier)) {
     throw new Error(`--tier must be one of: ${EVAL_TIERS.join(', ')}`);
   }
@@ -647,6 +656,8 @@ function markdownReport(output) {
     `Tier: \`${output.selection.tier}\` (${output.selection.caseCount} case(s))`,
     `Commit: \`${output.metadata.commitSha}\``,
     `Passed: **${output.summary.passed}/${output.summary.total}**`,
+    `Required passes: **${output.summary.requiredPasses}/${output.summary.total}** (minimum ratio ${output.summary.minimumPassRatio})`,
+    `Gate: **${output.summary.accepted ? 'PASS' : 'FAIL'}**`,
     '',
     '| Case | Profile | Result | Scores | Bands | Notes |',
     '|---|---|---:|---|---|---|',
@@ -812,11 +823,7 @@ export async function runScanEvals(argv = process.argv) {
     console.log(`langsmith: experiment recorded: ${reporter.experimentName}`);
   }
 
-  const summary = {
-    total: results.length,
-    passed: results.filter((result) => result.validation.passed).length,
-    failed: results.filter((result) => !result.validation.passed).length,
-  };
+  const summary = evaluateEvalGate(results, args.minimumPassRatio);
   const output = {
     runId,
     api: args.api,
@@ -847,6 +854,9 @@ export async function runScanEvals(argv = process.argv) {
   await writeFile(mdPath, markdownReport(output));
 
   console.log(`\n${summary.passed}/${summary.total} expectation(s) passed`);
+  console.log(
+    `gate=${summary.accepted ? 'pass' : 'fail'} passed=${summary.passed} requiredPasses=${summary.requiredPasses} minimumPassRatio=${summary.minimumPassRatio} operationalFailures=${summary.operationalFailures}`,
+  );
   console.log(`json=${jsonPath}`);
   console.log(`md=${mdPath}`);
 
@@ -855,7 +865,7 @@ export async function runScanEvals(argv = process.argv) {
       ? await runDriftCheck(args, results, reporter?.experimentName ?? null)
       : 0;
 
-  process.exitCode = summary.failed > 0 || driftExitCode !== 0 ? 1 : 0;
+  process.exitCode = !summary.accepted || driftExitCode !== 0 ? 1 : 0;
 }
 
 function gitRevision(spec) {
