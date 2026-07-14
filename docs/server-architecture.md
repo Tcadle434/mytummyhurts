@@ -10,6 +10,7 @@ Replaces the Supabase Edge Functions with a NestJS backend on a VPS. See the mig
 - `llm/`: `LlmProvider` seam and OpenAI embeddings, plus the shared Responses API structured-output runtime (strict Zod format generation/parsing, bounded retries, and sanitized regeneration feedback).
 - `scan/`
   - `engine/`: `scoring.ts` (deterministic engine, **48 regression tests pass**), `openai.ts` (Responses API orchestration, staged menu processing, and audit capture), `openaiSchemas.ts` (scan Zod contracts), `menuRubric`, `dietRubric`, `openaiPricing`, `domain`.
+  - `concern-v1/`: parallel shadow engine for neutral food facts, controlled mechanism mapping, exact condition-scoped evidence retrieval, LLM adjudication and verification, deterministic band placement, and bounded scheduling.
   - `workflow/` — `@langchain/langgraph` deterministic DAG: loadUserContext → generate (extract) → score → ragAdjust. Proven to add no score drift.
   - `scan-analysis.service.ts` - asynchronous start/result API plus blocking compatibility wrappers. `scan-analysis-job.service.ts` - durable queue and lease operations. `scan-analysis-executor.service.ts` - claimed-job execution and atomic finalization. `scan-analysis.worker.ts` - in-process queue polling. `scan-reservation.service.ts` - begin/complete/fail RPC wrappers and auto-routed scan-category persistence. `scan.controller.ts` - image, barcode, history, delete, and consumption endpoints.
 - `rag/` — chunking, `OpenAiEmbedder`, hybrid `RagRetrievalService` (pgvector + tsvector + synonym expansion), `FallbackReranker`, `RagIngestionService` (curation gate), `rag-influence.ts` (bounded within-band nudge + band-cross guard).
@@ -36,6 +37,13 @@ RAG may only nudge the score within its band, never across a boundary (bands:
 low < 37, medium 37-63, high >= 64). With RAG influence off (default), the
 result is byte-identical to the engine.
 
+After the durable scan and job are committed, the executor may start concern v1
+against the completed extraction and user context. This work is outside the
+served workflow and is never awaited by the result API. It records a separate
+best-effort `scan_concern_shadow` trace and cannot update the persisted scan score. Missing
+credentials, disabled configuration, queue saturation, model failure, or
+validation exhaustion therefore cannot delay or replace a served result.
+
 Menus add two bounded stages before scoring. Vision requests transcribe pages
 independently, then text-only requests analyze batches of menu items. The
 default batch size is 12 and stage concurrency is 2, with hard configuration
@@ -55,12 +63,20 @@ audits retain attempt metadata and raw provider responses, while cost snapshots
 aggregate token usage across attempts; failed audits never contain a parsed
 response.
 
+Concern v1 uses the same structured-output retry and audit boundary for its
+mechanism mapping, adjudication, and independent verification stages. Its
+schemas additionally require exact subject and condition coverage, scoped fact,
+mechanism, evidence, and personal-history identifiers, and a verifier result
+that never exceeds the proposed decision.
+
 ## Data model
-Existing tables reused (scans, scan_*_risks, daily_gut_reports, ingredient_insights, scan_ai_audit_logs, …). New: `scan_analysis_jobs` for durable scan payloads, leases, and outcomes; `schema_migrations` for immutable production migration checksums; `auth_*`; `ai_traces`/`ai_node_traces`/`ai_cost_events`/`ai_prompt_versions`/`ai_model_versions`; `rag_documents`/`rag_document_chunks`(vector+tsvector+HNSW)/`rag_ingestion_jobs`/`rag_retrieval_runs`/`rag_retrieved_chunks`; `eval_datasets`/`eval_cases`/`eval_runs`/`eval_results`; `user_conditions`/`user_sensitivities`/`user_note_embeddings`.
+Existing tables reused (scans, scan_*_risks, daily_gut_reports, ingredient_insights, scan_ai_audit_logs, …). New: `scan_analysis_jobs` for durable scan payloads, leases, and outcomes; `schema_migrations` for immutable production migration checksums; `auth_*`; `ai_traces`/`ai_node_traces`/`ai_cost_events`/`ai_prompt_versions`/`ai_model_versions`; `rag_documents`/`rag_document_chunks`(vector+tsvector+HNSW)/`rag_ingestion_jobs`/`rag_retrieval_runs`/`rag_retrieved_chunks`; `eval_datasets`/`eval_cases`/`eval_runs`/`eval_results`; `user_conditions`/`user_sensitivities`/`user_note_embeddings`. Concern v1 needs no migration: its result is stored in the shadow trace summary and its stage audits, token usage, cost, prompt versions, and model versions use the existing observability tables.
 
 ## Isolation
 Backend-enforced: every user query goes through `DatabaseService.scoped(userId, …)` which sets `SET LOCAL app.current_user_id`. Defense-in-depth: `FORCE ROW LEVEL SECURITY` + the shim's `auth.uid()` → GUC, on a non-BYPASSRLS app role. Verified by `test/isolation.int.spec.ts`.
 
 ## See also
 - `docs/vps-deploy.md` — deploy + cutover runbook.
+- `docs/concern-v1.md` - concern scoring, rollout, configuration, and promotion contract.
+- `docs/evals.md` - legacy and concern evaluation gates.
 - `server/scripts/rag/sources.allowlist.ts` — corpus seed allowlist + guardrails.

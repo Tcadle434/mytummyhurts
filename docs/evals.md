@@ -3,26 +3,79 @@
 MyTummyHurts uses these evaluation layers:
 
 1. **Golden scan image evals**: blocking score/mechanism checks for real food images.
-2. **Retrieval evals**: checks whether RAG retrieves the right nutrition concepts.
-3. **Generation judge evals**: optional LLM-as-judge checks for grounded, non-invented explanations, using the [openevals](https://github.com/langchain-ai/openevals) package (see below).
-4. **Replay and integration tests**: zero-token coverage for schemas, retries, normalization, scoring, persistence, and rendering contracts.
-5. **Unified LangSmith telemetry**: live golden-scan passes are recorded as LangSmith experiments when `LANGSMITH_API_KEY` is set.
+2. **Concern v1 transformation evals**: blocking relational checks over structured food-fact pairs and fixed image pairs.
+3. **Retrieval evals**: checks whether RAG retrieves the right nutrition concepts.
+4. **Generation judge evals**: optional LLM-as-judge checks for grounded, non-invented explanations, using the [openevals](https://github.com/langchain-ai/openevals) package (see below).
+5. **Replay and integration tests**: zero-token coverage for schemas, retries, normalization, scoring, persistence, and rendering contracts.
+6. **Unified LangSmith telemetry**: live golden-scan passes are recorded as LangSmith experiments when `LANGSMITH_API_KEY` is set; production concern shadows use the same best-effort trace forwarder outside this eval experiment stream.
 
 ## Evaluation cadence
 
 Paid live-model checks are intentionally tiered. The full dataset is not run on every pull request.
 
-| Tier | Trigger | Current size | Purpose |
-|---|---|---:|---|
-| Deterministic | Every pull request | 0 live scans | Code, schema, scoring, persistence, and dataset integrity |
-| Smoke | AI-sensitive PR opened non-draft or marked ready; label `run-ai-evals` to run now and on later pushes | 8 cases / 13 expectations | Small live-model canary |
-| Release | Every merge to `main`, or manual production deployment | 27 cases / about 35 expectations | Blocking fixed anchors plus deterministic rotation |
-| Nightly | Monday through Saturday | One of five balanced shards | Full rotating coverage over five nights |
-| Full | Sunday or manual major-model check | 56 cases / 71 expectations | Every food, menu, barcode, and unclear-input case |
+| Tier | Trigger | Legacy golden | Concern structured | Concern images | Purpose |
+|---|---|---:|---:|---:|---|
+| Deterministic | Every pull request | 0 live scans | 0 live pairs | 0 live pairs | Code, schema, scoring, persistence, selection, checksums, and dataset integrity |
+| Smoke | AI-sensitive PR opened non-draft or marked ready; label `run-ai-evals` to run now and on later pushes | 8 cases / 13 expectations | 4 pairs | 1 pair | Small live-model canary |
+| Release | Every merge to `main`, or manual production deployment | 27 cases / about 35 expectations | 8 pairs | 2 pairs | Blocking fixed anchors plus deterministic legacy rotation |
+| Nightly | Monday through Saturday | One of five balanced shards | 2 anchors plus one of four rotating shards | 1 anchor plus one of two rotating shards | Broader rotating coverage |
+| Full | Sunday or manual major-model check | 56 cases / 71 expectations | 20 pairs | 6 pairs | Complete legacy and concern coverage |
 
-`server/evals/golden/suites.json` is the source of truth for budgets, fixed anchors, release rotation, and nightly shards. Release rotation is seeded by the evaluated commit SHA, so reruns of the same commit select the same cases.
+`server/evals/golden/suites.json` is the source of truth for legacy budgets,
+fixed anchors, release rotation, and nightly shards. Release rotation is seeded
+by the evaluated commit SHA, so reruns of the same commit select the same cases.
+`server/evals/concern-v1/suites.json` independently owns concern tier membership,
+nightly anchors and shards, and soft-case ratios.
 
 Current food-image expectations are explicitly classified as `model_ratcheted_regression`. They are useful drift and regression labels, but they are not represented as an independently reviewed medical-accuracy holdout. Independently reviewed labels should be added as a separate frozen holdout rather than silently replacing historical expectations.
+
+## Concern v1 transformations
+
+Concern v1 does not inherit the served engine's score labels. Its structured
+suite changes one controlled food fact between two subjects and asserts score,
+mechanism, confidence, or unrelated-condition relationships. Its image suite
+first verifies the expected extraction difference, then runs each extracted
+meal through an independent concern context and applies the linked structured
+relationship. This prevents one side from influencing the other.
+
+The datasets are:
+
+```txt
+server/evals/concern-v1/
+  transformations.json
+  image-pairs.json
+  suites.json
+  images/
+```
+
+Run or preview a tier after building the server:
+
+```bash
+npm --prefix server run build
+npm --prefix server run eval:concern:plan -- --tier release
+npm --prefix server run eval:concern -- --tier release
+npm --prefix server run eval:concern:images:plan -- --tier release
+npm --prefix server run eval:concern:images -- --tier release
+```
+
+Use `--case id[,id...]` for targeted structured transformations. The image
+runner accepts either an image-pair ID or its transformation ID. Nightly runs
+require `--shard-index`; plans validate tier membership and selected image
+checksums without spending tokens. Live execution requires `OPENAI_API_KEY`.
+
+Hard transformations require 100 percent. Soft transformations use the ratio
+declared for their tier, while every resolved or thrown operational failure
+blocks regardless of assertion output. Both runners write JSON reports under
+`server/evals/reports/` with selection, assertions, latency, audit stages,
+retry and validation summaries, token usage, cost, and raw-response presence.
+Raw model output remains only in the underlying audit objects and is not copied
+into eval reports.
+
+Image fixtures are fixed generated assets with SHA-256 checksums, prompts,
+generation metadata, and completed manual visual review in `image-pairs.json`.
+Evaluation and CI never regenerate them. See the
+[concern eval runbook](../server/evals/concern-v1/README.md) for maintenance and
+the [engine contract](concern-v1.md) for scoring and promotion requirements.
 
 ## Golden Scan Images
 
@@ -136,11 +189,16 @@ key the runner prints a one-line notice and runs local-only.
 
 ### CI and deploy gates
 
-`.github/workflows/server-ci.yml` is the zero-token pull-request gate. It runs the full server test/build pipeline, the offline scoring goldens, and dry plans for every live tier and nightly shard.
+`.github/workflows/server-ci.yml` is the zero-token pull-request gate. It runs
+the full server test/build pipeline, the offline scoring goldens, and dry plans
+for every legacy and concern live tier and nightly shard. Concern image plans
+also verify the selected committed checksums. The offline legacy runner forces
+concern shadows off before loading the server, so it cannot make an unobserved
+model call even when local credentials are present.
 
 `.github/workflows/ai-eval-smoke.yml` runs the small paid smoke tier when an AI-sensitive pull request is opened non-draft, becomes ready for review, or receives the `run-ai-evals` label. It does not re-run on pushed commits by default, so a green smoke result can be stale relative to later pushes; keep the `run-ai-evals` label applied to re-run smoke on every push (in-progress runs are cancelled when new commits arrive). The release gate always re-evaluates before deployment either way.
 
-`.github/workflows/deploy-production.yml` is the only automated production deployment path. Every push to protected `main` triggers it automatically, and `workflow_dispatch` remains available for an intentional redeploy. Freshness guards run before the paid release evaluation and again immediately before deployment, so a run stops if its commit is no longer the head of `main`. The restricted VPS command independently enforces the same equality. Re-running a stale run therefore cannot roll production back; dispatch a fresh run to redeploy the current head. The workflow calls `.github/workflows/scan-evals.yml` with the release tier, and deployment cannot start unless retrieval and scan evaluations are green. It then deploys the exact evaluated commit and verifies `/healthz` and `/readyz`.
+`.github/workflows/deploy-production.yml` is the only automated production deployment path. Every push to protected `main` triggers it automatically, and `workflow_dispatch` remains available for an intentional redeploy. Freshness guards run before the paid release evaluation and again immediately before deployment, so a run stops if its commit is no longer the head of `main`. The restricted VPS command independently enforces the same equality. Re-running a stale run therefore cannot roll production back; dispatch a fresh run to redeploy the current head. The workflow calls `.github/workflows/scan-evals.yml` with the release tier, and deployment cannot start unless retrieval, legacy scan, concern structured, and concern image evaluations are green. It then deploys the exact evaluated commit and verifies `/healthz` and `/readyz`.
 
 - Manual: Actions -> scan-evals -> Run workflow and choose a tier.
 - Pre-deploy: the production workflow always calls the release tier.
@@ -148,8 +206,8 @@ key the runner prints a one-line notice and runs local-only.
 - Telemetry: configure the optional `LANGSMITH_API_KEY` secret and each gate
   run shows up in LangSmith tagged `context=ci-gate`; with the secret absent
   the runner prints a skip notice and the gate is unaffected.
-- Production parity: the workflow ingests the versioned curated corpus and enables retrieval, bounded RAG influence, and risk adjudication before scanning.
-- Reports: JSON and Markdown artifacts include commit SHA, corpus tree SHA, extraction and menu-stage model identities, extraction and menu prompt versions, feature flags, tier, shard, and repeat count.
+- Production parity: the workflow ingests the versioned curated corpus and enables retrieval, bounded RAG influence, and risk adjudication before legacy scanning. It disables automatic concern shadows for those API scans, then runs both concern suites directly so every paid call is observed and gated.
+- Reports: legacy JSON and Markdown artifacts include commit SHA, corpus tree SHA, extraction and menu-stage model identities, extraction and menu prompt versions, feature flags, tier, shard, and repeat count. Concern JSON artifacts include the selected plan, relationship assertions, audit summaries, usage, cost, and operational-failure counts.
 
 ## Adding A New Image
 

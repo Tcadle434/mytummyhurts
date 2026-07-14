@@ -44,8 +44,9 @@ durable jobs and wait up to seven minutes for completion.
 OpenAI Responses API stages share `src/llm/structured-output.ts`: text,
 single-image, and multi-image meal extraction; scan category classification;
 menu vision transcription; bounded menu text analysis; risk adjudication;
-ingredient taxonomy classification; and last-bad-meal extraction. Each stage
-defines a strict Zod schema that
+concern-v1 mechanism mapping, adjudication, and verification; ingredient
+taxonomy classification; and last-bad-meal extraction. Each stage defines a
+strict Zod schema that
 `zodTextFormat` also turns into the JSON Schema sent to OpenAI. Only output
 parsed by that same Zod schema reaches domain normalization or persistence.
 
@@ -71,6 +72,21 @@ the shared three-attempt policy fails the scan instead of producing fallback
 scores. The LLM owns food interpretation and severity or diet judgments; the
 deterministic scorer maps validated judgments into numeric scores.
 
+## Concern v1 shadow scoring
+
+Concern v1 starts only after the durable served result has been committed. It
+reuses the neutral extraction, evaluates every supported condition, and writes
+a separate best-effort `scan_concern_shadow` trace without changing the scan row, API
+response, mobile contract, or result latency. A concern failure is observable
+as a failed shadow result when the best-effort trace write succeeds; a trace
+write failure is logged. There is no deterministic medical fallback.
+
+Shadow work requires `OPENAI_API_KEY` and defaults on. Set
+`CONCERN_V1_SHADOW_ENABLED=off` to stop new runs. Concurrency, queue length, and
+queue wait are bounded by the `CONCERN_V1_*` settings in `.env.example`. See
+[`docs/concern-v1.md`](../docs/concern-v1.md) for the scoring contract, evidence
+boundaries, exact configuration, and promotion requirements.
+
 ## Scripts
 - `npm run db:migrate` - destructively rebuild a local or CI database from the full migration history
 - `npm run db:migrate:production` - incrementally apply pending production migrations with checksums
@@ -78,6 +94,8 @@ deterministic scorer maps validated judgments into numeric scores.
 - `npm run start:prod` — run compiled server
 - `npm run typecheck` — `tsc --noEmit`
 - `npm test` — vitest
+- `npm run eval:concern -- --tier smoke` - run structured concern transformations
+- `npm run eval:concern:images -- --tier smoke` - run fixed-image concern transformations
 
 ## Status
 - Phase 0 ✅ skeleton + health endpoints

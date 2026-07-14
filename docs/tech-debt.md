@@ -16,7 +16,7 @@ Things intentionally left for incremental follow-up (with rationale), so they re
 - **Migrations**: `scripts/migrate.mjs` remains the from-scratch local/CI reset. Production uses `scripts/migrate-production.mjs`, which applies numbered migrations incrementally with an advisory lock, transactions, and immutable SHA-256 checksums in `public.schema_migrations`.
 
 ## Observability
-- **LangSmith**: flag-gated (`LANGSMITH_TRACING`); the own-DB traces (`ai_traces`/`ai_node_traces`/`ai_cost_events`) are the source of truth and are wired. Full LangSmith span export is a small add when desired.
+- **LangSmith forwarding is wired and flag-gated.** With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` set, each scan trace with at least one audit is forwarded as a parent run with child LLM stages, including prompts, parsed responses, tokens, cost, latency, and the separate concern-v1 shadow result. The own-DB traces (`ai_traces`/`ai_node_traces`/`ai_cost_events`) remain the source of truth, and forwarding stays best-effort.
 
 ## Frontend
 - **On-device OAuth + secure store**: the transport + auth are nest-only and typecheck, but the Apple nonce flow, the Google direct-ID-token flow, and `expo-secure-store` persistence must be verified on a device/simulator once the app points at a deployed API.
