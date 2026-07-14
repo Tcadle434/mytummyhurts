@@ -189,6 +189,23 @@ describe('concern_v1 evidence and profile resolution', () => {
     }]);
   });
 
+  it('recognizes supported acronyms inside qualified condition names', () => {
+    expect(resolveConcernConditions(profile(['IBS-D', 'GERD / reflux']))).toEqual([
+      {
+        key: 'ibs',
+        label: 'IBS',
+        profileValue: 'IBS-D',
+        symptomContext: [],
+      },
+      {
+        key: 'gerd',
+        label: 'GERD / Acid reflux',
+        profileValue: 'GERD / reflux',
+        symptomContext: [],
+      },
+    ]);
+  });
+
   it('retrieves only condition-scoped claims and deduplicates identical evidence', () => {
     const claim = tomatoClaim();
     const duplicate = { ...claim, id: 'claim_duplicate_source' };

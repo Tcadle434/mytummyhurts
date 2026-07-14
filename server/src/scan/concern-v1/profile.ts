@@ -21,8 +21,9 @@ function normalize(value: string) {
 function conditionKey(value: string): SupportedConditionKey | null {
   const normalized = normalize(value);
   if (!normalized) return null;
-  if (normalized === 'ibs' || normalized.includes('irritable bowel')) return 'ibs';
-  if (normalized === 'gerd' || normalized.includes('acid reflux') || normalized.includes('heartburn')) {
+  const tokens = new Set(normalized.split(' '));
+  if (tokens.has('ibs') || normalized.includes('irritable bowel')) return 'ibs';
+  if (tokens.has('gerd') || normalized.includes('acid reflux') || normalized.includes('heartburn')) {
     return 'gerd';
   }
   if (normalized.includes('lactose')) return 'lactose_intolerance';

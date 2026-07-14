@@ -13,6 +13,10 @@ export function parseConcernEvalArgs(argv) {
   return parsed;
 }
 
+export function concernRunsHaveOperationalFailure(...runs) {
+  return runs.some((run) => run?.result?.status !== 'completed');
+}
+
 function stableRank(value) {
   return Number.parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16);
 }

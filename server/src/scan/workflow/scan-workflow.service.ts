@@ -35,9 +35,6 @@ import {
   type ScanStageCallback,
   type ScanStageDetail,
 } from '../scan-progress';
-import { concernShadowEnabled } from '../concern-v1/config';
-import { runConcernV1Shadow } from '../concern-v1/openai';
-import type { ConcernV1ShadowRun } from '../concern-v1/domain';
 
 export interface ScanWorkflowInput {
   userId: string;
@@ -61,7 +58,6 @@ export interface ScanWorkflowResult {
   baseResult: ScanResult;
   finalResult: ScanResult;
   audits: OpenAiAuditLog[];
-  concernV1Shadow?: Promise<ConcernV1ShadowRun>;
 }
 
 // Bounded RAG influence may nudge the overall score by at most this many points
@@ -475,20 +471,12 @@ export class ScanWorkflowService {
 
   async run(input: ScanWorkflowInput): Promise<ScanWorkflowResult> {
     const out = await this.graph.invoke({ input });
-    const concernV1Shadow = concernShadowEnabled()
-      ? runConcernV1Shadow({
-          extraction: out.extraction!,
-          profile: input.profile,
-          insights: input.insights,
-        })
-      : undefined;
     return {
       scanCategory: out.scanCategory,
       extraction: out.extraction!,
       baseResult: out.baseResult!,
       finalResult: out.finalResult ?? out.baseResult!,
       audits: out.audits,
-      concernV1Shadow,
     };
   }
 }

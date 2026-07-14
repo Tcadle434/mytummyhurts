@@ -4,10 +4,19 @@ import { LearningJobService } from '../learning/learning-job.service';
 import { StorageService } from '../storage/storage.service';
 import { TraceService } from '../trace/trace.service';
 import { InsightsService } from '../insights/insights.service';
+import { concernShadowEnabled } from './concern-v1/config';
 import type { ConcernV1ShadowRun } from './concern-v1/domain';
+import { runConcernV1Shadow } from './concern-v1/openai';
 import { CONCERN_ADJUDICATION_PROMPT_VERSION } from './concern-v1/prompts';
 import { buildDayLoadContext } from './engine/day-load';
-import type { IngredientInsight, ScanDayLoad, ScanResult, UserProfile } from './engine/domain';
+import type {
+  IngredientInsight,
+  MenuScanAnalysis,
+  ScanDayLoad,
+  ScanResult,
+  StructuredAnalysisV2,
+  UserProfile,
+} from './engine/domain';
 import { PROMPT_VERSION as EXTRACTION_PROMPT_VERSION, type OpenAiAuditLog } from './engine/openai';
 import { buildFoodCompletionInput, buildMenuCompletionInput } from './scan-payload';
 import { ScanAnalysisJobService } from './scan-analysis-job.service';
@@ -98,6 +107,15 @@ export class ScanAnalysisExecutorService {
           }`,
         );
       });
+  }
+
+  private startConcernV1Shadow(
+    extraction: StructuredAnalysisV2 | MenuScanAnalysis,
+    profile: UserProfile | null,
+    insights: IngredientInsight[],
+  ): Promise<ConcernV1ShadowRun> | undefined {
+    if (!concernShadowEnabled()) return undefined;
+    return runConcernV1Shadow({ extraction, profile, insights });
   }
 
   private async recordFailedScanTrace(
@@ -242,6 +260,11 @@ export class ScanAnalysisExecutorService {
       await this.reservation.complete(completion, sql);
     });
     if (!completed) return workflowResult.scanCategory;
+    const concernV1Shadow = this.startConcernV1Shadow(
+      workflowResult.extraction,
+      profile,
+      insights,
+    );
     await this.enqueueLearning(job.user_id, job.scan_id);
     await this.recordCompletedScanTraces({
       userId: job.user_id,
@@ -253,7 +276,7 @@ export class ScanAnalysisExecutorService {
       baseScore: workflowResult.baseResult.overallRiskScore,
       finalScore: workflowResult.finalResult.overallRiskScore,
       audits: workflowResult.audits,
-    }, workflowResult.concernV1Shadow);
+    }, concernV1Shadow);
     return workflowResult.scanCategory;
   }
 
@@ -281,6 +304,11 @@ export class ScanAnalysisExecutorService {
       await this.reservation.complete(completion, sql);
     });
     if (!completed) return 'grocery';
+    const concernV1Shadow = this.startConcernV1Shadow(
+      workflowResult.extraction,
+      profile,
+      insights,
+    );
     await this.enqueueLearning(job.user_id, job.scan_id);
     await this.recordCompletedScanTraces({
       userId: job.user_id,
@@ -292,7 +320,7 @@ export class ScanAnalysisExecutorService {
       baseScore: workflowResult.baseResult.overallRiskScore,
       finalScore: workflowResult.finalResult.overallRiskScore,
       audits: workflowResult.audits,
-    }, workflowResult.concernV1Shadow);
+    }, concernV1Shadow);
     return 'grocery';
   }
 

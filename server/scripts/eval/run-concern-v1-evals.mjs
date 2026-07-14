@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
+  concernRunsHaveOperationalFailure,
   pairExtraction,
   parseConcernEvalArgs,
   profileSeed,
@@ -53,6 +54,7 @@ async function main() {
         hard: caseDefinition.hard,
         latencyMs: Date.now() - startedAt,
         validation,
+        operationalFailure: concernRunsHaveOperationalFailure(run),
         auditStages: run.audits.map((audit) => audit.stage),
         auditSummary: summarizeConcernAudits(run.audits),
       });

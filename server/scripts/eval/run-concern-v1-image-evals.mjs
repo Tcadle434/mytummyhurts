@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
   combineIndependentConcernResults,
+  concernRunsHaveOperationalFailure,
   parseConcernEvalArgs,
   profileSeed,
   selectConcernImagePairs,
@@ -131,6 +132,7 @@ async function main() {
         hard: pair.hard,
         latencyMs: Date.now() - startedAt,
         validation,
+        operationalFailure: concernRunsHaveOperationalFailure(baseRun, variantRun),
         auditStages: [
           ...baseExtraction.audits.map((audit) => `base:${audit.stage}`),
           ...variantExtraction.audits.map((audit) => `variant:${audit.stage}`),

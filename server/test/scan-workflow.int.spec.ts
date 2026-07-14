@@ -55,6 +55,7 @@ describe('scan workflow (deterministic graph)', () => {
     // RAG influence is off -> final === base, byte-identical to the engine.
     expect(result.finalResult.overallRiskScore).toBe(result.baseResult.overallRiskScore);
     expect(result.scanCategory).toBe('food');
+    expect(result).not.toHaveProperty('concernV1Shadow');
   });
 
   it('retrieves RAG evidence and uses adjudicated bands before scoring when enabled', async () => {

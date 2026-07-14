@@ -5,8 +5,13 @@ function positiveNumber(name: string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function positiveInteger(name: string, fallback: number) {
+  const parsed = Number(process.env[name]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function boundedPositiveInteger(name: string, fallback: number, maximum: number) {
-  return Math.min(Math.floor(positiveNumber(name, fallback)), maximum);
+  return Math.min(positiveInteger(name, fallback), maximum);
 }
 
 export const CONCERN_MECHANISM_MODEL =
@@ -17,12 +22,13 @@ export const CONCERN_VERIFICATION_MODEL =
   process.env.OPENAI_CONCERN_VERIFICATION_MODEL ?? 'gpt-5.4-mini';
 
 export const CONCERN_TIMEOUT_MS = positiveNumber('OPENAI_CONCERN_TIMEOUT_MS', 45_000);
-export const CONCERN_MAX_OUTPUT_TOKENS = positiveNumber(
+export const CONCERN_MAX_OUTPUT_TOKENS = positiveInteger(
   'OPENAI_CONCERN_MAX_OUTPUT_TOKENS',
   6_000,
 );
-export const CONCERN_BATCH_SIZE = Math.min(
-  Math.floor(positiveNumber('OPENAI_CONCERN_BATCH_SIZE', 12)),
+export const CONCERN_BATCH_SIZE = boundedPositiveInteger(
+  'OPENAI_CONCERN_BATCH_SIZE',
+  12,
   20,
 );
 export const CONCERN_MAX_CONCURRENT_RUNS = boundedPositiveInteger(

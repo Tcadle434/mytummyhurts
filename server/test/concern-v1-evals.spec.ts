@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   combineIndependentConcernResults,
+  concernRunsHaveOperationalFailure,
   selectConcernCases,
   selectConcernImagePairs,
   summarizeConcernAudits,
@@ -87,6 +88,15 @@ describe('concern v1 eval gate', () => {
 
   it('always rejects operational failures', () => {
     expect(summarizeConcernGate([result(true, true, true)], 1).accepted).toBe(false);
+  });
+
+  it('classifies resolved concern failures as operational failures', () => {
+    expect(concernRunsHaveOperationalFailure({ result: { status: 'failed' } })).toBe(true);
+    expect(concernRunsHaveOperationalFailure(
+      { result: { status: 'completed' } },
+      { result: { status: 'failed' } },
+    )).toBe(true);
+    expect(concernRunsHaveOperationalFailure({ result: { status: 'completed' } })).toBe(false);
   });
 
   it('reports usage and raw-audit presence without copying model output', () => {
