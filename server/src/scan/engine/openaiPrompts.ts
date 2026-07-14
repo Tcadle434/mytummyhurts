@@ -3,6 +3,7 @@
 // adjudication. Band anchors and calibration examples live here too.
 
 import { ExtractedIngredient } from './domain';
+import type { ModelConditionTarget } from './conditionTargets';
 import { buildMenuRubricPromptText } from './menuRubric';
 import { dietPromptText } from './dietRubric';
 import { RISK_ADJUDICATION_PROMPT_VERSION, type RiskAdjudicationRequest } from './riskAdjudication';
@@ -14,7 +15,7 @@ import type { ExtractionContext } from './openaiTypes';
 // against fixed reference points instead of run-to-run vibes (Phase 2 item 1).
 // Shared by food scans and menu items.
 const BAND_ANCHOR_TEXT = [
-  'Band anchors — calibrate every band against these:',
+  'Band anchors - calibrate every band against these:',
   '- none: no meaningful trigger for that condition is present (plain white rice; a banana; steamed vegetables).',
   '- mild: a single small or modest trigger in an otherwise gentle meal (rice-heavy sushi rolls with a splash of soy sauce; oatmeal with berries; grilled chicken with a buttered roll).',
   '- moderate: one clear trigger at normal portion, or two or three modest triggers stacking (creamy butter chicken for reflux; spaghetti in tomato sauce for reflux; a cheeseburger for IBS).',
@@ -22,6 +23,10 @@ const BAND_ANCHOR_TEXT = [
   '- severe: an extreme, unambiguous worst case for that condition (a loaded chili-cheese platter with fried sides and beer for reflux). Reserve severe for genuinely extreme loads.',
   'When nothing meaningful is present for a condition, use none, not mild.',
   'Trace- or condiment-level exposures (a dab of wasabi, a splash of soy sauce, a lemon wedge, a pickled garnish) never lift a band above mild on their own; moderate and above need at least one clear trigger at meaningful portion.',
+  'Cite only condition-specific watch-outs as drivers. Gentle carrier foods such as plain rice or simple starch are neutral or mitigating, not positive risk drivers.',
+  'Portion size can amplify a real trigger, but meal volume or the visible count of bite-size pieces is not a trigger by itself. A large amount of mostly gentle food does not become moderate without a meaningful trigger load.',
+  'Judge the complete meal burden, not isolated ingredients. Portion size, meal density, richness, preparation, and several relevant modest triggers can combine into a higher band.',
+  'A normal-to-large dense meal with a meaningful rich or high-fat component can justify moderate concern for general gut sensitivity even when no single ingredient is extreme.',
   'Any band above none must cite at least one driver from the returned ingredients or prep.',
 ].join('\n');
 
@@ -29,12 +34,13 @@ const BAND_CALIBRATION_EXAMPLES = [
   'Worked examples:',
   '- Pepperoni pizza for GERD / acid reflux: band high, drivers ["pepperoni", "cheese", "tomato sauce"] — processed meat, fat, and acid stack in one dish.',
   '- Plain white rice for IBS: band none, drivers [] — no meaningful IBS trigger present.',
+  '- Rice-heavy salmon-avocado sushi for general gas sensitivity: band mild, drivers ["avocado"] - a standard avocado filling is a modest watch-out; rice, fish, nori, condiment-level soy or vinegar, and the number of bite-size pieces do not make it moderate.',
   '- Butter chicken with rice for GERD / acid reflux: band moderate, drivers ["butter", "cream sauce"] — rich and creamy, but the rice base is gentle and nothing fried or acidic stacks on top.',
 ].join('\n');
 
 function conditionPromptText(
   knownConditions: string[] | undefined,
-  options: { includeRationale?: boolean } = {},
+  options: { includeRationale?: boolean; commonSymptoms?: string[] } = {},
 ) {
   const rationaleField = (options.includeRationale ?? true) ? ', and a one-line rationale' : '';
   const conditions = (knownConditions ?? []).map((condition) => condition.trim()).filter(Boolean);
@@ -48,10 +54,32 @@ function conditionPromptText(
       ];
   return [
     ...instruction,
+    symptomContextPromptLine(options.commonSymptoms),
     'Cite drivers only from the ingredients and prep you returned above — do not introduce new or speculative ingredient names. If no returned ingredient or prep is a meaningful trigger for a condition, use band none with an empty drivers array.',
     BAND_ANCHOR_TEXT,
     BAND_CALIBRATION_EXAMPLES,
   ].join('\n');
+}
+
+function symptomContextPromptLine(commonSymptoms: string[] | undefined) {
+  const symptoms = (commonSymptoms ?? []).map((value) => value.trim()).filter(Boolean).slice(0, 12);
+  if (!symptoms.length) return '';
+  return `Relevant symptom context: ${symptoms.join(', ')}. Use symptoms as a lens for the listed condition, especially general discomfort, but never treat them as diagnoses or proof that this meal will cause symptoms.`;
+}
+
+function menuConditionPromptText(
+  targets: readonly ModelConditionTarget[],
+  commonSymptoms: string[] | undefined,
+) {
+  if (!targets.length) return 'Return an empty conditionSeverities array for every item.';
+  return [
+    `Condition targets: ${JSON.stringify(targets)}.`,
+    'For every item, return exactly one conditionSeverities entry per target using conditionKey exactly as supplied. Judge the digestive risk for the corresponding label.',
+    symptomContextPromptLine(commonSymptoms),
+    'Drivers must come only from the ingredient callouts and preparation cues returned for that item. Use band none with an empty drivers array when no meaningful trigger is present.',
+    BAND_ANCHOR_TEXT,
+    BAND_CALIBRATION_EXAMPLES,
+  ].filter(Boolean).join('\n');
 }
 
 // Declared sensitivities enter the extraction context as a verification list,
@@ -73,8 +101,10 @@ function foodBandsSystemLine(includeBands: boolean) {
   return includeBands ? FOOD_BANDS_ON_SYSTEM_LINE : FOOD_BANDS_OFF_SYSTEM_LINE;
 }
 
-function foodBandsUserLine(includeBands: boolean, knownConditions: string[]) {
-  return includeBands ? conditionPromptText(knownConditions) : FOOD_BANDS_OFF_USER_LINE;
+function foodBandsUserLine(includeBands: boolean, context: ExtractionContext) {
+  return includeBands
+    ? conditionPromptText(context.knownConditions, { commonSymptoms: context.commonSymptoms })
+    : FOOD_BANDS_OFF_USER_LINE;
 }
 
 // Existence rule shared by the image and text extraction system prompts: the
@@ -98,7 +128,7 @@ export function buildImageUserPrompt(context: ExtractionContext, includeBands: b
     'Represent multi-item plates in the components array.',
     'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
     knownIngredientsPromptLine(context),
-    foodBandsUserLine(includeBands, context.knownConditions),
+    foodBandsUserLine(includeBands, context),
     dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching the response schema.',
   ]
@@ -113,7 +143,7 @@ export function buildMultiImageUserPrompt(context: ExtractionContext & { imageCo
     'Represent multi-item meals in the components array.',
     'Each result must include exactly one baseFoodCategory and a riskModifiers array, even when empty.',
     knownIngredientsPromptLine(context),
-    foodBandsUserLine(includeBands, context.knownConditions),
+    foodBandsUserLine(includeBands, context),
     dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching the response schema.',
   ]
@@ -163,7 +193,10 @@ export function buildMenuUserPrompt(context: ExtractionContext & { pageCount: nu
     'Each item must include exactly one baseFoodCategory and a riskModifiers array, even when the array is empty.',
     knownIngredientsPromptLine(context),
     MENU_LLM_BANDS
-      ? `Apply this per item: ${conditionPromptText(context.knownConditions, { includeRationale: false })}`
+      ? `Apply this per item: ${conditionPromptText(context.knownConditions, {
+          includeRationale: false,
+          commonSymptoms: context.commonSymptoms,
+        })}`
       : 'Return an empty conditionSeverities array for every item.',
     dietPromptText(context.dietPreferences ?? []),
   ]
@@ -200,13 +233,14 @@ ${buildMenuRubricPromptText()}`;
 export function buildMenuAnalysisUserPrompt(
   items: MenuAnalysisPromptItem[],
   context: ExtractionContext,
+  conditionTargets: readonly ModelConditionTarget[],
 ) {
   return [
     'Analyze every menu item in this batch.',
     `Menu items: ${JSON.stringify(items)}`,
     knownIngredientsPromptLine(context),
     MENU_LLM_BANDS
-      ? conditionPromptText(context.knownConditions, { includeRationale: false })
+      ? menuConditionPromptText(conditionTargets, context.commonSymptoms)
       : 'Return an empty conditionSeverities array for every item.',
     dietPromptText(context.dietPreferences ?? []),
     'Return the exact supplied item identifiers, once each, in any order.',
@@ -229,7 +263,7 @@ export function buildTextUserPrompt(text: string, context: ExtractionContext, in
     'Analyze this meal description for structured food recognition.',
     'Represent multi-item meals in the components array when needed.',
     knownIngredientsPromptLine(context),
-    foodBandsUserLine(includeBands, context.knownConditions),
+    foodBandsUserLine(includeBands, context),
     dietPromptText(context.dietPreferences ?? []),
     'Return JSON matching the response schema.',
   ]
@@ -303,7 +337,10 @@ export function buildRiskAdjudicationUserPrompt(input: RiskAdjudicationRequest) 
     JSON.stringify({
       extractedFoodFacts: foodFacts,
       extractionConditionSeverities,
-      userContext: { knownConditions: input.knownConditions },
+      userContext: {
+        knownConditions: input.knownConditions,
+        symptomContext: input.symptomContext,
+      },
       personalEvidence: input.personalEvidence,
       ragEvidence,
     }),

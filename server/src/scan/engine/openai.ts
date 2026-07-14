@@ -81,6 +81,7 @@ import {
   buildTextUserPrompt,
 } from './openaiPrompts';
 import { combineMenuTranscriptionPages, mergeMenuAnalysisBatches } from './openaiMenuMerge';
+import { buildModelConditionTargets } from './conditionTargets';
 
 export {
   CLASSIFICATION_MODEL,
@@ -544,6 +545,11 @@ function uniqueTrimmed(values: string[], limit: number) {
   return unique;
 }
 
+function menuConditionTargets(context: ExtractionContext) {
+  if (!MENU_LLM_BANDS) return [];
+  return buildModelConditionTargets(uniqueTrimmed(context.knownConditions, 8));
+}
+
 async function requestMenuTranscription(
   imageUrl: string,
   pageIndex: number,
@@ -609,20 +615,16 @@ async function requestMenuAnalysisBatch(
   batchCount: number,
 ) {
   const systemPrompt = buildMenuAnalysisSystemPrompt();
-  const requestedConditions = MENU_LLM_BANDS
-    ? uniqueTrimmed(context.knownConditions, 8)
-    : [];
-  if (MENU_LLM_BANDS && requestedConditions.length === 0) requestedConditions.push('general');
+  const conditionTargets = menuConditionTargets(context);
   const selectedDietPreferences = (context.dietPreferences ?? []).slice(0, 10);
   const requestedDietKeys = selectedDietPreferences.map((preference) => preference.key);
   const userPrompt = buildMenuAnalysisUserPrompt(items, {
     ...context,
-    knownConditions: requestedConditions[0] === 'general' ? [] : requestedConditions,
     dietPreferences: selectedDietPreferences,
-  });
+  }, conditionTargets);
   const structuredOutput = menuAnalysisBatchStructuredOutput(
     items.map((item) => item.id),
-    requestedConditions,
+    conditionTargets,
     requestedDietKeys,
   );
   const request = {
@@ -791,6 +793,7 @@ export async function extractMenuFromImagesWithAudit(
     const merged = mergeMenuAnalysisBatches(
       transcription,
       analysisResults.map((batch) => batch.parsed as MenuAnalysisBatchPayload),
+      menuConditionTargets(context),
     );
     completedAudits.splice(
       pageResults.length,

@@ -107,7 +107,7 @@ function menuAnalysisBatch() {
       id: item.id,
       baseFoodCategory: item.baseFoodCategory,
       riskModifiers: item.riskModifiers,
-      conditionSeverities: [{ condition: 'general', band: 'none', drivers: [] }],
+      conditionSeverities: [{ conditionKey: 'general', band: 'none', drivers: [] }],
       dietFitHypotheses: item.dietFitHypotheses,
       ingredientCallouts: item.ingredientCallouts,
       prepStyle: item.prepStyle,
@@ -383,6 +383,7 @@ describe('structured output retries', () => {
         imageDetail: 'not_applicable',
       },
       knownConditions: [' GERD ', 'acid reflux', ' '],
+      symptomContext: [],
       personalEvidence: [],
       ragEvidence: [],
     });

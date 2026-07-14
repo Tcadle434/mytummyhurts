@@ -40,6 +40,7 @@ export type ExtractionWithAudit<T> = {
 export type ExtractionContext = {
   knownConditions: string[];
   knownIngredients: string[];
+  commonSymptoms?: string[];
   dietPreferences?: DietPreference[];
   /**
    * Set false when the active scoring engine will discard extraction

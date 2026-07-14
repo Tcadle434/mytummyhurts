@@ -13,6 +13,7 @@ import {
   menuRiskModifierKeys,
   menuRubricEvidenceValues,
 } from './menuRubric';
+import type { ModelConditionTarget } from './conditionTargets';
 import type { ConditionSeverityBand } from './domain';
 
 export const MENU_ITEM_LIMIT = 100;
@@ -97,6 +98,25 @@ function conditionSeveritySchema(includeRationale: boolean) {
 
 export const foodConditionSeveritySchema = conditionSeveritySchema(true);
 export const menuConditionSeveritySchema = conditionSeveritySchema(false);
+
+function menuConditionSeverityByKeySchema(conditionKeySchema: z.ZodType<string> = nonblankString) {
+  return z.object({
+    conditionKey: conditionKeySchema,
+    band: severityBandSchema,
+    drivers: z.array(nonblankString).max(6),
+  }).strict().superRefine((value, context) => {
+    if (
+      (value.band === 'moderate' || value.band === 'high' || value.band === 'severe')
+      && value.drivers.length === 0
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['drivers'],
+        message: CONDITION_DRIVERS_REQUIRED_MESSAGE,
+      });
+    }
+  });
+}
 
 export const mealExtractionSchema = z.object({
   dishName: z.string(),
@@ -201,7 +221,7 @@ export const menuItemAnalysisSchema = z.object({
   id: nonblankString,
   baseFoodCategory: menuBaseFoodCategorySchema,
   riskModifiers: z.array(menuRiskModifierSchema).max(5),
-  conditionSeverities: z.array(menuConditionSeveritySchema).max(8),
+  conditionSeverities: z.array(menuConditionSeverityByKeySchema()).max(8),
   dietFitHypotheses: z.array(dietFitHypothesisSchema).max(10),
   ingredientCallouts: z.array(z.string()).max(3),
   prepStyle: z.array(z.string()).max(4),
@@ -254,14 +274,23 @@ function hasExactValues(actual: readonly string[], expected: ReadonlySet<string>
 
 export function menuAnalysisBatchStructuredOutput(
   requestedItemIds: readonly string[],
-  requestedConditions: readonly string[],
+  requestedConditions: readonly ModelConditionTarget[],
   requestedDietKeys: readonly string[],
 ) {
   const requested = new Set(requestedItemIds);
-  const conditions = normalizedSet(requestedConditions);
+  const conditionKeys = requestedConditions.map((condition) => condition.key);
+  const conditions = normalizedSet(conditionKeys);
   const diets = normalizedSet(requestedDietKeys);
+  const conditionKeySchema = conditionKeys.length
+    ? z.enum(conditionKeys as [string, ...string[]])
+    : nonblankString;
+  const itemSchema = menuItemAnalysisSchema.extend({
+    conditionSeverities: z
+      .array(menuConditionSeverityByKeySchema(conditionKeySchema))
+      .length(conditionKeys.length),
+  });
   const schema = z.object({
-    items: z.array(menuItemAnalysisSchema).length(requestedItemIds.length),
+    items: z.array(itemSchema).length(requestedItemIds.length),
   }).strict().superRefine((payload, context) => {
     const returned = payload.items.map((item) => item.id);
     if (
@@ -276,7 +305,7 @@ export function menuAnalysisBatchStructuredOutput(
       });
     }
     payload.items.forEach((item, index) => {
-      if (!hasExactValues(item.conditionSeverities.map((entry) => entry.condition), conditions)) {
+      if (!hasExactValues(item.conditionSeverities.map((entry) => entry.conditionKey), conditions)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['items', index, 'conditionSeverities'],

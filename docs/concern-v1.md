@@ -10,17 +10,18 @@ condition, or claim that a food is universally safe or unsafe.
 
 ## Current rollout state
 
-Concern v1 runs in shadow mode. The production engine still supplies every API
-and mobile response. A concern-v1 failure therefore cannot replace, delay, or
-invalidate a served result. The executor starts the shadow only after the
-durable scan and job completion transaction succeeds, and the result API never
-waits for it. The shadow output and its full model audit trail are recorded as a
-separate best-effort `scan_concern_shadow` trace.
+Concern v1 is experimental and disabled by default. The production engine still
+supplies every API and mobile response. When an intentional shadow experiment
+enables concern v1, a failure cannot replace, delay, or invalidate a served
+result. The executor starts the shadow only after the durable scan and job
+completion transaction succeeds, and the result API never waits for it. The
+shadow output and its full model audit trail are recorded as a separate
+best-effort `scan_concern_shadow` trace.
 
-Shadow execution requires `OPENAI_API_KEY` and is on by default when that key is
-present. The kill switch is `CONCERN_V1_SHADOW_ENABLED=off`; `0` and `false`
-also disable it. No mobile release, API contract change, or database migration
-is required for shadow operation.
+Shadow execution requires `OPENAI_API_KEY` and an explicit
+`CONCERN_V1_SHADOW_ENABLED=on`; `1` and `true` also enable it. Missing, unknown,
+or disabled values keep the experiment off. No mobile release, API contract
+change, or database migration is required for shadow operation.
 
 Concurrent and queued shadow runs are bounded. A run that cannot obtain a slot
 within the configured queue deadline records a failed shadow result instead of
@@ -106,7 +107,7 @@ closed and produces no concern score.
 
 | Variable | Default | Contract |
 | --- | --- | --- |
-| `CONCERN_V1_SHADOW_ENABLED` | `on` | `0`, `false`, or `off` disables new production shadows; a missing `OPENAI_API_KEY` also disables them. |
+| `CONCERN_V1_SHADOW_ENABLED` | `off` | `1`, `true`, or `on` explicitly enables shadows when `OPENAI_API_KEY` is also present. |
 | `OPENAI_CONCERN_MECHANISM_MODEL` | `gpt-5.4-mini` | Model for controlled mechanism mapping. |
 | `OPENAI_CONCERN_ADJUDICATION_MODEL` | `gpt-5.4-mini` | Model for generic and personalized condition decisions. |
 | `OPENAI_CONCERN_VERIFICATION_MODEL` | `gpt-5.4-mini` | Independent verifier model. |

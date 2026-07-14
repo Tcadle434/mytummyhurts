@@ -91,6 +91,7 @@ export class ScanWorkflowService {
     return {
       knownConditions: profile?.knownConditions ?? [],
       knownIngredients: profile?.knownIngredientSensitivities ?? [],
+      commonSymptoms: profile?.commonSymptoms ?? [],
       dietPreferences: profile?.dietPreferences,
       // Mechanism-only scoring discards extraction conditionSeverities, so do
       // not pay the extractor to produce them on that path (FOOD_LLM_BANDS in

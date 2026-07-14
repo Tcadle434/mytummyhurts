@@ -47,8 +47,8 @@ export const CONCERN_QUEUE_TIMEOUT_MS = positiveNumber(
 );
 
 export function concernShadowEnabled() {
-  const value = (process.env.CONCERN_V1_SHADOW_ENABLED ?? 'on').trim().toLowerCase();
-  return Boolean(process.env.OPENAI_API_KEY) && !['0', 'false', 'off'].includes(value);
+  const value = (process.env.CONCERN_V1_SHADOW_ENABLED ?? 'off').trim().toLowerCase();
+  return Boolean(process.env.OPENAI_API_KEY) && ['1', 'true', 'on'].includes(value);
 }
 
 export function concernReasoningFields(model: string, effort: 'low' | 'medium') {

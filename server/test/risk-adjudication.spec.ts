@@ -141,6 +141,17 @@ describe('risk adjudication validation', () => {
     ]);
   });
 
+  it('carries profile symptoms into the active adjudication context', () => {
+    const input = buildRiskAdjudicationRequest({
+      structuredAnalysis: structured(),
+      profile: { ...ibsProfile(), commonSymptoms: [' Gas ', 'Bloating'] },
+      insights: [],
+      ragEvidence: [],
+    });
+
+    expect(input.symptomContext).toEqual(['Gas', 'Bloating']);
+  });
+
   it('uses general when a profile contains only blank conditions', () => {
     const input = buildRiskAdjudicationRequest({
       structuredAnalysis: structured(),

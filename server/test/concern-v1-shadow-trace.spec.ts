@@ -12,16 +12,20 @@ const { runConcernV1Shadow } = vi.hoisted(() => ({
 vi.mock('../src/scan/concern-v1/openai', () => ({ runConcernV1Shadow }));
 
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalConcernShadowEnabled = process.env.CONCERN_V1_SHADOW_ENABLED;
 
 afterEach(() => {
   if (originalOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
   else process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+  if (originalConcernShadowEnabled === undefined) delete process.env.CONCERN_V1_SHADOW_ENABLED;
+  else process.env.CONCERN_V1_SHADOW_ENABLED = originalConcernShadowEnabled;
   runConcernV1Shadow.mockReset();
 });
 
 describe('concern v1 shadow tracing', () => {
   it('starts shadow work only after the scan completion CAS succeeds', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
+    process.env.CONCERN_V1_SHADOW_ENABLED = 'on';
     const extraction: StructuredAnalysisV2 = {
       dishName: 'Meal',
       dishConfidence: 'high',

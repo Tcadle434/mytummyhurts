@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { defineStructuredOutput, sanitizeZodIssues } from '../src/llm/structured-output';
+import { buildModelConditionTargets } from '../src/scan/engine/conditionTargets';
 import {
   foodImageStructuredOutput,
   foodMultiImageStructuredOutput,
@@ -154,7 +155,7 @@ describe('OpenAI structured output definitions', () => {
       foodImageStructuredOutput,
       foodMultiImageStructuredOutput,
       menuTranscriptionStructuredOutput,
-      menuAnalysisBatchStructuredOutput(['item-1'], ['general'], []),
+      menuAnalysisBatchStructuredOutput(['item-1'], buildModelConditionTargets([]), []),
       scanCategoryStructuredOutput,
       riskAdjudicationStructuredOutput,
       taxonomyStructuredOutput,
@@ -309,7 +310,7 @@ describe('menu extraction schema', () => {
   it('requires one LLM judgment per item, condition, and selected diet', () => {
     const definition = menuAnalysisBatchStructuredOutput(
       ['item-1'],
-      ['GERD'],
+      buildModelConditionTargets(['GERD']),
       ['low_fodmap'],
     );
     const valid = {
@@ -317,7 +318,7 @@ describe('menu extraction schema', () => {
         id: 'item-1',
         baseFoodCategory: validMenuItem().baseFoodCategory,
         riskModifiers: [],
-        conditionSeverities: [{ condition: 'GERD', band: 'mild', drivers: [] }],
+        conditionSeverities: [{ conditionKey: 'gerd', band: 'mild', drivers: [] }],
         dietFitHypotheses: [{
           dietKey: 'low_fodmap',
           status: 'unknown',
@@ -341,7 +342,13 @@ describe('menu extraction schema', () => {
       {
         items: [{
           ...valid.items[0],
-          conditionSeverities: [{ condition: 'GERD', band: 'high', drivers: [] }],
+          conditionSeverities: [{ conditionKey: 'gerd', band: 'high', drivers: [] }],
+        }],
+      },
+      {
+        items: [{
+          ...valid.items[0],
+          conditionSeverities: [{ conditionKey: 'GERD.', band: 'mild', drivers: [] }],
         }],
       },
     ]);
