@@ -3,6 +3,7 @@ import type {
   MenuExtractionPayload,
   MenuTranscriptionPayload,
 } from './openaiSchemas';
+import type { ModelConditionTarget } from './conditionTargets';
 import { MENU_ITEM_LIMIT } from './openaiSchemas';
 import { normalizeMenuText } from './openaiMenuFallbacks';
 
@@ -70,14 +71,21 @@ export function combineMenuTranscriptionPages(
 export function mergeMenuAnalysisBatches(
   transcription: MenuTranscriptionPayload,
   batches: MenuAnalysisBatchPayload[],
+  conditionTargets: readonly ModelConditionTarget[],
 ): MenuExtractionPayload {
+  const conditionLabels = new Map(conditionTargets.map((target) => [target.key, target.label]));
   const analyses = new Map(
     batches.flatMap((batch) => batch.items).map((analysis) => [analysis.id, analysis]),
   );
   const items = transcription.items.map((item) => {
     const analysis = analyses.get(item.id);
     if (!analysis) throw new Error('menu_item_analysis_incomplete');
-    return { ...item, ...analysis, id: item.id };
+    const conditionSeverities = analysis.conditionSeverities.map((severity) => ({
+      condition: conditionLabels.get(severity.conditionKey) ?? severity.conditionKey,
+      band: severity.band,
+      drivers: severity.drivers,
+    }));
+    return { ...item, ...analysis, id: item.id, conditionSeverities };
   });
   return {
     isMenu: transcription.isMenu,

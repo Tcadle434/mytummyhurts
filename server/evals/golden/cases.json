@@ -135,6 +135,26 @@
           "notes": "Image is salmon-avocado maki: raw salmon is genuinely present, so raw_or_undercooked may legitimately fire; forbidding it was wrong (2026-07-03). Rice-dominant rolls stay low band. Bands low/medium both appeared post-anchor over 4 samples — kept both (still honest variance for this dish). Bands low/medium both appeared post-anchor over 6 samples — kept both (still honest variance for this dish). Bands low/medium both appeared post-anchor over 8 samples — kept both (still honest variance for this dish). Ratcheted 2026-07-04 post Phase 2 (band anchors + delivered rubric definitions): bands=observed-only over 15 samples / 7 passes (scores 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 30, 55, 56, 57); range=exact span of the allowed bands (the band union is the assertion — never-observed bands are the regression signal; sub-band placement precision does not hold at repeat 2). This dish flaps one band on composition reads — the union is honest variance.",
           "requiredIngredientMinRuns": 1,
           "requiredMechanismMinRuns": 1
+        },
+        {
+          "profile": "general_gas_sensitivity",
+          "expectedBands": [
+            "low"
+          ],
+          "expectedScoreRange": [
+            0,
+            36
+          ],
+          "maxRunScoreRange": 20,
+          "requiredMechanisms": [
+            "rice_or_simple_starch"
+          ],
+          "requiredIngredients": [
+            "rice"
+          ],
+          "notes": "General gas sensitivity should not turn trace sushi vinegar, soy sauce, or a modest avocado filling into a medium-or-higher meal. This production regression guards the active holistic LLM band without requiring an evidence-catalog match.",
+          "requiredIngredientMinRuns": 1,
+          "requiredMechanismMinRuns": 1
         }
       ]
     },
@@ -194,6 +214,29 @@
             "rice"
           ],
           "notes": "Same re-spec as ibs_gerd 2026-07-03; butter/oil richness fires reliably on this image. Ratcheted 2026-07-04 post Phase 2 (band anchors + delivered rubric definitions): medium scores were observed over 15 samples / 7 passes (53, 55, 55, 55, 55, 55, 55, 55, 57, 57, 57, 57, 57, 57, 60). The 2026-07-13 smoke gate produced a grounded high score of 81 from a valid LLM severity judgment over butter/cream richness, spicy curry, tomato, and a large sauce portion. Medium and high are both acceptable for this composition-sensitive dish; the band union is the assertion and sub-band placement precision does not hold at repeat 2.",
+          "requiredIngredientMinRuns": 1,
+          "requiredMechanismMinRuns": 1
+        },
+        {
+          "profile": "general_gas_sensitivity",
+          "expectedBands": [
+            "medium",
+            "high"
+          ],
+          "expectedScoreRange": [
+            37,
+            89
+          ],
+          "maxRunScoreRange": 52,
+          "requiredMechanisms": [
+            "high_fat_or_rich",
+            "rice_or_simple_starch"
+          ],
+          "requiredIngredients": [
+            "chicken",
+            "rice"
+          ],
+          "notes": "A normal-to-large butter chicken meal remains at least medium for a general gas-sensitive profile because the dense portion and rich butter or cream sauce create meaningful combined digestive load. Rice mitigates but does not erase the rich meal burden.",
           "requiredIngredientMinRuns": 1,
           "requiredMechanismMinRuns": 1
         }

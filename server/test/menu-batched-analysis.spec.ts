@@ -25,7 +25,7 @@ function transcription(itemCount: number) {
   };
 }
 
-function analyzedItem(id: string) {
+function analyzedItem(id: string, conditionKey = 'general') {
   return {
     id,
     baseFoodCategory: {
@@ -35,7 +35,7 @@ function analyzedItem(id: string) {
       source: 'chicken with rice',
     },
     riskModifiers: [],
-    conditionSeverities: [{ condition: 'general', band: 'none', drivers: [] }],
+    conditionSeverities: [{ conditionKey, band: 'none', drivers: [] }],
     dietFitHypotheses: [],
     ingredientCallouts: ['chicken', 'rice'],
     prepStyle: ['grilled'],
@@ -44,7 +44,7 @@ function analyzedItem(id: string) {
 }
 
 function analysisBatch(ids: string[]) {
-  return { items: ids.map(analyzedItem) };
+  return { items: ids.map((id) => analyzedItem(id)) };
 }
 
 describe('bounded menu LLM analysis', () => {
@@ -119,6 +119,37 @@ describe('bounded menu LLM analysis', () => {
         message: 'Must contain at least 2 items.',
       }]),
     });
+  });
+
+  it('uses stable condition keys and restores the exact profile label before scoring', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    vi.resetModules();
+    const menu = transcription(1);
+    const analysis = {
+      items: menu.items.map((item) => analyzedItem(item.id, 'general_discomfort')),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(responseWithOutput(menu, 'transcription'))
+      .mockResolvedValueOnce(responseWithOutput(analysis, 'analysis'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { extractMenuFromImagesWithAudit } = await import('../src/scan/engine/openai');
+
+    const result = await extractMenuFromImagesWithAudit(['data:image/jpeg;base64,menu'], {
+      knownConditions: ['Unsure, just general discomfort'],
+      knownIngredients: [],
+      commonSymptoms: ['Gas'],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.result.items[0]?.conditionSeverities).toEqual([{
+      condition: 'Unsure, just general discomfort',
+      band: 'none',
+      drivers: [],
+    }]);
+    const analysisBody = String(fetchMock.mock.calls[1]?.[1]?.body);
+    expect(analysisBody).toContain('general_discomfort');
+    expect(analysisBody).toContain('Gas');
   });
 
   it('fails after three incomplete batches instead of serving fallback scores', async () => {

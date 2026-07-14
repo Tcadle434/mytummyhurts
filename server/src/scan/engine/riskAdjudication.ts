@@ -56,6 +56,7 @@ export interface RiskAdjudicationEvidenceChunk {
 export interface RiskAdjudicationRequest {
   structuredAnalysis: StructuredAnalysisV2;
   knownConditions: string[];
+  symptomContext: string[];
   personalEvidence: PersonalRiskEvidence[];
   ragEvidence: RiskAdjudicationEvidenceChunk[];
 }
@@ -155,6 +156,10 @@ export function buildRiskAdjudicationRequest(params: {
   return {
     structuredAnalysis: params.structuredAnalysis,
     knownConditions,
+    symptomContext: (params.profile?.commonSymptoms ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 12),
     personalEvidence: buildPersonalRiskEvidence(params.structuredAnalysis, params.insights),
     ragEvidence: params.ragEvidence,
   };

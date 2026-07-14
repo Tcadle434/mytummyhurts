@@ -17,6 +17,14 @@
       "symptomFrequency": "A few times a week",
       "symptomSeverityBaseline": "Moderate"
     },
+    "general_gas_sensitivity": {
+      "description": "User selected the general-discomfort profile and primarily reports gas.",
+      "knownConditions": ["Unsure, just general discomfort"],
+      "knownIngredientSensitivities": [],
+      "commonSymptoms": ["Gas"],
+      "symptomFrequency": "A few times a week",
+      "symptomSeverityBaseline": "Moderate"
+    },
     "ibs": {
       "description": "IBS-only profile.",
       "knownConditions": ["IBS"],
