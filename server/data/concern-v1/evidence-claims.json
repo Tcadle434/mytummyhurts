@@ -1,0 +1,329 @@
+{
+  "version": "concern_evidence_2026_07_13_v1",
+  "reviewedAt": "2026-07-13T16:00:00.000Z",
+  "claims": [
+    {
+      "id": "claim_gerd_high_fat",
+      "conditions": ["gerd"],
+      "mechanisms": ["high_fat_load", "fried_preparation"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "High-fat and greasy foods are commonly reported GERD triggers and may be reasonable to limit when they reproduce symptoms.",
+      "applicability": "Use when a fatty or fried preparation is a meaningful part of the meal, with more concern for a large or dominant exposure.",
+      "limitations": "The ACG guideline describes trigger-food avoidance as conditional and supported by low-quality evidence. Individual response matters.",
+      "source": {
+        "title": "ACG Clinical Guideline for the Diagnosis and Management of Gastroesophageal Reflux Disease",
+        "organization": "American College of Gastroenterology",
+        "url": "https://doi.org/10.14309/ajg.0000000000001538",
+        "publishedYear": 2022,
+        "sourceType": "clinical_guideline"
+      }
+    },
+    {
+      "id": "claim_gerd_acidic_food",
+      "conditions": ["gerd"],
+      "mechanisms": ["acidic_food"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "Tomato products and citrus or acidic drinks are common individual reflux triggers, especially when the acidic component is prominent.",
+      "applicability": "Use for tomato sauce, citrus juice, or another clearly acidic food at a meaningful amount, not a trace garnish by itself.",
+      "limitations": "Food triggers vary substantially, and broad elimination is not supported for every person with GERD.",
+      "source": {
+        "title": "Acid Reflux/GERD",
+        "organization": "American College of Gastroenterology",
+        "url": "https://gi.org/topics/acid-reflux/",
+        "publishedYear": 2024,
+        "sourceType": "patient_guidance"
+      }
+    },
+    {
+      "id": "claim_gerd_spicy_food",
+      "conditions": ["gerd"],
+      "mechanisms": ["spicy_food"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "Spicy foods are a common symptom trigger for some people with GERD.",
+      "applicability": "Use when meaningful spicy heat is explicitly present. A trace pepper garnish alone should not imply high concern.",
+      "limitations": "This is an individual trigger pattern, not a universal response, and the supporting evidence is limited.",
+      "source": {
+        "title": "Acid Reflux/GERD",
+        "organization": "American College of Gastroenterology",
+        "url": "https://gi.org/topics/acid-reflux/",
+        "publishedYear": 2024,
+        "sourceType": "patient_guidance"
+      }
+    },
+    {
+      "id": "claim_gerd_caffeine",
+      "conditions": ["gerd"],
+      "mechanisms": ["caffeine"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "Coffee and caffeinated drinks are common reflux triggers for some people.",
+      "applicability": "Use when coffee, espresso, an energy drink, or another clearly caffeinated beverage is present.",
+      "limitations": "Tolerance is individual. Do not infer caffeine from an unrelated dark beverage or food name.",
+      "source": {
+        "title": "Acid Reflux/GERD",
+        "organization": "American College of Gastroenterology",
+        "url": "https://gi.org/topics/acid-reflux/",
+        "publishedYear": 2024,
+        "sourceType": "patient_guidance"
+      }
+    },
+    {
+      "id": "claim_gerd_alcohol",
+      "conditions": ["gerd"],
+      "mechanisms": ["alcohol"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "Alcoholic beverages are common reflux triggers for some people.",
+      "applicability": "Use only when alcohol is explicitly present, with dose reflected by the serving rather than the number of supporting documents.",
+      "limitations": "Individual response varies, and trigger avoidance is a conditional recommendation.",
+      "source": {
+        "title": "Acid Reflux/GERD",
+        "organization": "American College of Gastroenterology",
+        "url": "https://gi.org/topics/acid-reflux/",
+        "publishedYear": 2024,
+        "sourceType": "patient_guidance"
+      }
+    },
+    {
+      "id": "claim_gerd_chocolate_mint",
+      "conditions": ["gerd"],
+      "mechanisms": ["chocolate_or_mint"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "Chocolate and peppermint are common reflux triggers for some people.",
+      "applicability": "Use when chocolate, cocoa, peppermint, or mint is a meaningful component rather than a speculative ingredient.",
+      "limitations": "These are not universal triggers and should not outweigh direct food facts or personal evidence.",
+      "source": {
+        "title": "Acid Reflux/GERD",
+        "organization": "American College of Gastroenterology",
+        "url": "https://gi.org/topics/acid-reflux/",
+        "publishedYear": 2024,
+        "sourceType": "patient_guidance"
+      }
+    },
+    {
+      "id": "claim_gerd_meal_size",
+      "conditions": ["gerd", "general_discomfort"],
+      "mechanisms": ["large_meal_load"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "Meal size and timing can affect reflux symptoms, so a clearly large meal can justify more caution than the same food in a small portion.",
+      "applicability": "Use only when the meal or serving is clearly large or dominant. Do not infer a large serving from a close camera crop.",
+      "limitations": "Timing is not visible in a scan and should not be invented. For general discomfort this is contextual rather than diagnostic evidence.",
+      "source": {
+        "title": "ACG Clinical Guideline for the Diagnosis and Management of Gastroesophageal Reflux Disease",
+        "organization": "American College of Gastroenterology",
+        "url": "https://doi.org/10.14309/ajg.0000000000001538",
+        "publishedYear": 2022,
+        "sourceType": "clinical_guideline"
+      }
+    },
+    {
+      "id": "claim_gerd_carbonation",
+      "conditions": ["gerd"],
+      "mechanisms": ["carbonation"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "Carbonated drinks may reproduce reflux symptoms for some people and are distinct from chemical leaveners used in food.",
+      "applicability": "Use for an explicitly carbonated beverage such as soda, sparkling water, or beer. Baking soda is not a carbonated beverage exposure.",
+      "limitations": "Individual tolerance varies and carbonation alone should not automatically produce a high concern band.",
+      "source": {
+        "title": "Acid Reflux/GERD",
+        "organization": "American College of Gastroenterology",
+        "url": "https://gi.org/topics/acid-reflux/",
+        "publishedYear": 2024,
+        "sourceType": "patient_guidance"
+      }
+    },
+    {
+      "id": "claim_ibs_low_fodmap",
+      "conditions": ["ibs"],
+      "mechanisms": ["fructan_allium", "fructan_wheat", "gos_legume", "polyol", "excess_fructose", "lactose"],
+      "direction": "raises",
+      "strength": "moderate",
+      "summary": "A limited trial of a low-FODMAP diet can improve global IBS symptoms for some patients, followed by reintroduction and personalization.",
+      "applicability": "Use as mechanism-level context for meaningful FODMAP exposures, with dose and the person's own history affecting concern.",
+      "limitations": "A low-FODMAP diet is not a permanent universal avoidance list. It should not make every listed food high concern.",
+      "source": {
+        "title": "ACG Clinical Guideline: Management of Irritable Bowel Syndrome",
+        "organization": "American College of Gastroenterology",
+        "url": "https://doi.org/10.14309/ajg.0000000000001036",
+        "publishedYear": 2021,
+        "sourceType": "clinical_guideline"
+      }
+    },
+    {
+      "id": "claim_ibs_personalization",
+      "conditions": ["ibs", "general_discomfort"],
+      "mechanisms": ["fructan_allium", "fructan_wheat", "gos_legume", "polyol", "excess_fructose", "lactose", "high_fat_load"],
+      "direction": "context",
+      "strength": "moderate",
+      "summary": "Diet response in IBS is heterogeneous, and structured reintroduction is used to identify personal triggers while broadening the diet.",
+      "applicability": "Use to keep generic concern proportional and to allow repeated calm or reactive personal evidence to refine the result.",
+      "limitations": "Personal observations can be confounded and should require repeated paired evidence before moving a band.",
+      "source": {
+        "title": "The role of diet in irritable bowel syndrome",
+        "organization": "American Gastroenterological Association",
+        "url": "https://gastro.org/clinical-guidance/the-role-of-diet-in-irritable-bowel-syndrome-ibs/",
+        "publishedYear": 2022,
+        "sourceType": "clinical_practice_update"
+      }
+    },
+    {
+      "id": "claim_ibs_dose",
+      "conditions": ["ibs", "general_discomfort"],
+      "mechanisms": ["fructan_allium", "fructan_wheat", "gos_legume", "polyol", "excess_fructose", "lactose", "large_meal_load"],
+      "direction": "context",
+      "strength": "moderate",
+      "summary": "FODMAP concern is dose-dependent, so trace, small, standard, and dominant exposures should not receive the same judgment.",
+      "applicability": "Use the extracted amount and role. Several foods sharing one mechanism aggregate exposure but do not count as independent mechanisms.",
+      "limitations": "A photograph provides only an estimate of amount, so confidence should fall when portion or ingredients are unclear.",
+      "source": {
+        "title": "The role of diet in irritable bowel syndrome",
+        "organization": "American Gastroenterological Association",
+        "url": "https://gastro.org/clinical-guidance/the-role-of-diet-in-irritable-bowel-syndrome-ibs/",
+        "publishedYear": 2022,
+        "sourceType": "clinical_practice_update"
+      }
+    },
+    {
+      "id": "claim_lactose_direct_exposure",
+      "conditions": ["lactose_intolerance", "ibs"],
+      "mechanisms": ["lactose"],
+      "direction": "raises",
+      "strength": "high",
+      "summary": "Lactose intolerance symptoms are tied to the amount of lactose consumed and individual tolerance.",
+      "applicability": "Use for milk and lactose-containing dairy. A large milk-based serving is more concerning than a trace dairy ingredient.",
+      "limitations": "Dairy fat and milk allergy are different mechanisms. Do not treat every dairy food as containing the same lactose dose.",
+      "source": {
+        "title": "Eating, Diet, & Nutrition for Lactose Intolerance",
+        "organization": "National Institute of Diabetes and Digestive and Kidney Diseases",
+        "url": "https://www.niddk.nih.gov/health-information/digestive-diseases/lactose-intolerance/eating-diet-nutrition",
+        "publishedYear": 2025,
+        "sourceType": "government_health"
+      }
+    },
+    {
+      "id": "claim_lactose_hard_cheese",
+      "conditions": ["lactose_intolerance", "ibs"],
+      "mechanisms": ["lactose"],
+      "direction": "lowers",
+      "strength": "high",
+      "summary": "Yogurt and hard cheeses such as cheddar or Swiss are lower in lactose and may be easier to tolerate than milk for many people.",
+      "applicability": "Use when the food form is explicitly yogurt or an aged hard cheese. It lowers lactose exposure relative to milk but does not guarantee tolerance.",
+      "limitations": "Soft cheese, cream, and cheese sauce should not inherit the hard-cheese reduction without evidence.",
+      "source": {
+        "title": "Eating, Diet, & Nutrition for Lactose Intolerance",
+        "organization": "National Institute of Diabetes and Digestive and Kidney Diseases",
+        "url": "https://www.niddk.nih.gov/health-information/digestive-diseases/lactose-intolerance/eating-diet-nutrition",
+        "publishedYear": 2025,
+        "sourceType": "government_health"
+      }
+    },
+    {
+      "id": "claim_lactose_free",
+      "conditions": ["lactose_intolerance", "ibs"],
+      "mechanisms": ["lactose"],
+      "direction": "lowers",
+      "strength": "high",
+      "summary": "Lactose-free and lactose-reduced milk products reduce the lactose exposure that drives lactose intolerance symptoms.",
+      "applicability": "Use only when lactose-free or lactose-reduced status is explicit in text, a product record, or a readable label.",
+      "limitations": "A photograph of an unlabeled white liquid cannot establish lactose-free status.",
+      "source": {
+        "title": "Eating, Diet, & Nutrition for Lactose Intolerance",
+        "organization": "National Institute of Diabetes and Digestive and Kidney Diseases",
+        "url": "https://www.niddk.nih.gov/health-information/digestive-diseases/lactose-intolerance/eating-diet-nutrition",
+        "publishedYear": 2025,
+        "sourceType": "government_health"
+      }
+    },
+    {
+      "id": "claim_gluten_sensitivity_context",
+      "conditions": ["gluten_sensitivity"],
+      "mechanisms": ["gluten_exposure", "fructan_wheat"],
+      "direction": "context",
+      "strength": "moderate",
+      "summary": "Non-celiac wheat sensitivity can involve reproducible symptoms after wheat exposure, but the responsible component may be gluten, fructans, or another wheat component.",
+      "applicability": "Use the user's selected gluten-sensitivity lens without treating it as celiac disease or assuming that gluten is the only possible trigger.",
+      "limitations": "The app cannot diagnose non-celiac wheat sensitivity, celiac disease, or wheat allergy from a scan, and expectancy can affect reported symptoms.",
+      "source": {
+        "title": "European Society for the Study of Coeliac Disease 2025 Updated Guidelines on the Diagnosis and Management of Coeliac Disease in Adults. Part 1: Diagnostic Approach",
+        "organization": "European Society for the Study of Coeliac Disease",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12704582/",
+        "publishedYear": 2025,
+        "sourceType": "clinical_guideline"
+      }
+    },
+    {
+      "id": "claim_gluten_wheat_exposure",
+      "conditions": ["gluten_sensitivity"],
+      "mechanisms": ["gluten_exposure", "fructan_wheat"],
+      "direction": "raises",
+      "strength": "moderate",
+      "summary": "An explicit wheat exposure is relevant for a person who reports reproducible non-celiac wheat or gluten sensitivity symptoms.",
+      "applicability": "Use when wheat or another gluten-containing grain is explicit or strongly defining. Keep gluten and wheat-fructan mechanisms distinct.",
+      "limitations": "A scan cannot identify which wheat component causes symptoms, confirm a diagnosis, or establish cross-contact risk from an unlabeled meal.",
+      "source": {
+        "title": "European Society for the Study of Coeliac Disease 2025 Updated Guidelines on the Diagnosis and Management of Coeliac Disease in Adults. Part 1: Diagnostic Approach",
+        "organization": "European Society for the Study of Coeliac Disease",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12704582/",
+        "publishedYear": 2025,
+        "sourceType": "clinical_guideline"
+      }
+    },
+    {
+      "id": "claim_gluten_fructan_overlap",
+      "conditions": ["gluten_sensitivity", "ibs"],
+      "mechanisms": ["gluten_exposure", "fructan_wheat"],
+      "direction": "context",
+      "strength": "moderate",
+      "summary": "In a randomized crossover trial of people with self-reported non-celiac gluten sensitivity, fructans produced more gastrointestinal symptoms than gluten.",
+      "applicability": "Use to keep wheat-fructan and gluten mechanisms distinct and to avoid claiming that every wheat-related symptom is caused by gluten.",
+      "limitations": "This trial does not prove that gluten is irrelevant for every individual and should not override clear personal evidence.",
+      "source": {
+        "title": "Fructan, Rather Than Gluten, Induces Symptoms in Patients With Self-Reported Non-Celiac Gluten Sensitivity",
+        "organization": "Gastroenterology",
+        "url": "https://doi.org/10.1053/j.gastro.2017.10.040",
+        "publishedYear": 2018,
+        "sourceType": "randomized_trial"
+      }
+    },
+    {
+      "id": "claim_general_uncertainty",
+      "conditions": ["general_discomfort"],
+      "mechanisms": ["uncertain_compound"],
+      "direction": "context",
+      "strength": "limited",
+      "summary": "An unknown sauce or incomplete ingredient list should lower confidence, not automatically imply a high-concern trigger load.",
+      "applicability": "Use when the food is genuinely unresolved after extraction. Ask for details or suggest a simpler preparation rather than inventing ingredients.",
+      "limitations": "This is a conservative product rule derived from evidence uncertainty, not a clinical claim about the food.",
+      "source": {
+        "title": "The role of diet in irritable bowel syndrome",
+        "organization": "American Gastroenterological Association",
+        "url": "https://gastro.org/clinical-guidance/the-role-of-diet-in-irritable-bowel-syndrome-ibs/",
+        "publishedYear": 2022,
+        "sourceType": "clinical_practice_update"
+      }
+    },
+    {
+      "id": "claim_general_fat_load",
+      "conditions": ["general_discomfort"],
+      "mechanisms": ["high_fat_load", "fried_preparation"],
+      "direction": "raises",
+      "strength": "limited",
+      "summary": "A clearly rich or fried meal can be harder to tolerate for some people with nonspecific digestive symptoms.",
+      "applicability": "Use as a cautious general lens only when the fat or fried preparation is meaningful and visible or explicit.",
+      "limitations": "Nonspecific symptoms have many causes. This supports modest caution, not diagnosis or an automatic high score.",
+      "source": {
+        "title": "The role of diet in irritable bowel syndrome",
+        "organization": "American Gastroenterological Association",
+        "url": "https://gastro.org/clinical-guidance/the-role-of-diet-in-irritable-bowel-syndrome-ibs/",
+        "publishedYear": 2022,
+        "sourceType": "clinical_practice_update"
+      }
+    }
+  ]
+}

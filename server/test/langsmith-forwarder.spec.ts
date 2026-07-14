@@ -99,4 +99,44 @@ describe('buildScanTracePayload', () => {
     expect(payload.children[0]!.error).toBe('timed out');
     expect(payload.children[0]!.outputs.parsed).toBeNull();
   });
+
+  it('includes concern output only on a shadow trace', () => {
+    const concernV1 = { status: 'completed', engineVersion: 'concern_v1' };
+    const payload = buildScanTracePayload(
+      traceInput({
+        operation: 'scan_concern_shadow',
+        ragSummary: { concernV1 },
+      }),
+      1_000_000,
+    );
+
+    expect(payload.outputs).toMatchObject({
+      status: 'completed',
+      concernV1Shadow: { concernV1 },
+    });
+    expect(payload.metadata.operation).toBe('scan_concern_shadow');
+  });
+
+  it('preserves a failed concern result for shadow triage', () => {
+    const concernV1 = {
+      status: 'failed',
+      engineVersion: 'concern_v1',
+      stage: 'verification',
+      code: 'concern_v1_stage_failed',
+    };
+    const payload = buildScanTracePayload(
+      traceInput({
+        operation: 'scan_concern_shadow',
+        status: 'failed',
+        ragSummary: { concernV1 },
+      }),
+      1_000_000,
+    );
+
+    expect(payload.error).toBe('concern_shadow_failed');
+    expect(payload.outputs).toEqual({
+      status: 'failed',
+      concernV1Shadow: { concernV1 },
+    });
+  });
 });

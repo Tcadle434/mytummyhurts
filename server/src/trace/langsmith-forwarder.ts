@@ -89,6 +89,9 @@ export function buildScanTracePayload(
   }
 
   const failed = input.status === 'failed';
+  const shadowOutput = input.ragSummary === undefined
+    ? {}
+    : { concernV1Shadow: input.ragSummary };
   return {
     name: `scan/${input.scanCategory}`,
     runType: 'chain',
@@ -99,20 +102,24 @@ export function buildScanTracePayload(
       operation: input.operation,
     },
     outputs: failed
-      ? { status: 'failed' }
+      ? { status: 'failed', ...shadowOutput }
       : {
           status: 'completed',
           baseScore: input.baseScore,
           finalScore: input.finalScore,
+          ...shadowOutput,
         },
     metadata: {
       userId: input.userId,
+      operation: input.operation,
       promptVersion: input.promptVersion,
       totalLatencyMs: totalLatency,
       totalCostUsdMicros: totalCost,
       stages: input.audits.map((audit) => audit.stage),
     },
-    error: failed ? 'scan_failed' : undefined,
+    error: failed
+      ? input.operation === 'scan_concern_shadow' ? 'concern_shadow_failed' : 'scan_failed'
+      : undefined,
     startTimeMs,
     endTimeMs: nowMs,
     children,
