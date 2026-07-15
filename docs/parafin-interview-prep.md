@@ -141,3 +141,35 @@ Good luck. This role is basically "person who builds real integrations and can t
 **If Scala comes up:** haven't shipped it; routinely navigate unfamiliar code (patched vendored pods); comfortable learning in the codebase.
 
 **If integration design comes up:** four-pipe model — data in (underwriting), offers/UI out (embedded vs API vs hybrid), webhooks out (lifecycle events), repayment in (sales splits + reconciliation data stream).
+
+---
+
+## 9. STAR stories — Magic Eden (your strongest, all true)
+
+These map to Amit's rubric: owned integration end-to-end · custom-fix-vs-scalable-solution · voice of the customer · cross-functional/roadmap · tricky debugging · SDKs/provider APIs · client-facing.
+
+**Delivery rule:** lead with the business framing, go technical only when the interviewer leans in (Amit will). Name the "custom vs scalable" tradeoff out loud — it's the differentiator.
+
+### STAR #1 — Scalable standards over a custom SDK (headline)
+- **S:** Owned Magic Eden's crypto wallet integration surface across 3 ecosystems (Solana, EVM, Bitcoin). Problem: partner adoption of our wallet was low. Root cause — adding a new wallet meant every partner writing custom code for it.
+- **T:** Talked to several highest-volume partners; consistent feedback — they already had wallet libraries wired in and didn't want to write bespoke code to add us. Brought a recommendation to leadership: instead of a custom SDK (per-partner integration work + forever maintenance for us), make our wallet conform to existing ecosystem standards so partners' existing tooling drives it automatically.
+- **A:** Implemented the standard provider interfaces per chain — Solana Wallet Standard (what wallet-adapter uses); EIP-1193 + EIP-6963 on EVM; a generic provider for Bitcoin (no mature standard). Supported the standard methods — connect, signMessage, signAndSendTransaction, signAllTransactions — and emitted events like accountChanged. Owned the docs. Drove onboarding directly, prioritized by volume, ran partner working-sessions over Telegram.
+- **R:** Partners could support us with ~zero custom code; onboarded across all major partners in the industry (massive volume — no exact number, say "all the major partners representing the bulk of ecosystem volume"). Turned integration from bespoke per-partner work into out-of-the-box; removed our maintenance burden by conforming to standards vs. a one-off SDK.
+- **The line that lands:** "The lazy path was a custom SDK per partner; I chose the scalable path — conform to the standard so the whole ecosystem's tooling just works with us."
+
+### STAR #2 — The namespace-collision bug (debugging)
+- **S:** A Bitcoin Runes marketplace partner (Runes = Bitcoin's fungible-token standard) reported users trying to connect the Magic Eden wallet but a *different* installed wallet extension popping up instead.
+- **T:** Owned wallet integrations, took it. Tricky part: couldn't reproduce with just our wallet — only happened when a user had one specific other wallet also installed.
+- **A:** Installed that other extension myself to mirror their users' exact setup, reproduced it. Code investigation showed both wallets injecting into the *same* global browser namespace (`window.bitcoin`) — fighting over one injection point, last-loaded wins. Fix: expose the ME wallet at its own dedicated namespace, keep backwards compat with the shared one but prioritize our connection, bump the wallet version, ship.
+- **R:** Their users connected reliably after. Kicker: same class of problem EIP-6963 solves on EVM (multiple injected wallets colliding on one namespace) — we'd avoided it on EVM by conforming to that standard; Bitcoin had no equivalent, so we solved it manually.
+
+### Other true stories in the bank (from MyTummyHurts)
+- RevenueCat/StoreKit billing bug → webhook-driven integration debugging.
+- Expo pod patch → root-cause in code you didn't write.
+- Regression suite + golden evals → guardrail/process that scaled.
+- Carpool → API changes driven by partner requests + direct client implementation.
+
+### Honest framing for the webhook-experience gap
+Real production real-time experience is **streaming-based, not HTTP-webhook**: Magic Eden ran a Geyser indexing layer streaming on-chain data → backend → websockets to frontend/consumers. Push model is identical. Built a webhook prototype (signed delivery, retries+backoff, idempotency, token-secured embedded widget) to get hands-on with the HTTP-delivery specifics. Never call the Geyser/websocket work "webhooks."
+- Auth framing: **API key** = system→us (static secret, server-to-server); **webhook signature (HMAC)** = us→partner (authenticity, reverse direction); **OAuth** = end-user delegating scoped/expiring access (no password). Wallet signMessage = the web3 auth pattern (prove ownership via signature).
+- Delivery-mechanism spectrum: **polling** for current state (consumer's cadence, simple), **websockets** for high-frequency streaming (consumer opens persistent connection — backend or browser), **webhooks** for discrete cross-org events (provider POSTs to consumer's endpoint). Direction flips: poll/ws = consumer reaches out; webhook = provider reaches out.
