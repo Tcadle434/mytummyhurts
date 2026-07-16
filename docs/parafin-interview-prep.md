@@ -173,3 +173,27 @@ These map to Amit's rubric: owned integration end-to-end · custom-fix-vs-scalab
 Real production real-time experience is **streaming-based, not HTTP-webhook**: Magic Eden ran a Geyser indexing layer streaming on-chain data → backend → websockets to frontend/consumers. Push model is identical. Built a webhook prototype (signed delivery, retries+backoff, idempotency, token-secured embedded widget) to get hands-on with the HTTP-delivery specifics. Never call the Geyser/websocket work "webhooks."
 - Auth framing: **API key** = system→us (static secret, server-to-server); **webhook signature (HMAC)** = us→partner (authenticity, reverse direction); **OAuth** = end-user delegating scoped/expiring access (no password). Wallet signMessage = the web3 auth pattern (prove ownership via signature).
 - Delivery-mechanism spectrum: **polling** for current state (consumer's cadence, simple), **websockets** for high-frequency streaming (consumer opens persistent connection — backend or browser), **webhooks** for discrete cross-org events (provider POSTs to consumer's endpoint). Direction flips: poll/ws = consumer reaches out; webhook = provider reaches out.
+
+---
+
+## 10. Behavioral answers — why / trajectory + explaining to non-technical
+
+### "Why this role / career trajectory" (the arc + the honest ambition, framed as growth-within-Parafin)
+**The throughline (your real arc):** bank / big-systems eng (~3 yrs) → started a dev agency, 2 yrs working *directly with clients* idea→ship (the "spark") → founding Partner Engineer, worked with technical partners on the Solana indexer — **one of those partners acquired us** → 18 months solo going deep on AI workflows / next-gen dev → now missing working with people on hard technical problems + being the translator between partner and business.
+- Lead with: "I keep gravitating back to working directly with partners."
+- **Lean hard on:** "I worked so closely with a technical partner on our indexer that they ended up acquiring us." (best partner-relationship proof point)
+- Gap = intentional: "spent 18 months solo to go deep on AI workflows and the next generation of development." One sentence.
+
+**Trajectory — reframe (avoid flight-risk):** DON'T say "I don't see myself as an IC long-term." DO frame PM ambition as growth *from* PE, *at Parafin*:
+> "I'm genuinely excited to be a great Partner Engineer and develop those relationships. It fits my long arc because PE is the best foundation for growing into technical product — you absorb what partners and their end users actually value every day. I'd love to grow that direction at Parafin over time, and being someone who can prototype and build gives me an edge in the role now."
+
+**Why Parafin (specific + personal — this is the mic-drop):**
+> "Having run an agency, I felt firsthand how brutal distribution is when you don't have an edge. Parafin makes distribution the *partner's* — the business is delivered through platforms merchants already use. That's a genuinely elegant model, and it's why I think there's enormous room for embedded financial infrastructure to grow."
+
+### Explaining to a non-technical audience (Amit flagged this TWICE)
+**The skill:** deliberate plain language at the right altitude; analogy only if truly needed; **when they flag a word, define it immediately — never repeat it raw.**
+
+- **What's an API?** "A way for your software to *ask* our software for information, automatically. A fixed set of questions your system can ask ours — 'is this merchant approved?', 'what's their offer amount?' — and for each, we instantly send back a clean answer your app can use. 'Calling our API' just means your system asking one of those questions and getting the answer — software-to-software, no person involved. The API is the doorway between your systems and ours."
+- **What's a webhook / why not just poll?** "An API is you-ask/we-answer; a webhook flips it — we send you the data the instant it's available (e.g., a merchant accepted an offer or got funded). Why not just keep asking us? Because you'd have to guess *when* — a merchant might accept minutes or hours later, and you can't know when. So you'd either ask constantly and mostly get 'nothing new,' or ask too rarely and find out late. The webhook means you find out the instant it happens, no wasted asking."
+
+**Delivery habits to keep:** build on what they already understand · define scary words · ground every concept in *their* job · land a crisp one-sentence definition · trim voice filler / pause instead of "um."
