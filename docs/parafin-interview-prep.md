@@ -212,3 +212,34 @@ Real production real-time experience is **streaming-based, not HTTP-webhook**: M
 - "Tricky bug / hardest problem" → **#2 Namespace bug** (natural follow-up to #1).
 - "Disagreed / pushed back / said no / worked with Product / tough call" → **#3 Diamonds**.
 - Bridge between them: "that's one of a few examples from owning that surface — another was..." (signals depth, not one lucky project).
+
+---
+
+## 11. Embeddable widgets (rubric item — you built one in the prototype)
+
+**What it is:** provider-built UI rendered inside the partner's app, styled as the partner's but controlled by the provider. For Parafin: offer card, application flow, KYB, bank linking, agreement signing.
+
+**Why it's big for Parafin:** financing is compliance-heavy (KYB/KYC, SSN/EIN, bank link, loan e-sign). Putting those inside a Parafin-controlled widget means the partner never touches the sensitive data or becomes a regulated entity. The widget is the technical delivery of Parafin's core promise: "we handle capital + compliance + servicing; you embed it."
+
+**How it works — two mechanics to know cold:**
+1. **Cross-origin iframe.** Widget runs in an iframe served by the provider (mounted via a JS SDK — Stripe Elements / Plaid Link style). The partner's page *cannot read inside a cross-origin iframe*, so sensitive input (EIN, bank creds) stays inside the provider's boundary. That isolation IS the compliance value.
+2. **Session-token handoff** (same one you built): partner backend calls provider API with SECRET key → gets a short-lived, single-merchant token → frontend inits widget with that token → widget talks to provider scoped to that merchant, token expires in minutes. Browser only ever holds a low-privilege expiring credential.
+
+**Embed vs API-only vs hybrid:**
+- Embedded: fastest launch; compliance flows stay provider's liability; provider updates without partner redeploy; consistent UX.
+- API-only: partner builds own UI (native/branded) but more work + compliance-touching screens partly their problem.
+- Hybrid (smart rec): partner builds high-visibility surfaces via API, embeds provider component only for the one-time compliance flow (KYB/bank/e-sign). Sell to widget-averse PM: faster launch + compliance stays with provider.
+
+**Explain to a non-technical PM:** "An embedded widget is a piece of our screen that lives inside your app. Merchants see it as part of your product, but we build and run it — especially sensitive parts like collecting a tax ID or linking a bank. It's walled off from your systems so that data never touches you, which means you offer financing without the compliance burden. You drop it in; we handle what's inside."
+
+**Your honest experience framing:** "Haven't shipped a production embedded UI component at scale, but I built one end-to-end in a prototype — a session-token-secured offer card in an iframe with the KYB + accept flow — and at Magic Eden I did the provider-interface side of embedding wallet connect + signing into third-party apps. So I understand the model: iframe isolation for sensitive flows, short-lived scoped token so the secret key stays server-side."
+
+**Interview one-liners:**
+- "Provider-controlled UI in a cross-origin iframe, so the partner's page can't read the sensitive data inside — that isolation keeps compliance flows the provider's responsibility."
+- "Initialized with a short-lived single-merchant session token minted server-side from the secret key — browser never holds anything dangerous. Same pattern as Stripe Elements / Plaid Link."
+
+### Is the session token OAuth? (precise answer — don't overclaim)
+- **OAuth-*inspired*, NOT OAuth.** Shares the principle (short-lived scoped token minted server-side so the browser never holds the secret) but is **missing OAuth's user-consent/delegation step**. Nobody is delegating access to their own account — the partner backend just mints it with its API key.
+- Correct label: a **client token / ephemeral scoped access token** — exactly what Stripe calls `client_secret` and Plaid calls `link_token` (neither calls it OAuth).
+- **Where REAL OAuth shows up:** the **bank-linking step inside the widget** — the merchant logs into their bank directly (via Plaid) and the bank issues a scoped token via OAuth (merchant delegating access to their bank data without sharing their password). So one widget can have both: a client/session token initializing it (OAuth-inspired) + a real OAuth flow at bank connect.
+- Safe phrasing: "It's not OAuth exactly — same principle, but no user-consent step; closer to Stripe's client secret or Plaid's link token. Real OAuth shows up inside the flow, at the bank-linking step."
