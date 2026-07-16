@@ -197,3 +197,18 @@ Real production real-time experience is **streaming-based, not HTTP-webhook**: M
 - **What's a webhook / why not just poll?** "An API is you-ask/we-answer; a webhook flips it — we send you the data the instant it's available (e.g., a merchant accepted an offer or got funded). Why not just keep asking us? Because you'd have to guess *when* — a merchant might accept minutes or hours later, and you can't know when. So you'd either ask constantly and mostly get 'nothing new,' or ask too rarely and find out late. The webhook means you find out the instant it happens, no wasted asking."
 
 **Delivery habits to keep:** build on what they already understand · define scary words · ground every concept in *their* job · land a crisp one-sentence definition · trim voice filler / pause instead of "um."
+
+### STAR #3 — Saying "no" to a partner, well (judgment + cross-functional)
+**Deploy for:** "a time you disagreed / pushed back / said no to a customer / worked with Product / a tough judgment call." NOT your opener — hold for a conflict/judgment prompt.
+- **S:** Owned Magic Eden's public API layer. A partner (a market maker) requested we return "diamonds" in the API response — diamonds = our loyalty/points program; more diamonds → larger allocation of our token at the drop.
+- **T:** Reasonable-seeming ask, but it's a *public* API — adding a field exposes it to *every* consumer, not just the one partner who asked. My job was to weigh that.
+- **A:** Flagged the risk, drove a discussion with the PMs. Concern: exposing diamonds publicly would let anyone **game the points system** — e.g., place bids/asks that sit on collections without ever executing real trades, farming points without real trading. So even though this market maker asked in good faith, general exposure would incentivize farming over real volume. We decided not to return it. I took the "no" back to the partner directly over Telegram, explained the farming/abuse scenario and why we couldn't expose it broadly — they understood and were completely fine with it.
+- **R:** Protected the integrity of the points program and token distribution — kept rewards tied to real trading, not gamed activity — and kept the partner relationship intact.
+- **Framing line:** "A request on a shared public API is never just about the one partner who asked — you have to consider every consumer, and sometimes the right partner-engineering move is a well-reasoned no."
+- **Parafin parallel (name it):** exposing financial data via an API means constantly asking "what abuse/gaming does this field enable across *all* consumers?" — e.g., exposing underwriting signals that could be gamed, or data that lets someone farm offers. Same judgment.
+
+### Story ordering (match to the question, don't fix a sequence)
+- Open-ended "project you're proud of / owned end-to-end" → **#1 Standards** (always the lead).
+- "Tricky bug / hardest problem" → **#2 Namespace bug** (natural follow-up to #1).
+- "Disagreed / pushed back / said no / worked with Product / tough call" → **#3 Diamonds**.
+- Bridge between them: "that's one of a few examples from owning that surface — another was..." (signals depth, not one lucky project).
